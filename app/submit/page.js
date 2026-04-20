@@ -53,7 +53,7 @@ export default function Submit() {
     if (!error) {
       setSuccess(true)
       setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '' })
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
+      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
     }
     setLoading(false)
@@ -136,4 +136,15 @@ export default function Submit() {
                     <p className="text-xs text-steel-400 mt-0.5">{new Date(s.submitted_at).toLocaleDateString()} · {s.pct_complete}% complete</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <sp
+                    <span className="text-sm font-semibold text-steel-900">${s.amount_billed?.toLocaleString()}</span>
+                    <span className={`badge-${s.status}`}>{s.status}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}

@@ -26,6 +26,7 @@ const s = {
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
   btn: { padding: '11px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
+  btnGray: { padding: '11px 24px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
   btnSm: (color) => ({ padding: '7px 16px', background: color === 'red' ? '#2a0a0a' : '#0a1a0a', color: color === 'red' ? '#ff6b6b' : '#4ade80', border: `1px solid ${color === 'red' ? '#5a1a1a' : '#1a4a1a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
   filterRow: { display: 'flex', gap: '12px', marginBottom: '1.25rem' },
   filterSelect: { padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#888' },
@@ -37,19 +38,12 @@ const s = {
   detailGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' },
   detailLabel: { fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' },
   detailValue: { fontSize: '14px', color: '#ccc' },
-  successMsg: { background: '#0a1a0a', border: '1px solid #1a4a1a', color: '#4ade80', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginTop: '12px' },
   emptyMsg: { textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' },
   badge: (status) => ({
     padding: '3px 12px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
     background: status === 'approved' ? '#0a2a0a' : status === 'rejected' ? '#2a0a0a' : '#2a1a00',
     color: status === 'approved' ? '#4ade80' : status === 'rejected' ? '#ff6b6b' : '#e8590c',
     border: `1px solid ${status === 'approved' ? '#1a4a1a' : status === 'rejected' ? '#5a1a1a' : '#4a2a00'}`
-  }),
-  jobStatusBadge: (status) => ({
-    padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: status === 'active' ? '#0a1a2a' : status === 'complete' ? '#0a2a0a' : '#2a2a0a',
-    color: status === 'active' ? '#60a5fa' : status === 'complete' ? '#4ade80' : '#facc15',
-    border: `1px solid ${status === 'active' ? '#1a3a5a' : status === 'complete' ? '#1a4a1a' : '#4a4a0a'}`
   }),
   formBox: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.5rem' },
   formTitle: { fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1rem' },
@@ -118,10 +112,20 @@ export default function Dashboard() {
     e.preventDefault()
     const { error } = await supabase.from('job_assignments').insert({ job_id: inviteJobId, sub_email: inviteEmail.toLowerCase().trim() })
     if (error) { setInviteMsg(error.code === '23505' ? 'Already invited to this job.' : 'Error: ' + error.message); return }
-    setInviteMsg('Invited! Share your app URL with them to register.')
+    await syncAssignments()
     setInviteEmail('')
     await loadAll()
-    setTimeout(() => setInviteMsg(''), 4000)
+  }
+
+  async function syncAssignments() {
+    const { error } = await supabase.rpc('sync_job_assignments')
+    if (!error) {
+      setInviteMsg('Invite sent and synced.')
+      await loadAll()
+      setTimeout(() => setInviteMsg(''), 3000)
+    } else {
+      setInviteMsg('Error syncing: ' + error.message)
+    }
   }
 
   async function updateJobStatus(id, status) {
@@ -277,6 +281,7 @@ export default function Dashboard() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button type="submit" style={s.btn}>Send invite</button>
+                      <button type="button" onClick={syncAssignments} style={s.btnGray}>Sync all invites</button>
                       {inviteMsg && <span style={{ fontSize: '13px', color: '#4ade80' }}>{inviteMsg}</span>}
                     </div>
                   </form>

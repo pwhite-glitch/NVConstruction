@@ -22,9 +22,23 @@ export default function Submit() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       if (prof?.role === 'pm') { router.push('/dashboard'); return }
       setProfile(prof)
-      const { data: jobList } = await supabase.from('jobs').select('*').eq('status', 'active')
-      setJobs(jobList || [])
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
+
+      // Only load jobs this sub is assigned to
+      const { data: assignments } = await supabase
+        .from('job_assignments')
+        .select('job_id, jobs(id, job_number, project_name, status)')
+        .eq('sub_id', session.user.id)
+
+      const assignedJobs = (assignments || [])
+        .map(a => a.jobs)
+        .filter(j => j && j.status === 'active')
+      setJobs(assignedJobs)
+
+      const { data: subs } = await supabase
+        .from('billing_submissions')
+        .select('*, jobs(job_number, project_name)')
+        .eq('sub_id', session.user.id)
+        .order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
     }
     load()
@@ -64,33 +78,46 @@ export default function Submit() {
           <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }} style={{ padding: '6px 14px', border: '1px solid #d1d5db', borderRadius: '8px', background: 'white', cursor: 'pointer', fontSize: '13px' }}>Sign out</button>
         </div>
       </header>
+
       <main style={{ maxWidth: '720px', margin: '0 auto', padding: '2rem 1rem' }}>
-        {success && <div style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', marginBottom: '1.5rem' }}>Billing submitted! Peyton will be notified.</div>}
-        <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '1.5rem', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: '600', marginTop: 0, marginBottom: '1.5rem' }}>Submit billing</h2>
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={labelStyle}>Project</label>
-              <select value={form.job_id} onChange={e => update('job_id', e.target.value)} required style={inputStyle}>
-                <option value="">Select a project...</option>
-                {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
-              <div><label style={labelStyle}>Amount billed</label><input type="number" style={inputStyle} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" /></div>
-              <div><label style={labelStyle}>% complete on scope</label><input type="number" style={inputStyle} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
-            </div>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={labelStyle}>Work description</label>
-              <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this period..." style={{ ...inputStyle, resize: 'vertical' }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" disabled={loading} style={{ padding: '10px 24px', background: '#1e3db5', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-                {loading ? 'Submitting...' : 'Submit billing'}
-              </button>
-            </div>
-          </form>
-        </div>
+        {success && (
+          <div style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', marginBottom: '1.5rem' }}>
+            Billing submitted! Peyton will be notified.
+          </div>
+        )}
+
+        {jobs.length === 0 ? (
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '3rem', textAlign: 'center' }}>
+            <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>You have not been assigned to any active jobs yet. Contact Peyton at NV Construction.</p>
+          </div>
+        ) : (
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '1.5rem', marginBottom: '1.5rem' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: '600', marginTop: 0, marginBottom: '1.5rem' }}>Submit billing</h2>
+            <form onSubmit={handleSubmit}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={labelStyle}>Project</label>
+                <select value={form.job_id} onChange={e => update('job_id', e.target.value)} required style={inputStyle}>
+                  <option value="">Select a project...</option>
+                  {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
+                <div><label style={labelStyle}>Amount billed</label><input type="number" style={inputStyle} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" /></div>
+                <div><label style={labelStyle}>% complete on scope</label><input type="number" style={inputStyle} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
+              </div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={labelStyle}>Work description</label>
+                <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this period..." style={{ ...inputStyle, resize: 'vertical' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="submit" disabled={loading} style={{ padding: '10px 24px', background: '#1e3db5', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+                  {loading ? 'Submitting...' : 'Submit billing'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         {submissions.length > 0 && (
           <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '1.5rem' }}>
             <h2 style={{ fontSize: '18px', fontWeight: '600', marginTop: 0, marginBottom: '1rem' }}>Your submissions</h2>

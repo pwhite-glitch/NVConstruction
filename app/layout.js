@@ -1,14 +1,9 @@
 import './globals.css'
-
-export const metadata = {
-  title: 'NV Construction',
-  description: 'NV Construction Management Platform',
-}
-
+export const metadata = { title: 'NV Construction' }
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body style={{ backgroundColor: '#f4f5f6', fontFamily: 'system-ui, sans-serif' }}>{children}</body>
     </html>
   )
 }

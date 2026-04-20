@@ -3,6 +3,21 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
+const s = {
+  page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '1rem' },
+  card: { width: '100%', maxWidth: '420px', background: '#141414', border: '1px solid #222', borderRadius: '16px', padding: '2.5rem' },
+  logo: { display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' },
+  logoImg: { width: '80px', height: '80px', objectFit: 'contain', marginBottom: '12px' },
+  logoText: { fontSize: '11px', fontWeight: '600', letterSpacing: '4px', color: '#666', textTransform: 'uppercase' },
+  label: { display: 'block', fontSize: '12px', fontWeight: '600', color: '#888', marginBottom: '6px', letterSpacing: '1px', textTransform: 'uppercase' },
+  input: { width: '100%', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
+  btn: { width: '100%', padding: '13px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase', marginTop: '8px' },
+  err: { background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' },
+  link: { color: '#e8590c', fontWeight: '600', textDecoration: 'none' },
+  divider: { borderTop: '1px solid #1e1e1e', margin: '1.5rem 0' },
+  footer: { textAlign: 'center', fontSize: '13px', color: '#555' },
+}
+
 export default function Login() {
   const router = useRouter()
   const [email, setEmail] = useState('')
@@ -21,33 +36,29 @@ export default function Login() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-      <div style={{ width: '100%', maxWidth: '400px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{ width: '48px', height: '48px', background: '#1e3db5', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
-            <svg width="24" height="24" fill="none" stroke="white" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-          </div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px' }}>NV Construction</h1>
-          <p style={{ color: '#6b7280', fontSize: '14px', margin: 0 }}>Sign in to your account</p>
+    <div style={s.page}>
+      <div style={s.card}>
+        <div style={s.logo}>
+          <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
+          <span style={s.logoText}>Subcontractor Portal</span>
         </div>
-        <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', padding: '1.5rem' }}>
-          {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px', borderRadius: '8px', fontSize: '14px', marginBottom: '1rem' }}>{error}</div>}
-          <form onSubmit={handleLogin}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#4b5563', marginBottom: '4px' }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@company.com" style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }} />
-            </div>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: '#4b5563', marginBottom: '4px' }}>Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }} />
-            </div>
-            <button type="submit" disabled={loading} style={{ width: '100%', padding: '10px', background: '#1e3db5', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </form>
-          <p style={{ textAlign: 'center', fontSize: '14px', color: '#6b7280', marginTop: '1rem', marginBottom: 0 }}>
-            New subcontractor? <a href="/register" style={{ color: '#1e3db5', fontWeight: '500' }}>Create an account</a>
-          </p>
+        {error && <div style={s.err}>{error}</div>}
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={s.label}>Email</label>
+            <input style={s.input} type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@company.com" />
+          </div>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={s.label}>Password</label>
+            <input style={s.input} type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" />
+          </div>
+          <button style={{ ...s.btn, opacity: loading ? 0.6 : 1 }} type="submit" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+        <div style={s.divider} />
+        <div style={s.footer}>
+          New subcontractor? <a href="/register" style={s.link}>Create account</a>
         </div>
       </div>
     </div>

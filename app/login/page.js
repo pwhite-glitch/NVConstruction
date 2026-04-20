@@ -15,12 +15,17 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push('/dashboard')
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
+      if (prof?.role === 'pm') {
+        router.push('/dashboard')
+      } else {
+        router.push('/submit')
+      }
     }
   }
 
@@ -36,7 +41,6 @@ export default function Login() {
           <h1 className="text-2xl font-bold text-steel-900">NV Construction</h1>
           <p className="text-steel-500 text-sm mt-1">Sign in to your account</p>
         </div>
-
         <div className="card">
           <form onSubmit={handleLogin} className="space-y-4">
             {error && (

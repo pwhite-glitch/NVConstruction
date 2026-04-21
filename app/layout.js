@@ -1,3 +1,4 @@
+// v2
 import './globals.css'
 export const metadata = { title: 'NV Construction' }
 export default function RootLayout({ children }) {

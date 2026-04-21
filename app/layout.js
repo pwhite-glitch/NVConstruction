@@ -6,4 +6,4 @@ export default function RootLayout({ children }) {
       <body style={{ backgroundColor: '#0a0a0a', fontFamily: "'Inter', system-ui, sans-serif", color: '#f1f1f1', margin: 0 }}>{children}</body>
     </html>
   )
-}
+} 

@@ -1,1 +1,274 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '../../../lib/supabase'
 
+const s = {
+  page: { minHeight: '100vh', background: '#0a0a0a' },
+  header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
+  headerInner: { maxWidth: '1040px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
+  logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
+  logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
+  logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
+  logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
+  main: { maxWidth: '1040px', margin: '0 auto', padding: '2rem 1.5rem' },
+  backBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#888', fontSize: '13px', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.5rem' },
+  card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.75rem', marginBottom: '1.5rem' },
+  cardTitle: { fontSize: '13px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1.25rem' },
+  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+  grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
+  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
+  input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
+  textarea: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none', resize: 'vertical', minHeight: '100px' },
+  btn: { padding: '11px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
+  btnGray: { padding: '11px 24px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
+  btnRed: { padding: '11px 24px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
+  jobTitle: { fontSize: '28px', fontWeight: '800', color: '#f1f1f1', margin: '0 0 4px' },
+  jobMeta: { fontSize: '14px', color: '#555', margin: 0 },
+  successMsg: { background: '#0a1a0a', border: '1px solid #1a4a1a', color: '#4ade80', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1.5rem' },
+  badge: (status) => ({
+    padding: '4px 14px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
+    background: status === 'active' ? '#0a1a2a' : status === 'complete' ? '#0a2a0a' : status === 'archived' ? '#1a1a1a' : '#2a2a0a',
+    color: status === 'active' ? '#60a5fa' : status === 'complete' ? '#4ade80' : status === 'archived' ? '#555' : '#facc15',
+    border: `1px solid ${status === 'active' ? '#1a3a5a' : status === 'complete' ? '#1a4a1a' : status === 'archived' ? '#2a2a2a' : '#4a4a0a'}`
+  }),
+  billingRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
+  subRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
+  statRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' },
+  statCard: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem' },
+  statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' },
+  statValue: (accent) => ({ fontSize: '24px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
+  confirmBox: { background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '1.25rem', marginTop: '1rem' },
+}
+
+export default function JobDetail({ params }) {
+  const router = useRouter()
+  const { id } = params
+  const [job, setJob] = useState(null)
+  const [form, setForm] = useState({})
+  const [subs, setSubs] = useState([])
+  const [billing, setBilling] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
+
+  useEffect(() => {
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      if (prof?.role !== 'pm') { router.push('/submit'); return }
+      const { data: jobData } = await supabase.from('jobs').select('*').eq('id', id).single()
+      if (!jobData) { router.push('/dashboard'); return }
+      setJob(jobData)
+      setForm(jobData)
+      const { data: subList } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone)').eq('job_id', id)
+      setSubs(subList || [])
+      const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
+      setBilling(bills || [])
+      setLoading(false)
+    }
+    load()
+  }, [id, router])
+
+  async function saveJob(e) {
+    e.preventDefault()
+    setSaving(true)
+    const { error } = await supabase.from('jobs').update({
+      job_number: form.job_number,
+      project_name: form.project_name,
+      location: form.location,
+      contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
+      start_date: form.start_date || null,
+      status: form.status,
+      owner_company: form.owner_company,
+      owner_name: form.owner_name,
+      owner_email: form.owner_email,
+      owner_phone: form.owner_phone,
+      architect_name: form.architect_name,
+      architect_company: form.architect_company,
+      architect_email: form.architect_email,
+      engineer_name: form.engineer_name,
+      engineer_company: form.engineer_company,
+      engineer_email: form.engineer_email,
+      permit_number: form.permit_number,
+      permit_date: form.permit_date || null,
+      scope_notes: form.scope_notes,
+    }).eq('id', id)
+    if (!error) { setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
+    setSaving(false)
+  }
+
+  async function archiveJob() {
+    await supabase.from('jobs').update({ archived: true, status: 'on_hold' }).eq('id', id)
+    setMsg('Job archived.')
+    setTimeout(() => router.push('/dashboard'), 1500)
+  }
+
+  async function deleteJob() {
+    await supabase.from('job_assignments').delete().eq('job_id', id)
+    await supabase.from('billing_submissions').delete().eq('job_id', id)
+    await supabase.from('jobs').delete().eq('id', id)
+    router.push('/dashboard')
+  }
+
+  const totalBilled = billing.reduce((a, b) => a + (b.amount_billed || 0), 0)
+  const pending = billing.filter(b => b.status === 'pending').length
+  const pctContract = job?.contract_value ? ((totalBilled / job.contract_value) * 100).toFixed(1) : null
+
+  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
+
+  return (
+    <div style={s.page}>
+      <header style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logoRow}>
+            <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
+            <div>
+              <div style={s.logoName}>NV Construction</div>
+              <div style={s.logoSub}>Job Detail</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main style={s.main}>
+        <button style={s.backBtn} onClick={() => router.push('/dashboard')}>← Back to dashboard</button>
+
+        {msg && <div style={s.successMsg}>{msg}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+          <div>
+            <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
+            <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
+          </div>
+          <span style={s.badge(job.archived ? 'archived' : job.status)}>{job.archived ? 'Archived' : job.status}</span>
+        </div>
+
+        <div style={s.statRow}>
+          <div style={s.statCard}>
+            <div style={s.statLabel}>Total billed</div>
+            <div style={s.statValue()}>${totalBilled.toLocaleString()}</div>
+          </div>
+          <div style={s.statCard}>
+            <div style={s.statLabel}>Contract value</div>
+            <div style={s.statValue()}>{job.contract_value ? '$' + parseFloat(job.contract_value).toLocaleString() : '—'}</div>
+          </div>
+          <div style={s.statCard}>
+            <div style={s.statLabel}>% billed</div>
+            <div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : '—'}</div>
+          </div>
+        </div>
+
+        <form onSubmit={saveJob}>
+          <div style={s.card}>
+            <p style={s.cardTitle}>Job info</p>
+            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+              <div><label style={s.label}>Job number</label><input style={s.input} value={form.job_number || ''} onChange={e => update('job_number', e.target.value)} required /></div>
+              <div><label style={s.label}>Project name</label><input style={s.input} value={form.project_name || ''} onChange={e => update('project_name', e.target.value)} required /></div>
+              <div><label style={s.label}>Location</label><input style={s.input} value={form.location || ''} onChange={e => update('location', e.target.value)} /></div>
+            </div>
+            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+              <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={form.contract_value || ''} onChange={e => update('contract_value', e.target.value)} /></div>
+              <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={form.start_date || ''} onChange={e => update('start_date', e.target.value)} /></div>
+              <div><label style={s.label}>Status</label>
+                <select style={s.input} value={form.status || 'active'} onChange={e => update('status', e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="on_hold">On hold</option>
+                  <option value="complete">Complete</option>
+                </select>
+              </div>
+            </div>
+            <div><label style={s.label}>Scope notes</label><textarea style={s.textarea} value={form.scope_notes || ''} onChange={e => update('scope_notes', e.target.value)} placeholder="Project description, scope of work, special requirements..." /></div>
+          </div>
+
+          <div style={s.card}>
+            <p style={s.cardTitle}>Owner info</p>
+            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+              <div><label style={s.label}>Owner company</label><input style={s.input} value={form.owner_company || ''} onChange={e => update('owner_company', e.target.value)} placeholder="Braum's Inc." /></div>
+              <div><label style={s.label}>Owner name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} placeholder="John Smith" /></div>
+            </div>
+            <div style={s.grid2}>
+              <div><label style={s.label}>Owner email</label><input style={s.input} value={form.owner_email || ''} onChange={e => update('owner_email', e.target.value)} placeholder="owner@company.com" /></div>
+              <div><label style={s.label}>Owner phone</label><input style={s.input} value={form.owner_phone || ''} onChange={e => update('owner_phone', e.target.value)} placeholder="(555) 555-5555" /></div>
+            </div>
+          </div>
+
+          <div style={s.card}>
+            <p style={s.cardTitle}>Architect & engineer</p>
+            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+              <div><label style={s.label}>Architect name</label><input style={s.input} value={form.architect_name || ''} onChange={e => update('architect_name', e.target.value)} /></div>
+              <div><label style={s.label}>Architect company</label><input style={s.input} value={form.architect_company || ''} onChange={e => update('architect_company', e.target.value)} /></div>
+              <div><label style={s.label}>Architect email</label><input style={s.input} value={form.architect_email || ''} onChange={e => update('architect_email', e.target.value)} /></div>
+            </div>
+            <div style={s.grid3}>
+              <div><label style={s.label}>Engineer name</label><input style={s.input} value={form.engineer_name || ''} onChange={e => update('engineer_name', e.target.value)} /></div>
+              <div><label style={s.label}>Engineer company</label><input style={s.input} value={form.engineer_company || ''} onChange={e => update('engineer_company', e.target.value)} /></div>
+              <div><label style={s.label}>Engineer email</label><input style={s.input} value={form.engineer_email || ''} onChange={e => update('engineer_email', e.target.value)} /></div>
+            </div>
+          </div>
+
+          <div style={s.card}>
+            <p style={s.cardTitle}>Permits</p>
+            <div style={s.grid2}>
+              <div><label style={s.label}>Permit number</label><input style={s.input} value={form.permit_number || ''} onChange={e => update('permit_number', e.target.value)} placeholder="PERM-2024-0001" /></div>
+              <div><label style={s.label}>Permit date</label><input type="date" style={s.input} value={form.permit_date || ''} onChange={e => update('permit_date', e.target.value)} /></div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '1.5rem' }}>
+            <button type="submit" style={{ ...s.btn, opacity: saving ? 0.6 : 1 }} disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
+            <button type="button" style={s.btnGray} onClick={archiveJob}>Archive job</button>
+            <button type="button" style={s.btnRed} onClick={() => setConfirmDelete(!confirmDelete)}>Delete job</button>
+          </div>
+
+          {confirmDelete && (
+            <div style={s.confirmBox}>
+              <p style={{ color: '#ff6b6b', fontSize: '14px', margin: '0 0 1rem' }}>Are you sure? This will permanently delete the job, all billing submissions, and all sub assignments. This cannot be undone.</p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" onClick={deleteJob} style={s.btnRed}>Yes, delete permanently</button>
+                <button type="button" onClick={() => setConfirmDelete(false)} style={s.btnGray}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </form>
+
+        <div style={s.card}>
+          <p style={s.cardTitle}>Assigned subcontractors ({subs.length})</p>
+          {subs.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No subs assigned yet.</p> : subs.map(a => (
+            <div key={a.id} style={s.subRow}>
+              <div>
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{a.profiles?.company_name || a.sub_email}</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>{a.profiles?.full_name} · {a.sub_email}</p>
+              </div>
+              <span style={{ fontSize: '12px', color: a.sub_id ? '#4ade80' : '#e8590c' }}>{a.sub_id ? 'Registered' : 'Pending registration'}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={s.card}>
+          <p style={s.cardTitle}>Billing activity ({billing.length} submissions · {pending} pending)</p>
+          {billing.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No billing submissions yet.</p> : billing.map(b => (
+            <div key={b.id} style={s.billingRow}>
+              <div>
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>{new Date(b.submitted_at).toLocaleDateString()} · {b.pct_complete}% complete</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontWeight: '700', color: '#f1f1f1' }}>${b.amount_billed?.toLocaleString()}</span>
+                <span style={{
+                  padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700',
+                  background: b.status === 'approved' ? '#0a2a0a' : b.status === 'rejected' ? '#2a0a0a' : '#2a1a00',
+                  color: b.status === 'approved' ? '#4ade80' : b.status === 'rejected' ? '#ff6b6b' : '#e8590c',
+                  border: `1px solid ${b.status === 'approved' ? '#1a4a1a' : b.status === 'rejected' ? '#5a1a1a' : '#4a2a00'}`
+                }}>{b.status}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  )
+}

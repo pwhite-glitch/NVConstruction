@@ -45,6 +45,12 @@ const s = {
     color: status === 'approved' ? '#4ade80' : status === 'rejected' ? '#ff6b6b' : '#e8590c',
     border: `1px solid ${status === 'approved' ? '#1a4a1a' : status === 'rejected' ? '#5a1a1a' : '#4a2a00'}`
   }),
+  jobBadge: (status) => ({
+    padding: '3px 12px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
+    background: status === 'active' ? '#0a1a2a' : status === 'complete' ? '#0a2a0a' : '#2a2a0a',
+    color: status === 'active' ? '#60a5fa' : status === 'complete' ? '#4ade80' : '#facc15',
+    border: `1px solid ${status === 'active' ? '#1a3a5a' : status === 'complete' ? '#1a4a1a' : '#4a4a0a'}`
+  }),
   formBox: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.5rem' },
   formTitle: { fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1rem' },
 }
@@ -126,11 +132,6 @@ export default function Dashboard() {
     } else {
       setInviteMsg('Error syncing: ' + error.message)
     }
-  }
-
-  async function updateJobStatus(id, status) {
-    await supabase.from('jobs').update({ status }).eq('id', id)
-    await loadAll()
   }
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
@@ -249,16 +250,15 @@ export default function Dashboard() {
                   </form>
                 </div>
                 {jobs.length === 0 ? <div style={s.emptyMsg}>No jobs yet.</div> : jobs.map(j => (
-                  <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                  <div key={j.id} onClick={() => router.push(`/jobs/${j.id}`)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
                     <div>
                       <p style={s.company}>#{j.job_number} — {j.project_name}</p>
                       <p style={s.meta}>{j.location}{j.contract_value ? ' · $' + parseFloat(j.contract_value).toLocaleString() : ''}{j.start_date ? ' · ' + new Date(j.start_date).toLocaleDateString() : ''}</p>
                     </div>
-                    <select value={j.status} onChange={e => updateJobStatus(j.id, e.target.value)} style={{ ...s.filterSelect, fontSize: '12px' }}>
-                      <option value="active">Active</option>
-                      <option value="on_hold">On hold</option>
-                      <option value="complete">Complete</option>
-                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={s.jobBadge(j.status)}>{j.status}</span>
+                      <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                    </div>
                   </div>
                 ))}
               </>

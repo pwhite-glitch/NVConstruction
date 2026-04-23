@@ -114,10 +114,15 @@ export default function Dashboard() {
     setDirectory(dir || [])
   }
 
-  async function updateStatus(id, status) {
-    await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
-    await loadAll()
-    setExpanded(null)
+  async function deleteDirEntry(id) {
+  const { error } = await supabase.from('sub_directory').delete().eq('id', id)
+  if (error) {
+    alert('Delete error: ' + error.message)
+    return
+  }
+  await loadAll()
+  setExpandedDir(null)
+}
   }
 
   async function updateDirStatus(id, status) {

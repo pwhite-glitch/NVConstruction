@@ -65,8 +65,7 @@ const s = {
   formTitle: { fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1rem' },
   applyLink: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' },
   applyLinkText: { fontSize: '13px', color: '#888' },
-  applyLinkUrl: { fontSize: '13px', color: '#e8590c', fontWeight: '600' },
-  docLink: { color: '#e8590c', fontSize: '13px', textDecoration: 'none', fontWeight: '600' },
+  applyLinkUrl: { fontSize: '13px', color: '#e8590c', fontWeight: '600', cursor: 'pointer' },
 }
 
 export default function Dashboard() {
@@ -126,6 +125,12 @@ export default function Dashboard() {
     await loadAll()
   }
 
+  async function deleteDirEntry(id) {
+    await supabase.from('sub_directory').delete().eq('id', id)
+    await loadAll()
+    setExpandedDir(null)
+  }
+
   async function addJob(e) {
     e.preventDefault()
     const { error } = await supabase.from('jobs').insert({
@@ -171,16 +176,13 @@ export default function Dashboard() {
   const pending = submissions.filter(s => s.status === 'pending')
   const totalBilled = submissions.reduce((a, s) => a + (s.amount_billed || 0), 0)
   const totalThisWeek = submissions.filter(s => new Date(s.submitted_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).reduce((a, s) => a + (s.amount_billed || 0), 0)
-
   const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
   const expiringCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration) < thirtyDaysFromNow)
-
   const filteredDir = directory.filter(s =>
     (!filterDirStatus || s.status === filterDirStatus) &&
     (!filterTrade || s.trade === filterTrade) &&
     (!searchDir || s.company_name.toLowerCase().includes(searchDir.toLowerCase()) || s.contact_name.toLowerCase().includes(searchDir.toLowerCase()))
   )
-
   const pendingApps = directory.filter(s => s.status === 'pending').length
 
   return (
@@ -341,14 +343,17 @@ export default function Dashboard() {
                         {sub.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
-                            <button onClick={() => updateDirStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Reject</button>
+                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Reject & delete</button>
                           </div>
                         )}
                         {sub.status === 'approved' && (
-                          <button onClick={() => updateDirStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Remove from directory</button>
+                          <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Remove from directory</button>
                         )}
                         {sub.status === 'rejected' && (
-                          <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Re-approve</button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Re-approve</button>
+                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete</button>
+                          </div>
                         )}
                       </div>
                     )}

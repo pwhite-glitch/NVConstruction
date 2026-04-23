@@ -1,4 +1,4 @@
-'use client' v3
+'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
@@ -114,15 +114,10 @@ export default function Dashboard() {
     setDirectory(dir || [])
   }
 
-  async function deleteDirEntry(id) {
-  const { error } = await supabase.from('sub_directory').delete().eq('id', id)
-  if (error) {
-    alert('Delete error: ' + error.message)
-    return
-  }
-  await loadAll()
-  setExpandedDir(null)
-}
+  async function updateStatus(id, status) {
+    await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
+    await loadAll()
+    setExpanded(null)
   }
 
   async function updateDirStatus(id, status) {
@@ -131,7 +126,11 @@ export default function Dashboard() {
   }
 
   async function deleteDirEntry(id) {
-    await supabase.from('sub_directory').delete().eq('id', id)
+    const { error } = await supabase.from('sub_directory').delete().eq('id', id)
+    if (error) {
+      alert('Delete error: ' + error.message)
+      return
+    }
     await loadAll()
     setExpandedDir(null)
   }
@@ -348,11 +347,11 @@ export default function Dashboard() {
                         {sub.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
-                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Reject & delete</button>
+                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete application</button>
                           </div>
                         )}
                         {sub.status === 'approved' && (
-                          <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Remove from directory</button>
+                          <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete from directory</button>
                         )}
                         {sub.status === 'rejected' && (
                           <div style={{ display: 'flex', gap: '8px' }}>

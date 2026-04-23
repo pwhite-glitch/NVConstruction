@@ -3,6 +3,14 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
+const TRADES = [
+  'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
+  'Roofing', 'Drywall', 'Painting', 'Flooring', 'Doors & Windows',
+  'Mechanical / HVAC', 'Electrical', 'Plumbing', 'Fire Protection',
+  'Site Work / Grading', 'Landscaping', 'Insulation', 'Waterproofing',
+  'Signage', 'Cleaning', 'Other'
+]
+
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
   header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
@@ -18,8 +26,8 @@ const s = {
   statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' },
   statValue: (accent) => ({ fontSize: '32px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
   card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', overflow: 'hidden', marginBottom: '1.5rem' },
-  tabs: { display: 'flex', borderBottom: '1px solid #222' },
-  tab: (active) => ({ padding: '14px 24px', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase' }),
+  tabs: { display: 'flex', borderBottom: '1px solid #222', overflowX: 'auto' },
+  tab: (active) => ({ padding: '14px 20px', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }),
   cardBody: { padding: '1.5rem' },
   label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
   input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
@@ -27,9 +35,10 @@ const s = {
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
   btn: { padding: '11px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
   btnGray: { padding: '11px 24px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSm: (color) => ({ padding: '7px 16px', background: color === 'red' ? '#2a0a0a' : '#0a1a0a', color: color === 'red' ? '#ff6b6b' : '#4ade80', border: `1px solid ${color === 'red' ? '#5a1a1a' : '#1a4a1a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
-  filterRow: { display: 'flex', gap: '12px', marginBottom: '1.25rem' },
+  btnSm: (color) => ({ padding: '7px 16px', background: color === 'red' ? '#2a0a0a' : color === 'green' ? '#0a1a0a' : '#1a1a1a', color: color === 'red' ? '#ff6b6b' : color === 'green' ? '#4ade80' : '#888', border: `1px solid ${color === 'red' ? '#5a1a1a' : color === 'green' ? '#1a4a1a' : '#2a2a2a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
+  filterRow: { display: 'flex', gap: '12px', marginBottom: '1.25rem', flexWrap: 'wrap' },
   filterSelect: { padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#888' },
+  filterInput: { padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', outline: 'none', flex: 1 },
   row: { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '1rem', padding: '14px 8px', cursor: 'pointer', borderRadius: '8px' },
   rowBorder: { borderBottom: '1px solid #1a1a1a' },
   company: { margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' },
@@ -51,8 +60,13 @@ const s = {
     color: status === 'active' ? '#60a5fa' : status === 'complete' ? '#4ade80' : '#facc15',
     border: `1px solid ${status === 'active' ? '#1a3a5a' : status === 'complete' ? '#1a4a1a' : '#4a4a0a'}`
   }),
+  coiWarning: { background: '#2a1a00', border: '1px solid #4a3a00', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#e8590c', marginBottom: '1rem' },
   formBox: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.5rem' },
   formTitle: { fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1rem' },
+  applyLink: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' },
+  applyLinkText: { fontSize: '13px', color: '#888' },
+  applyLinkUrl: { fontSize: '13px', color: '#e8590c', fontWeight: '600' },
+  docLink: { color: '#e8590c', fontSize: '13px', textDecoration: 'none', fontWeight: '600' },
 }
 
 export default function Dashboard() {
@@ -61,11 +75,16 @@ export default function Dashboard() {
   const [submissions, setSubmissions] = useState([])
   const [jobs, setJobs] = useState([])
   const [assignments, setAssignments] = useState([])
+  const [directory, setDirectory] = useState([])
   const [expanded, setExpanded] = useState(null)
+  const [expandedDir, setExpandedDir] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('billing')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterJob, setFilterJob] = useState('')
+  const [filterTrade, setFilterTrade] = useState('')
+  const [filterDirStatus, setFilterDirStatus] = useState('')
+  const [searchDir, setSearchDir] = useState('')
   const [newJob, setNewJob] = useState({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active' })
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
@@ -92,12 +111,19 @@ export default function Dashboard() {
     setJobs(jobList || [])
     const { data: asgn } = await supabase.from('job_assignments').select('*, jobs(job_number, project_name)').order('invited_at', { ascending: false })
     setAssignments(asgn || [])
+    const { data: dir } = await supabase.from('sub_directory').select('*').order('applied_at', { ascending: false })
+    setDirectory(dir || [])
   }
 
   async function updateStatus(id, status) {
     await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
     await loadAll()
     setExpanded(null)
+  }
+
+  async function updateDirStatus(id, status) {
+    await supabase.from('sub_directory').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
+    await loadAll()
   }
 
   async function addJob(e) {
@@ -134,12 +160,28 @@ export default function Dashboard() {
     }
   }
 
+  async function getDocUrl(path) {
+    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
   const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
   const pending = submissions.filter(s => s.status === 'pending')
   const totalBilled = submissions.reduce((a, s) => a + (s.amount_billed || 0), 0)
   const totalThisWeek = submissions.filter(s => new Date(s.submitted_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).reduce((a, s) => a + (s.amount_billed || 0), 0)
+
+  const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+  const expiringCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration) < thirtyDaysFromNow)
+
+  const filteredDir = directory.filter(s =>
+    (!filterDirStatus || s.status === filterDirStatus) &&
+    (!filterTrade || s.trade === filterTrade) &&
+    (!searchDir || s.company_name.toLowerCase().includes(searchDir.toLowerCase()) || s.contact_name.toLowerCase().includes(searchDir.toLowerCase()))
+  )
+
+  const pendingApps = directory.filter(s => s.status === 'pending').length
 
   return (
     <div style={s.page}>
@@ -162,7 +204,7 @@ export default function Dashboard() {
       <main style={s.main}>
         <div style={s.statsGrid}>
           <div style={s.statCard}>
-            <div style={s.statLabel}>Pending review</div>
+            <div style={s.statLabel}>Pending billing</div>
             <div style={s.statValue('#e8590c')}>{pending.length}</div>
           </div>
           <div style={s.statCard}>
@@ -170,19 +212,23 @@ export default function Dashboard() {
             <div style={s.statValue()}>${totalThisWeek.toLocaleString()}</div>
           </div>
           <div style={s.statCard}>
-            <div style={s.statLabel}>Total billed</div>
-            <div style={s.statValue()}>${totalBilled.toLocaleString()}</div>
+            <div style={s.statLabel}>Pending applications</div>
+            <div style={s.statValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
           </div>
         </div>
 
         <div style={s.card}>
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
+            <button style={s.tab(activeTab === 'directory')} onClick={() => setActiveTab('directory')}>
+              Sub directory {pendingApps > 0 ? `(${pendingApps})` : ''}
+            </button>
             <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
             <button style={s.tab(activeTab === 'invite')} onClick={() => setActiveTab('invite')}>Invite subs</button>
           </div>
 
           <div style={s.cardBody}>
+
             {activeTab === 'billing' && (
               <>
                 <div style={s.filterRow}>
@@ -222,6 +268,88 @@ export default function Dashboard() {
                           </div>
                         )}
                         {sub.status !== 'pending' && <div style={s.meta}>Reviewed {sub.reviewed_at ? new Date(sub.reviewed_at).toLocaleDateString() : '—'}</div>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+
+            {activeTab === 'directory' && (
+              <>
+                <div style={s.applyLink}>
+                  <span style={s.applyLinkText}>Share this link with subs to apply to your network:</span>
+                  <span style={s.applyLinkUrl} onClick={() => navigator.clipboard.writeText(window.location.origin + '/apply')} title="Click to copy">
+                    {typeof window !== 'undefined' ? window.location.origin : ''}/apply ⧉
+                  </span>
+                </div>
+
+                {expiringCOIs.length > 0 && (
+                  <div style={s.coiWarning}>
+                    ⚠ {expiringCOIs.length} subcontractor{expiringCOIs.length > 1 ? 's have' : ' has'} a COI expiring within 30 days: {expiringCOIs.map(s => s.company_name).join(', ')}
+                  </div>
+                )}
+
+                <div style={s.filterRow}>
+                  <input style={s.filterInput} value={searchDir} onChange={e => setSearchDir(e.target.value)} placeholder="Search by company or contact..." />
+                  <select value={filterDirStatus} onChange={e => setFilterDirStatus(e.target.value)} style={s.filterSelect}>
+                    <option value="">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                  <select value={filterTrade} onChange={e => setFilterTrade(e.target.value)} style={s.filterSelect}>
+                    <option value="">All trades</option>
+                    {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+
+                {filteredDir.length === 0 ? <div style={s.emptyMsg}>No subcontractors found.</div> : filteredDir.map(sub => (
+                  <div key={sub.id} style={s.rowBorder}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }} onClick={() => setExpandedDir(expandedDir === sub.id ? null : sub.id)}>
+                      <div>
+                        <p style={s.company}>{sub.company_name}</p>
+                        <p style={s.meta}>{sub.contact_name} · {sub.trade} · Applied {new Date(sub.applied_at).toLocaleDateString()}</p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
+                          <span style={{ fontSize: '11px', color: '#e8590c', fontWeight: '700' }}>COI EXPIRING</span>
+                        )}
+                        <span style={s.badge(sub.status)}>{sub.status}</span>
+                      </div>
+                    </div>
+                    {expandedDir === sub.id && (
+                      <div style={s.detail}>
+                        <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
+                          <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{sub.email}</div></div>
+                          <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{sub.phone || '—'}</div></div>
+                          <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{sub.address || '—'}</div></div>
+                          <div><div style={s.detailLabel}>Trade</div><div style={s.detailValue}>{sub.trade || '—'}</div></div>
+                          <div><div style={s.detailLabel}>COI expiration</div><div style={{ ...s.detailValue, color: sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#e8590c' : '#ccc' }}>{sub.coi_expiration ? new Date(sub.coi_expiration).toLocaleDateString() : '—'}</div></div>
+                          <div><div style={s.detailLabel}>License</div><div style={s.detailValue}>{sub.license_number || '—'}</div></div>
+                        </div>
+                        {sub.scope_description && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <div style={s.detailLabel}>Scope description</div>
+                            <div style={{ ...s.detailValue, lineHeight: '1.7' }}>{sub.scope_description}</div>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                          {sub.w9_url && <button onClick={() => getDocUrl(sub.w9_url)} style={s.btnSm('gray')}>View W-9</button>}
+                          {sub.coi_url && <button onClick={() => getDocUrl(sub.coi_url)} style={s.btnSm('gray')}>View COI</button>}
+                        </div>
+                        {sub.status === 'pending' && (
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
+                            <button onClick={() => updateDirStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Reject</button>
+                          </div>
+                        )}
+                        {sub.status === 'approved' && (
+                          <button onClick={() => updateDirStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Remove from directory</button>
+                        )}
+                        {sub.status === 'rejected' && (
+                          <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Re-approve</button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -297,6 +425,7 @@ export default function Dashboard() {
                 ))}
               </>
             )}
+
           </div>
         </div>
       </main>

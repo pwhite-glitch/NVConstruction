@@ -1,4 +1,4 @@
-'use client' // fresh
+'use client' v2
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
@@ -127,7 +127,10 @@ export default function Dashboard() {
 
   async function deleteDirEntry(id) {
     const { error } = await supabase.from('sub_directory').delete().eq('id', id)
-    if (error) { alert('Delete error: ' + error.message); return }
+    if (error) {
+      alert('Delete error: ' + error.message)
+      return
+    }
     await loadAll()
     setExpandedDir(null)
   }

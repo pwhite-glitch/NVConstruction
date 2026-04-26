@@ -35,7 +35,7 @@ const s = {
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
   btn: { padding: '11px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
   btnGray: { padding: '11px 24px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSm: (color) => ({ padding: '7px 16px', background: color === 'red' ? '#2a0a0a' : color === 'green' ? '#0a1a0a' : '#1a1a1a', color: color === 'red' ? '#ff6b6b' : color === 'green' ? '#4ade80' : '#888', border: `1px solid ${color === 'red' ? '#5a1a1a' : color === 'green' ? '#1a4a1a' : '#2a2a2a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
+  btnSm: (color) => ({ padding: '7px 16px', background: color === 'red' ? '#2a0a0a' : color === 'green' ? '#0a1a0a' : color === 'orange' ? '#2a1200' : '#1a1a1a', color: color === 'red' ? '#ff6b6b' : color === 'green' ? '#4ade80' : color === 'orange' ? '#e8590c' : '#888', border: `1px solid ${color === 'red' ? '#5a1a1a' : color === 'green' ? '#1a4a1a' : color === 'orange' ? '#4a2200' : '#2a2a2a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
   filterRow: { display: 'flex', gap: '12px', marginBottom: '1.25rem', flexWrap: 'wrap' },
   filterSelect: { padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#888' },
   filterInput: { padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', outline: 'none', flex: 1 },
@@ -63,9 +63,13 @@ const s = {
   coiWarning: { background: '#2a1a00', border: '1px solid #4a3a00', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#e8590c', marginBottom: '1rem' },
   formBox: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.5rem' },
   formTitle: { fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1rem' },
-  applyLink: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' },
+  applyLink: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' },
   applyLinkText: { fontSize: '13px', color: '#888' },
   applyLinkUrl: { fontSize: '13px', color: '#e8590c', fontWeight: '600', cursor: 'pointer' },
+  assignBox: { background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginTop: '1rem' },
+  assignTitle: { fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '0.75rem' },
+  successInline: { fontSize: '12px', color: '#4ade80' },
+  errorInline: { fontSize: '12px', color: '#ff6b6b' },
 }
 
 export default function Dashboard() {
@@ -89,6 +93,12 @@ export default function Dashboard() {
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
   const [inviteMsg, setInviteMsg] = useState('')
+  const [showInviteForm, setShowInviteForm] = useState(false)
+
+  // Per-sub assign-to-job state
+  const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
+  const [assignMsg, setAssignMsg] = useState({})       // { [dirSubId]: { text, ok } }
+  const [assigningId, setAssigningId] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -167,6 +177,27 @@ export default function Dashboard() {
     }
   }
 
+  async function assignToJob(sub) {
+    const jobId = assignTarget[sub.id]
+    if (!jobId) return
+    setAssigningId(sub.id)
+    const { error } = await supabase.from('job_assignments').insert({
+      job_id: jobId,
+      sub_email: sub.email.toLowerCase().trim(),
+    })
+    if (error) {
+      const text = error.code === '23505' ? 'Already assigned to this job.' : 'Error: ' + error.message
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text, ok: false } }))
+    } else {
+      await supabase.rpc('sync_job_assignments')
+      await loadAll()
+      setAssignTarget(prev => ({ ...prev, [sub.id]: '' }))
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned — sub can now bill this job.', ok: true } }))
+      setTimeout(() => setAssignMsg(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
+    }
+    setAssigningId(null)
+  }
+
   async function getDocUrl(path) {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
@@ -176,7 +207,6 @@ export default function Dashboard() {
 
   const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
   const pending = submissions.filter(s => s.status === 'pending')
-  const totalBilled = submissions.reduce((a, s) => a + (s.amount_billed || 0), 0)
   const totalThisWeek = submissions.filter(s => new Date(s.submitted_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).reduce((a, s) => a + (s.amount_billed || 0), 0)
   const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
   const expiringCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration) < thirtyDaysFromNow)
@@ -186,6 +216,7 @@ export default function Dashboard() {
     (!searchDir || s.company_name.toLowerCase().includes(searchDir.toLowerCase()) || s.contact_name.toLowerCase().includes(searchDir.toLowerCase()))
   )
   const pendingApps = directory.filter(s => s.status === 'pending').length
+  const activeJobs = jobs.filter(j => j.status === 'active')
 
   return (
     <div style={s.page}>
@@ -225,14 +256,14 @@ export default function Dashboard() {
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
             <button style={s.tab(activeTab === 'directory')} onClick={() => setActiveTab('directory')}>
-              Sub directory {pendingApps > 0 ? `(${pendingApps})` : ''}
+              Sub directory{pendingApps > 0 ? ` (${pendingApps})` : ''}
             </button>
             <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
-            <button style={s.tab(activeTab === 'invite')} onClick={() => setActiveTab('invite')}>Invite subs</button>
           </div>
 
           <div style={s.cardBody}>
 
+            {/* ── BILLING ── */}
             {activeTab === 'billing' && (
               <>
                 <div style={s.filterRow}>
@@ -279,14 +310,43 @@ export default function Dashboard() {
               </>
             )}
 
+            {/* ── DIRECTORY ── */}
             {activeTab === 'directory' && (
               <>
-                <div style={s.applyLink}>
-                  <span style={s.applyLinkText}>Share this link with subs to apply to your network:</span>
-                  <span style={s.applyLinkUrl} onClick={() => navigator.clipboard.writeText(window.location.origin + '/apply')} title="Click to copy">
-                    {typeof window !== 'undefined' ? window.location.origin : ''}/apply ⧉
-                  </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={s.applyLink}>
+                    <span style={s.applyLinkText}>Share with subs to apply:</span>
+                    <span style={{ ...s.applyLinkUrl, marginLeft: '12px' }} onClick={() => navigator.clipboard.writeText(window.location.origin + '/apply')} title="Click to copy">
+                      {typeof window !== 'undefined' ? window.location.origin : ''}/apply ⧉
+                    </span>
+                  </div>
+                  <button style={{ ...s.btnSm('orange'), marginLeft: '12px', whiteSpace: 'nowrap' }} onClick={() => setShowInviteForm(v => !v)}>
+                    {showInviteForm ? 'Cancel invite' : '+ Invite by email'}
+                  </button>
                 </div>
+
+                {showInviteForm && (
+                  <div style={s.formBox}>
+                    <p style={s.formTitle}>Invite subcontractor to a job</p>
+                    <form onSubmit={inviteSub}>
+                      <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
+                        <div><label style={s.label}>Sub's email address</label><input type="email" style={s.input} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required placeholder="sub@company.com" /></div>
+                        <div>
+                          <label style={s.label}>Job</label>
+                          <select style={s.input} value={inviteJobId} onChange={e => setInviteJobId(e.target.value)} required>
+                            <option value="">Select a job...</option>
+                            {activeJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button type="submit" style={s.btn}>Send invite</button>
+                        <button type="button" onClick={syncAssignments} style={s.btnGray}>Sync all</button>
+                        {inviteMsg && <span style={s.successInline}>{inviteMsg}</span>}
+                      </div>
+                    </form>
+                  </div>
+                )}
 
                 {expiringCOIs.length > 0 && (
                   <div style={s.coiWarning}>
@@ -342,21 +402,65 @@ export default function Dashboard() {
                           {sub.w9_url && <button onClick={() => getDocUrl(sub.w9_url)} style={s.btnSm('gray')}>View W-9</button>}
                           {sub.coi_url && <button onClick={() => getDocUrl(sub.coi_url)} style={s.btnSm('gray')}>View COI</button>}
                         </div>
-                        {sub.status === 'pending' && (
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
-                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete application</button>
-                          </div>
-                        )}
+
+                        {/* Assign to job */}
                         {sub.status === 'approved' && (
-                          <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete from directory</button>
-                        )}
-                        {sub.status === 'rejected' && (
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Re-approve</button>
-                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete</button>
+                          <div style={s.assignBox}>
+                            <p style={s.assignTitle}>Assign to job</p>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <select
+                                style={{ ...s.input, maxWidth: '280px' }}
+                                value={assignTarget[sub.id] || ''}
+                                onChange={e => setAssignTarget(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                              >
+                                <option value="">Select a job...</option>
+                                {activeJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                              </select>
+                              <button
+                                style={{ ...s.btnSm('orange'), opacity: assigningId === sub.id ? 0.6 : 1 }}
+                                disabled={assigningId === sub.id || !assignTarget[sub.id]}
+                                onClick={() => assignToJob(sub)}
+                              >
+                                {assigningId === sub.id ? 'Assigning...' : 'Assign & enable billing'}
+                              </button>
+                              {assignMsg[sub.id] && (
+                                <span style={assignMsg[sub.id].ok ? s.successInline : s.errorInline}>
+                                  {assignMsg[sub.id].text}
+                                </span>
+                              )}
+                            </div>
+                            {assignments.filter(a => a.sub_email === sub.email).length > 0 && (
+                              <div style={{ marginTop: '10px' }}>
+                                <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Currently assigned to</div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  {assignments.filter(a => a.sub_email === sub.email).map(a => (
+                                    <span key={a.id} style={{ fontSize: '12px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '3px 10px' }}>
+                                      #{a.jobs?.job_number} — {a.jobs?.project_name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
+
+                        <div style={{ marginTop: '1rem' }}>
+                          {sub.status === 'pending' && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
+                              <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete application</button>
+                            </div>
+                          )}
+                          {sub.status === 'approved' && (
+                            <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete from directory</button>
+                          )}
+                          {sub.status === 'rejected' && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => updateDirStatus(sub.id, 'approved')} style={s.btnSm('green')}>Re-approve</button>
+                              <button onClick={() => deleteDirEntry(sub.id)} style={s.btnSm('red')}>Delete</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -364,6 +468,7 @@ export default function Dashboard() {
               </>
             )}
 
+            {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
                 <div style={s.formBox}>
@@ -380,7 +485,7 @@ export default function Dashboard() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button type="submit" style={s.btn}>Add job</button>
-                      {jobMsg && <span style={{ fontSize: '13px', color: '#4ade80' }}>{jobMsg}</span>}
+                      {jobMsg && <span style={s.successInline}>{jobMsg}</span>}
                     </div>
                   </form>
                 </div>
@@ -394,40 +499,6 @@ export default function Dashboard() {
                       <span style={s.jobBadge(j.status)}>{j.status}</span>
                       <span style={{ color: '#555', fontSize: '18px' }}>›</span>
                     </div>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {activeTab === 'invite' && (
-              <>
-                <div style={s.formBox}>
-                  <p style={s.formTitle}>Invite subcontractor to a job</p>
-                  <form onSubmit={inviteSub}>
-                    <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
-                      <div><label style={s.label}>Sub's email address</label><input type="email" style={s.input} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required placeholder="sub@company.com" /></div>
-                      <div>
-                        <label style={s.label}>Job</label>
-                        <select style={s.input} value={inviteJobId} onChange={e => setInviteJobId(e.target.value)} required>
-                          <option value="">Select a job...</option>
-                          {jobs.filter(j => j.status === 'active').map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <button type="submit" style={s.btn}>Send invite</button>
-                      <button type="button" onClick={syncAssignments} style={s.btnGray}>Sync all invites</button>
-                      {inviteMsg && <span style={{ fontSize: '13px', color: '#4ade80' }}>{inviteMsg}</span>}
-                    </div>
-                  </form>
-                </div>
-                {assignments.length === 0 ? <div style={s.emptyMsg}>No invites sent yet.</div> : assignments.map(a => (
-                  <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
-                    <div>
-                      <p style={s.company}>{a.sub_email}</p>
-                      <p style={s.meta}>#{a.jobs?.job_number} — {a.jobs?.project_name} · Invited {new Date(a.invited_at).toLocaleDateString()}</p>
-                    </div>
-                    <span style={s.badge(a.sub_id ? 'approved' : 'pending')}>{a.sub_id ? 'Registered' : 'Pending'}</span>
                   </div>
                 ))}
               </>

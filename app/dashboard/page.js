@@ -125,13 +125,18 @@ export default function Dashboard() {
     await loadAll()
   }
 
-  async function deleteDirEntry(id) {
+async function deleteDirEntry(id) {
+    const { data: { session } } = await supabase.auth.getSession()
+    console.log('Session user:', session?.user?.id)
+    const { data: prof } = await supabase.from('profiles').select('role').eq('id', session?.user?.id).single()
+    console.log('Profile role:', prof?.role)
     const { error } = await supabase.from('sub_directory').delete().eq('id', id)
+    console.log('Delete error:', error)
+    console.log('Delete id:', id)
     if (error) { alert('Delete error: ' + error.message); return }
     await loadAll()
     setExpandedDir(null)
   }
-
   async function addJob(e) {
     e.preventDefault()
     const { error } = await supabase.from('jobs').insert({

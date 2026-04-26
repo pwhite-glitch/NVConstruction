@@ -125,16 +125,8 @@ export default function Dashboard() {
     await loadAll()
   }
 
-<<<<<<< HEAD
   async function deleteDirEntry(id) {
     if (!window.confirm('Are you sure you want to permanently delete this subcontractor?')) return
-=======
-async function deleteDirEntry(id) {
-    const { data: { session } } = await supabase.auth.getSession()
-    console.log('Session user:', session?.user?.id)
-    const { data: prof } = await supabase.from('profiles').select('role').eq('id', session?.user?.id).single()
-    console.log('Profile role:', prof?.role)
->>>>>>> b9a569278304b9957f8a0d48804202041d2cb258
     const { error } = await supabase.from('sub_directory').delete().eq('id', id)
     console.log('Delete error:', error)
     console.log('Delete id:', id)

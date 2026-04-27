@@ -109,6 +109,18 @@ export default function Dashboard() {
   const [newSubManual, setNewSubManual] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
   const [addingSubManual, setAddingSubManual] = useState(false)
 
+  // Bid invites state
+  const [bidPackages, setBidPackages] = useState([])
+  const [expandedBid, setExpandedBid] = useState(null)
+  const [showCreateBid, setShowCreateBid] = useState(false)
+  const [bidForm, setBidForm] = useState({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '' })
+  const [creatingBid, setCreatingBid] = useState(false)
+  const [bidDetails, setBidDetails] = useState({})
+  const [uploadingPlanFor, setUploadingPlanFor] = useState(null)
+  const [showInviteFor, setShowInviteFor] = useState(null)
+  const [selectedEmails, setSelectedEmails] = useState([])
+  const [sendingInvites, setSendingInvites] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -121,6 +133,11 @@ export default function Dashboard() {
     }
     load()
   }, [router])
+
+  useEffect(() => {
+    if (activeTab === 'bids') loadBidPackages()
+  }, [activeTab])
+
 
   async function loadAll() {
     const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').order('submitted_at', { ascending: false })
@@ -159,6 +176,90 @@ export default function Dashboard() {
     setNewSubManual({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
     await loadAll()
     setAddingSubManual(false)
+  }
+
+  async function loadBidPackages() {
+    const { data } = await supabase.from('bid_packages').select('*').order('created_at', { ascending: false })
+    setBidPackages(data || [])
+  }
+
+  async function loadBidDetail(bidId) {
+    const [{ data: plans }, { data: invites }, { data: subs }] = await Promise.all([
+      supabase.from('bid_plans').select('*').eq('bid_package_id', bidId).order('uploaded_at'),
+      supabase.from('bid_invitations').select('*').eq('bid_package_id', bidId).order('sent_at'),
+      supabase.from('bid_submissions').select('*').eq('bid_package_id', bidId).order('submitted_at'),
+    ])
+    setBidDetails(prev => ({ ...prev, [bidId]: { plans: plans || [], invitations: invites || [], submissions: subs || [] } }))
+  }
+
+  async function createBidPackage(e) {
+    e.preventDefault()
+    setCreatingBid(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await supabase.from('bid_packages').insert({
+      title: bidForm.title,
+      description: bidForm.description || null,
+      scope_of_work: bidForm.scope_of_work || null,
+      due_date: bidForm.due_date || null,
+      job_id: bidForm.job_id || null,
+      created_by: session.user.id,
+      status: 'open',
+    })
+    if (!error) {
+      setShowCreateBid(false)
+      setBidForm({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '' })
+      await loadBidPackages()
+    }
+    setCreatingBid(false)
+  }
+
+  async function uploadPlan(bidId, file) {
+    setUploadingPlanFor(bidId)
+    const path = `${bidId}/${Date.now()}-${file.name}`
+    const { error: uploadError } = await supabase.storage.from('bid-plans').upload(path, file)
+    if (!uploadError) {
+      await supabase.from('bid_plans').insert({ bid_package_id: bidId, file_name: file.name, storage_path: path })
+      await loadBidDetail(bidId)
+    }
+    setUploadingPlanFor(null)
+  }
+
+  async function openPlan(storagePath) {
+    const { data } = await supabase.storage.from('bid-plans').createSignedUrl(storagePath, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function inviteSubs(bidId) {
+    if (selectedEmails.length === 0) return
+    setSendingInvites(true)
+    for (const email of selectedEmails) {
+      await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
+    }
+    setShowInviteFor(null)
+    setSelectedEmails([])
+    await loadBidDetail(bidId)
+    setSendingInvites(false)
+  }
+
+  async function awardBid(submission, bidId) {
+    if (!window.confirm(`Award this bid to ${submission.company_name} for $${Number(submission.amount).toLocaleString()}?`)) return
+    await supabase.from('bid_submissions').update({ status: 'awarded' }).eq('id', submission.id)
+    await supabase.from('bid_submissions').update({ status: 'rejected' }).eq('bid_package_id', bidId).neq('id', submission.id)
+    await supabase.from('bid_packages').update({ status: 'awarded' }).eq('id', bidId)
+    await loadBidPackages()
+    await loadBidDetail(bidId)
+  }
+
+  async function setBidStatus(bidId, status) {
+    await supabase.from('bid_packages').update({ status }).eq('id', bidId)
+    await loadBidPackages()
+  }
+
+  async function deleteBidPackage(bidId) {
+    if (!window.confirm('Delete this bid package and all its plans and bids?')) return
+    await supabase.from('bid_packages').delete().eq('id', bidId)
+    setExpandedBid(null)
+    await loadBidPackages()
   }
 
   async function saveBillingEdit() {
@@ -303,6 +404,9 @@ export default function Dashboard() {
               Sub directory{pendingApps > 0 ? ` (${pendingApps})` : ''}
             </button>
             <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
+            <button style={s.tab(activeTab === 'bids')} onClick={() => setActiveTab('bids')}>
+              Bid Invites{bidPackages.filter(b => b.status === 'open').length > 0 ? ` (${bidPackages.filter(b => b.status === 'open').length} open)` : ''}
+            </button>
           </div>
 
           <div style={s.cardBody}>
@@ -631,6 +735,197 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
+              </>
+            )}
+
+            {/* ── BID INVITES ── */}
+            {activeTab === 'bids' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open</p>
+                  <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>
+                    {showCreateBid ? 'Cancel' : '+ New bid package'}
+                  </button>
+                </div>
+
+                {showCreateBid && (
+                  <div style={s.formBox}>
+                    <p style={s.formTitle}>Create bid package</p>
+                    <form onSubmit={createBidPackage}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Package title *</label><input style={s.input} value={bidForm.title} onChange={e => setBidForm(f => ({ ...f, title: e.target.value }))} required placeholder="Unit 4 Kitchen Remodel" /></div>
+                        <div><label style={s.label}>Bid due date</label><input type="date" style={s.input} value={bidForm.due_date} onChange={e => setBidForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Link to job (optional)</label>
+                        <select style={s.input} value={bidForm.job_id} onChange={e => setBidForm(f => ({ ...f, job_id: e.target.value }))}>
+                          <option value="">— No job linked —</option>
+                          {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Description</label>
+                        <input style={s.input} value={bidForm.description} onChange={e => setBidForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief summary of the bid package" />
+                      </div>
+                      <div style={{ marginBottom: '1.25rem' }}>
+                        <label style={s.label}>Scope of work</label>
+                        <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical' }} value={bidForm.scope_of_work} onChange={e => setBidForm(f => ({ ...f, scope_of_work: e.target.value }))} placeholder="Full scope of work for bidders to review..." />
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button type="submit" style={{ ...s.btn, opacity: creatingBid ? 0.6 : 1 }} disabled={creatingBid}>{creatingBid ? 'Creating...' : 'Create package'}</button>
+                        <button type="button" style={s.btnGray} onClick={() => setShowCreateBid(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {bidPackages.length === 0 && !showCreateBid && <div style={s.emptyMsg}>No bid packages yet. Create one to start inviting subs.</div>}
+
+                {bidPackages.map(pkg => {
+                  const isExp = expandedBid === pkg.id
+                  const det = bidDetails[pkg.id] || {}
+                  const plans = det.plans || []
+                  const invitations = det.invitations || []
+                  const submissions = det.submissions || []
+                  const bidStatusColor = pkg.status === 'awarded' ? 'approved' : pkg.status === 'closed' ? 'rejected' : 'pending'
+                  const approvedDir = directory.filter(d => d.status === 'approved')
+                  const uninvited = approvedDir.filter(d => !invitations.some(i => i.sub_email === d.email))
+
+                  return (
+                    <div key={pkg.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', cursor: 'pointer' }}
+                        onClick={() => { if (isExp) { setExpandedBid(null) } else { setExpandedBid(pkg.id); loadBidDetail(pkg.id) } }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{pkg.title}</span>
+                            <span style={s.badge(bidStatusColor)}>{pkg.status}</span>
+                            {pkg.job_id && <span style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px' }}>linked to job</span>}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#555' }}>
+                            {pkg.due_date ? `Due ${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}` : 'No due date'}
+                            {invitations.length > 0 && ` · ${invitations.length} invited`}
+                            {submissions.length > 0 && ` · ${submissions.length} bid${submissions.length !== 1 ? 's' : ''} received`}
+                          </div>
+                        </div>
+                        <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                      </div>
+
+                      {isExp && (
+                        <div style={{ borderTop: '1px solid #1e1e1e', padding: '1.25rem', background: '#080808' }}>
+                          {pkg.description && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{pkg.description}</p>}
+                          {pkg.scope_of_work && (
+                            <div style={{ background: '#0f0f0f', border: '1px solid #1a1a1a', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
+                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Scope of work</div>
+                              <div style={{ fontSize: '13px', color: '#aaa', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>{pkg.scope_of_work}</div>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                            {pkg.status === 'open' && <button style={s.btnSm('gray')} onClick={() => setBidStatus(pkg.id, 'closed')}>Close bidding</button>}
+                            {pkg.status === 'closed' && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
+                            <button style={s.btnSm('red')} onClick={() => deleteBidPackage(pkg.id)}>Delete package</button>
+                          </div>
+
+                          {/* Plans */}
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Plans & documents ({plans.length})</span>
+                              <label style={{ ...s.btnSm('orange'), cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                                {uploadingPlanFor === pkg.id ? 'Uploading...' : '+ Upload'}
+                                <input type="file" accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.xlsx,.docx" style={{ display: 'none' }}
+                                  disabled={uploadingPlanFor === pkg.id}
+                                  onChange={e => e.target.files[0] && uploadPlan(pkg.id, e.target.files[0])} />
+                              </label>
+                            </div>
+                            {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No plans uploaded yet.</p> : plans.map(plan => (
+                              <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '13px', color: '#ccc' }}>📄 {plan.file_name}</span>
+                                <button style={s.btnSm('gray')} onClick={() => openPlan(plan.storage_path)}>Open</button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Invitations */}
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Invited subs ({invitations.length})</span>
+                              {showInviteFor !== pkg.id && pkg.status === 'open' && (
+                                <button style={s.btnSm('orange')} onClick={() => { setShowInviteFor(pkg.id); setSelectedEmails([]) }}>+ Invite subs</button>
+                              )}
+                            </div>
+
+                            {showInviteFor === pkg.id && (
+                              <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', marginBottom: '0.75rem' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>
+                                  Select from approved directory
+                                </p>
+                                {uninvited.length === 0 ? <p style={{ fontSize: '13px', color: '#444', margin: '0 0 0.75rem' }}>All directory subs have already been invited.</p> : (
+                                  <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '0.75rem' }}>
+                                    {uninvited.map(sub => (
+                                      <label key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 0', cursor: 'pointer', borderBottom: '1px solid #1a1a1a' }}>
+                                        <input type="checkbox" checked={selectedEmails.includes(sub.email)}
+                                          onChange={e => setSelectedEmails(prev => e.target.checked ? [...prev, sub.email] : prev.filter(em => em !== sub.email))}
+                                          style={{ accentColor: '#e8590c', width: '16px', height: '16px' }} />
+                                        <span style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: '600' }}>{sub.company_name}</span>
+                                        {sub.trade && <span style={{ fontSize: '11px', color: '#555' }}>{sub.trade}</span>}
+                                        {sub.email && <span style={{ fontSize: '11px', color: '#444' }}>{sub.email}</span>}
+                                      </label>
+                                    ))}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button style={{ ...s.btnSm('orange'), opacity: sendingInvites || selectedEmails.length === 0 ? 0.6 : 1 }}
+                                    disabled={sendingInvites || selectedEmails.length === 0}
+                                    onClick={() => inviteSubs(pkg.id)}>
+                                    {sendingInvites ? 'Sending...' : `Send ${selectedEmails.length > 0 ? selectedEmails.length + ' ' : ''}invite${selectedEmails.length !== 1 ? 's' : ''}`}
+                                  </button>
+                                  <button style={s.btnSm('gray')} onClick={() => setShowInviteFor(null)}>Cancel</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {invitations.map(inv => {
+                              const subEntry = directory.find(d => d.email === inv.sub_email)
+                              const invBadge = inv.status === 'submitted' ? 'approved' : inv.status === 'declined' ? 'rejected' : 'pending'
+                              return (
+                                <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
+                                  <span style={{ fontSize: '13px', color: '#ccc', fontWeight: '600' }}>{subEntry?.company_name || inv.sub_email}</span>
+                                  <span style={s.badge(invBadge)}>{inv.status}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          {/* Submitted bids */}
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '0.75rem' }}>Submitted bids ({submissions.length})</span>
+                            {submissions.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No bids submitted yet.</p> : submissions.map(sub => (
+                              <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#0f0f0f', borderRadius: '8px', marginBottom: '6px', flexWrap: 'wrap', gap: '12px', border: sub.status === 'awarded' ? '1px solid #1a4a1a' : '1px solid transparent' }}>
+                                <div style={{ flex: 1, minWidth: '180px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
+                                    <span style={s.badge(sub.status === 'awarded' ? 'approved' : sub.status === 'rejected' ? 'rejected' : 'pending')}>{sub.status}</span>
+                                  </div>
+                                  {sub.notes && <p style={{ fontSize: '12px', color: '#888', margin: '0', lineHeight: '1.5' }}>{sub.notes}</p>}
+                                  <span style={{ fontSize: '11px', color: '#444' }}>{new Date(sub.submitted_at).toLocaleDateString()}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <span style={{ fontSize: '20px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</span>
+                                  {sub.status === 'pending' && pkg.status !== 'awarded' && (
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                      <button style={s.btnSm('green')} onClick={() => awardBid(sub, pkg.id)}>Award</button>
+                                      <button style={s.btnSm('red')} onClick={async () => { await supabase.from('bid_submissions').update({ status: 'rejected' }).eq('id', sub.id); loadBidDetail(pkg.id) }}>Pass</button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </>
             )}
 

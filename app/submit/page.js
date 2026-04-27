@@ -64,6 +64,13 @@ export default function Submit() {
   const [activeTab, setActiveTab] = useState('billing')
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
+  // Bid invitations state
+  const [bidInvitations, setBidInvitations] = useState([])
+  const [expandedBidInv, setExpandedBidInv] = useState(null)
+  const [bidPackageDetails, setBidPackageDetails] = useState({})
+  const [bidSubmitForm, setBidSubmitForm] = useState({ amount: '', notes: '' })
+  const [submittingBidFor, setSubmittingBidFor] = useState(null)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -77,9 +84,48 @@ export default function Submit() {
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
       await loadMyContracts(session.user.id)
+      await loadBidInvitations(session.user.email)
     }
     load()
   }, [router])
+
+  async function loadBidInvitations(email) {
+    const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*)').eq('sub_email', email).order('sent_at', { ascending: false })
+    setBidInvitations(data || [])
+  }
+
+  async function loadBidPackageDetail(bidPackageId) {
+    const { data: plans } = await supabase.from('bid_plans').select('*').eq('bid_package_id', bidPackageId).order('uploaded_at')
+    const { data: myBid } = await supabase.from('bid_submissions').select('*').eq('bid_package_id', bidPackageId).eq('sub_id', user.id).maybeSingle()
+    setBidPackageDetails(prev => ({ ...prev, [bidPackageId]: { plans: plans || [], myBid } }))
+    // mark as viewed if still 'invited'
+    await supabase.from('bid_invitations').update({ status: 'viewed' }).eq('bid_package_id', bidPackageId).eq('sub_email', user.email).eq('status', 'invited')
+  }
+
+  async function openPlan(storagePath) {
+    const { data } = await supabase.storage.from('bid-plans').createSignedUrl(storagePath, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function submitBid(bidPackageId) {
+    if (!bidSubmitForm.amount) return
+    setSubmittingBidFor(bidPackageId)
+    const { error } = await supabase.from('bid_submissions').insert({
+      bid_package_id: bidPackageId,
+      sub_id: user.id,
+      sub_email: user.email,
+      company_name: profile?.company_name || 'Unknown',
+      amount: parseFloat(bidSubmitForm.amount),
+      notes: bidSubmitForm.notes || null,
+    })
+    if (!error) {
+      await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).eq('sub_email', user.email)
+      await loadBidPackageDetail(bidPackageId)
+      await loadBidInvitations(user.email)
+      setBidSubmitForm({ amount: '', notes: '' })
+    }
+    setSubmittingBidFor(null)
+  }
 
   async function loadMyContracts(userId) {
     const { data: contractData } = await supabase
@@ -154,6 +200,9 @@ export default function Submit() {
           </button>
           <button style={s.tab(activeTab === 'history')} onClick={() => setActiveTab('history')}>
             Billing History{submissions.length > 0 ? ` (${submissions.length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'bids')} onClick={() => setActiveTab('bids')}>
+            Bid Invites{bidInvitations.length > 0 ? ` (${bidInvitations.length})` : ''}
           </button>
         </div>
 
@@ -307,6 +356,104 @@ export default function Submit() {
             </div>
           )
         )}
+        {/* ── BID INVITATIONS TAB ── */}
+        {activeTab === 'bids' && (
+          bidInvitations.length === 0 ? (
+            <div style={s.empty}>No bid invitations yet.<br />NV Construction will notify you when plans are ready for bidding.</div>
+          ) : (
+            <>
+              {bidInvitations.map(inv => {
+                const pkg = inv.bid_packages
+                if (!pkg) return null
+                const isExp = expandedBidInv === pkg.id
+                const det = bidPackageDetails[pkg.id] || {}
+                const plans = det.plans || []
+                const myBid = det.myBid
+                const isClosed = pkg.status === 'closed' || pkg.status === 'awarded'
+                const badgeStatus = inv.status === 'submitted' ? 'approved' : inv.status === 'declined' ? 'rejected' : 'pending'
+
+                return (
+                  <div key={inv.id} style={s.contractRow}>
+                    <div style={s.contractRowHeader} onClick={() => {
+                      if (isExp) { setExpandedBidInv(null) }
+                      else { setExpandedBidInv(pkg.id); loadBidPackageDetail(pkg.id) }
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{pkg.title}</span>
+                          <span style={s.coBadge(badgeStatus)}>{inv.status}</span>
+                          {isClosed && <span style={{ fontSize: '11px', color: '#555' }}>Bidding closed</span>}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#555' }}>
+                          {pkg.due_date ? `Bids due ${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}` : 'No due date'}
+                          {myBid && ` · Your bid: $${Number(myBid.amount).toLocaleString()}`}
+                        </div>
+                      </div>
+                      <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                    </div>
+
+                    {isExp && (
+                      <div style={s.contractRowExpanded}>
+                        {pkg.description && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{pkg.description}</p>}
+
+                        {pkg.scope_of_work && (
+                          <div style={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Scope of work</div>
+                            <div style={{ fontSize: '13px', color: '#aaa', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>{pkg.scope_of_work}</div>
+                          </div>
+                        )}
+
+                        {/* Plans */}
+                        <div style={{ marginBottom: '1.25rem' }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Plans & documents ({plans.length})</div>
+                          {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No plans uploaded yet.</p> : plans.map(plan => (
+                            <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#111', borderRadius: '6px', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '13px', color: '#ccc' }}>📄 {plan.file_name}</span>
+                              <button style={{ padding: '6px 14px', background: '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }} onClick={() => openPlan(plan.storage_path)}>Open</button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Bid form or existing bid */}
+                        {myBid ? (
+                          <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Your submitted bid</div>
+                            <div style={{ fontSize: '24px', fontWeight: '800', color: '#4ade80' }}>${Number(myBid.amount).toLocaleString()}</div>
+                            {myBid.notes && <p style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, margin: '6px 0 0' }}>{myBid.notes}</p>}
+                            <p style={{ fontSize: '11px', color: '#1a4a1a', margin: '6px 0 0' }}>Submitted {new Date(myBid.submitted_at).toLocaleDateString()}{myBid.status === 'awarded' ? ' · AWARDED' : ''}</p>
+                          </div>
+                        ) : isClosed ? (
+                          <p style={{ fontSize: '13px', color: '#555' }}>Bidding is closed for this package.</p>
+                        ) : (
+                          <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Submit your bid</div>
+                            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div>
+                                <label style={s.label}>Bid amount ($) *</label>
+                                <input type="number" step="0.01" style={s.input} value={bidSubmitForm.amount} onChange={e => setBidSubmitForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                              </div>
+                              <div>
+                                <label style={s.label}>Notes / qualifications</label>
+                                <input style={s.input} value={bidSubmitForm.notes} onChange={e => setBidSubmitForm(f => ({ ...f, notes: e.target.value }))} placeholder="Lead time, exclusions, etc." />
+                              </div>
+                            </div>
+                            <button
+                              style={{ ...s.btn, opacity: submittingBidFor === pkg.id || !bidSubmitForm.amount ? 0.6 : 1 }}
+                              disabled={submittingBidFor === pkg.id || !bidSubmitForm.amount}
+                              onClick={() => submitBid(pkg.id)}>
+                              {submittingBidFor === pkg.id ? 'Submitting...' : 'Submit bid'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )
+        )}
+
       </main>
     </div>
   )

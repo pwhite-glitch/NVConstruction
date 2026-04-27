@@ -104,6 +104,11 @@ export default function Dashboard() {
   const [editingBilling, setEditingBilling] = useState(null)
   const [editBillingForm, setEditBillingForm] = useState({})
 
+  // Manual sub add state
+  const [showAddSubManual, setShowAddSubManual] = useState(false)
+  const [newSubManual, setNewSubManual] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
+  const [addingSubManual, setAddingSubManual] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -132,6 +137,28 @@ export default function Dashboard() {
     await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
     await loadAll()
     setExpanded(null)
+  }
+
+  async function addSubManually(e) {
+    e.preventDefault()
+    setAddingSubManual(true)
+    const { error } = await supabase.from('sub_directory').insert({
+      company_name: newSubManual.company_name,
+      contact_name: newSubManual.contact_name || null,
+      email: newSubManual.email || null,
+      phone: newSubManual.phone || null,
+      address: newSubManual.address || null,
+      trade: newSubManual.trade || null,
+      license_number: newSubManual.license_number || null,
+      coi_expiration: newSubManual.coi_expiration || null,
+      status: 'approved',
+      applied_at: new Date().toISOString(),
+    })
+    if (error) { setInviteMsg('Error: ' + error.message); setAddingSubManual(false); return }
+    setShowAddSubManual(false)
+    setNewSubManual({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
+    await loadAll()
+    setAddingSubManual(false)
   }
 
   async function saveBillingEdit() {
@@ -377,17 +404,56 @@ export default function Dashboard() {
             {/* ── DIRECTORY ── */}
             {activeTab === 'directory' && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                   <div style={s.applyLink}>
                     <span style={s.applyLinkText}>Share with subs to apply:</span>
                     <span style={{ ...s.applyLinkUrl, marginLeft: '12px' }} onClick={() => navigator.clipboard.writeText(window.location.origin + '/apply')} title="Click to copy">
                       {typeof window !== 'undefined' ? window.location.origin : ''}/apply ⧉
                     </span>
                   </div>
-                  <button style={{ ...s.btnSm('orange'), marginLeft: '12px', whiteSpace: 'nowrap' }} onClick={() => setShowInviteForm(v => !v)}>
-                    {showInviteForm ? 'Cancel invite' : '+ Invite by email'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={{ ...s.btnSm('orange'), whiteSpace: 'nowrap' }} onClick={() => setShowAddSubManual(v => !v)}>
+                      {showAddSubManual ? 'Cancel' : '+ Add subcontractor'}
+                    </button>
+                    <button style={{ ...s.btnSm('gray'), whiteSpace: 'nowrap' }} onClick={() => setShowInviteForm(v => !v)}>
+                      {showInviteForm ? 'Cancel invite' : 'Invite by email'}
+                    </button>
+                  </div>
                 </div>
+
+                {showAddSubManual && (
+                  <div style={s.formBox}>
+                    <p style={s.formTitle}>Add subcontractor to directory</p>
+                    <form onSubmit={addSubManually}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Company name *</label><input style={s.input} value={newSubManual.company_name} onChange={e => setNewSubManual(f => ({ ...f, company_name: e.target.value }))} required placeholder="ABC Framing LLC" /></div>
+                        <div><label style={s.label}>Contact name</label><input style={s.input} value={newSubManual.contact_name} onChange={e => setNewSubManual(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
+                      </div>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Email</label><input type="email" style={s.input} value={newSubManual.email} onChange={e => setNewSubManual(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
+                        <div><label style={s.label}>Phone</label><input style={s.input} value={newSubManual.phone} onChange={e => setNewSubManual(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
+                        <div><label style={s.label}>Address</label><input style={s.input} value={newSubManual.address} onChange={e => setNewSubManual(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, TX" /></div>
+                      </div>
+                      <div style={{ ...s.grid3, marginBottom: '1.25rem' }}>
+                        <div>
+                          <label style={s.label}>Trade</label>
+                          <select style={s.input} value={newSubManual.trade} onChange={e => setNewSubManual(f => ({ ...f, trade: e.target.value }))}>
+                            <option value="">— Select trade —</option>
+                            {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div><label style={s.label}>License number</label><input style={s.input} value={newSubManual.license_number} onChange={e => setNewSubManual(f => ({ ...f, license_number: e.target.value }))} placeholder="TX-12345" /></div>
+                        <div><label style={s.label}>COI expiration</label><input type="date" style={s.input} value={newSubManual.coi_expiration} onChange={e => setNewSubManual(f => ({ ...f, coi_expiration: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button type="submit" style={{ ...s.btn, opacity: addingSubManual ? 0.6 : 1 }} disabled={addingSubManual}>
+                          {addingSubManual ? 'Saving...' : 'Add to directory'}
+                        </button>
+                        <button type="button" style={s.btnGray} onClick={() => setShowAddSubManual(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                )}
 
                 {showInviteForm && (
                   <div style={s.formBox}>

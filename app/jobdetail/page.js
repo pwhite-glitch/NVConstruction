@@ -124,6 +124,12 @@ export default function JobDetail() {
   const [editingBilling, setEditingBilling] = useState(null)
   const [editBillingForm, setEditBillingForm] = useState({})
 
+  // Subs tab state
+  const [subDirectory, setSubDirectory] = useState([])
+  const [showAssignSub, setShowAssignSub] = useState(false)
+  const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
+  const [assigningSubLoading, setAssigningSubLoading] = useState(false)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -178,12 +184,23 @@ export default function JobDetail() {
     setBillingSubmissions(data || [])
   }
 
+  async function reloadSubs() {
+    const { data } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone)').eq('job_id', id)
+    setSubs(data || [])
+  }
+
+  async function loadSubDirectory() {
+    const { data } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
+    setSubDirectory(data || [])
+  }
+
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs() }
     if (activeTab === 'billing') { loadBillingForJob() }
+    if (activeTab === 'subs') { loadSubDirectory() }
   }, [activeTab, id])
 
   // ── Contracts ──────────────────────────────────────────────
@@ -309,6 +326,32 @@ export default function JobDetail() {
 
   function committedForItem(budgetItemId) {
     return contracts.filter(c => c.budget_item_id === budgetItemId).reduce((a, c) => a + Number(c.adjusted_contract_value || c.contract_value || 0), 0)
+  }
+
+  // ── Subs ────────────────────────────────────────────────────
+  async function assignSubToJob() {
+    const email = assignSubForm.from_dir
+      ? subDirectory.find(d => d.id === assignSubForm.from_dir)?.email
+      : assignSubForm.email.trim()
+    if (!email) return
+    setAssigningSubLoading(true)
+    const { error } = await supabase.from('job_assignments').insert({ job_id: id, sub_email: email.toLowerCase() })
+    if (error) {
+      setErrMsg(error.code === '23505' ? 'This sub is already assigned to this job.' : error.message)
+      setTimeout(() => setErrMsg(''), 4000)
+    } else {
+      await supabase.rpc('sync_job_assignments')
+      await reloadSubs()
+      setShowAssignSub(false)
+      setAssignSubForm({ email: '', from_dir: '' })
+    }
+    setAssigningSubLoading(false)
+  }
+
+  async function removeSubFromJob(assignmentId) {
+    if (!window.confirm('Remove this subcontractor from this job?')) return
+    await supabase.from('job_assignments').delete().eq('id', assignmentId)
+    await reloadSubs()
   }
 
   // ── Billing (PM-managed) ─────────────────────────────────────
@@ -509,6 +552,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         <div style={s.tabRow}>
           <button style={s.tab(activeTab === 'details')} onClick={() => setActiveTab('details')}>Details</button>
+          <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>
+            Subs{subs.length > 0 ? ` (${subs.length})` : ''}
+          </button>
           <button style={s.tab(activeTab === 'budget')} onClick={() => setActiveTab('budget')}>
             Budget{budgetItems.length > 0 ? ` (${budgetItems.length})` : ''}
           </button>
@@ -626,6 +672,96 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 </div>
               ))}
+            </div>
+          </>
+        )}
+
+        {/* ── SUBS TAB ── */}
+        {activeTab === 'subs' && (
+          <>
+            <div style={s.statRow}>
+              <div style={s.statCard}><div style={s.statLabel}>Assigned</div><div style={s.statValue()}>{subs.length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#4ade80')}>{registeredSubs.length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Not registered</div><div style={s.statValue(subs.length - registeredSubs.length > 0 ? '#e8590c' : undefined)}>{subs.length - registeredSubs.length}</div></div>
+            </div>
+
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned subcontractors ({subs.length})</p>
+                {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign sub</button>}
+              </div>
+
+              {showAssignSub && (
+                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Assign subcontractor to job</p>
+
+                  {subDirectory.filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase())).length > 0 && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={s.label}>Pick from approved directory</label>
+                      <select style={s.input} value={assignSubForm.from_dir}
+                        onChange={e => setAssignSubForm({ from_dir: e.target.value, email: '' })}>
+                        <option value="">— Select company —</option>
+                        {subDirectory
+                          .filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase()))
+                          .map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={s.label}>{subDirectory.length > 0 ? 'Or assign by email directly' : 'Email address'}</label>
+                    <input type="email" style={s.input} placeholder="sub@company.com"
+                      value={assignSubForm.email}
+                      onChange={e => setAssignSubForm({ email: e.target.value, from_dir: '' })} />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={{ ...s.btn, opacity: assigningSubLoading ? 0.6 : 1 }}
+                      disabled={assigningSubLoading || (!assignSubForm.from_dir && !assignSubForm.email)}
+                      onClick={assignSubToJob}>
+                      {assigningSubLoading ? 'Assigning...' : 'Assign & enable billing'}
+                    </button>
+                    <button style={s.btnGray} onClick={() => { setShowAssignSub(false); setAssignSubForm({ email: '', from_dir: '' }) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {subs.length === 0 && !showAssignSub && (
+                <p style={{ color: '#444', fontSize: '14px' }}>No subcontractors assigned yet.</p>
+              )}
+
+              {subs.map(a => {
+                const dirEntry = subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())
+                const companyName = a.profiles?.company_name || dirEntry?.company_name || a.sub_email || 'Unknown'
+                const contactName = a.profiles?.full_name || dirEntry?.contact_name
+                const phone = a.profiles?.phone || dirEntry?.phone
+                const address = dirEntry?.address
+                const isRegistered = !!a.sub_id
+                return (
+                  <div key={a.id} style={{ ...s.contractRow, marginBottom: '8px' }}>
+                    <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: '200px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{companyName}</span>
+                          <span style={{
+                            fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700',
+                            background: isRegistered ? '#0a2a0a' : '#1a1a1a',
+                            color: isRegistered ? '#4ade80' : '#555',
+                            border: `1px solid ${isRegistered ? '#1a4a1a' : '#2a2a2a'}`
+                          }}>{isRegistered ? 'Registered' : 'Not registered'}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
+                          {contactName && <span>{contactName}</span>}
+                          {phone && <span>{phone}</span>}
+                          {a.sub_email && <span>{a.sub_email}</span>}
+                          {address && <span>{address}</span>}
+                        </div>
+                      </div>
+                      <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </>
         )}

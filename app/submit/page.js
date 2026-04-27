@@ -75,6 +75,8 @@ export default function Submit() {
   const [submittingBidFor, setSubmittingBidFor] = useState(null)
   const [billingFile, setBillingFile] = useState(null)
   const [bidFile, setBidFile] = useState(null)
+  const [jobSovContracts, setJobSovContracts] = useState([])
+  const [sovForm, setSovForm] = useState([])
 
   useEffect(() => {
     async function load() {
@@ -186,6 +188,24 @@ export default function Submit() {
     loadMyCOs(id)
   }
 
+  async function loadJobSov(jobId) {
+    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); return }
+    const { data: contracts } = await supabase.from('subcontracts').select('id, description').eq('sub_id', user.id).eq('job_id', jobId)
+    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); return }
+    const contractIds = contracts.map(c => c.id)
+    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
+    setJobSovContracts(contracts)
+    setSovForm((lines || []).map(l => ({
+      sov_line_id: l.id,
+      subcontract_id: l.subcontract_id,
+      description: l.description,
+      scheduled_value: Number(l.scheduled_value || 0),
+      contract_description: l.subcontracts?.description || '',
+      pct_this: '',
+      amount_this: 0,
+    })))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
@@ -196,7 +216,7 @@ export default function Submit() {
       if (!upErr) doc_url = path
     }
     const selectedJob = jobs.find(j => j.id === form.job_id)
-    const { error } = await supabase.from('billing_submissions').insert({
+    const { data: newSub, error } = await supabase.from('billing_submissions').insert({
       sub_id: user.id, job_id: form.job_id,
       sub_email: user.email,
       company_name: profile?.company_name || 'Unknown',
@@ -206,8 +226,17 @@ export default function Submit() {
       work_description: form.work_description,
       billing_period: form.billing_period ? form.billing_period + '-01' : null,
       doc_url,
-    })
+    }).select().single()
     if (!error) {
+      const sovInserts = sovForm.filter(l => l.amount_this > 0).map(l => ({
+        billing_submission_id: newSub.id,
+        sov_line_id: l.sov_line_id,
+        amount: l.amount_this,
+        pct_this_period: parseFloat(l.pct_this) || 0,
+      }))
+      if (sovInserts.length > 0) {
+        await supabase.from('billing_sov_lines').insert(sovInserts)
+      }
       sendEmail(PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
         emailWrap(`
           <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
@@ -220,6 +249,8 @@ export default function Submit() {
       )
       setSuccess(true)
       setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7) })
+      setSovForm([])
+      setJobSovContracts([])
       setBillingFile(null)
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
@@ -272,11 +303,64 @@ export default function Submit() {
               <form onSubmit={handleSubmit}>
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={s.label}>Project</label>
-                  <select value={form.job_id} onChange={e => update('job_id', e.target.value)} required style={s.input}>
+                  <select value={form.job_id} onChange={e => { update('job_id', e.target.value); loadJobSov(e.target.value) }} required style={s.input}>
                     <option value="">Select a project...</option>
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
                 </div>
+                {sovForm.length > 0 && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={s.label}>Schedule of values</label>
+                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Line item</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', width: '120px' }}>% This period</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sovForm.map((line, idx) => (
+                            <tr key={line.sov_line_id} style={{ borderBottom: '1px solid #111' }}>
+                              <td style={{ padding: '8px 12px', color: '#ccc' }}>
+                                {line.description}
+                                {line.contract_description && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{line.contract_description}</div>}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>${line.scheduled_value.toLocaleString()}</td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                <input
+                                  type="number" min="0" max="100" step="1"
+                                  value={line.pct_this}
+                                  placeholder="0"
+                                  onChange={e => {
+                                    const pct = parseFloat(e.target.value) || 0
+                                    const amt = Math.round(line.scheduled_value * pct / 100 * 100) / 100
+                                    const next = sovForm.map((l, i) => i === idx ? { ...l, pct_this: e.target.value, amount_this: amt } : l)
+                                    setSovForm(next)
+                                    const total = next.reduce((a, l) => a + l.amount_this, 0)
+                                    update('amount_billed', total.toFixed(2))
+                                  }}
+                                  style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'right' }}
+                                />
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>
+                                ${line.amount_this.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr style={{ background: '#111' }}>
+                            <td colSpan={3} style={{ padding: '8px 12px', color: '#888', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Total this period:</td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '14px' }}>
+                              ${sovForm.reduce((a, l) => a + l.amount_this, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
                   <div><label style={s.label}>Amount billed</label><input type="number" style={s.input} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" /></div>
                   <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>

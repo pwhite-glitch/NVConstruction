@@ -170,6 +170,16 @@ export default function JobDetail() {
   const [aiaLoading, setAiaLoading] = useState(false)
   const [periodBilling, setPeriodBilling] = useState([])
 
+  // Contract SOV state
+  const [contractSovLines, setContractSovLines] = useState({})
+  const [expandedSov, setExpandedSov] = useState(null)
+  const [showAddSovLine, setShowAddSovLine] = useState(null)
+  const [sovLineForm, setSovLineForm] = useState({ description: '', scheduled_value: '' })
+  const [addingSovLine, setAddingSovLine] = useState(false)
+  const [editingSovLine, setEditingSovLine] = useState(null)
+  const [editSovLineForm, setEditSovLineForm] = useState({})
+  const [billingSovData, setBillingSovData] = useState({})
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -637,6 +647,56 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadAiaApplications() }
   }, [activeTab, id])
 
+
+  // ── Sub SOV ─────────────────────────────────────────────────
+  async function loadContractSov(contractId) {
+    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*').eq('subcontract_id', contractId).order('sort_order').order('created_at')
+    if (!lines || lines.length === 0) { setContractSovLines(prev => ({ ...prev, [contractId]: [] })); return }
+    const lineIds = lines.map(l => l.id)
+    const { data: billedData } = await supabase.from('billing_sov_lines').select('sov_line_id, amount, billing_submissions(status)').in('sov_line_id', lineIds)
+    const approvedBilled = {}
+    ;(billedData || []).forEach(b => {
+      if (b.billing_submissions?.status === 'approved') {
+        approvedBilled[b.sov_line_id] = (approvedBilled[b.sov_line_id] || 0) + Number(b.amount || 0)
+      }
+    })
+    setContractSovLines(prev => ({ ...prev, [contractId]: lines.map(l => ({ ...l, billed_to_date: approvedBilled[l.id] || 0 })) }))
+  }
+
+  async function addSovLine(contractId) {
+    if (!sovLineForm.description || !sovLineForm.scheduled_value) return
+    setAddingSovLine(true)
+    await supabase.from('subcontract_sov_lines').insert({
+      subcontract_id: contractId,
+      description: sovLineForm.description,
+      scheduled_value: parseFloat(sovLineForm.scheduled_value),
+      sort_order: (contractSovLines[contractId]?.length || 0) + 1,
+    })
+    setSovLineForm({ description: '', scheduled_value: '' })
+    setShowAddSovLine(null)
+    await loadContractSov(contractId)
+    setAddingSovLine(false)
+  }
+
+  async function updateSovLine(lineId, contractId) {
+    await supabase.from('subcontract_sov_lines').update({
+      description: editSovLineForm.description,
+      scheduled_value: parseFloat(editSovLineForm.scheduled_value),
+    }).eq('id', lineId)
+    setEditingSovLine(null)
+    await loadContractSov(contractId)
+  }
+
+  async function deleteSovLine(lineId, contractId) {
+    if (!window.confirm('Delete this SOV line?')) return
+    await supabase.from('subcontract_sov_lines').delete().eq('id', lineId)
+    await loadContractSov(contractId)
+  }
+
+  async function loadBillingSov(submissionId) {
+    const { data } = await supabase.from('billing_sov_lines').select('*, subcontract_sov_lines(description, scheduled_value)').eq('billing_submission_id', submissionId)
+    setBillingSovData(prev => ({ ...prev, [submissionId]: data || [] }))
+  }
 
   // ── Contracts ──────────────────────────────────────────────
   async function addContract() {
@@ -1440,6 +1500,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#ff6b6b' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
                         </div>
                         <div style={{ display: 'flex', gap: '6px' }}>
+                          <button style={s.btnSmallOrange} onClick={() => {
+                            if (expandedSov === c.id) { setExpandedSov(null) }
+                            else { setExpandedSov(c.id); loadContractSov(c.id); setShowAddSovLine(null); setEditingSovLine(null) }
+                          }}>
+                            {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
+                          </button>
                           <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '' }) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
@@ -1485,6 +1551,124 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>View contract on OneDrive ↗</a>
                       </div>
                     )}
+
+                    {expandedSov === c.id && (() => {
+                      const sovs = contractSovLines[c.id]
+                      const totalScheduled = (sovs || []).reduce((a, l) => a + Number(l.scheduled_value), 0)
+                      const totalBilled = (sovs || []).reduce((a, l) => a + Number(l.billed_to_date || 0), 0)
+                      return (
+                        <div style={{ ...s.contractRowExpanded, background: '#060606' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                            <p style={{ ...s.cardTitle, margin: 0 }}>Schedule of Values{sovs ? ` (${sovs.length})` : ''}</p>
+                            {showAddSovLine !== c.id && (
+                              <button style={s.btnSmallOrange} onClick={() => setShowAddSovLine(c.id)}>+ Add line</button>
+                            )}
+                          </div>
+
+                          {showAddSovLine === c.id && (
+                            <div style={{ ...s.inlineForm, marginBottom: '0.75rem' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                                <div>
+                                  <label style={s.label}>Description *</label>
+                                  <input style={s.input} value={sovLineForm.description} onChange={e => setSovLineForm(f => ({ ...f, description: e.target.value }))} placeholder="Mobilization, framing, drywall..." />
+                                </div>
+                                <div>
+                                  <label style={s.label}>Scheduled value ($) *</label>
+                                  <input type="number" step="0.01" style={s.input} value={sovLineForm.scheduled_value} onChange={e => setSovLineForm(f => ({ ...f, scheduled_value: e.target.value }))} placeholder="0.00" />
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button style={{ ...s.btnSmallOrange, opacity: (addingSovLine || !sovLineForm.description || !sovLineForm.scheduled_value) ? 0.6 : 1 }}
+                                  disabled={addingSovLine || !sovLineForm.description || !sovLineForm.scheduled_value}
+                                  onClick={() => addSovLine(c.id)}>
+                                  {addingSovLine ? 'Adding...' : 'Add line'}
+                                </button>
+                                <button style={s.btnSmall} onClick={() => { setShowAddSovLine(null); setSovLineForm({ description: '', scheduled_value: '' }) }}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {!sovs && <p style={{ color: '#444', fontSize: '13px' }}>Loading...</p>}
+                          {sovs && sovs.length === 0 && !showAddSovLine && (
+                            <p style={{ color: '#444', fontSize: '13px' }}>No SOV lines yet. Add lines to track sub's completion per scope item.</p>
+                          )}
+
+                          {sovs && sovs.length > 0 && (
+                            <div style={{ overflowX: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+                                    <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>Description</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }}>Billed to Date</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>Balance</th>
+                                    <th style={{ textAlign: 'center', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>% Done</th>
+                                    <th style={{ width: '90px' }}></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sovs.map(line => {
+                                    const balance = Number(line.scheduled_value) - Number(line.billed_to_date || 0)
+                                    const pct = Number(line.scheduled_value) > 0 ? (Number(line.billed_to_date || 0) / Number(line.scheduled_value)) * 100 : 0
+                                    const isEditingThisLine = editingSovLine === line.id
+                                    return (
+                                      <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
+                                        {isEditingThisLine ? (
+                                          <>
+                                            <td style={{ padding: '4px' }}>
+                                              <input style={{ ...s.input, padding: '5px 8px', fontSize: '12px' }} value={editSovLineForm.description} onChange={e => setEditSovLineForm(f => ({ ...f, description: e.target.value }))} />
+                                            </td>
+                                            <td style={{ padding: '4px' }}>
+                                              <input type="number" step="0.01" style={{ ...s.input, padding: '5px 8px', fontSize: '12px', width: '110px', textAlign: 'right' }} value={editSovLineForm.scheduled_value} onChange={e => setEditSovLineForm(f => ({ ...f, scheduled_value: e.target.value }))} />
+                                            </td>
+                                            <td colSpan="3"></td>
+                                            <td style={{ padding: '4px', textAlign: 'right' }}>
+                                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                                                <button style={s.btnSmallOrange} onClick={() => updateSovLine(line.id, c.id)}>Save</button>
+                                                <button style={s.btnSmall} onClick={() => setEditingSovLine(null)}>✕</button>
+                                              </div>
+                                            </td>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <td style={{ padding: '8px', color: '#ccc' }}>{line.description}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(line.scheduled_value).toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', color: Number(line.billed_to_date) > 0 ? '#4ade80' : '#444', fontFamily: 'monospace' }}>${Number(line.billed_to_date || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'center' }}>
+                                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                                                <span style={{ fontSize: '11px', fontWeight: '700', color: pct >= 100 ? '#4ade80' : pct > 50 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</span>
+                                                <div style={{ width: '56px', height: '3px', background: '#1a1a1a', borderRadius: '2px' }}>
+                                                  <div style={{ width: Math.min(100, pct) + '%', height: '100%', background: pct >= 100 ? '#4ade80' : '#e8590c', borderRadius: '2px' }} />
+                                                </div>
+                                              </div>
+                                            </td>
+                                            <td style={{ padding: '4px', textAlign: 'right' }}>
+                                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                                                <button style={s.btnSmall} onClick={() => { setEditingSovLine(line.id); setEditSovLineForm({ description: line.description, scheduled_value: String(line.scheduled_value) }) }}>Edit</button>
+                                                <button style={s.btnSmallRed} onClick={() => deleteSovLine(line.id, c.id)}>Del</button>
+                                              </div>
+                                            </td>
+                                          </>
+                                        )}
+                                      </tr>
+                                    )
+                                  })}
+                                  <tr style={{ borderTop: '2px solid #2a2a2a' }}>
+                                    <td style={{ padding: '8px', color: '#888', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Total</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#f1f1f1' }}>${totalScheduled.toLocaleString()}</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#4ade80' }}>${totalBilled.toLocaleString()}</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: (totalScheduled - totalBilled) < 0 ? '#ff6b6b' : '#555' }}>${(totalScheduled - totalBilled).toLocaleString()}</td>
+                                    <td style={{ padding: '8px', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#555' }}>{totalScheduled > 0 ? ((totalBilled / totalScheduled) * 100).toFixed(0) : 0}%</td>
+                                    <td></td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })}
@@ -1700,6 +1884,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnSmallOrange} onClick={() => {
+                            if (!isEditing) loadBillingSov(b.id)
                             setEditingBilling(isEditing ? null : b.id)
                             setEditBillingForm({
                               company_name: b.company_name || '',
@@ -1768,6 +1953,36 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmallOrange} onClick={updateBillingEntry}>Save changes</button>
                           <button style={s.btnSmall} onClick={() => setEditingBilling(null)}>Cancel</button>
                         </div>
+                        {billingSovData[b.id] && billingSovData[b.id].length > 0 && (
+                          <div style={{ marginTop: '1.25rem', borderTop: '1px solid #1e1e1e', paddingTop: '1rem' }}>
+                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Schedule of values — this submission</p>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
+                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
+                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>This submission</th>
+                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>% Complete</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {billingSovData[b.id].map(line => {
+                                  const sched = Number(line.subcontract_sov_lines?.scheduled_value || 0)
+                                  const amt = Number(line.amount || 0)
+                                  const pct = sched > 0 ? (amt / sched * 100).toFixed(0) : '—'
+                                  return (
+                                    <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
+                                      <td style={{ padding: '8px', color: '#ccc' }}>{line.subcontract_sov_lines?.description || '—'}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', color: '#888' }}>${sched.toLocaleString()}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>${amt.toLocaleString()}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', color: '#4ade80' }}>{pct}%</td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

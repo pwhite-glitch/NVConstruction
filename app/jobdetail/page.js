@@ -480,7 +480,6 @@ export default function JobDetail() {
   function generateAIAFromApp() {
     if (!activeAia) return
     const app = activeAia
-    const w = window.open('', '_blank')
     const retPct = Math.max(0, Math.min(100, parseFloat(app.retainage_pct) || 10)) / 100
     const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const origContract = Number(job.contract_value || 0)
@@ -511,6 +510,12 @@ export default function JobDetail() {
     const balanceToFinish = contractSumToDate - totalCompleted
     const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
 
+    if (Math.abs(totalScheduled - contractSumToDate) > 0.01) {
+      window.alert(`Cannot generate AIA — SOV total (${fmt(totalScheduled)}) doesn't match contract sum to date (${fmt(contractSumToDate)}).\n\nUpdate the budget item values in the Budget tab so the G703 balances correctly.`)
+      return
+    }
+
+    const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head>
 <title>AIA G702/G703 — App #${app.app_number} — Job #${job.job_number}</title>
 <style>
@@ -604,7 +609,7 @@ ${sovLines.length > 0 ? `
     <th>I<br>Retainage</th>
   </tr></thead>
   <tbody>
-    ${sovLines.map(l => `<tr>
+    ${sovLines.filter(l => l.scheduled > 0).map(l => `<tr>
       <td class="c">${l.idx}</td>
       <td class="code">${l.cost_code || ''}</td>
       <td>${l.description}</td>
@@ -2498,6 +2503,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const retPct = Math.max(0, Math.min(100, parseFloat(activeAia.retainage_pct) || 10)) / 100
                                   const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
                                   const contractSumToDate = Number(job.contract_value || 0) + approvedCOsVal
+                                  const totalSov = aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
+                                  const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01
                                   const totalCompleted = aiaLines.reduce((a, line) => {
                                     const sv = Number(line.budget_amount || 0)
                                     return a + sv * (Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) + Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
@@ -2511,16 +2518,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const prevCerts = totalPrevCompleted * (1 - retPct)
                                   const currentDue = earnedLessRet - prevCerts
                                   return (
-                                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
-                                      <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary</p>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
-                                        <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
-                                        <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                                        <span style={{ color: '#555' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
-                                        <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
-                                        <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                    <>
+                                      {sovMismatch && (
+                                        <div style={{ background: '#2a1200', border: '1px solid #e8590c', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                                          <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
+                                            SOV total (${totalSov.toLocaleString()}) doesn't match contract sum to date (${contractSumToDate.toLocaleString()})
+                                          </p>
+                                          <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>
+                                            Update the owner amounts on your budget items in the Budget tab so the G703 totals balance before generating.
+                                          </p>
+                                        </div>
+                                      )}
+                                      <div style={{ background: '#0f0f0f', border: `1px solid ${sovMismatch ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary</p>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
+                                          <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
+                                          <span style={{ color: '#555' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#ff6b6b' : '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
+                                          <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                          <span style={{ color: '#555' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                                          <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                                          <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                        </div>
                                       </div>
-                                    </div>
+                                    </>
                                   )
                                 })()}
 

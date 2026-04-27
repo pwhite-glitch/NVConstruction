@@ -130,6 +130,23 @@ export default function JobDetail() {
   const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
   const [assigningSubLoading, setAssigningSubLoading] = useState(false)
 
+  // Field tab state
+  const [fieldDailyReports, setFieldDailyReports] = useState([])
+  const [fieldRfis, setFieldRfis] = useState([])
+  const [fieldDeliveries, setFieldDeliveries] = useState([])
+  const [fieldMilestones, setFieldMilestones] = useState([])
+  const [expandedFieldReport, setExpandedFieldReport] = useState(null)
+  const [expandedFieldRfi, setExpandedFieldRfi] = useState(null)
+  const [fieldSubTab, setFieldSubTab] = useState('reports')
+  const [respondingRfi, setRespondingRfi] = useState(null)
+  const [rfiResponse, setRfiResponse] = useState('')
+  const [savingRfiResponse, setSavingRfiResponse] = useState(false)
+  const [milestoneForm, setMilestoneForm] = useState({ title: '', due_date: '', notes: '' })
+  const [addingMilestone, setAddingMilestone] = useState(false)
+  const [showMilestoneForm, setShowMilestoneForm] = useState(false)
+  const [editingMilestone, setEditingMilestone] = useState(null)
+  const [editMilestoneForm, setEditMilestoneForm] = useState({})
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -145,7 +162,7 @@ export default function JobDetail() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      if (prof?.role !== 'pm') { router.push('/submit'); return }
+      if (prof?.role !== 'pm' && prof?.role !== 'apm') { router.push('/submit'); return }
       const { data: jobData } = await supabase.from('jobs').select('*').eq('id', id).single()
       if (!jobData) { router.push('/dashboard'); return }
       setJob(jobData)
@@ -201,6 +218,52 @@ export default function JobDetail() {
     setSubDirectory(data || [])
   }
 
+  async function loadFieldData() {
+    const [{ data: reports }, { data: rfis }, { data: deliveries }, { data: milestones }] = await Promise.all([
+      supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),
+      supabase.from('rfis').select('*').eq('job_id', id).order('created_at', { ascending: false }),
+      supabase.from('deliveries').select('*').eq('job_id', id).order('expected_date', { ascending: true }),
+      supabase.from('milestones').select('*').eq('job_id', id).order('due_date', { ascending: true }),
+    ])
+    setFieldDailyReports(reports || [])
+    setFieldRfis(rfis || [])
+    setFieldDeliveries(deliveries || [])
+    setFieldMilestones(milestones || [])
+  }
+
+  async function respondToRfi(rfiId) {
+    setSavingRfiResponse(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('rfis').update({ response: rfiResponse, status: 'answered', responded_at: new Date().toISOString(), responded_by: session.user.id }).eq('id', rfiId)
+    setRespondingRfi(null)
+    setRfiResponse('')
+    await loadFieldData()
+    setSavingRfiResponse(false)
+  }
+
+  async function addMilestone(e) {
+    e.preventDefault()
+    setAddingMilestone(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('milestones').insert({ job_id: id, title: milestoneForm.title, due_date: milestoneForm.due_date || null, notes: milestoneForm.notes || null, created_by: session.user.id })
+    setMilestoneForm({ title: '', due_date: '', notes: '' })
+    setShowMilestoneForm(false)
+    await loadFieldData()
+    setAddingMilestone(false)
+  }
+
+  async function saveMilestoneEdit() {
+    await supabase.from('milestones').update({ title: editMilestoneForm.title, due_date: editMilestoneForm.due_date || null, notes: editMilestoneForm.notes || null, status: editMilestoneForm.status }).eq('id', editingMilestone)
+    setEditingMilestone(null)
+    await loadFieldData()
+  }
+
+  async function deleteMilestone(milestoneId) {
+    if (!window.confirm('Delete this milestone?')) return
+    await supabase.from('milestones').delete().eq('id', milestoneId)
+    await loadFieldData()
+  }
+
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems() }
@@ -208,6 +271,7 @@ export default function JobDetail() {
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs() }
     if (activeTab === 'billing') { loadBillingForJob() }
     if (activeTab === 'subs') { loadSubDirectory() }
+    if (activeTab === 'field') { loadFieldData() }
   }, [activeTab, id])
 
   // ── Contracts ──────────────────────────────────────────────
@@ -574,6 +638,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </button>
           <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>
             Billing{pendingBillingCount > 0 ? ` (${pendingBillingCount} pending)` : billingSubmissions.length > 0 ? ` (${billingSubmissions.length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'field')} onClick={() => setActiveTab('field')}>
+            Field{fieldRfis.filter(r => r.status === 'open').length > 0 ? ` (${fieldRfis.filter(r => r.status === 'open').length} RFI)` : ''}
           </button>
         </div>
 
@@ -1302,6 +1369,184 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
           </>
         )}
+        {/* ── FIELD TAB ── */}
+        {activeTab === 'field' && (
+          <>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid #1a1a1a', paddingBottom: '0' }}>
+              {['reports', 'rfis', 'deliveries', 'milestones'].map(t => (
+                <button key={t} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: fieldSubTab === t ? '#f1f1f1' : '#555', borderBottom: fieldSubTab === t ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '-1px' }}
+                  onClick={() => setFieldSubTab(t)}>
+                  {t === 'reports' ? `Daily Reports (${fieldDailyReports.length})` : t === 'rfis' ? `RFIs (${fieldRfis.length})` : t === 'deliveries' ? `Deliveries (${fieldDeliveries.length})` : `Milestones (${fieldMilestones.length})`}
+                </button>
+              ))}
+            </div>
+
+            {/* Daily Reports */}
+            {fieldSubTab === 'reports' && (
+              fieldDailyReports.length === 0 ? <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No daily reports submitted yet.</div>
+              : fieldDailyReports.map(r => (
+                <div key={r.id} style={s.billingEntryRow}>
+                  <div style={s.billingEntryHeader} onClick={() => setExpandedFieldReport(expandedFieldReport === r.id ? null : r.id)}>
+                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}</span>}
+                      {r.crew_count != null && <span style={{ fontSize: '12px', color: '#555' }}>{r.crew_count} crew</span>}
+                    </div>
+                    <span style={{ color: '#555' }}>{expandedFieldReport === r.id ? '▲' : '▼'}</span>
+                  </div>
+                  {expandedFieldReport === r.id && (
+                    <div style={s.billingEntryExpanded}>
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work performed</p>
+                      <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
+                      {r.issues && <>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / delays</p>
+                        <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.issues}</p>
+                      </>}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+
+            {/* RFIs */}
+            {fieldSubTab === 'rfis' && (
+              fieldRfis.length === 0 ? <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No RFIs submitted yet.</div>
+              : fieldRfis.map(rfi => (
+                <div key={rfi.id} style={s.billingEntryRow}>
+                  <div style={s.billingEntryHeader} onClick={() => setExpandedFieldRfi(expandedFieldRfi === rfi.id ? null : rfi.id)}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{rfi.title}</span>
+                        <span style={s.coBadge(rfi.status === 'answered' ? 'approved' : rfi.status === 'closed' ? 'rejected' : 'pending')}>{rfi.status}</span>
+                      </div>
+                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <span style={{ color: '#555' }}>{expandedFieldRfi === rfi.id ? '▲' : '▼'}</span>
+                  </div>
+                  {expandedFieldRfi === rfi.id && (
+                    <div style={s.billingEntryExpanded}>
+                      {rfi.description && <>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Details</p>
+                        <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{rfi.description}</p>
+                      </>}
+                      {rfi.response && (
+                        <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Your response</p>
+                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
+                        </div>
+                      )}
+                      {respondingRfi === rfi.id ? (
+                        <div>
+                          <label style={s.label}>Response</label>
+                          <textarea rows={4} style={{ ...s.textarea, marginBottom: '10px' }} value={rfiResponse} onChange={e => setRfiResponse(e.target.value)} placeholder="Type your response..." />
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => respondToRfi(rfi.id)} disabled={savingRfiResponse || !rfiResponse} style={{ ...s.btnSmallOrange, opacity: savingRfiResponse || !rfiResponse ? 0.6 : 1 }}>{savingRfiResponse ? 'Saving...' : 'Send response'}</button>
+                            <button onClick={() => { setRespondingRfi(null); setRfiResponse('') }} style={s.btnSmall}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setRespondingRfi(rfi.id); setRfiResponse(rfi.response || '') }} style={s.btnSmallOrange}>
+                          {rfi.response ? 'Edit response' : 'Respond'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+
+            {/* Deliveries */}
+            {fieldSubTab === 'deliveries' && (
+              fieldDeliveries.length === 0 ? <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No deliveries logged yet.</div>
+              : fieldDeliveries.map(d => (
+                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 12px', borderBottom: '1px solid #1a1a1a', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{d.material}</span>
+                      <span style={s.coBadge(d.status === 'received' ? 'approved' : d.status === 'partial' ? 'pending' : 'pending')}>{d.status}</span>
+                    </div>
+                    <span style={{ fontSize: '12px', color: '#555' }}>
+                      {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                      {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
+                      {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+
+            {/* Milestones */}
+            {fieldSubTab === 'milestones' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                  <button style={s.btnSmallOrange} onClick={() => setShowMilestoneForm(v => !v)}>{showMilestoneForm ? 'Cancel' : '+ Add milestone'}</button>
+                </div>
+                {showMilestoneForm && (
+                  <div style={s.inlineForm}>
+                    <form onSubmit={addMilestone}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div style={{ gridColumn: 'span 2' }}><label style={s.label}>Title *</label><input style={s.input} required value={milestoneForm.title} onChange={e => setMilestoneForm(f => ({ ...f, title: e.target.value }))} placeholder="Foundation pour, framing complete..." /></div>
+                        <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={milestoneForm.due_date} onChange={e => setMilestoneForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Notes</label>
+                        <input style={s.input} value={milestoneForm.notes} onChange={e => setMilestoneForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+                      </div>
+                      <button type="submit" disabled={addingMilestone} style={{ ...s.btnSmallOrange, opacity: addingMilestone ? 0.6 : 1 }}>{addingMilestone ? 'Adding...' : 'Add milestone'}</button>
+                    </form>
+                  </div>
+                )}
+                {fieldMilestones.length === 0 && !showMilestoneForm && <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No milestones yet.</div>}
+                {fieldMilestones.map(m => (
+                  <div key={m.id} style={{ padding: '14px 12px', borderBottom: '1px solid #1a1a1a' }}>
+                    {editingMilestone === m.id ? (
+                      <div style={s.inlineForm}>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div style={{ gridColumn: 'span 2' }}><label style={s.label}>Title</label><input style={s.input} value={editMilestoneForm.title} onChange={e => setEditMilestoneForm(f => ({ ...f, title: e.target.value }))} /></div>
+                          <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={editMilestoneForm.due_date} onChange={e => setEditMilestoneForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                        </div>
+                        <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                          <div><label style={s.label}>Notes</label><input style={s.input} value={editMilestoneForm.notes} onChange={e => setEditMilestoneForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                          <div>
+                            <label style={s.label}>Status</label>
+                            <select style={s.input} value={editMilestoneForm.status} onChange={e => setEditMilestoneForm(f => ({ ...f, status: e.target.value }))}>
+                              <option value="pending">Pending</option>
+                              <option value="complete">Complete</option>
+                              <option value="delayed">Delayed</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={saveMilestoneEdit} style={s.btnSmallOrange}>Save</button>
+                          <button onClick={() => setEditingMilestone(null)} style={s.btnSmall}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: m.status === 'complete' ? '#4ade80' : '#f1f1f1' }}>{m.title}</span>
+                            <span style={s.coBadge(m.status === 'complete' ? 'approved' : m.status === 'delayed' ? 'rejected' : 'pending')}>{m.status}</span>
+                          </div>
+                          <span style={{ fontSize: '12px', color: '#555' }}>
+                            {m.due_date && `Due ${new Date(m.due_date + 'T12:00:00').toLocaleDateString()}`}
+                            {m.completed_date && ` · Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
+                          </span>
+                          {m.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{m.notes}</div>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button onClick={() => { setEditingMilestone(m.id); setEditMilestoneForm({ title: m.title, due_date: m.due_date || '', notes: m.notes || '', status: m.status }) }} style={s.btnSmallOrange}>Edit</button>
+                          <button onClick={() => deleteMilestone(m.id)} style={s.btnSmallRed}>Delete</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+
       </main>
     </div>
   )

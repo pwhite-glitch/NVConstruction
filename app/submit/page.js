@@ -82,7 +82,8 @@ export default function Submit() {
       if (!session) { router.push('/login'); return }
       setUser(session.user)
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
-      if (prof?.role === 'pm') { router.push('/dashboard'); return }
+      if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
+      if (prof?.role === 'super') { router.push('/field'); return }
       setProfile(prof)
       const { data: assignments } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status)').eq('sub_id', session.user.id)
       setJobs((assignments || []).map(a => a.jobs).filter(j => j && j.status === 'active'))

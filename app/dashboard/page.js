@@ -62,6 +62,12 @@ const s = {
     border: `1px solid ${status === 'active' ? '#1a3a5a' : status === 'complete' ? '#1a4a1a' : '#4a4a0a'}`
   }),
   coiWarning: { background: '#2a1a00', border: '1px solid #4a3a00', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#e8590c', marginBottom: '1rem' },
+  roleBadge: (role) => ({
+    padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
+    background: role === 'pm' ? '#1a0a2a' : role === 'apm' ? '#0a1a2a' : role === 'super' ? '#0a2a1a' : '#2a1a00',
+    color: role === 'pm' ? '#c084fc' : role === 'apm' ? '#60a5fa' : role === 'super' ? '#4ade80' : '#e8590c',
+    border: `1px solid ${role === 'pm' ? '#3a1a5a' : role === 'apm' ? '#1a3a5a' : role === 'super' ? '#1a4a2a' : '#4a2a00'}`
+  }),
   formBox: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.5rem' },
   formTitle: { fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1rem' },
   applyLink: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' },
@@ -122,30 +128,65 @@ export default function Dashboard() {
   const [selectedEmails, setSelectedEmails] = useState([])
   const [sendingInvites, setSendingInvites] = useState(false)
 
+  // Role / APM filtering
+  const [assignedJobIds, setAssignedJobIds] = useState(null) // null = no filter (PM), array = APM filter
+
+  // NV Directory state
+  const [teamMembers, setTeamMembers] = useState([])
+  const [pmJobAssigns, setPmJobAssigns] = useState([])
+  const [teamExpandedId, setTeamExpandedId] = useState(null)
+  const [teamAssignTarget, setTeamAssignTarget] = useState({})
+  const [teamAssignMsg, setTeamAssignMsg] = useState({})
+  const [teamAssigningId, setTeamAssigningId] = useState(null)
+  const [updatingRoleId, setUpdatingRoleId] = useState(null)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
-      if (!prof || prof.role !== 'pm') { router.push('/submit'); return }
+      if (!prof) { router.push('/login'); return }
+      if (prof.role === 'super') { router.push('/field'); return }
+      if (prof.role !== 'pm' && prof.role !== 'apm') { router.push('/submit'); return }
       setProfile(prof)
-      await loadAll()
+      let jobIds = null
+      if (prof.role === 'apm') {
+        const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id').eq('user_id', session.user.id)
+        jobIds = (assigns || []).map(a => a.job_id)
+        setAssignedJobIds(jobIds)
+      }
+      await loadAll(jobIds)
       setLoading(false)
     }
     load()
   }, [router])
 
   useEffect(() => {
-    if (activeTab === 'bids') loadBidPackages()
+    if (activeTab === 'bids') loadBidPackages(assignedJobIds)
+    if (activeTab === 'nv-directory') loadTeamData()
   }, [activeTab])
 
 
-  async function loadAll() {
-    const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').order('submitted_at', { ascending: false })
+  async function loadAll(jobIds = null) {
+    const ids = jobIds !== undefined ? jobIds : assignedJobIds
+    let billingQ = supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').order('submitted_at', { ascending: false })
+    let jobsQ = supabase.from('jobs').select('*').order('created_at', { ascending: false })
+    let asgnQ = supabase.from('job_assignments').select('*, jobs(job_number, project_name)').order('invited_at', { ascending: false })
+    if (ids !== null && ids.length > 0) {
+      billingQ = billingQ.in('job_id', ids)
+      jobsQ = jobsQ.in('id', ids)
+      asgnQ = asgnQ.in('job_id', ids)
+    } else if (ids !== null && ids.length === 0) {
+      setSubmissions([]); setJobs([]); setAssignments([])
+      const { data: dir } = await supabase.from('sub_directory').select('*').order('applied_at', { ascending: false })
+      setDirectory(dir || [])
+      return
+    }
+    const { data: subs } = await billingQ
     setSubmissions(subs || [])
-    const { data: jobList } = await supabase.from('jobs').select('*').order('created_at', { ascending: false })
+    const { data: jobList } = await jobsQ
     setJobs(jobList || [])
-    const { data: asgn } = await supabase.from('job_assignments').select('*, jobs(job_number, project_name)').order('invited_at', { ascending: false })
+    const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
     const { data: dir } = await supabase.from('sub_directory').select('*').order('applied_at', { ascending: false })
     setDirectory(dir || [])
@@ -190,8 +231,12 @@ export default function Dashboard() {
     setAddingSubManual(false)
   }
 
-  async function loadBidPackages() {
-    const { data } = await supabase.from('bid_packages').select('*').order('created_at', { ascending: false })
+  async function loadBidPackages(jobIds = null) {
+    const ids = jobIds !== undefined ? jobIds : assignedJobIds
+    let q = supabase.from('bid_packages').select('*').order('created_at', { ascending: false })
+    if (ids !== null && ids.length > 0) q = q.in('job_id', ids)
+    else if (ids !== null && ids.length === 0) { setBidPackages([]); return }
+    const { data } = await q
     setBidPackages(data || [])
   }
 
@@ -389,6 +434,44 @@ export default function Dashboard() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function loadTeamData() {
+    const [{ data: members }, { data: assigns }] = await Promise.all([
+      supabase.from('profiles').select('*').in('role', ['pm', 'apm', 'super', 'admin']).order('full_name'),
+      supabase.from('pm_job_assignments').select('*, jobs(id, job_number, project_name)').order('assigned_at'),
+    ])
+    setTeamMembers(members || [])
+    setPmJobAssigns(assigns || [])
+  }
+
+  async function assignApmToJob(member) {
+    const jobId = teamAssignTarget[member.id]
+    if (!jobId) return
+    setTeamAssigningId(member.id)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await supabase.from('pm_job_assignments').insert({ job_id: jobId, user_id: member.id, assigned_by: session.user.id })
+    if (error) {
+      setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: error.code === '23505' ? 'Already assigned.' : 'Error: ' + error.message, ok: false } }))
+    } else {
+      await loadTeamData()
+      setTeamAssignTarget(prev => ({ ...prev, [member.id]: '' }))
+      setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: 'Assigned.', ok: true } }))
+      setTimeout(() => setTeamAssignMsg(prev => { const n = { ...prev }; delete n[member.id]; return n }), 3000)
+    }
+    setTeamAssigningId(null)
+  }
+
+  async function removeApmFromJob(assignId) {
+    await supabase.from('pm_job_assignments').delete().eq('id', assignId)
+    await loadTeamData()
+  }
+
+  async function updateTeamRole(userId, role) {
+    setUpdatingRoleId(userId)
+    await supabase.from('profiles').update({ role }).eq('id', userId)
+    await loadTeamData()
+    setUpdatingRoleId(null)
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
   const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
@@ -448,6 +531,9 @@ export default function Dashboard() {
             <button style={s.tab(activeTab === 'bids')} onClick={() => setActiveTab('bids')}>
               Bid Invites{bidPackages.filter(b => b.status === 'open').length > 0 ? ` (${bidPackages.filter(b => b.status === 'open').length} open)` : ''}
             </button>
+            {profile?.role === 'pm' && (
+              <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
+            )}
           </div>
 
           <div style={s.cardBody}>
@@ -970,6 +1056,107 @@ export default function Dashboard() {
                               </div>
                             ))}
                           </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* ── NV DIRECTORY ── */}
+            {activeTab === 'nv-directory' && (
+              <>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
+                    Internal team — {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                {teamMembers.length === 0 ? (
+                  <div style={s.emptyMsg}>No team members yet. Create accounts in Supabase and assign a role.</div>
+                ) : teamMembers.map(member => {
+                  const isExp = teamExpandedId === member.id
+                  const memberAssigns = pmJobAssigns.filter(a => a.user_id === member.id)
+                  return (
+                    <div key={member.id} style={s.rowBorder}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }}
+                        onClick={() => setTeamExpandedId(isExp ? null : member.id)}>
+                        <div>
+                          <p style={s.company}>{member.full_name || member.email}</p>
+                          <p style={s.meta}>{member.email}{member.phone ? ' · ' + member.phone : ''}</p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={s.roleBadge(member.role)}>{member.role}</span>
+                          <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+
+                      {isExp && (
+                        <div style={s.detail}>
+                          {/* Role changer */}
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={s.detailLabel}>Role</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                              <select
+                                style={{ ...s.input, maxWidth: '200px' }}
+                                value={member.role || ''}
+                                onChange={e => updateTeamRole(member.id, e.target.value)}
+                                disabled={updatingRoleId === member.id}
+                              >
+                                <option value="pm">PM</option>
+                                <option value="apm">Assistant PM</option>
+                                <option value="super">Superintendent</option>
+                                <option value="admin">Office Admin</option>
+                              </select>
+                              {updatingRoleId === member.id && <span style={s.successInline}>Saving...</span>}
+                            </div>
+                          </div>
+
+                          {/* Job assignments (APM only) */}
+                          {member.role === 'apm' && (
+                            <div>
+                              <div style={s.detailLabel}>Assigned jobs</div>
+                              {memberAssigns.length === 0 ? (
+                                <p style={{ fontSize: '13px', color: '#444', margin: '6px 0 1rem' }}>Not assigned to any jobs yet.</p>
+                              ) : (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 1rem' }}>
+                                  {memberAssigns.map(a => (
+                                    <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#aaa', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '4px 10px' }}>
+                                      #{a.jobs?.job_number} — {a.jobs?.project_name}
+                                      <button onClick={() => removeApmFromJob(a.id)} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1 }}>×</button>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={s.assignBox}>
+                                <p style={s.assignTitle}>Assign to job</p>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <select
+                                    style={{ ...s.input, maxWidth: '280px' }}
+                                    value={teamAssignTarget[member.id] || ''}
+                                    onChange={e => setTeamAssignTarget(prev => ({ ...prev, [member.id]: e.target.value }))}
+                                  >
+                                    <option value="">Select a job...</option>
+                                    {jobs.filter(j => !memberAssigns.some(a => a.job_id === j.id)).map(j => (
+                                      <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    style={{ ...s.btnSm('orange'), opacity: teamAssigningId === member.id || !teamAssignTarget[member.id] ? 0.6 : 1 }}
+                                    disabled={teamAssigningId === member.id || !teamAssignTarget[member.id]}
+                                    onClick={() => assignApmToJob(member)}
+                                  >
+                                    {teamAssigningId === member.id ? 'Assigning...' : 'Assign'}
+                                  </button>
+                                  {teamAssignMsg[member.id] && (
+                                    <span style={teamAssignMsg[member.id].ok ? s.successInline : s.errorInline}>
+                                      {teamAssignMsg[member.id].text}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

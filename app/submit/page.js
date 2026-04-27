@@ -70,6 +70,8 @@ export default function Submit() {
   const [bidPackageDetails, setBidPackageDetails] = useState({})
   const [bidSubmitForm, setBidSubmitForm] = useState({ amount: '', notes: '' })
   const [submittingBidFor, setSubmittingBidFor] = useState(null)
+  const [billingFile, setBillingFile] = useState(null)
+  const [bidFile, setBidFile] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -107,9 +109,25 @@ export default function Submit() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function openBidDoc(storagePath) {
+    const { data } = await supabase.storage.from('bid-docs').createSignedUrl(storagePath, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function openBillingDoc(storagePath) {
+    const { data } = await supabase.storage.from('billing-docs').createSignedUrl(storagePath, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   async function submitBid(bidPackageId) {
     if (!bidSubmitForm.amount) return
     setSubmittingBidFor(bidPackageId)
+    let doc_url = null
+    if (bidFile) {
+      const path = `${bidPackageId}/${user.id}-${Date.now()}-${bidFile.name}`
+      const { error: upErr } = await supabase.storage.from('bid-docs').upload(path, bidFile)
+      if (!upErr) doc_url = path
+    }
     const { error } = await supabase.from('bid_submissions').insert({
       bid_package_id: bidPackageId,
       sub_id: user.id,
@@ -117,12 +135,14 @@ export default function Submit() {
       company_name: profile?.company_name || 'Unknown',
       amount: parseFloat(bidSubmitForm.amount),
       notes: bidSubmitForm.notes || null,
+      doc_url,
     })
     if (!error) {
       await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).eq('sub_email', user.email)
       await loadBidPackageDetail(bidPackageId)
       await loadBidInvitations(user.email)
       setBidSubmitForm({ amount: '', notes: '' })
+      setBidFile(null)
     }
     setSubmittingBidFor(null)
   }
@@ -154,6 +174,12 @@ export default function Submit() {
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
+    let doc_url = null
+    if (billingFile) {
+      const path = `${user.id}/${Date.now()}-${billingFile.name}`
+      const { error: upErr } = await supabase.storage.from('billing-docs').upload(path, billingFile)
+      if (!upErr) doc_url = path
+    }
     const { error } = await supabase.from('billing_submissions').insert({
       sub_id: user.id, job_id: form.job_id,
       company_name: profile?.company_name || 'Unknown',
@@ -161,10 +187,12 @@ export default function Submit() {
       amount_billed: parseFloat(form.amount_billed),
       pct_complete: parseInt(form.pct_complete) || null,
       work_description: form.work_description,
+      doc_url,
     })
     if (!error) {
       setSuccess(true)
       setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '' })
+      setBillingFile(null)
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
     }
@@ -225,9 +253,14 @@ export default function Submit() {
                   <div><label style={s.label}>Amount billed</label><input type="number" style={s.input} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" /></div>
                   <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
                 </div>
-                <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ marginBottom: '1rem' }}>
                   <label style={s.label}>Work description</label>
                   <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this billing period..." style={{ ...s.input, resize: 'vertical' }} />
+                </div>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={s.label}>Attach document (optional)</label>
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
+                  {billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {billingFile.name}</div>}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Submitting...' : 'Submit billing'}</button>
@@ -421,6 +454,11 @@ export default function Submit() {
                             <div style={{ fontSize: '24px', fontWeight: '800', color: '#4ade80' }}>${Number(myBid.amount).toLocaleString()}</div>
                             {myBid.notes && <p style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, margin: '6px 0 0' }}>{myBid.notes}</p>}
                             <p style={{ fontSize: '11px', color: '#1a4a1a', margin: '6px 0 0' }}>Submitted {new Date(myBid.submitted_at).toLocaleDateString()}{myBid.status === 'awarded' ? ' · AWARDED' : ''}</p>
+                            {myBid.doc_url && (
+                              <button onClick={() => openBidDoc(myBid.doc_url)} style={{ marginTop: '10px', fontSize: '12px', color: '#4ade80', background: 'none', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>
+                                📎 View attached estimate
+                              </button>
+                            )}
                           </div>
                         ) : isClosed ? (
                           <p style={{ fontSize: '13px', color: '#555' }}>Bidding is closed for this package.</p>
@@ -436,6 +474,11 @@ export default function Submit() {
                                 <label style={s.label}>Notes / qualifications</label>
                                 <input style={s.input} value={bidSubmitForm.notes} onChange={e => setBidSubmitForm(f => ({ ...f, notes: e.target.value }))} placeholder="Lead time, exclusions, etc." />
                               </div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={s.label}>Attach estimate (optional)</label>
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBidFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
+                              {bidFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {bidFile.name}</div>}
                             </div>
                             <button
                               style={{ ...s.btn, opacity: submittingBidFor === pkg.id || !bidSubmitForm.amount ? 0.6 : 1 }}

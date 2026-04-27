@@ -348,6 +348,16 @@ export default function Dashboard() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function openBillingDoc(path) {
+    const { data } = await supabase.storage.from('billing-docs').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function openBidDoc(path) {
+    const { data } = await supabase.storage.from('bid-docs').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
   const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
@@ -475,6 +485,11 @@ export default function Dashboard() {
                               <div style={s.detailLabel}>Work description</div>
                               <div style={{ ...s.detailValue, lineHeight: '1.7' }}>{sub.work_description}</div>
                             </div>
+                            {sub.doc_url && (
+                              <div style={{ marginBottom: '1rem' }}>
+                                <button onClick={() => openBillingDoc(sub.doc_url)} style={s.btnSm('gray')}>📎 View attachment</button>
+                              </div>
+                            )}
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               {sub.status === 'pending' && (
                                 <>
@@ -911,6 +926,9 @@ export default function Dashboard() {
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                   <span style={{ fontSize: '20px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</span>
+                                  {sub.doc_url && (
+                                    <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎 Estimate</button>
+                                  )}
                                   {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                     <div style={{ display: 'flex', gap: '6px' }}>
                                       <button style={s.btnSm('green')} onClick={() => awardBid(sub, pkg.id)}>Award</button>

@@ -139,6 +139,8 @@ export default function Dashboard() {
   const [teamAssignMsg, setTeamAssignMsg] = useState({})
   const [teamAssigningId, setTeamAssigningId] = useState(null)
   const [updatingRoleId, setUpdatingRoleId] = useState(null)
+  const [editingTeamId, setEditingTeamId] = useState(null)
+  const [editTeamForm, setEditTeamForm] = useState({})
 
   useEffect(() => {
     async function load() {
@@ -470,6 +472,16 @@ export default function Dashboard() {
     await supabase.from('profiles').update({ role }).eq('id', userId)
     await loadTeamData()
     setUpdatingRoleId(null)
+  }
+
+  async function saveTeamEdit() {
+    await supabase.from('profiles').update({
+      full_name: editTeamForm.full_name || null,
+      phone: editTeamForm.phone || null,
+      company_name: editTeamForm.company_name || null,
+    }).eq('id', editingTeamId)
+    setEditingTeamId(null)
+    await loadTeamData()
   }
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
@@ -1093,69 +1105,103 @@ export default function Dashboard() {
 
                       {isExp && (
                         <div style={s.detail}>
-                          {/* Role changer */}
-                          <div style={{ marginBottom: '1.25rem' }}>
-                            <div style={s.detailLabel}>Role</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
-                              <select
-                                style={{ ...s.input, maxWidth: '200px' }}
-                                value={member.role || ''}
-                                onChange={e => updateTeamRole(member.id, e.target.value)}
-                                disabled={updatingRoleId === member.id}
-                              >
-                                <option value="pm">PM</option>
-                                <option value="apm">Assistant PM</option>
-                                <option value="super">Superintendent</option>
-                                <option value="admin">Office Admin</option>
-                              </select>
-                              {updatingRoleId === member.id && <span style={s.successInline}>Saving...</span>}
-                            </div>
-                          </div>
+                          {editingTeamId === member.id ? (
+                            <>
+                              <p style={{ ...s.detailLabel, marginBottom: '1rem', fontSize: '12px' }}>Edit team member</p>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                <div><label style={s.label}>Full name</label><input style={s.input} value={editTeamForm.full_name} onChange={e => setEditTeamForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Smith" /></div>
+                                <div><label style={s.label}>Phone</label><input style={s.input} value={editTeamForm.phone} onChange={e => setEditTeamForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
+                              </div>
+                              <div style={{ marginBottom: '1.25rem' }}>
+                                <label style={s.label}>Company / title</label>
+                                <input style={s.input} value={editTeamForm.company_name} onChange={e => setEditTeamForm(f => ({ ...f, company_name: e.target.value }))} placeholder="Project Manager" />
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={saveTeamEdit} style={s.btnSm('orange')}>Save</button>
+                                <button onClick={() => setEditingTeamId(null)} style={s.btnSm('gray')}>Cancel</button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {/* Details row */}
+                              <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
+                                <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{member.phone || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Title</div><div style={s.detailValue}>{member.company_name || '—'}</div></div>
+                              </div>
 
-                          {/* Job assignments (APM only) */}
-                          {member.role === 'apm' && (
-                            <div>
-                              <div style={s.detailLabel}>Assigned jobs</div>
-                              {memberAssigns.length === 0 ? (
-                                <p style={{ fontSize: '13px', color: '#444', margin: '6px 0 1rem' }}>Not assigned to any jobs yet.</p>
-                              ) : (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 1rem' }}>
-                                  {memberAssigns.map(a => (
-                                    <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#aaa', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '4px 10px' }}>
-                                      #{a.jobs?.job_number} — {a.jobs?.project_name}
-                                      <button onClick={() => removeApmFromJob(a.id)} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1 }}>×</button>
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <div style={s.assignBox}>
-                                <p style={s.assignTitle}>Assign to job</p>
-                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              {/* Edit button */}
+                              <div style={{ marginBottom: '1.25rem' }}>
+                                <button onClick={() => {
+                                  setEditingTeamId(member.id)
+                                  setEditTeamForm({ full_name: member.full_name || '', phone: member.phone || '', company_name: member.company_name || '' })
+                                }} style={s.btnSm('orange')}>Edit details</button>
+                              </div>
+
+                              {/* Role changer */}
+                              <div style={{ marginBottom: '1.25rem' }}>
+                                <div style={s.detailLabel}>Role</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
                                   <select
-                                    style={{ ...s.input, maxWidth: '280px' }}
-                                    value={teamAssignTarget[member.id] || ''}
-                                    onChange={e => setTeamAssignTarget(prev => ({ ...prev, [member.id]: e.target.value }))}
+                                    style={{ ...s.input, maxWidth: '200px' }}
+                                    value={member.role || ''}
+                                    onChange={e => updateTeamRole(member.id, e.target.value)}
+                                    disabled={updatingRoleId === member.id}
                                   >
-                                    <option value="">Select a job...</option>
-                                    {jobs.filter(j => !memberAssigns.some(a => a.job_id === j.id)).map(j => (
-                                      <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
-                                    ))}
+                                    <option value="pm">PM</option>
+                                    <option value="apm">Assistant PM</option>
+                                    <option value="super">Superintendent</option>
+                                    <option value="admin">Office Admin</option>
                                   </select>
-                                  <button
-                                    style={{ ...s.btnSm('orange'), opacity: teamAssigningId === member.id || !teamAssignTarget[member.id] ? 0.6 : 1 }}
-                                    disabled={teamAssigningId === member.id || !teamAssignTarget[member.id]}
-                                    onClick={() => assignApmToJob(member)}
-                                  >
-                                    {teamAssigningId === member.id ? 'Assigning...' : 'Assign'}
-                                  </button>
-                                  {teamAssignMsg[member.id] && (
-                                    <span style={teamAssignMsg[member.id].ok ? s.successInline : s.errorInline}>
-                                      {teamAssignMsg[member.id].text}
-                                    </span>
-                                  )}
+                                  {updatingRoleId === member.id && <span style={s.successInline}>Saving...</span>}
                                 </div>
                               </div>
-                            </div>
+
+                              {/* Job assignments (APM only) */}
+                              {member.role === 'apm' && (
+                                <div>
+                                  <div style={s.detailLabel}>Assigned jobs</div>
+                                  {memberAssigns.length === 0 ? (
+                                    <p style={{ fontSize: '13px', color: '#444', margin: '6px 0 1rem' }}>Not assigned to any jobs yet.</p>
+                                  ) : (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 1rem' }}>
+                                      {memberAssigns.map(a => (
+                                        <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#aaa', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '4px 10px' }}>
+                                          #{a.jobs?.job_number} — {a.jobs?.project_name}
+                                          <button onClick={() => removeApmFromJob(a.id)} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1 }}>×</button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div style={s.assignBox}>
+                                    <p style={s.assignTitle}>Assign to job</p>
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <select
+                                        style={{ ...s.input, maxWidth: '280px' }}
+                                        value={teamAssignTarget[member.id] || ''}
+                                        onChange={e => setTeamAssignTarget(prev => ({ ...prev, [member.id]: e.target.value }))}
+                                      >
+                                        <option value="">Select a job...</option>
+                                        {jobs.filter(j => !memberAssigns.some(a => a.job_id === j.id)).map(j => (
+                                          <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        style={{ ...s.btnSm('orange'), opacity: teamAssigningId === member.id || !teamAssignTarget[member.id] ? 0.6 : 1 }}
+                                        disabled={teamAssigningId === member.id || !teamAssignTarget[member.id]}
+                                        onClick={() => assignApmToJob(member)}
+                                      >
+                                        {teamAssigningId === member.id ? 'Assigning...' : 'Assign'}
+                                      </button>
+                                      {teamAssignMsg[member.id] && (
+                                        <span style={teamAssignMsg[member.id].ok ? s.successInline : s.errorInline}>
+                                          {teamAssignMsg[member.id].text}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       )}

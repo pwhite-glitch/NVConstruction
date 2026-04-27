@@ -158,6 +158,12 @@ export default function JobDetail() {
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
 
+  // Prime Contract tab state
+  const [primeContractFile, setPrimeContractFile] = useState(null)
+  const [uploadingPrimeContract, setUploadingPrimeContract] = useState(false)
+  const [aiaForm, setAiaForm] = useState({ app_number: '1', period_to: new Date().toISOString().split('T')[0], retainage_pct: '10' })
+  const [aiaSov, setAiaSov] = useState([])
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -342,6 +348,181 @@ export default function JobDetail() {
     URL.revokeObjectURL(url)
   }
 
+  async function uploadPrimeContract() {
+    if (!primeContractFile) return
+    setUploadingPrimeContract(true)
+    const ext = primeContractFile.name.split('.').pop()
+    const path = `${id}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('prime-contracts').upload(path, primeContractFile)
+    if (!error) {
+      await supabase.from('jobs').update({ prime_contract_url: path }).eq('id', id)
+      setJob(j => ({ ...j, prime_contract_url: path }))
+      setPrimeContractFile(null)
+    }
+    setUploadingPrimeContract(false)
+  }
+
+  async function openPrimeContractUrl() {
+    const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(job.prime_contract_url, 60)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  function generateAIA() {
+    const w = window.open('', '_blank')
+    const retPct = Math.max(0, Math.min(100, parseFloat(aiaForm.retainage_pct) || 10)) / 100
+    const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+    const origContract = Number(job.contract_value || 0)
+    const contractSumToDate = origContract + approvedCOsVal
+    const periodDate = aiaForm.period_to ? new Date(aiaForm.period_to + 'T12:00:00').toLocaleDateString() : '—'
+    const genDate = new Date().toLocaleDateString()
+    const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
+
+    const sovLines = aiaSov.map((line, idx) => {
+      const scheduled = Number(line.budget_amount || 0)
+      const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+      const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
+      const totalAmt = prevAmt + thisAmt
+      const totalPct = scheduled > 0 ? Math.min(100, totalAmt / scheduled * 100) : 0
+      const balance = scheduled - totalAmt
+      return { ...line, idx: idx + 1, scheduled, prevAmt, thisAmt, totalAmt, totalPct, balance, retainage: totalAmt * retPct }
+    })
+
+    const totalScheduled = sovLines.reduce((a, l) => a + l.scheduled, 0)
+    const totalPrev = sovLines.reduce((a, l) => a + l.prevAmt, 0)
+    const totalThis = sovLines.reduce((a, l) => a + l.thisAmt, 0)
+    const totalCompleted = sovLines.reduce((a, l) => a + l.totalAmt, 0)
+    const totalRetainage = sovLines.reduce((a, l) => a + l.retainage, 0)
+    const totalEarnedLessRet = totalCompleted - totalRetainage
+    const prevCertificates = totalPrev * (1 - retPct)
+    const currentPaymentDue = totalEarnedLessRet - prevCertificates
+    const balanceToFinish = contractSumToDate - totalCompleted
+    const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
+
+    w.document.write(`<!DOCTYPE html><html><head>
+<title>AIA G702/G703 — App #${aiaForm.app_number} — Job #${job.job_number}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 24px; line-height: 1.5; }
+.btn { padding: 8px 20px; background: #111; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; margin-bottom: 20px; margin-right: 8px; }
+@media print { .btn { display: none; } }
+h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; border-bottom: 3px solid #111; padding-bottom: 8px; margin-bottom: 4px; }
+.sub { font-size: 10px; color: #777; margin-bottom: 18px; }
+.hgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.hblock { border: 1px solid #ddd; padding: 10px 12px; border-radius: 4px; }
+.hlabel { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 2px; }
+.hval { font-size: 12px; font-weight: 700; }
+.hsub { font-size: 10px; color: #666; margin-top: 2px; }
+.stitle { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #666; font-weight: 700; margin: 18px 0 8px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+.g702 { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.g702 td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
+.g702 td:first-child { color: #888; width: 28px; font-size: 10px; }
+.g702 td:last-child { text-align: right; font-family: monospace; font-size: 12px; font-weight: 600; min-width: 130px; }
+.g702 tr.due td { font-weight: 800; font-size: 13px; border-top: 2px solid #111; background: #f5f5f5; }
+.page-break { page-break-before: always; padding-top: 24px; }
+.g703 { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 8px; }
+.g703 th { padding: 5px 7px; border: 1px solid #ccc; background: #f0f0f0; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.3px; text-align: center; line-height: 1.3; }
+.g703 td { padding: 5px 7px; border: 1px solid #e8e8e8; }
+.g703 td.r { text-align: right; font-family: monospace; }
+.g703 td.c { text-align: center; }
+.g703 td.code { font-family: monospace; font-size: 9px; color: #888; }
+.g703 tr.tot td { font-weight: 700; border-top: 2px solid #111; background: #f5f5f5; }
+.foot { margin-top: 24px; font-size: 9px; color: #bbb; border-top: 1px solid #eee; padding-top: 8px; }
+</style></head><body>
+<button class="btn" onclick="window.print()">Print / Save as PDF</button>
+<button class="btn" style="background:#666" onclick="window.close()">Close</button>
+
+<h1>Application and Certificate for Payment</h1>
+<div class="sub">AIA Document G702 &nbsp;·&nbsp; Application No. ${aiaForm.app_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+
+<div class="hgrid">
+  <div>
+    <div class="hblock" style="margin-bottom:10px">
+      <div class="hlabel">To Owner</div>
+      <div class="hval">${job.owner_company || '—'}</div>
+      ${job.owner_name ? `<div class="hsub">${job.owner_name}</div>` : ''}
+    </div>
+    <div class="hblock">
+      <div class="hlabel">Via Architect</div>
+      <div class="hval">${job.architect_name || job.architect_company || '—'}</div>
+      ${job.architect_company && job.architect_name ? `<div class="hsub">${job.architect_company}</div>` : ''}
+    </div>
+  </div>
+  <div>
+    <div class="hblock" style="margin-bottom:10px">
+      <div class="hlabel">From Contractor</div>
+      <div class="hval">NV Construction</div>
+    </div>
+    <div class="hblock">
+      <div class="hlabel">Project</div>
+      <div class="hval">${job.project_name}</div>
+      <div class="hsub">Contract No. ${job.job_number}${job.location ? ' &nbsp;·&nbsp; ' + job.location : ''}</div>
+    </div>
+  </div>
+</div>
+
+<div class="stitle">Contractor's Application for Payment (G702)</div>
+<table class="g702">
+  <tr><td>1.</td><td>Original Contract Sum</td><td>${fmt(origContract)}</td></tr>
+  <tr><td>2.</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
+  <tr><td>3.</td><td>Contract Sum to Date (Line 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
+  <tr><td>4.</td><td>Total Completed &amp; Stored to Date (column G, G703)</td><td>${fmt(totalCompleted)}</td></tr>
+  <tr><td>5.</td><td>Retainage: ${aiaForm.retainage_pct}% of Completed Work</td><td>(${fmt(totalRetainage)})</td></tr>
+  <tr><td>6.</td><td>Total Earned Less Retainage (Line 4 less 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
+  <tr><td>7.</td><td>Less Previous Certificates for Payment</td><td>(${fmt(prevCertificates)})</td></tr>
+  <tr class="due"><td>8.</td><td>CURRENT PAYMENT DUE</td><td>${fmtSigned(currentPaymentDue)}</td></tr>
+  <tr><td>9.</td><td>Balance to Finish, Including Retainage (Line 3 less 4)</td><td>${fmtSigned(balanceToFinish)}</td></tr>
+</table>
+
+${sovLines.length > 0 ? `
+<div class="page-break">
+<h1>Continuation Sheet</h1>
+<div class="sub">AIA Document G703 &nbsp;·&nbsp; Application No. ${aiaForm.app_number} &nbsp;·&nbsp; ${job.project_name} &nbsp;·&nbsp; Contract No. ${job.job_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+<table class="g703">
+  <thead><tr>
+    <th style="width:28px">A<br>No.</th>
+    <th style="width:22px">B<br>Code</th>
+    <th>C — Description of Work</th>
+    <th>D<br>Scheduled<br>Value</th>
+    <th>E<br>Work Completed<br>From Previous<br>Application</th>
+    <th>F<br>Work Completed<br>This Period</th>
+    <th>G<br>Total Completed<br>&amp; Stored to Date</th>
+    <th>%<br>G/C</th>
+    <th>H<br>Balance<br>to Finish</th>
+    <th>I<br>Retainage</th>
+  </tr></thead>
+  <tbody>
+    ${sovLines.map(l => `<tr>
+      <td class="c">${l.idx}</td>
+      <td class="code">${l.cost_code || ''}</td>
+      <td>${l.description}</td>
+      <td class="r">${fmt(l.scheduled)}</td>
+      <td class="r">${fmt(l.prevAmt)}</td>
+      <td class="r">${fmt(l.thisAmt)}</td>
+      <td class="r">${fmt(l.totalAmt)}</td>
+      <td class="c">${l.totalPct.toFixed(0)}%</td>
+      <td class="r">${fmtSigned(l.balance)}</td>
+      <td class="r">${fmt(l.retainage)}</td>
+    </tr>`).join('')}
+    <tr class="tot">
+      <td colspan="3">TOTALS</td>
+      <td class="r">${fmt(totalScheduled)}</td>
+      <td class="r">${fmt(totalPrev)}</td>
+      <td class="r">${fmt(totalThis)}</td>
+      <td class="r">${fmt(totalCompleted)}</td>
+      <td class="c">${overallPct}%</td>
+      <td class="r">${fmtSigned(balanceToFinish)}</td>
+      <td class="r">${fmt(totalRetainage)}</td>
+    </tr>
+  </tbody>
+</table>
+</div>` : ''}
+
+<div class="foot">Generated ${genDate} &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Job #${job.job_number} — ${job.project_name}</div>
+</body></html>`)
+    w.document.close()
+  }
+
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems() }
@@ -351,7 +532,14 @@ export default function JobDetail() {
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs() }
   }, [activeTab, id])
+
+  useEffect(() => {
+    if (activeTab === 'prime' && budgetItems.length > 0) {
+      setAiaSov(budgetItems.map(b => ({ id: b.id, cost_code: b.cost_code, description: b.description, budget_amount: b.budget_amount, pct_prev: '0', pct_this: '0' })))
+    }
+  }, [activeTab, budgetItems])
 
   // ── Contracts ──────────────────────────────────────────────
   async function addContract() {
@@ -724,6 +912,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>
             Direct Costs{directCosts.filter(c => c.status === 'pending').length > 0 ? ` (${directCosts.filter(c => c.status === 'pending').length} pending)` : directCosts.length > 0 ? ` (${directCosts.length})` : ''}
           </button>
+          <button style={s.tab(activeTab === 'prime')} onClick={() => setActiveTab('prime')}>Prime Contract</button>
         </div>
 
         {/* ── DETAILS TAB ── */}
@@ -1772,6 +1961,139 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 )
               })}
+            </div>
+          </>
+        )}
+
+        {/* ── PRIME CONTRACT TAB ── */}
+        {activeTab === 'prime' && (
+          <>
+            <div style={s.card}>
+              <p style={s.cardTitle}>Prime contract document</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                {job.prime_contract_url && (
+                  <button style={s.btnSmallOrange} onClick={openPrimeContractUrl}>View prime contract PDF</button>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                  <input type="file" accept=".pdf" style={{ ...s.input, padding: '8px 14px', flex: 1 }} onChange={e => setPrimeContractFile(e.target.files[0])} />
+                  <button style={{ ...s.btn, opacity: (!primeContractFile || uploadingPrimeContract) ? 0.5 : 1 }} disabled={!primeContractFile || uploadingPrimeContract} onClick={uploadPrimeContract}>
+                    {uploadingPrimeContract ? 'Uploading...' : job.prime_contract_url ? 'Replace' : 'Upload'}
+                  </button>
+                </div>
+              </div>
+              {job.contract_value && (
+                <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
+                  Contract value: <strong style={{ color: '#f1f1f1' }}>${Number(job.contract_value).toLocaleString()}</strong>
+                  <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— edit in the Details tab</span>
+                </p>
+              )}
+            </div>
+
+            <div style={s.card}>
+              <p style={s.cardTitle}>AIA G702 / G703 — Application for payment</p>
+              <p style={{ fontSize: '12px', color: '#555', margin: '-0.5rem 0 1.25rem' }}>
+                Enter % complete per line item below. All financial calculations are automatic.
+              </p>
+
+              <div style={{ ...s.grid3, marginBottom: '1.25rem' }}>
+                <div>
+                  <label style={s.label}>Application No.</label>
+                  <input type="number" min="1" style={s.input} value={aiaForm.app_number} onChange={e => setAiaForm(f => ({ ...f, app_number: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={s.label}>Period to</label>
+                  <input type="date" style={s.input} value={aiaForm.period_to} onChange={e => setAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={s.label}>Retainage %</label>
+                  <input type="number" min="0" max="100" step="0.5" style={s.input} value={aiaForm.retainage_pct} onChange={e => setAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                </div>
+              </div>
+
+              {aiaSov.length === 0 ? (
+                <p style={{ color: '#444', fontSize: '13px' }}>
+                  No budget line items found. Add budget items in the Budget tab — they become the G703 schedule of values.
+                </p>
+              ) : (
+                <>
+                  <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+                          <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled Value</th>
+                          <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
+                          <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% This Period</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total Completed</th>
+                          <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiaSov.map((line, i) => {
+                          const scheduled = Number(line.budget_amount || 0)
+                          const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                          const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
+                          const total = prevAmt + thisAmt
+                          const balance = scheduled - total
+                          return (
+                            <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
+                              <td style={{ padding: '10px', color: '#ccc' }}>
+                                {line.cost_code && <span style={{ fontSize: '10px', color: '#555', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
+                                {line.description}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(scheduled).toLocaleString()}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
+                                  value={line.pct_prev}
+                                  onChange={e => setAiaSov(v => v.map((l, idx) => idx === i ? { ...l, pct_prev: e.target.value } : l))} />
+                              </td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
+                                  value={line.pct_this}
+                                  onChange={e => setAiaSov(v => v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l))} />
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {(() => {
+                    const retPct = Math.max(0, Math.min(100, parseFloat(aiaForm.retainage_pct) || 10)) / 100
+                    const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+                    const contractSumToDate = Number(job.contract_value || 0) + approvedCOsVal
+                    const totalCompleted = aiaSov.reduce((a, line) => {
+                      const s = Number(line.budget_amount || 0)
+                      return a + s * (Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) + Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
+                    }, 0)
+                    const totalRetainage = totalCompleted * retPct
+                    const totalPrevCompleted = aiaSov.reduce((a, line) => {
+                      const s = Number(line.budget_amount || 0)
+                      return a + s * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                    }, 0)
+                    const earnedLessRet = totalCompleted - totalRetainage
+                    const prevCerts = totalPrevCompleted * (1 - retPct)
+                    const currentDue = earnedLessRet - prevCerts
+                    return (
+                      <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary preview</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
+                          <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
+                          <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span style={{ color: '#555' }}>Retainage ({aiaForm.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                          <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  <button style={s.btn} onClick={generateAIA}>Generate AIA G702 / G703</button>
+                </>
+              )}
             </div>
           </>
         )}

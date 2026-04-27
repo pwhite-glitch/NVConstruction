@@ -56,11 +56,11 @@ const s = {
   statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' },
   statValue: (accent) => ({ fontSize: '24px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
   confirmBox: { background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '1.25rem', marginTop: '1rem' },
-  tabRow: { display: 'flex', gap: '4px', marginBottom: '1.5rem', borderBottom: '1px solid #222', paddingBottom: '0' },
+  tabRow: { display: 'flex', gap: '4px', marginBottom: '1.5rem', borderBottom: '1px solid #222', paddingBottom: '0', overflowX: 'auto' },
   tab: (active) => ({
     padding: '10px 20px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none',
     color: active ? '#f1f1f1' : '#555', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent',
-    letterSpacing: '0.5px', marginBottom: '-1px'
+    letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap'
   }),
   inlineForm: { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1rem' },
   contractRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
@@ -69,11 +69,15 @@ const s = {
   coRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
   budgetTableHeader: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e', marginBottom: '4px', alignItems: 'center' },
   budgetTableRow: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '14px 12px', borderBottom: '1px solid #111', alignItems: 'center' },
+  billingEntryRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
+  billingEntryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' },
+  billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
 }
 
 const emptyContract = { sub_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '' }
+const emptyCreateBilling = { sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', auto_approve: true }
 
 export default function JobDetail() {
   const router = useRouter()
@@ -111,6 +115,14 @@ export default function JobDetail() {
   const [csvUploading, setCsvUploading] = useState(false)
   const [editingBudgetItem, setEditingBudgetItem] = useState(null)
   const [editBudgetForm, setEditBudgetForm] = useState({})
+
+  // Billing tab state
+  const [billingSubmissions, setBillingSubmissions] = useState([])
+  const [showCreateBilling, setShowCreateBilling] = useState(false)
+  const [createBillingForm, setCreateBillingForm] = useState(emptyCreateBilling)
+  const [creatingBilling, setCreatingBilling] = useState(false)
+  const [editingBilling, setEditingBilling] = useState(null)
+  const [editBillingForm, setEditBillingForm] = useState({})
 
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -161,11 +173,17 @@ export default function JobDetail() {
     setAllCOs(data || [])
   }
 
+  async function loadBillingForJob() {
+    const { data } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
+    setBillingSubmissions(data || [])
+  }
+
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs() }
+    if (activeTab === 'billing') { loadBillingForJob() }
   }, [activeTab, id])
 
   // ── Contracts ──────────────────────────────────────────────
@@ -293,6 +311,55 @@ export default function JobDetail() {
     return contracts.filter(c => c.budget_item_id === budgetItemId).reduce((a, c) => a + Number(c.adjusted_contract_value || c.contract_value || 0), 0)
   }
 
+  // ── Billing (PM-managed) ─────────────────────────────────────
+  async function createBilling() {
+    if (!createBillingForm.amount_billed || !createBillingForm.company_name) return
+    setCreatingBilling(true)
+    const now = new Date().toISOString()
+    const status = createBillingForm.auto_approve ? 'approved' : 'pending'
+    const { error } = await supabase.from('billing_submissions').insert({
+      job_id: id,
+      company_name: createBillingForm.company_name,
+      contact_name: createBillingForm.contact_name || null,
+      contact_info: createBillingForm.contact_info || null,
+      amount_billed: parseFloat(createBillingForm.amount_billed),
+      pct_complete: createBillingForm.pct_complete ? parseFloat(createBillingForm.pct_complete) : null,
+      work_description: createBillingForm.work_description || null,
+      status,
+      submitted_at: now,
+      reviewed_at: status === 'approved' ? now : null,
+    })
+    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
+    else {
+      setShowCreateBilling(false)
+      setCreateBillingForm(emptyCreateBilling)
+      await loadBillingForJob()
+    }
+    setCreatingBilling(false)
+  }
+
+  async function updateBillingEntry() {
+    const now = new Date().toISOString()
+    await supabase.from('billing_submissions').update({
+      company_name: editBillingForm.company_name,
+      contact_name: editBillingForm.contact_name || null,
+      contact_info: editBillingForm.contact_info || null,
+      amount_billed: parseFloat(editBillingForm.amount_billed),
+      pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
+      work_description: editBillingForm.work_description || null,
+      status: editBillingForm.status,
+      reviewed_at: editBillingForm.status !== 'pending' ? now : null,
+    }).eq('id', editingBilling)
+    setEditingBilling(null)
+    await loadBillingForJob()
+  }
+
+  async function deleteBillingEntry(billingId) {
+    if (!window.confirm('Delete this billing submission?')) return
+    await supabase.from('billing_submissions').delete().eq('id', billingId)
+    await loadBillingForJob()
+  }
+
   // ── Job ─────────────────────────────────────────────────────
   async function saveJob(e) {
     e.preventDefault()
@@ -401,6 +468,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const registeredSubs = subs.filter(s => s.sub_id)
   const pendingCOs = allCOs.filter(co => co.status === 'pending').length
   const approvedCOValue = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+  const pendingBillingCount = billingSubmissions.filter(b => b.status === 'pending').length
+  const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
@@ -448,6 +517,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </button>
           <button style={s.tab(activeTab === 'changeorders')} onClick={() => setActiveTab('changeorders')}>
             Change Orders{pendingCOs > 0 ? ` (${pendingCOs} pending)` : allCOs.length > 0 ? ` (${allCOs.length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>
+            Billing{pendingBillingCount > 0 ? ` (${pendingBillingCount} pending)` : billingSubmissions.length > 0 ? ` (${billingSubmissions.length})` : ''}
           </button>
         </div>
 
@@ -550,7 +622,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <span style={{ fontWeight: '700', color: '#f1f1f1' }}>${b.amount_billed?.toLocaleString()}</span>
-                    <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: b.status === 'approved' ? '#0a2a0a' : b.status === 'rejected' ? '#2a0a0a' : '#2a1a00', color: b.status === 'approved' ? '#4ade80' : b.status === 'rejected' ? '#ff6b6b' : '#e8590c', border: `1px solid ${b.status === 'approved' ? '#1a4a1a' : b.status === 'rejected' ? '#5a1a1a' : '#4a2a00'}` }}>{b.status}</span>
+                    <span style={s.coBadge(b.status)}>{b.status}</span>
                   </div>
                 </div>
               ))}
@@ -808,7 +880,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                     {c.onedrive_url && !isEditing && (
                       <div style={{ ...s.contractRowExpanded, paddingTop: '10px', paddingBottom: '10px' }}>
-                        <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>📄 View contract on OneDrive ↗</a>
+                        <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>View contract on OneDrive ↗</a>
                       </div>
                     )}
                   </div>
@@ -899,6 +971,187 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                     </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ── BILLING TAB ── */}
+        {activeTab === 'billing' && (
+          <>
+            <div style={s.statRow}>
+              <div style={s.statCard}><div style={s.statLabel}>Total submissions</div><div style={s.statValue()}>{billingSubmissions.length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingBillingCount > 0 ? '#e8590c' : undefined)}>{pendingBillingCount}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#4ade80')}>${approvedBillingTotal.toLocaleString()}</div></div>
+            </div>
+
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Billing submissions ({billingSubmissions.length})</p>
+                {!showCreateBilling && (
+                  <button style={s.btnSmallOrange} onClick={() => setShowCreateBilling(true)}>+ Create billing for sub</button>
+                )}
+              </div>
+
+              {showCreateBilling && (
+                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create billing on behalf of subcontractor</p>
+                  <p style={{ fontSize: '12px', color: '#555', margin: '-0.5rem 0 1rem' }}>Use when a sub emails you billing info and you want to enter and approve it directly.</p>
+
+                  {registeredSubs.length > 0 && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={s.label}>Auto-fill from sub (optional)</label>
+                      <select style={s.input} value={createBillingForm.sub_id}
+                        onChange={e => {
+                          const sub_id = e.target.value
+                          const subData = registeredSubs.find(s => s.sub_id === sub_id)
+                          setCreateBillingForm(f => ({
+                            ...f,
+                            sub_id,
+                            company_name: subData?.profiles?.company_name || f.company_name,
+                            contact_name: subData?.profiles?.full_name || f.contact_name,
+                            contact_info: subData?.profiles?.phone || f.contact_info,
+                          }))
+                        }}>
+                        <option value="">— Select to auto-fill —</option>
+                        {registeredSubs.map(a => <option key={a.sub_id} value={a.sub_id}>{a.profiles?.company_name || a.sub_email}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>Company name *</label>
+                      <input style={s.input} value={createBillingForm.company_name} onChange={e => setCreateBillingForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing LLC" required />
+                    </div>
+                    <div>
+                      <label style={s.label}>Contact name</label>
+                      <input style={s.input} value={createBillingForm.contact_name} onChange={e => setCreateBillingForm(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" />
+                    </div>
+                  </div>
+                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>Contact info (phone / email)</label>
+                      <input style={s.input} value={createBillingForm.contact_info} onChange={e => setCreateBillingForm(f => ({ ...f, contact_info: e.target.value }))} placeholder="555-0100" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Amount billed ($) *</label>
+                      <input type="number" step="0.01" style={s.input} value={createBillingForm.amount_billed} onChange={e => setCreateBillingForm(f => ({ ...f, amount_billed: e.target.value }))} placeholder="0.00" required />
+                    </div>
+                    <div>
+                      <label style={s.label}>% complete</label>
+                      <input type="number" min="0" max="100" style={s.input} value={createBillingForm.pct_complete} onChange={e => setCreateBillingForm(f => ({ ...f, pct_complete: e.target.value }))} placeholder="0" />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={s.label}>Work description</label>
+                    <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
+                  </div>
+                  <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input type="checkbox" id="autoApprove" checked={createBillingForm.auto_approve} onChange={e => setCreateBillingForm(f => ({ ...f, auto_approve: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#e8590c' }} />
+                    <label htmlFor="autoApprove" style={{ fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                      Approve immediately (skip pending queue)
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={{ ...s.btn, opacity: creatingBilling ? 0.6 : 1 }} disabled={creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed} onClick={createBilling}>
+                      {creatingBilling ? 'Saving...' : createBillingForm.auto_approve ? 'Save & approve' : 'Save as pending'}
+                    </button>
+                    <button style={s.btnGray} onClick={() => { setShowCreateBilling(false); setCreateBillingForm(emptyCreateBilling) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {billingSubmissions.length === 0 && !showCreateBilling && (
+                <p style={{ color: '#444', fontSize: '14px' }}>No billing submissions yet. Create one above or wait for subs to submit from their portal.</p>
+              )}
+
+              {billingSubmissions.map(b => {
+                const isEditing = editingBilling === b.id
+                return (
+                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1 }}>
+                    <div style={s.billingEntryHeader}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '3px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</span>
+                          {b.contact_name && <span style={{ fontSize: '12px', color: '#555' }}>{b.contact_name}</span>}
+                          <span style={s.coBadge(b.status)}>{b.status}</span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#555' }}>
+                          {new Date(b.submitted_at).toLocaleDateString()}
+                          {b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
+                          {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button style={s.btnSmallOrange} onClick={() => {
+                            setEditingBilling(isEditing ? null : b.id)
+                            setEditBillingForm({
+                              company_name: b.company_name || '',
+                              contact_name: b.contact_name || '',
+                              contact_info: b.contact_info || '',
+                              amount_billed: b.amount_billed || '',
+                              pct_complete: b.pct_complete ?? '',
+                              work_description: b.work_description || '',
+                              status: b.status,
+                            })
+                          }}>
+                            {isEditing ? 'Cancel' : 'Edit'}
+                          </button>
+                          <button style={s.btnSmallRed} onClick={() => deleteBillingEntry(b.id)}>Delete</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isEditing && (
+                      <div style={s.billingEntryExpanded}>
+                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Edit billing submission</p>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                          <div>
+                            <label style={s.label}>Company name</label>
+                            <input style={s.input} value={editBillingForm.company_name} onChange={e => setEditBillingForm(f => ({ ...f, company_name: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Contact name</label>
+                            <input style={s.input} value={editBillingForm.contact_name} onChange={e => setEditBillingForm(f => ({ ...f, contact_name: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div>
+                            <label style={s.label}>Contact info</label>
+                            <input style={s.input} value={editBillingForm.contact_info} onChange={e => setEditBillingForm(f => ({ ...f, contact_info: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Amount billed ($)</label>
+                            <input type="number" step="0.01" style={s.input} value={editBillingForm.amount_billed} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>% complete</label>
+                            <input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={s.label}>Work description</label>
+                          <textarea style={{ ...s.textarea, minHeight: '80px' }} value={editBillingForm.work_description} onChange={e => setEditBillingForm(f => ({ ...f, work_description: e.target.value }))} />
+                        </div>
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Status</label>
+                          <select style={s.input} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button style={s.btnSmallOrange} onClick={updateBillingEntry}>Save changes</button>
+                          <button style={s.btnSmall} onClick={() => setEditingBilling(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}

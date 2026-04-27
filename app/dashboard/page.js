@@ -100,6 +100,10 @@ export default function Dashboard() {
   const [assignMsg, setAssignMsg] = useState({})       // { [dirSubId]: { text, ok } }
   const [assigningId, setAssigningId] = useState(null)
 
+  // Billing edit state
+  const [editingBilling, setEditingBilling] = useState(null)
+  const [editBillingForm, setEditBillingForm] = useState({})
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -128,6 +132,22 @@ export default function Dashboard() {
     await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
     await loadAll()
     setExpanded(null)
+  }
+
+  async function saveBillingEdit() {
+    const now = new Date().toISOString()
+    await supabase.from('billing_submissions').update({
+      company_name: editBillingForm.company_name,
+      contact_name: editBillingForm.contact_name || null,
+      contact_info: editBillingForm.contact_info || null,
+      amount_billed: parseFloat(editBillingForm.amount_billed),
+      pct_complete: editBillingForm.pct_complete !== '' ? parseFloat(editBillingForm.pct_complete) : null,
+      work_description: editBillingForm.work_description || null,
+      status: editBillingForm.status,
+      reviewed_at: editBillingForm.status !== 'pending' ? now : null,
+    }).eq('id', editingBilling)
+    setEditingBilling(null)
+    await loadAll()
   }
 
   async function updateDirStatus(id, status) {
@@ -285,21 +305,68 @@ export default function Dashboard() {
                     </div>
                     {expanded === sub.id && (
                       <div style={s.detail}>
-                        <div style={s.detailGrid}>
-                          <div><div style={s.detailLabel}>Contact</div><div style={s.detailValue}>{sub.contact_name} · {sub.contact_info}</div></div>
-                          <div><div style={s.detailLabel}>% complete</div><div style={s.detailValue}>{sub.pct_complete ?? '—'}%</div></div>
-                        </div>
-                        <div style={{ marginBottom: '1rem' }}>
-                          <div style={s.detailLabel}>Work description</div>
-                          <div style={{ ...s.detailValue, lineHeight: '1.7' }}>{sub.work_description}</div>
-                        </div>
-                        {sub.status === 'pending' && (
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => updateStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
-                            <button onClick={() => updateStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Reject</button>
-                          </div>
+                        {editingBilling === sub.id ? (
+                          <>
+                            <p style={{ ...s.detailLabel, marginBottom: '1rem', fontSize: '12px' }}>Edit billing submission</p>
+                            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Company name</label><input style={s.input} value={editBillingForm.company_name} onChange={e => setEditBillingForm(f => ({ ...f, company_name: e.target.value }))} /></div>
+                              <div><label style={s.label}>Contact name</label><input style={s.input} value={editBillingForm.contact_name} onChange={e => setEditBillingForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Contact info</label><input style={s.input} value={editBillingForm.contact_info} onChange={e => setEditBillingForm(f => ({ ...f, contact_info: e.target.value }))} /></div>
+                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" style={s.input} value={editBillingForm.amount_billed} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} /></div>
+                              <div><label style={s.label}>% complete</label><input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={s.label}>Work description</label>
+                              <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={editBillingForm.work_description} onChange={e => setEditBillingForm(f => ({ ...f, work_description: e.target.value }))} />
+                            </div>
+                            <div style={{ marginBottom: '1rem' }}>
+                              <label style={s.label}>Status</label>
+                              <select style={s.input} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                              </select>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={saveBillingEdit} style={s.btnSm('orange')}>Save changes</button>
+                              <button onClick={() => setEditingBilling(null)} style={s.btnSm('gray')}>Cancel</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={s.detailGrid}>
+                              <div><div style={s.detailLabel}>Contact</div><div style={s.detailValue}>{sub.contact_name} · {sub.contact_info}</div></div>
+                              <div><div style={s.detailLabel}>% complete</div><div style={s.detailValue}>{sub.pct_complete ?? '—'}%</div></div>
+                            </div>
+                            <div style={{ marginBottom: '1rem' }}>
+                              <div style={s.detailLabel}>Work description</div>
+                              <div style={{ ...s.detailValue, lineHeight: '1.7' }}>{sub.work_description}</div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              {sub.status === 'pending' && (
+                                <>
+                                  <button onClick={() => updateStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
+                                  <button onClick={() => updateStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Reject</button>
+                                </>
+                              )}
+                              <button onClick={() => {
+                                setEditingBilling(sub.id)
+                                setEditBillingForm({
+                                  company_name: sub.company_name || '',
+                                  contact_name: sub.contact_name || '',
+                                  contact_info: sub.contact_info || '',
+                                  amount_billed: sub.amount_billed || '',
+                                  pct_complete: sub.pct_complete ?? '',
+                                  work_description: sub.work_description || '',
+                                  status: sub.status,
+                                })
+                              }} style={s.btnSm('orange')}>Edit</button>
+                            </div>
+                            {sub.status !== 'pending' && <div style={{ ...s.meta, marginTop: '8px' }}>Reviewed {sub.reviewed_at ? new Date(sub.reviewed_at).toLocaleDateString() : '—'}</div>}
+                          </>
                         )}
-                        {sub.status !== 'pending' && <div style={s.meta}>Reviewed {sub.reviewed_at ? new Date(sub.reviewed_at).toLocaleDateString() : '—'}</div>}
                       </div>
                     )}
                   </div>

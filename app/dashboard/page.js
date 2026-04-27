@@ -142,6 +142,18 @@ export default function Dashboard() {
   const [editingTeamId, setEditingTeamId] = useState(null)
   const [editTeamForm, setEditTeamForm] = useState({})
 
+  // Estimates state
+  const [estimates, setEstimates] = useState([])
+  const [expandedEstimate, setExpandedEstimate] = useState(null)
+  const [showNewEstimate, setShowNewEstimate] = useState(false)
+  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' })
+  const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '' }])
+  const [savingEstimate, setSavingEstimate] = useState(false)
+  const [editingEstimate, setEditingEstimate] = useState(null)
+  const [editEstimateForm, setEditEstimateForm] = useState({})
+  const [editEstimateLines, setEditEstimateLines] = useState([])
+  const [savingEstimateEdit, setSavingEstimateEdit] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -166,6 +178,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab === 'bids') loadBidPackages(assignedJobIds)
     if (activeTab === 'nv-directory') loadTeamData()
+    if (activeTab === 'estimates') loadEstimates()
   }, [activeTab])
 
 
@@ -484,6 +497,183 @@ export default function Dashboard() {
     await loadTeamData()
   }
 
+  // ── Estimates ───────────────────────────────────────────────
+  async function loadEstimates() {
+    const { data } = await supabase.from('estimates').select('*, estimate_line_items(*)').order('created_at', { ascending: false })
+    setEstimates((data || []).map(e => ({ ...e, estimate_line_items: (e.estimate_line_items || []).sort((a, b) => a.sort_order - b.sort_order) })))
+  }
+
+  async function saveEstimate() {
+    if (!estimateForm.project_name) return
+    setSavingEstimate(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const year = new Date().getFullYear()
+    const yearEstimates = estimates.filter(e => e.estimate_number?.startsWith(`EST-${year}-`))
+    const nextNum = String(yearEstimates.length + 1).padStart(3, '0')
+    const { data: est, error } = await supabase.from('estimates').insert({
+      created_by: session.user.id,
+      estimate_number: `EST-${year}-${nextNum}`,
+      project_name: estimateForm.project_name,
+      address: estimateForm.address || null,
+      owner_name: estimateForm.owner_name || null,
+      owner_company: estimateForm.owner_company || null,
+      owner_email: estimateForm.owner_email || null,
+      owner_phone: estimateForm.owner_phone || null,
+      notes: estimateForm.notes || null,
+      status: 'draft',
+    }).select().single()
+    if (!error && est) {
+      const validLines = estimateLines.filter(l => l.description)
+      if (validLines.length > 0) {
+        await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, sort_order: i })))
+      }
+      setShowNewEstimate(false)
+      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' })
+      setEstimateLines([{ description: '', amount: '' }])
+      await loadEstimates()
+    }
+    setSavingEstimate(false)
+  }
+
+  async function saveEstimateEdit() {
+    setSavingEstimateEdit(true)
+    await supabase.from('estimates').update({
+      project_name: editEstimateForm.project_name,
+      address: editEstimateForm.address || null,
+      owner_name: editEstimateForm.owner_name || null,
+      owner_company: editEstimateForm.owner_company || null,
+      owner_email: editEstimateForm.owner_email || null,
+      owner_phone: editEstimateForm.owner_phone || null,
+      notes: editEstimateForm.notes || null,
+      status: editEstimateForm.status,
+      updated_at: new Date().toISOString(),
+    }).eq('id', editingEstimate)
+    await supabase.from('estimate_line_items').delete().eq('estimate_id', editingEstimate)
+    const validLines = editEstimateLines.filter(l => l.description)
+    if (validLines.length > 0) {
+      await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: editingEstimate, description: l.description, amount: parseFloat(l.amount) || 0, sort_order: i })))
+    }
+    setEditingEstimate(null)
+    await loadEstimates()
+    setSavingEstimateEdit(false)
+  }
+
+  async function deleteEstimate(estimateId) {
+    if (!window.confirm('Delete this estimate?')) return
+    await supabase.from('estimates').delete().eq('id', estimateId)
+    if (expandedEstimate === estimateId) setExpandedEstimate(null)
+    await loadEstimates()
+  }
+
+  function generateEstimatePDF(estimate) {
+    const w = window.open('', '_blank')
+    const lines = estimate.estimate_line_items || []
+    const total = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+    const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const estDate = new Date(estimate.created_at).toLocaleDateString()
+    const genDate = new Date().toLocaleDateString()
+    w.document.write(`<!DOCTYPE html><html><head>
+<title>Estimate ${estimate.estimate_number} — ${estimate.project_name}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 40px; line-height: 1.5; }
+.btn { padding: 8px 20px; background: #111; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; margin-right: 8px; margin-bottom: 20px; }
+@media print { .no-print { display: none; } }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; border-bottom: 3px solid #111; padding-bottom: 18px; }
+.co-name { font-size: 22px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+.co-sub { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; }
+.est-title { font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #333; text-align: right; }
+.est-meta { font-size: 12px; color: #888; text-align: right; margin-top: 4px; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+.info-block { padding: 14px 16px; border: 1px solid #ddd; border-radius: 6px; }
+.info-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; font-weight: 700; margin-bottom: 8px; }
+.info-name { font-size: 14px; font-weight: 700; }
+.info-detail { font-size: 12px; color: #555; margin-top: 3px; }
+.section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #888; font-weight: 700; margin-bottom: 10px; margin-top: 22px; }
+.scope-box { border: 1px solid #ddd; border-radius: 6px; padding: 14px; font-size: 13px; color: #444; line-height: 1.7; white-space: pre-wrap; }
+table { width: 100%; border-collapse: collapse; }
+thead th { padding: 8px 12px; border-bottom: 2px solid #111; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; font-weight: 700; }
+thead th.right { text-align: right; }
+tbody td { padding: 11px 12px; border-bottom: 1px solid #eee; font-size: 13px; vertical-align: middle; }
+tbody td.num { text-align: center; color: #aaa; width: 32px; font-size: 11px; }
+tbody td.right { text-align: right; font-family: monospace; }
+.total-row td { padding: 12px; font-weight: 800; font-size: 15px; border-top: 2px solid #111; background: #f8f8f8; border-bottom: none; }
+.total-row td.right { font-family: monospace; font-size: 17px; }
+.footer-note { font-size: 11px; color: #aaa; margin-top: 6px; }
+.terms { margin-top: 28px; border-top: 1px solid #ddd; padding-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.sig-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; font-weight: 700; margin-bottom: 10px; }
+.sig-line { border-bottom: 1px solid #888; height: 44px; width: 100%; margin-bottom: 6px; }
+.sig-sub { font-size: 10px; color: #aaa; }
+.validity { font-size: 10px; color: #bbb; margin-top: 24px; text-align: center; border-top: 1px solid #eee; padding-top: 12px; }
+</style></head><body>
+<div class="no-print">
+  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+  <button class="btn" style="background:#666" onclick="window.close()">Close</button>
+</div>
+<div class="header">
+  <div>
+    <div class="co-name">NV Construction</div>
+    <div class="co-sub">General Contractor</div>
+  </div>
+  <div>
+    <div class="est-title">Estimate</div>
+    <div class="est-meta">${estimate.estimate_number} &nbsp;·&nbsp; ${estDate}</div>
+  </div>
+</div>
+<div class="info-grid">
+  <div class="info-block">
+    <div class="info-label">Prepared for</div>
+    ${estimate.owner_name ? `<div class="info-name">${estimate.owner_name}</div>` : ''}
+    ${estimate.owner_company ? `<div class="info-detail">${estimate.owner_company}</div>` : ''}
+    ${estimate.owner_email ? `<div class="info-detail">${estimate.owner_email}</div>` : ''}
+    ${estimate.owner_phone ? `<div class="info-detail">${estimate.owner_phone}</div>` : ''}
+    ${!estimate.owner_name && !estimate.owner_company ? '<div class="info-detail" style="color:#ccc">—</div>' : ''}
+  </div>
+  <div class="info-block">
+    <div class="info-label">Project</div>
+    <div class="info-name">${estimate.project_name}</div>
+    ${estimate.address ? `<div class="info-detail" style="margin-top:6px">${estimate.address.replace(/\n/g, '<br>')}</div>` : ''}
+  </div>
+</div>
+${estimate.notes ? `<div class="section-label">Scope of work</div><div class="scope-box">${estimate.notes.replace(/</g, '&lt;')}</div>` : ''}
+<div class="section-label">Schedule of values</div>
+<table>
+  <thead><tr>
+    <th class="num">#</th>
+    <th>Description</th>
+    <th class="right" style="width:180px">Amount</th>
+  </tr></thead>
+  <tbody>
+    ${lines.map((l, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td>${l.description}</td>
+      <td class="right">${fmt(l.amount)}</td>
+    </tr>`).join('')}
+    <tr class="total-row">
+      <td></td>
+      <td><strong>TOTAL ESTIMATE</strong></td>
+      <td class="right">${fmt(total)}</td>
+    </tr>
+  </tbody>
+</table>
+<div class="footer-note">All prices in USD · Subject to change if scope changes</div>
+<div class="terms">
+  <div>
+    <div class="sig-label">Client acceptance</div>
+    <div class="sig-line"></div>
+    <div class="sig-sub">Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</div>
+  </div>
+  <div>
+    <div class="sig-label">NV Construction</div>
+    <div class="sig-line"></div>
+    <div class="sig-sub">Authorized signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</div>
+  </div>
+</div>
+<div class="validity">This estimate is valid for 30 days from the date above &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Generated ${genDate}</div>
+</body></html>`)
+    w.document.close()
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
   const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
@@ -546,6 +736,7 @@ export default function Dashboard() {
             {profile?.role === 'pm' && (
               <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
             )}
+            <button style={s.tab(activeTab === 'estimates')} onClick={() => setActiveTab('estimates')}>Estimates</button>
           </div>
 
           <div style={s.cardBody}>
@@ -1201,6 +1392,199 @@ export default function Dashboard() {
                                   </div>
                                 </div>
                               )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* ── ESTIMATES ── */}
+            {activeTab === 'estimates' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''}</p>
+                  <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>
+                </div>
+
+                {showNewEstimate && (
+                  <div style={s.formBox}>
+                    <p style={s.formTitle}>New estimate</p>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div><label style={s.label}>Project name *</label><input style={s.input} value={estimateForm.project_name} onChange={e => setEstimateForm(f => ({ ...f, project_name: e.target.value }))} placeholder="Project name" /></div>
+                      <div><label style={s.label}>Address</label><input style={s.input} value={estimateForm.address} onChange={e => setEstimateForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, ST" /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div><label style={s.label}>Owner / Contact name</label><input style={s.input} value={estimateForm.owner_name} onChange={e => setEstimateForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="John Smith" /></div>
+                      <div><label style={s.label}>Company</label><input style={s.input} value={estimateForm.owner_company} onChange={e => setEstimateForm(f => ({ ...f, owner_company: e.target.value }))} placeholder="ABC Properties" /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div><label style={s.label}>Email</label><input type="email" style={s.input} value={estimateForm.owner_email} onChange={e => setEstimateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@example.com" /></div>
+                      <div><label style={s.label}>Phone</label><input style={s.input} value={estimateForm.owner_phone} onChange={e => setEstimateForm(f => ({ ...f, owner_phone: e.target.value }))} placeholder="555-0100" /></div>
+                    </div>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={s.label}>Scope of work / notes</label>
+                      <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={estimateForm.notes} onChange={e => setEstimateForm(f => ({ ...f, notes: e.target.value }))} placeholder="Describe the scope of work..." />
+                    </div>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <label style={s.label}>Schedule of values</label>
+                        <button type="button" style={s.btnSm('green')} onClick={() => setEstimateLines(l => [...l, { description: '', amount: '' }])}>+ Add line</button>
+                      </div>
+                      <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                          <div>Description</div><div style={{ textAlign: 'right' }}>Amount</div><div></div>
+                        </div>
+                        {estimateLines.map((line, idx) => (
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderBottom: idx < estimateLines.length - 1 ? '1px solid #1a1a1a' : 'none', alignItems: 'center' }}>
+                            <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
+                            <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
+                            <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                          </div>
+                        ))}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                          <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', textAlign: 'right', gridColumn: '1/2' }}>Total:</div>
+                          <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '14px', fontFamily: 'monospace' }}>
+                            ${estimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button style={{ ...s.btn, opacity: savingEstimate || !estimateForm.project_name ? 0.6 : 1 }} disabled={savingEstimate || !estimateForm.project_name} onClick={saveEstimate}>{savingEstimate ? 'Saving...' : 'Save estimate'}</button>
+                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {estimates.length === 0 && !showNewEstimate && <div style={s.emptyMsg}>No estimates yet. Click "New estimate" to get started.</div>}
+
+                {estimates.map(est => {
+                  const isExp = expandedEstimate === est.id
+                  const lines = est.estimate_line_items || []
+                  const total = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+                  const isEditingEst = editingEstimate === est.id
+                  return (
+                    <div key={est.id} style={s.rowBorder}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }}
+                        onClick={() => setExpandedEstimate(isExp ? null : est.id)}>
+                        <div>
+                          <p style={s.company}>{est.project_name}</p>
+                          <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}</p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: est.status === 'sent' ? '#0a2a0a' : est.status === 'accepted' ? '#0a1a2a' : est.status === 'declined' ? '#2a0a0a' : '#1a1a1a', color: est.status === 'sent' ? '#4ade80' : est.status === 'accepted' ? '#60a5fa' : est.status === 'declined' ? '#ff6b6b' : '#888', border: `1px solid ${est.status === 'sent' ? '#1a4a1a' : est.status === 'accepted' ? '#1a3a5a' : est.status === 'declined' ? '#5a1a1a' : '#2a2a2a'}` }}>{est.status}</span>
+                          <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+
+                      {isExp && (
+                        <div style={s.detail}>
+                          {isEditingEst ? (
+                            <>
+                              <p style={{ ...s.detailLabel, marginBottom: '1rem', fontSize: '12px' }}>Edit estimate</p>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                <div><label style={s.label}>Project name</label><input style={s.input} value={editEstimateForm.project_name} onChange={e => setEditEstimateForm(f => ({ ...f, project_name: e.target.value }))} /></div>
+                                <div><label style={s.label}>Address</label><input style={s.input} value={editEstimateForm.address} onChange={e => setEditEstimateForm(f => ({ ...f, address: e.target.value }))} /></div>
+                              </div>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                <div><label style={s.label}>Owner name</label><input style={s.input} value={editEstimateForm.owner_name} onChange={e => setEditEstimateForm(f => ({ ...f, owner_name: e.target.value }))} /></div>
+                                <div><label style={s.label}>Company</label><input style={s.input} value={editEstimateForm.owner_company} onChange={e => setEditEstimateForm(f => ({ ...f, owner_company: e.target.value }))} /></div>
+                              </div>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                <div><label style={s.label}>Email</label><input style={s.input} value={editEstimateForm.owner_email} onChange={e => setEditEstimateForm(f => ({ ...f, owner_email: e.target.value }))} /></div>
+                                <div><label style={s.label}>Phone</label><input style={s.input} value={editEstimateForm.owner_phone} onChange={e => setEditEstimateForm(f => ({ ...f, owner_phone: e.target.value }))} /></div>
+                              </div>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                <div>
+                                  <label style={s.label}>Status</label>
+                                  <select style={s.input} value={editEstimateForm.status} onChange={e => setEditEstimateForm(f => ({ ...f, status: e.target.value }))}>
+                                    <option value="draft">Draft</option>
+                                    <option value="sent">Sent</option>
+                                    <option value="accepted">Accepted</option>
+                                    <option value="declined">Declined</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div style={{ marginBottom: '1.25rem' }}>
+                                <label style={s.label}>Scope / notes</label>
+                                <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={editEstimateForm.notes} onChange={e => setEditEstimateForm(f => ({ ...f, notes: e.target.value }))} />
+                              </div>
+                              <div style={{ marginBottom: '1.25rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                  <label style={s.label}>Schedule of values</label>
+                                  <button type="button" style={s.btnSm('green')} onClick={() => setEditEstimateLines(l => [...l, { description: '', amount: '' }])}>+ Add line</button>
+                                </div>
+                                <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                                    <div>Description</div><div style={{ textAlign: 'right' }}>Amount</div><div></div>
+                                  </div>
+                                  {editEstimateLines.map((line, idx) => (
+                                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderBottom: idx < editEstimateLines.length - 1 ? '1px solid #1a1a1a' : 'none', alignItems: 'center' }}>
+                                      <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
+                                      <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
+                                      <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEditEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                                    </div>
+                                  ))}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#555', textAlign: 'right' }}>Total:</div>
+                                    <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '14px', fontFamily: 'monospace' }}>
+                                      ${editEstimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                    <div></div>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button style={{ ...s.btnSm('orange'), opacity: savingEstimateEdit ? 0.6 : 1 }} disabled={savingEstimateEdit} onClick={saveEstimateEdit}>{savingEstimateEdit ? 'Saving...' : 'Save changes'}</button>
+                                <button style={s.btnSm('gray')} onClick={() => setEditingEstimate(null)}>Cancel</button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
+                                <div><div style={s.detailLabel}>Owner / Contact</div><div style={s.detailValue}>{[est.owner_name, est.owner_company].filter(Boolean).join(' · ') || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{est.address || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{est.owner_email || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{est.owner_phone || '—'}</div></div>
+                              </div>
+                              {est.notes && (
+                                <div style={{ marginBottom: '1rem' }}>
+                                  <div style={s.detailLabel}>Scope / notes</div>
+                                  <div style={{ fontSize: '13px', color: '#888', whiteSpace: 'pre-wrap', marginTop: '4px', lineHeight: 1.6 }}>{est.notes}</div>
+                                </div>
+                              )}
+                              {lines.length > 0 && (
+                                <div style={{ marginBottom: '1.25rem' }}>
+                                  <div style={s.detailLabel}>Schedule of values</div>
+                                  <div style={{ marginTop: '8px', border: '1px solid #1e1e1e', borderRadius: '6px', overflow: 'hidden' }}>
+                                    {lines.map((l, i) => (
+                                      <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 12px', borderBottom: i < lines.length - 1 ? '1px solid #111' : 'none', fontSize: '13px' }}>
+                                        <span style={{ color: '#ccc' }}>{l.description}</span>
+                                        <span style={{ color: '#f1f1f1', fontWeight: '600', fontFamily: 'monospace' }}>${Number(l.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                    ))}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e', fontWeight: '800' }}>
+                                      <span style={{ color: '#888', fontSize: '12px' }}>Total</span>
+                                      <span style={{ color: '#e8590c', fontFamily: 'monospace', fontSize: '15px' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button style={s.btnSm('orange')} onClick={() => generateEstimatePDF(est)}>Export PDF</button>
+                                <button style={s.btnSm('gray')} onClick={() => {
+                                  setEditingEstimate(est.id)
+                                  setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft' })
+                                  setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount) })))
+                                }}>Edit</button>
+                                <button style={s.btnSm('red')} onClick={() => deleteEstimate(est.id)}>Delete</button>
+                              </div>
                             </>
                           )}
                         </div>

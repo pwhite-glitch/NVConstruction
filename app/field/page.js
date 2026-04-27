@@ -27,9 +27,9 @@ const s = {
   empty: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' },
   badge: (st) => ({
     padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: st === 'received' || st === 'complete' || st === 'answered' ? '#0a2a0a' : st === 'delayed' ? '#2a0a0a' : st === 'partial' ? '#2a1a00' : '#1a1200',
-    color: st === 'received' || st === 'complete' || st === 'answered' ? '#4ade80' : st === 'delayed' ? '#ff6b6b' : st === 'partial' ? '#facc15' : '#e8590c',
-    border: `1px solid ${st === 'received' || st === 'complete' || st === 'answered' ? '#1a4a1a' : st === 'delayed' ? '#5a1a1a' : st === 'partial' ? '#4a4a00' : '#4a2200'}`
+    background: st === 'received' || st === 'complete' || st === 'answered' || st === 'approved' ? '#0a2a0a' : st === 'delayed' || st === 'rejected' ? '#2a0a0a' : st === 'partial' ? '#2a1a00' : '#1a1200',
+    color: st === 'received' || st === 'complete' || st === 'answered' || st === 'approved' ? '#4ade80' : st === 'delayed' || st === 'rejected' ? '#ff6b6b' : st === 'partial' ? '#facc15' : '#e8590c',
+    border: `1px solid ${st === 'received' || st === 'complete' || st === 'answered' || st === 'approved' ? '#1a4a1a' : st === 'delayed' || st === 'rejected' ? '#5a1a1a' : st === 'partial' ? '#4a4a00' : '#4a2200'}`
   }),
   tabRow: { display: 'flex', marginBottom: '1.5rem', borderBottom: '1px solid #222', overflowX: 'auto' },
   tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: active ? '#f1f1f1' : '#555', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap' }),
@@ -70,6 +70,13 @@ export default function Field() {
 
   const [subContacts, setSubContacts] = useState([])
 
+  const [directCosts, setDirectCosts] = useState([])
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+  const [dcFile, setDcFile] = useState(null)
+  const [submittingDc, setSubmittingDc] = useState(false)
+  const [dcSuccess, setDcSuccess] = useState(false)
+  const [showDcForm, setShowDcForm] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -93,6 +100,7 @@ export default function Field() {
     else if (activeTab === 'deliveries') loadDeliveries()
     else if (activeTab === 'schedule') loadMilestones()
     else if (activeTab === 'subs') loadSubContacts()
+    else if (activeTab === 'costs') loadDirectCosts()
   }, [selectedJobId, activeTab])
 
   async function loadDailyReports() {
@@ -117,6 +125,43 @@ export default function Field() {
     if (emails.length === 0) { setSubContacts([]); return }
     const { data } = await supabase.from('sub_directory').select('*').in('email', emails)
     setSubContacts(data || [])
+  }
+
+  async function loadDirectCosts() {
+    const { data } = await supabase.from('direct_costs').select('*').eq('job_id', selectedJobId).order('cost_date', { ascending: false })
+    setDirectCosts(data || [])
+  }
+
+  async function submitDirectCost(e) {
+    e.preventDefault()
+    setSubmittingDc(true)
+    let receipt_url = null
+    if (dcFile) {
+      const ext = dcFile.name.split('.').pop()
+      const path = `${selectedJobId}/${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('receipts').upload(path, dcFile)
+      if (!uploadError) receipt_url = path
+    }
+    const { error } = await supabase.from('direct_costs').insert({
+      job_id: selectedJobId, submitted_by: user.id,
+      cost_date: dcForm.cost_date, description: dcForm.description,
+      category: dcForm.category, amount: parseFloat(dcForm.amount),
+      receipt_url, notes: dcForm.notes || null,
+    })
+    if (!error) {
+      setDcSuccess(true)
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+      setDcFile(null)
+      setShowDcForm(false)
+      await loadDirectCosts()
+      setTimeout(() => setDcSuccess(false), 3000)
+    }
+    setSubmittingDc(false)
+  }
+
+  async function openReceiptUrl(path) {
+    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 60)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
   async function submitDailyReport(e) {
@@ -245,6 +290,7 @@ export default function Field() {
                   <button style={s.tab(activeTab === 'deliveries')} onClick={() => setActiveTab('deliveries')}>Deliveries</button>
                   <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
                   <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>Sub Contacts</button>
+                  <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
                 </div>
 
                 {/* ── DAILY REPORTS ── */}
@@ -448,6 +494,80 @@ export default function Field() {
                       </div>
                     </div>
                   ))
+                )}
+
+                {/* ── DIRECT COSTS ── */}
+                {activeTab === 'costs' && (
+                  <>
+                    {dcSuccess && <div style={s.success}>Cost logged successfully.</div>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} · Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
+                      <button style={s.btnSm('orange')} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
+                    </div>
+                    {showDcForm && (
+                      <div style={s.card}>
+                        <h2 style={s.cardTitle}>Log direct cost</h2>
+                        <form onSubmit={submitDirectCost}>
+                          <div style={{ ...s.grid3, marginBottom: '1rem' }}>
+                            <div>
+                              <label style={s.label}>Date *</label>
+                              <input type="date" style={s.input} required value={dcForm.cost_date} onChange={e => setDcForm(f => ({ ...f, cost_date: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label style={s.label}>Category *</label>
+                              <select style={s.input} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
+                                {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={s.label}>Amount ($) *</label>
+                              <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: '1rem' }}>
+                            <label style={s.label}>Description *</label>
+                            <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber for framing, concrete delivery..." />
+                          </div>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                            <div>
+                              <label style={s.label}>Notes</label>
+                              <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+                            </div>
+                            <div>
+                              <label style={s.label}>Receipt (photo / PDF)</label>
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button type="submit" disabled={submittingDc} style={{ ...s.btn, opacity: submittingDc ? 0.6 : 1 }}>{submittingDc ? 'Saving...' : 'Log cost'}</button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                    {directCosts.length === 0 && !showDcForm && <div style={s.empty}>No direct costs logged yet.</div>}
+                    {directCosts.map(c => (
+                      <div key={c.id} style={{ ...s.row, border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{c.description}</span>
+                              <span style={s.badge(c.category.toLowerCase())}>{c.category}</span>
+                              <span style={s.badge(c.status)}>{c.status}</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>
+                              {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()} {c.notes && `· ${c.notes}`}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '15px', fontWeight: '800', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                            {c.receipt_url && (
+                              <button style={s.btnSm('orange')} onClick={() => openReceiptUrl(c.receipt_url)}>View receipt</button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
                 )}
 
                 {/* ── SUB CONTACTS ── */}

@@ -147,6 +147,13 @@ export default function JobDetail() {
   const [editingMilestone, setEditingMilestone] = useState(null)
   const [editMilestoneForm, setEditMilestoneForm] = useState({})
 
+  // Direct Costs tab state
+  const [directCosts, setDirectCosts] = useState([])
+  const [updatingCostId, setUpdatingCostId] = useState(null)
+  const [rejectingCostId, setRejectingCostId] = useState(null)
+  const [costRejectNote, setCostRejectNote] = useState('')
+  const [assigningCostId, setAssigningCostId] = useState(null)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -264,6 +271,48 @@ export default function JobDetail() {
     await loadFieldData()
   }
 
+  async function loadDirectCosts() {
+    const { data } = await supabase.from('direct_costs').select('*').eq('job_id', id).order('cost_date', { ascending: false })
+    setDirectCosts(data || [])
+  }
+
+  async function openDcReceiptUrl(path) {
+    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 60)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function updateCostStatus(costId, status, notes) {
+    setUpdatingCostId(costId)
+    await supabase.from('direct_costs').update({ status, notes: notes || null }).eq('id', costId)
+    setRejectingCostId(null)
+    setCostRejectNote('')
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function assignDcBudgetItem(costId, budgetItemId) {
+    setAssigningCostId(costId)
+    await supabase.from('direct_costs').update({ budget_item_id: budgetItemId || null }).eq('id', costId)
+    await loadDirectCosts()
+    setAssigningCostId(null)
+  }
+
+  function exportDirectCostsCSV() {
+    const rows = [['Date', 'Description', 'Category', 'Amount', 'Budget Line', 'Status', 'Notes']]
+    directCosts.forEach(c => {
+      const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)?.description || ''
+      rows.push([c.cost_date, c.description, c.category, c.amount, budgetLine, c.status, c.notes || ''])
+    })
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `direct-costs-${job.job_number}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems() }
@@ -272,6 +321,7 @@ export default function JobDetail() {
     if (activeTab === 'billing') { loadBillingForJob() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
+    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
   }, [activeTab, id])
 
   // ── Contracts ──────────────────────────────────────────────
@@ -641,6 +691,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </button>
           <button style={s.tab(activeTab === 'field')} onClick={() => setActiveTab('field')}>
             Field{fieldRfis.filter(r => r.status === 'open').length > 0 ? ` (${fieldRfis.filter(r => r.status === 'open').length} RFI)` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>
+            Direct Costs{directCosts.filter(c => c.status === 'pending').length > 0 ? ` (${directCosts.filter(c => c.status === 'pending').length} pending)` : directCosts.length > 0 ? ` (${directCosts.length})` : ''}
           </button>
         </div>
 
@@ -1544,6 +1597,110 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 ))}
               </>
             )}
+          </>
+        )}
+
+        {/* ── DIRECT COSTS TAB ── */}
+        {activeTab === 'costs' && (
+          <>
+            {(() => {
+              const totalCosts = directCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+              const approvedTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+              const pendingCount = directCosts.filter(c => c.status === 'pending').length
+              return (
+                <div style={s.statRow}>
+                  <div style={s.statCard}><div style={s.statLabel}>Total submitted</div><div style={s.statValue()}>${totalCosts.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Approved</div><div style={s.statValue('#4ade80')}>${approvedTotal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
+                </div>
+              )
+            })()}
+
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
+                {directCosts.length > 0 && (
+                  <button style={s.btnSmall} onClick={exportDirectCostsCSV}>Export CSV</button>
+                )}
+              </div>
+
+              {directCosts.length === 0 && (
+                <p style={{ color: '#444', fontSize: '14px' }}>No direct costs logged yet. Superintendents can log costs from the field portal.</p>
+              )}
+
+              {directCosts.map(c => {
+                const isRejecting = rejectingCostId === c.id
+                const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
+                return (
+                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
+                    <div style={s.billingEntryHeader}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{c.description}</span>
+                          <span style={s.coBadge('pending')}>{c.category}</span>
+                          <span style={s.coBadge(c.status)}>{c.status}</span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#555' }}>
+                          {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
+                          {budgetLine && ` · ${budgetLine.description}`}
+                          {c.notes && ` · ${c.notes}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                        {c.receipt_url && (
+                          <button style={s.btnSmall} onClick={() => openDcReceiptUrl(c.receipt_url)}>View receipt</button>
+                        )}
+                        {c.status === 'pending' && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              style={{ ...s.btnSmallGreen, opacity: updatingCostId === c.id ? 0.6 : 1 }}
+                              disabled={updatingCostId === c.id}
+                              onClick={() => updateCostStatus(c.id, 'approved', c.notes)}>
+                              Approve
+                            </button>
+                            <button
+                              style={s.btnSmallRed}
+                              onClick={() => { setRejectingCostId(isRejecting ? null : c.id); setCostRejectNote('') }}>
+                              {isRejecting ? 'Cancel' : 'Reject'}
+                            </button>
+                          </div>
+                        )}
+                        {c.status === 'approved' && (
+                          <button style={s.btnSmallRed} onClick={() => updateCostStatus(c.id, 'rejected', c.notes)}>Undo approve</button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isRejecting && (
+                      <div style={{ ...s.billingEntryExpanded }}>
+                        <label style={s.label}>Rejection note (optional)</label>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                          <input style={s.input} value={costRejectNote} onChange={e => setCostRejectNote(e.target.value)} placeholder="Reason for rejection..." />
+                          <button style={{ ...s.btnSmallRed, whiteSpace: 'nowrap', opacity: updatingCostId === c.id ? 0.6 : 1 }} disabled={updatingCostId === c.id} onClick={() => updateCostStatus(c.id, 'rejected', costRejectNote)}>
+                            {updatingCostId === c.id ? '...' : 'Confirm reject'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap' }}>Budget line</label>
+                      <select
+                        style={{ ...s.input, flex: 1, opacity: assigningCostId === c.id ? 0.6 : 1 }}
+                        disabled={assigningCostId === c.id}
+                        value={c.budget_item_id || ''}
+                        onChange={e => assignDcBudgetItem(c.id, e.target.value)}>
+                        <option value="">— Unassigned —</option>
+                        {budgetItems.map(b => (
+                          <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </>
         )}
 

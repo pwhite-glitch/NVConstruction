@@ -74,7 +74,7 @@ const s = {
   billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
 }
 
-const emptyContract = { sub_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
+const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '' }
 const emptyCreateBilling = { sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', auto_approve: true }
@@ -197,10 +197,11 @@ export default function JobDetail() {
     const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
     if (!summary) { setContracts([]); return [] }
     // Fetch budget_item_id from the base table — the view may predate this column
-    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id').eq('job_id', id)
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, vendor_name').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
       budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
+      vendor_name: raw?.find(r => r.id === c.id)?.vendor_name ?? null,
     }))
     setContracts(merged)
     return merged
@@ -525,7 +526,7 @@ ${sovLines.length > 0 ? `
 
   useEffect(() => {
     if (!id) return
-    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems() }
+    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs() }
     if (activeTab === 'billing') { loadBillingForJob() }
@@ -543,12 +544,15 @@ ${sovLines.length > 0 ? `
 
   // ── Contracts ──────────────────────────────────────────────
   async function addContract() {
-    if (!contractForm.sub_id || !contractForm.contract_value) return
+    if (!contractForm.dir_id || !contractForm.contract_value) return
     setAddingContract(true)
     const { data: { session } } = await supabase.auth.getSession()
+    const dirEntry = subDirectory.find(d => d.id === contractForm.dir_id)
+    const matchedSub = subs.find(s => s.sub_email?.toLowerCase() === dirEntry?.email?.toLowerCase() && s.sub_id)
     const { error } = await supabase.from('subcontracts').insert({
       job_id: id,
-      sub_id: contractForm.sub_id,
+      sub_id: matchedSub?.sub_id || null,
+      vendor_name: dirEntry?.company_name || '',
       contract_value: parseFloat(contractForm.contract_value),
       description: contractForm.description || null,
       onedrive_url: contractForm.onedrive_url || null,
@@ -776,7 +780,7 @@ ${sovLines.length > 0 ? `
   function exportContractsPDF() {
     const w = window.open('', '_blank')
     const date = new Date().toLocaleDateString()
-    const rows = contracts.map(c => ({ c, subName: registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown' }))
+    const rows = contracts.map(c => ({ c, subName: c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown' }))
     w.document.write(`<!DOCTYPE html><html><head>
 <title>Subcontract Summary — Job #${job.job_number}</title>
 <style>* { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1248,9 +1252,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ ...s.grid2, marginBottom: '12px' }}>
                     <div>
                       <label style={s.label}>Subcontractor</label>
-                      <select style={s.input} value={contractForm.sub_id} onChange={e => setContractForm(f => ({ ...f, sub_id: e.target.value }))}>
+                      <select style={s.input} value={contractForm.dir_id} onChange={e => setContractForm(f => ({ ...f, dir_id: e.target.value }))}>
                         <option value="">Select a sub...</option>
-                        {registeredSubs.map(a => <option key={a.sub_id} value={a.sub_id}>{a.profiles?.company_name || a.sub_email}</option>)}
+                        {subDirectory.map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
                       </select>
                     </div>
                     <div>
@@ -1287,7 +1291,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {contracts.length === 0 && !showAddContract && <p style={{ color: '#444', fontSize: '14px' }}>No subcontracts yet.</p>}
 
               {contracts.map(c => {
-                const subName = registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown sub'
+                const subName = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown sub'
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const isEditing = editingContract === c.id
 
@@ -1395,7 +1399,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <select style={s.input} value={coForm.subcontract_id} onChange={e => setCoForm(f => ({ ...f, subcontract_id: e.target.value }))}>
                       <option value="">Select subcontract...</option>
                       {contracts.map(c => {
-                        const subName = registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'
+                        const subName = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'
                         return <option key={c.id} value={c.id}>{subName}{c.description ? ` — ${c.description}` : ''}</option>
                       })}
                     </select>
@@ -1428,7 +1432,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {allCOs.map(co => {
                 const subId = co.subcontracts?.sub_id
-                const subName = registeredSubs.find(s => s.sub_id === subId)?.profiles?.company_name || 'Unknown sub'
+                const matchedContract = contracts.find(c => c.id === co.subcontract_id)
+                const subName = matchedContract?.vendor_name || registeredSubs.find(s => s.sub_id === subId)?.profiles?.company_name || 'Unknown sub'
                 const scope = co.subcontracts?.description
                 return (
                   <div key={co.id} style={s.coRow}>

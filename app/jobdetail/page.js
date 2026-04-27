@@ -153,6 +153,10 @@ export default function JobDetail() {
   const [rejectingCostId, setRejectingCostId] = useState(null)
   const [costRejectNote, setCostRejectNote] = useState('')
   const [assigningCostId, setAssigningCostId] = useState(null)
+  const [showDcForm, setShowDcForm] = useState(false)
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+  const [dcFile, setDcFile] = useState(null)
+  const [submittingDc, setSubmittingDc] = useState(false)
 
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -279,6 +283,31 @@ export default function JobDetail() {
   async function openDcReceiptUrl(path) {
     const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 60)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function submitDirectCostPM(e) {
+    e.preventDefault()
+    setSubmittingDc(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    let receipt_url = null
+    if (dcFile) {
+      const ext = dcFile.name.split('.').pop()
+      const path = `${id}/${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('receipts').upload(path, dcFile)
+      if (!uploadError) receipt_url = path
+    }
+    await supabase.from('direct_costs').insert({
+      job_id: id, submitted_by: session.user.id,
+      cost_date: dcForm.cost_date, description: dcForm.description,
+      category: dcForm.category, amount: parseFloat(dcForm.amount),
+      receipt_url, notes: dcForm.notes || null,
+      status: 'approved',
+    })
+    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+    setDcFile(null)
+    setShowDcForm(false)
+    await loadDirectCosts()
+    setSubmittingDc(false)
   }
 
   async function updateCostStatus(costId, status, notes) {
@@ -1619,10 +1648,53 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
-                {directCosts.length > 0 && (
-                  <button style={s.btnSmall} onClick={exportDirectCostsCSV}>Export CSV</button>
-                )}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {directCosts.length > 0 && <button style={s.btnSmall} onClick={exportDirectCostsCSV}>Export CSV</button>}
+                  <button style={s.btnSmallOrange} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
+                </div>
               </div>
+
+              {showDcForm && (
+                <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Log direct cost</p>
+                  <form onSubmit={submitDirectCostPM}>
+                    <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div>
+                        <label style={s.label}>Date *</label>
+                        <input type="date" style={s.input} required value={dcForm.cost_date} onChange={e => setDcForm(f => ({ ...f, cost_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Category *</label>
+                        <select style={s.input} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
+                          {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={s.label}>Amount ($) *</label>
+                        <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                      </div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div>
+                        <label style={s.label}>Description *</label>
+                        <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
+                      </div>
+                      <div>
+                        <label style={s.label}>Notes</label>
+                        <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <label style={s.label}>Receipt (photo / PDF)</label>
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="submit" disabled={submittingDc} style={{ ...s.btn, opacity: submittingDc ? 0.6 : 1 }}>{submittingDc ? 'Saving...' : 'Save & approve'}</button>
+                      <button type="button" style={s.btnGray} onClick={() => setShowDcForm(false)}>Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               {directCosts.length === 0 && (
                 <p style={{ color: '#444', fontSize: '14px' }}>No direct costs logged yet. Superintendents can log costs from the field portal.</p>

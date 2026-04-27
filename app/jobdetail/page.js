@@ -67,8 +67,8 @@ const s = {
   contractRowHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' },
   contractRowExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
   coRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
-  budgetTableHeader: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e', marginBottom: '4px', alignItems: 'center' },
-  budgetTableRow: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '14px 12px', borderBottom: '1px solid #111', alignItems: 'center' },
+  budgetTableHeader: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e', marginBottom: '4px', alignItems: 'center' },
+  budgetTableRow: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '14px 12px', borderBottom: '1px solid #111', alignItems: 'center' },
   billingEntryRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
   billingEntryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' },
   billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
@@ -76,7 +76,7 @@ const s = {
 
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
-const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '' }
+const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
 const emptyCreateBilling = { sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', auto_approve: true }
 
 export default function JobDetail() {
@@ -538,7 +538,7 @@ ${sovLines.length > 0 ? `
 
   useEffect(() => {
     if (activeTab === 'prime' && budgetItems.length > 0) {
-      setAiaSov(budgetItems.map(b => ({ id: b.id, cost_code: b.cost_code, description: b.description, budget_amount: b.budget_amount, pct_prev: '0', pct_this: '0' })))
+      setAiaSov(budgetItems.map(b => ({ id: b.id, cost_code: b.cost_code, description: b.description, budget_amount: b.owner_amount ?? b.budget_amount, pct_prev: '0', pct_this: '0' })))
     }
   }, [activeTab, budgetItems])
 
@@ -619,6 +619,7 @@ ${sovLines.length > 0 ? `
       cost_code: budgetItemForm.cost_code || null,
       description: budgetItemForm.description,
       budget_amount: parseFloat(budgetItemForm.budget_amount),
+      owner_amount: budgetItemForm.owner_amount ? parseFloat(budgetItemForm.owner_amount) : null,
     })
     await loadBudgetItems()
     setShowAddBudgetItem(false)
@@ -632,6 +633,7 @@ ${sovLines.length > 0 ? `
       cost_code: editBudgetForm.cost_code || null,
       description: editBudgetForm.description,
       budget_amount: parseFloat(editBudgetForm.budget_amount),
+      owner_amount: editBudgetForm.owner_amount ? parseFloat(editBudgetForm.owner_amount) : null,
     }).eq('id', editingBudgetItem)
     setEditingBudgetItem(null)
     await loadBudgetItems()
@@ -849,6 +851,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const totalCOs = contracts.reduce((a, c) => a + Number(c.approved_change_orders || 0), 0)
   const totalRevised = contracts.reduce((a, c) => a + Number(c.adjusted_contract_value || 0), 0)
   const totalBudget = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
+  const totalOwnerSOV = budgetItems.reduce((a, b) => a + Number(b.owner_amount ?? b.budget_amount ?? 0), 0)
+  const totalMarkup = totalOwnerSOV - totalBudget
   const totalCommitted = budgetItems.reduce((a, b) => a + committedForItem(b.id), 0)
   const totalUncommitted = totalBudget - totalCommitted
   const registeredSubs = subs.filter(s => s.sub_id)
@@ -1120,16 +1124,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'budget' && (
           <>
             <div style={s.statRow}>
-              <div style={s.statCard}><div style={s.statLabel}>Total budget</div><div style={s.statValue()}>${totalBudget.toLocaleString()}</div></div>
               <div style={s.statCard}>
-                <div style={s.statLabel}>Committed</div>
-                <div style={s.statValue('#e8590c')}>${totalCommitted.toLocaleString()}</div>
-                {totalBudget > 0 && <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{((totalCommitted / totalBudget) * 100).toFixed(1)}% of budget</div>}
+                <div style={s.statLabel}>Internal budget</div>
+                <div style={s.statValue()}>${totalBudget.toLocaleString()}</div>
+                <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>Your actual cost target</div>
               </div>
               <div style={s.statCard}>
-                <div style={s.statLabel}>Uncommitted</div>
-                <div style={s.statValue(totalUncommitted < 0 ? '#ff6b6b' : '#4ade80')}>{totalUncommitted < 0 ? '-' : ''}${Math.abs(totalUncommitted).toLocaleString()}</div>
-                {totalUncommitted < 0 && <div style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px' }}>Over budget</div>}
+                <div style={s.statLabel}>Owner SOV total</div>
+                <div style={s.statValue('#60a5fa')}>${totalOwnerSOV.toLocaleString()}</div>
+                <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>What owner sees on AIA</div>
+              </div>
+              <div style={s.statCard}>
+                <div style={s.statLabel}>Gross profit</div>
+                <div style={s.statValue(totalMarkup > 0 ? '#4ade80' : '#555')}>{totalMarkup > 0 ? '+' : ''}${totalMarkup.toLocaleString()}</div>
+                {totalBudget > 0 && totalMarkup > 0 && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>{((totalMarkup / totalBudget) * 100).toFixed(1)}% margin</div>}
               </div>
             </div>
 
@@ -1151,11 +1159,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {showAddBudgetItem && (
                 <form onSubmit={saveBudgetItem} style={s.inlineForm}>
-                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: '12px', marginBottom: '8px' }}>
                     <div><label style={s.label}>Cost code</label><input style={s.input} value={budgetItemForm.cost_code} onChange={e => setBudgetItemForm(f => ({ ...f, cost_code: e.target.value }))} placeholder="03-000" /></div>
-                    <div><label style={s.label}>Description</label><input style={s.input} value={budgetItemForm.description} onChange={e => setBudgetItemForm(f => ({ ...f, description: e.target.value }))} required placeholder="Concrete" /></div>
-                    <div><label style={s.label}>Budget amount</label><input type="number" step="0.01" style={s.input} value={budgetItemForm.budget_amount} onChange={e => setBudgetItemForm(f => ({ ...f, budget_amount: e.target.value }))} required placeholder="0.00" /></div>
+                    <div><label style={s.label}>Description *</label><input style={s.input} value={budgetItemForm.description} onChange={e => setBudgetItemForm(f => ({ ...f, description: e.target.value }))} required placeholder="Concrete" /></div>
+                    <div><label style={s.label}>Internal budget *</label><input type="number" step="0.01" style={s.input} value={budgetItemForm.budget_amount} onChange={e => setBudgetItemForm(f => ({ ...f, budget_amount: e.target.value }))} required placeholder="0.00" /></div>
+                    <div><label style={s.label}>Owner SOV amount</label><input type="number" step="0.01" style={s.input} value={budgetItemForm.owner_amount} onChange={e => setBudgetItemForm(f => ({ ...f, owner_amount: e.target.value }))} placeholder="Leave blank = same as budget" /></div>
                   </div>
+                  <p style={{ fontSize: '11px', color: '#444', margin: '0 0 10px' }}>Owner SOV is what appears on the AIA G702/G703. Leave blank to match internal budget.</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="submit" style={{ ...s.btnSmallOrange, opacity: addingBudgetItem ? 0.6 : 1 }} disabled={addingBudgetItem}>{addingBudgetItem ? 'Saving...' : 'Save line'}</button>
                     <button type="button" style={s.btnSmall} onClick={() => setShowAddBudgetItem(false)}>Cancel</button>
@@ -1166,10 +1176,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {editingBudgetItem && (
                 <form onSubmit={updateBudgetItem} style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Edit budget line</p>
-                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div><label style={s.label}>Cost code</label><input style={s.input} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} placeholder="03-000" /></div>
                     <div><label style={s.label}>Description</label><input style={s.input} value={editBudgetForm.description || ''} onChange={e => setEditBudgetForm(f => ({ ...f, description: e.target.value }))} required /></div>
-                    <div><label style={s.label}>Budget amount</label><input type="number" step="0.01" style={s.input} value={editBudgetForm.budget_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} required /></div>
+                    <div><label style={s.label}>Internal budget</label><input type="number" step="0.01" style={s.input} value={editBudgetForm.budget_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} required /></div>
+                    <div><label style={s.label}>Owner SOV amount</label><input type="number" step="0.01" style={s.input} value={editBudgetForm.owner_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, owner_amount: e.target.value }))} placeholder="Blank = same as budget" /></div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="submit" style={s.btnSmallOrange}>Save changes</button>
@@ -1186,7 +1197,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <>
                   <div style={s.budgetTableHeader}>
                     <span>Description</span>
-                    <span style={{ textAlign: 'right' }}>Budget</span>
+                    <span style={{ textAlign: 'right' }}>Internal</span>
+                    <span style={{ textAlign: 'right' }}>Owner SOV</span>
                     <span style={{ textAlign: 'right' }}>Committed</span>
                     <span style={{ textAlign: 'right' }}>Uncommitted</span>
                     <span style={{ textAlign: 'right' }}>% Used</span>
@@ -1197,6 +1209,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const uncommitted = Number(item.budget_amount) - committed
                     const pct = Number(item.budget_amount) > 0 ? Math.min(110, (committed / Number(item.budget_amount)) * 100) : 0
                     const over = uncommitted < 0
+                    const ownerAmt = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
+                    const markup = ownerAmt - Number(item.budget_amount)
                     return (
                       <div key={item.id} style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1 }}>
                         <div>
@@ -1209,11 +1223,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         </div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: '#f1f1f1', fontWeight: '600' }}>${Number(item.budget_amount).toLocaleString()}</div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '14px', color: '#60a5fa', fontWeight: '600' }}>${ownerAmt.toLocaleString()}</div>
+                          {markup !== 0 && <div style={{ fontSize: '11px', color: markup > 0 ? '#4ade80' : '#ff6b6b', marginTop: '2px' }}>{markup > 0 ? '+' : ''}{((markup / Number(item.budget_amount)) * 100).toFixed(1)}%</div>}
+                        </div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: committed > 0 ? '#e8590c' : '#444', fontWeight: '600' }}>${committed.toLocaleString()}</div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: over ? '#ff6b6b' : '#4ade80', fontWeight: '600' }}>{over ? '-' : ''}${Math.abs(uncommitted).toLocaleString()}</div>
                         <div style={{ textAlign: 'right', fontSize: '13px', color: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</div>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                          <button style={s.btnSmall} onClick={() => { setEditingBudgetItem(item.id); setEditBudgetForm({ cost_code: item.cost_code || '', description: item.description, budget_amount: item.budget_amount }); setShowAddBudgetItem(false) }}>Edit</button>
+                          <button style={s.btnSmall} onClick={() => { setEditingBudgetItem(item.id); setEditBudgetForm({ cost_code: item.cost_code || '', description: item.description, budget_amount: item.budget_amount, owner_amount: item.owner_amount || '' }); setShowAddBudgetItem(false) }}>Edit</button>
                           <button style={s.btnSmallRed} onClick={() => deleteBudgetItem(item.id)}>Del</button>
                         </div>
                       </div>

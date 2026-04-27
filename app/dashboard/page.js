@@ -145,16 +145,13 @@ export default function Dashboard() {
 
   async function addJob(e) {
     e.preventDefault()
-    const { error } = await supabase.from('jobs').insert({
+    const { data, error } = await supabase.from('jobs').insert({
       job_number: newJob.job_number, project_name: newJob.project_name,
       location: newJob.location || null, contract_value: newJob.contract_value ? parseFloat(newJob.contract_value) : null,
       start_date: newJob.start_date || null, status: newJob.status,
-    })
+    }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
-    setJobMsg('Job added successfully.')
-    setNewJob({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active' })
-    await loadAll()
-    setTimeout(() => setJobMsg(''), 3000)
+    router.push(`/jobdetail?id=${data.id}&tab=budget`)
   }
 
   async function inviteSub(e) {

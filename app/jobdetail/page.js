@@ -160,9 +160,16 @@ export default function JobDetail() {
   }, [id, router])
 
   async function loadContracts() {
-    const { data } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
-    setContracts(data || [])
-    return data || []
+    const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
+    if (!summary) { setContracts([]); return [] }
+    // Fetch budget_item_id from the base table — the view may predate this column
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id').eq('job_id', id)
+    const merged = summary.map(c => ({
+      ...c,
+      budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
+    }))
+    setContracts(merged)
+    return merged
   }
 
   async function loadBudgetItems() {
@@ -224,12 +231,13 @@ export default function JobDetail() {
   }
 
   async function updateContract() {
-    await supabase.from('subcontracts').update({
+    const { error } = await supabase.from('subcontracts').update({
       contract_value: parseFloat(editContractForm.contract_value),
       description: editContractForm.description || null,
       onedrive_url: editContractForm.onedrive_url || null,
       budget_item_id: editContractForm.budget_item_id || null,
     }).eq('id', editingContract)
+    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
     setEditingContract(null)
     await loadContracts()
   }

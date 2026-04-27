@@ -77,7 +77,7 @@ const s = {
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', auto_approve: true }
+const emptyCreateBilling = { sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
 
 export default function JobDetail() {
   const router = useRouter()
@@ -161,8 +161,14 @@ export default function JobDetail() {
   // Prime Contract tab state
   const [primeContractFile, setPrimeContractFile] = useState(null)
   const [uploadingPrimeContract, setUploadingPrimeContract] = useState(false)
-  const [aiaForm, setAiaForm] = useState({ app_number: '1', period_to: new Date().toISOString().split('T')[0], retainage_pct: '10' })
-  const [aiaSov, setAiaSov] = useState([])
+  const [aiaApplications, setAiaApplications] = useState([])
+  const [activeAia, setActiveAia] = useState(null)
+  const [aiaLines, setAiaLines] = useState([])
+  const [showNewAia, setShowNewAia] = useState(false)
+  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10' })
+  const [savingAia, setSavingAia] = useState(false)
+  const [aiaLoading, setAiaLoading] = useState(false)
+  const [periodBilling, setPeriodBilling] = useState([])
 
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -368,18 +374,113 @@ export default function JobDetail() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
-  function generateAIA() {
+  async function loadAiaApplications() {
+    const { data } = await supabase.from('aia_applications').select('*').eq('job_id', id).order('app_number', { ascending: false })
+    setAiaApplications(data || [])
+    return data || []
+  }
+
+  async function openAiaApp(app) {
+    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); return }
+    setAiaLoading(true)
+    setActiveAia(app)
+    const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
+    const [{ data: lines }, { data: bills }] = await Promise.all([
+      supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
+      monthPrefix
+        ? supabase.from('billing_submissions').select('company_name, amount_billed').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
+        : Promise.resolve({ data: [] }),
+    ])
+    const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
+    setAiaLines(budgetItems.map(b => ({
+      budget_item_id: b.id,
+      cost_code: b.cost_code,
+      description: b.description,
+      budget_amount: b.owner_amount ?? b.budget_amount,
+      pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
+      pct_this: String(lineMap[b.id]?.pct_this_period ?? 0),
+    })))
+    setPeriodBilling(bills || [])
+    setAiaLoading(false)
+  }
+
+  async function createAiaApplication() {
+    if (!newAiaForm.period_to) return
+    setSavingAia(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const prevApp = aiaApplications[0]
+    let prevLines = []
+    if (prevApp) {
+      const { data: pl } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
+      prevLines = pl || []
+    }
+    const [year, month] = newAiaForm.period_to.split('-').map(Number)
+    const periodTo = new Date(year, month, 0).toISOString().split('T')[0]
+    const { data: newApp, error } = await supabase.from('aia_applications').insert({
+      job_id: id,
+      app_number: parseInt(newAiaForm.app_number) || (aiaApplications.length + 1),
+      period_to: periodTo,
+      retainage_pct: parseFloat(newAiaForm.retainage_pct) || 10,
+      created_by: session.user.id,
+    }).select().single()
+    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setSavingAia(false); return }
+    if (budgetItems.length > 0) {
+      const lineInserts = budgetItems.map(b => {
+        const prevLine = prevLines.find(l => l.budget_item_id === b.id)
+        return {
+          application_id: newApp.id,
+          budget_item_id: b.id,
+          pct_prev: prevLine ? Math.min(100, parseFloat(prevLine.pct_prev || 0) + parseFloat(prevLine.pct_this_period || 0)) : 0,
+          pct_this_period: 0,
+        }
+      })
+      await supabase.from('aia_application_lines').insert(lineInserts)
+    }
+    const updatedApps = await loadAiaApplications()
+    setShowNewAia(false)
+    const created = updatedApps.find(a => a.id === newApp.id) || newApp
+    await openAiaApp(created)
+    setSavingAia(false)
+  }
+
+  async function saveAiaLines() {
+    if (!activeAia) return
+    setSavingAia(true)
+    await supabase.from('aia_applications').update({
+      retainage_pct: parseFloat(activeAia.retainage_pct),
+      status: activeAia.status || 'draft',
+      updated_at: new Date().toISOString(),
+    }).eq('id', activeAia.id)
+    for (const line of aiaLines) {
+      await supabase.from('aia_application_lines').update({
+        pct_this_period: parseFloat(line.pct_this) || 0,
+      }).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
+    }
+    await loadAiaApplications()
+    setSavingAia(false)
+  }
+
+  async function deleteAiaApplication(appId) {
+    if (!window.confirm('Delete this AIA application?')) return
+    await supabase.from('aia_applications').delete().eq('id', appId)
+    if (activeAia?.id === appId) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]) }
+    await loadAiaApplications()
+  }
+
+  function generateAIAFromApp() {
+    if (!activeAia) return
+    const app = activeAia
     const w = window.open('', '_blank')
-    const retPct = Math.max(0, Math.min(100, parseFloat(aiaForm.retainage_pct) || 10)) / 100
+    const retPct = Math.max(0, Math.min(100, parseFloat(app.retainage_pct) || 10)) / 100
     const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const origContract = Number(job.contract_value || 0)
     const contractSumToDate = origContract + approvedCOsVal
-    const periodDate = aiaForm.period_to ? new Date(aiaForm.period_to + 'T12:00:00').toLocaleDateString() : '—'
+    const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
     const genDate = new Date().toLocaleDateString()
     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
 
-    const sovLines = aiaSov.map((line, idx) => {
+    const sovLines = aiaLines.map((line, idx) => {
       const scheduled = Number(line.budget_amount || 0)
       const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
       const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
@@ -401,7 +502,7 @@ export default function JobDetail() {
     const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
 
     w.document.write(`<!DOCTYPE html><html><head>
-<title>AIA G702/G703 — App #${aiaForm.app_number} — Job #${job.job_number}</title>
+<title>AIA G702/G703 — App #${app.app_number} — Job #${job.job_number}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 24px; line-height: 1.5; }
@@ -434,7 +535,7 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
 <button class="btn" style="background:#666" onclick="window.close()">Close</button>
 
 <h1>Application and Certificate for Payment</h1>
-<div class="sub">AIA Document G702 &nbsp;·&nbsp; Application No. ${aiaForm.app_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+<div class="sub">AIA Document G702 &nbsp;·&nbsp; Application No. ${app.app_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
 
 <div class="hgrid">
   <div>
@@ -468,7 +569,7 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
   <tr><td>2.</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
   <tr><td>3.</td><td>Contract Sum to Date (Line 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
   <tr><td>4.</td><td>Total Completed &amp; Stored to Date (column G, G703)</td><td>${fmt(totalCompleted)}</td></tr>
-  <tr><td>5.</td><td>Retainage: ${aiaForm.retainage_pct}% of Completed Work</td><td>(${fmt(totalRetainage)})</td></tr>
+  <tr><td>5.</td><td>Retainage: ${app.retainage_pct}% of Completed Work</td><td>(${fmt(totalRetainage)})</td></tr>
   <tr><td>6.</td><td>Total Earned Less Retainage (Line 4 less 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
   <tr><td>7.</td><td>Less Previous Certificates for Payment</td><td>(${fmt(prevCertificates)})</td></tr>
   <tr class="due"><td>8.</td><td>CURRENT PAYMENT DUE</td><td>${fmtSigned(currentPaymentDue)}</td></tr>
@@ -478,7 +579,7 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
 ${sovLines.length > 0 ? `
 <div class="page-break">
 <h1>Continuation Sheet</h1>
-<div class="sub">AIA Document G703 &nbsp;·&nbsp; Application No. ${aiaForm.app_number} &nbsp;·&nbsp; ${job.project_name} &nbsp;·&nbsp; Contract No. ${job.job_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+<div class="sub">AIA Document G703 &nbsp;·&nbsp; Application No. ${app.app_number} &nbsp;·&nbsp; ${job.project_name} &nbsp;·&nbsp; Contract No. ${job.job_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
 <table class="g703">
   <thead><tr>
     <th style="width:28px">A<br>No.</th>
@@ -533,14 +634,9 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
-    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadAiaApplications() }
   }, [activeTab, id])
 
-  useEffect(() => {
-    if (activeTab === 'prime' && budgetItems.length > 0) {
-      setAiaSov(budgetItems.map(b => ({ id: b.id, cost_code: b.cost_code, description: b.description, budget_amount: b.owner_amount ?? b.budget_amount, pct_prev: '0', pct_this: '0' })))
-    }
-  }, [activeTab, budgetItems])
 
   // ── Contracts ──────────────────────────────────────────────
   async function addContract() {
@@ -713,6 +809,7 @@ ${sovLines.length > 0 ? `
       amount_billed: parseFloat(createBillingForm.amount_billed),
       pct_complete: createBillingForm.pct_complete ? parseFloat(createBillingForm.pct_complete) : null,
       work_description: createBillingForm.work_description || null,
+      billing_period: createBillingForm.billing_period ? createBillingForm.billing_period + '-01' : null,
       status,
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
@@ -735,6 +832,7 @@ ${sovLines.length > 0 ? `
       amount_billed: parseFloat(editBillingForm.amount_billed),
       pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
       work_description: editBillingForm.work_description || null,
+      billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
     }).eq('id', editingBilling)
@@ -1550,9 +1648,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" min="0" max="100" style={s.input} value={createBillingForm.pct_complete} onChange={e => setCreateBillingForm(f => ({ ...f, pct_complete: e.target.value }))} placeholder="0" />
                     </div>
                   </div>
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={s.label}>Work description</label>
-                    <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
+                  <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                    <div>
+                      <label style={s.label}>Work description</label>
+                      <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
+                    </div>
+                    <div>
+                      <label style={s.label}>Billing period</label>
+                      <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
+                      <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                    </div>
                   </div>
                   <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <input type="checkbox" id="autoApprove" checked={createBillingForm.auto_approve} onChange={e => setCreateBillingForm(f => ({ ...f, auto_approve: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#e8590c' }} />
@@ -1586,6 +1691,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(b.submitted_at).toLocaleDateString()}
+                          {b.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
                           {b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
                           {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
                         </div>
@@ -1602,6 +1708,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               amount_billed: b.amount_billed || '',
                               pct_complete: b.pct_complete ?? '',
                               work_description: b.work_description || '',
+                              billing_period: b.billing_period ? b.billing_period.slice(0, 7) : '',
                               status: b.status,
                             })
                           }}>
@@ -1639,9 +1746,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} />
                           </div>
                         </div>
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={s.label}>Work description</label>
-                          <textarea style={{ ...s.textarea, minHeight: '80px' }} value={editBillingForm.work_description} onChange={e => setEditBillingForm(f => ({ ...f, work_description: e.target.value }))} />
+                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                          <div>
+                            <label style={s.label}>Work description</label>
+                            <textarea style={{ ...s.textarea, minHeight: '80px' }} value={editBillingForm.work_description} onChange={e => setEditBillingForm(f => ({ ...f, work_description: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Billing period</label>
+                            <input type="month" style={s.input} value={editBillingForm.billing_period || ''} onChange={e => setEditBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
+                          </div>
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Status</label>
@@ -2013,110 +2126,202 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
 
             <div style={s.card}>
-              <p style={s.cardTitle}>AIA G702 / G703 — Application for payment</p>
-              <p style={{ fontSize: '12px', color: '#555', margin: '-0.5rem 0 1.25rem' }}>
-                Enter % complete per line item below. All financial calculations are automatic.
-              </p>
-
-              <div style={{ ...s.grid3, marginBottom: '1.25rem' }}>
-                <div>
-                  <label style={s.label}>Application No.</label>
-                  <input type="number" min="1" style={s.input} value={aiaForm.app_number} onChange={e => setAiaForm(f => ({ ...f, app_number: e.target.value }))} />
-                </div>
-                <div>
-                  <label style={s.label}>Period to</label>
-                  <input type="date" style={s.input} value={aiaForm.period_to} onChange={e => setAiaForm(f => ({ ...f, period_to: e.target.value }))} />
-                </div>
-                <div>
-                  <label style={s.label}>Retainage %</label>
-                  <input type="number" min="0" max="100" step="0.5" style={s.input} value={aiaForm.retainage_pct} onChange={e => setAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} />
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>AIA Applications ({aiaApplications.length})</p>
+                {!showNewAia && (
+                  <button style={s.btnSmallOrange} onClick={() => {
+                    setShowNewAia(true)
+                    setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10' })
+                  }}>+ New application</button>
+                )}
               </div>
 
-              {aiaSov.length === 0 ? (
-                <p style={{ color: '#444', fontSize: '13px' }}>
-                  No budget line items found. Add budget items in the Budget tab — they become the G703 schedule of values.
-                </p>
-              ) : (
-                <>
-                  <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
-                          <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
-                          <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled Value</th>
-                          <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
-                          <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% This Period</th>
-                          <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total Completed</th>
-                          <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {aiaSov.map((line, i) => {
-                          const scheduled = Number(line.budget_amount || 0)
-                          const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
-                          const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
-                          const total = prevAmt + thisAmt
-                          const balance = scheduled - total
-                          return (
-                            <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
-                              <td style={{ padding: '10px', color: '#ccc' }}>
-                                {line.cost_code && <span style={{ fontSize: '10px', color: '#555', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
-                                {line.description}
-                              </td>
-                              <td style={{ padding: '10px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(scheduled).toLocaleString()}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
-                                  value={line.pct_prev}
-                                  onChange={e => setAiaSov(v => v.map((l, idx) => idx === i ? { ...l, pct_prev: e.target.value } : l))} />
-                              </td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
-                                  value={line.pct_this}
-                                  onChange={e => setAiaSov(v => v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l))} />
-                              </td>
-                              <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+              {showNewAia && (
+                <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 100px', gap: '12px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>App #</label>
+                      <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Billing period</label>
+                      <input type="month" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Retainage %</label>
+                      <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                    </div>
                   </div>
+                  {aiaApplications.length > 0 && (
+                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 12px' }}>
+                      % complete from App #{aiaApplications[0].app_number} will auto-carry forward as "Previous" on this application.
+                    </p>
+                  )}
+                  {budgetItems.length === 0 && (
+                    <p style={{ fontSize: '12px', color: '#e8590c', margin: '0 0 12px' }}>Add budget line items in the Budget tab first — they become the G703 schedule of values.</p>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={{ ...s.btn, opacity: (savingAia || !newAiaForm.period_to || budgetItems.length === 0) ? 0.6 : 1 }}
+                      disabled={savingAia || !newAiaForm.period_to || budgetItems.length === 0}
+                      onClick={createAiaApplication}>
+                      {savingAia ? 'Creating...' : 'Create application'}
+                    </button>
+                    <button style={s.btnGray} onClick={() => setShowNewAia(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
 
-                  {(() => {
-                    const retPct = Math.max(0, Math.min(100, parseFloat(aiaForm.retainage_pct) || 10)) / 100
-                    const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-                    const contractSumToDate = Number(job.contract_value || 0) + approvedCOsVal
-                    const totalCompleted = aiaSov.reduce((a, line) => {
-                      const s = Number(line.budget_amount || 0)
-                      return a + s * (Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) + Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
-                    }, 0)
-                    const totalRetainage = totalCompleted * retPct
-                    const totalPrevCompleted = aiaSov.reduce((a, line) => {
-                      const s = Number(line.budget_amount || 0)
-                      return a + s * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
-                    }, 0)
-                    const earnedLessRet = totalCompleted - totalRetainage
-                    const prevCerts = totalPrevCompleted * (1 - retPct)
-                    const currentDue = earnedLessRet - prevCerts
-                    return (
-                      <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
-                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary preview</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
-                          <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
-                          <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                          <span style={{ color: '#555' }}>Retainage ({aiaForm.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
-                          <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
-                          <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              {aiaApplications.length === 0 && !showNewAia && (
+                <p style={{ color: '#444', fontSize: '14px' }}>No AIA applications yet. Create your first application above to get started.</p>
+              )}
+
+              {aiaApplications.map(app => {
+                const isActive = activeAia?.id === app.id
+                const periodLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
+                return (
+                  <div key={app.id} style={{ ...s.billingEntryRow, border: `1px solid ${isActive ? '#4a2200' : '#1e1e1e'}` }}>
+                    <div style={{ ...s.billingEntryHeader, cursor: 'pointer' }} onClick={() => openAiaApp(app)}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>App #{app.app_number}</span>
+                          <span style={{ fontSize: '13px', color: '#888' }}>{periodLabel}</span>
+                          <span style={s.coBadge(app.status === 'certified' ? 'approved' : app.status === 'submitted' ? 'pending' : 'pending')}>{app.status}</span>
                         </div>
                       </div>
-                    )
-                  })()}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {isActive && (
+                          <button style={s.btnSmallRed} onClick={e => { e.stopPropagation(); deleteAiaApplication(app.id) }}>Delete</button>
+                        )}
+                        <span style={{ color: '#555', fontSize: '14px' }}>{isActive ? '▲' : '▼'}</span>
+                      </div>
+                    </div>
 
-                  <button style={s.btn} onClick={generateAIA}>Generate AIA G702 / G703</button>
-                </>
-              )}
+                    {isActive && (
+                      <div style={s.billingEntryExpanded}>
+                        {aiaLoading ? (
+                          <p style={{ color: '#444', fontSize: '14px' }}>Loading...</p>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', gap: '16px', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                              <div>
+                                <label style={s.label}>Status</label>
+                                <select style={{ ...s.input, width: 'auto' }} value={activeAia.status || 'draft'} onChange={e => setActiveAia(a => ({ ...a, status: e.target.value }))}>
+                                  <option value="draft">Draft</option>
+                                  <option value="submitted">Submitted</option>
+                                  <option value="certified">Certified</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label style={s.label}>Retainage %</label>
+                                <input type="number" min="0" max="100" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.retainage_pct} onChange={e => setActiveAia(a => ({ ...a, retainage_pct: e.target.value }))} />
+                              </div>
+                            </div>
+
+                            {periodBilling.length > 0 && (
+                              <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                  Approved billing this period — ${periodBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()} from {periodBilling.length} sub{periodBilling.length !== 1 ? 's' : ''}
+                                </p>
+                                {periodBilling.map((b, i) => (
+                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#aaa', padding: '3px 0' }}>
+                                    <span>{b.company_name}</span>
+                                    <span style={{ fontFamily: 'monospace' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {aiaLines.length === 0 ? (
+                              <p style={{ color: '#444', fontSize: '14px' }}>No budget line items found. Add them in the Budget tab.</p>
+                            ) : (
+                              <>
+                                <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                    <thead>
+                                      <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+                                        <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
+                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% This Period</th>
+                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total</th>
+                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {aiaLines.map((line, i) => {
+                                        const scheduled = Number(line.budget_amount || 0)
+                                        const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                                        const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
+                                        const total = prevAmt + thisAmt
+                                        const balance = scheduled - total
+                                        return (
+                                          <tr key={line.budget_item_id} style={{ borderBottom: '1px solid #111' }}>
+                                            <td style={{ padding: '10px', color: '#ccc' }}>
+                                              {line.cost_code && <span style={{ fontSize: '10px', color: '#555', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
+                                              {line.description}
+                                            </td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(scheduled).toLocaleString()}</td>
+                                            <td style={{ padding: '10px', textAlign: 'center', color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>
+                                              {parseFloat(line.pct_prev) || 0}%
+                                            </td>
+                                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                              <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
+                                                value={line.pct_this}
+                                                onChange={e => setAiaLines(v => v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l))} />
+                                            </td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {(() => {
+                                  const retPct = Math.max(0, Math.min(100, parseFloat(activeAia.retainage_pct) || 10)) / 100
+                                  const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+                                  const contractSumToDate = Number(job.contract_value || 0) + approvedCOsVal
+                                  const totalCompleted = aiaLines.reduce((a, line) => {
+                                    const sv = Number(line.budget_amount || 0)
+                                    return a + sv * (Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) + Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
+                                  }, 0)
+                                  const totalRetainage = totalCompleted * retPct
+                                  const totalPrevCompleted = aiaLines.reduce((a, line) => {
+                                    const sv = Number(line.budget_amount || 0)
+                                    return a + sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                                  }, 0)
+                                  const earnedLessRet = totalCompleted - totalRetainage
+                                  const prevCerts = totalPrevCompleted * (1 - retPct)
+                                  const currentDue = earnedLessRet - prevCerts
+                                  return (
+                                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                                      <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary</p>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
+                                        <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
+                                        <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                        <span style={{ color: '#555' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                                        <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                                        <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button style={{ ...s.btn, opacity: savingAia ? 0.6 : 1 }} disabled={savingAia} onClick={saveAiaLines}>{savingAia ? 'Saving...' : 'Save application'}</button>
+                                  <button style={s.btnGray} onClick={generateAIAFromApp}>Generate AIA G702/G703</button>
+                                </div>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </>
         )}

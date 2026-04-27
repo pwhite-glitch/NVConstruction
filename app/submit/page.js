@@ -61,7 +61,7 @@ export default function Submit() {
   const [myContracts, setMyContracts] = useState([])
   const [myCOs, setMyCOs] = useState({})
   const [expandedContract, setExpandedContract] = useState(null)
-  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '' })
+  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7) })
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [activeTab, setActiveTab] = useState('billing')
@@ -204,6 +204,7 @@ export default function Submit() {
       amount_billed: parseFloat(form.amount_billed),
       pct_complete: parseInt(form.pct_complete) || null,
       work_description: form.work_description,
+      billing_period: form.billing_period ? form.billing_period + '-01' : null,
       doc_url,
     })
     if (!error) {
@@ -218,7 +219,7 @@ export default function Submit() {
         `)
       )
       setSuccess(true)
-      setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '' })
+      setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7) })
       setBillingFile(null)
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
@@ -276,9 +277,10 @@ export default function Submit() {
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
                 </div>
-                <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
                   <div><label style={s.label}>Amount billed</label><input type="number" style={s.input} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" /></div>
                   <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
+                  <div><label style={s.label}>Billing period</label><input type="month" style={s.input} value={form.billing_period} onChange={e => update('billing_period', e.target.value)} /></div>
                 </div>
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={s.label}>Work description</label>
@@ -405,7 +407,10 @@ export default function Submit() {
                 <div key={s2.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #1e1e1e' }}>
                   <div>
                     <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>{new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete</p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
+                      {new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete
+                      {s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                    </p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <span style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</span>

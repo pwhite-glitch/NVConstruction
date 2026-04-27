@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { sendEmail, emailWrap } from '../../lib/email'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -150,8 +151,19 @@ export default function Dashboard() {
     setDirectory(dir || [])
   }
 
-  async function updateStatus(id, status) {
-    await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', id)
+  async function updateStatus(sub, status) {
+    await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', sub.id)
+    if (sub.sub_email) {
+      const approved = status === 'approved'
+      const color = approved ? '#4ade80' : '#ff6b6b'
+      sendEmail(sub.sub_email, `Billing ${status} — ${sub.jobs?.project_name}`,
+        emailWrap(`
+          <h2 style="color:${color};margin:0 0 1rem">Billing ${status}</h2>
+          <p style="color:#aaa">Your billing submission of <strong style="color:#f1f1f1">$${sub.amount_billed?.toLocaleString()}</strong> for <strong style="color:#f1f1f1">#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</strong> has been <strong style="color:${color}">${status}</strong>.</p>
+          ${!approved ? `<p style="color:#888;font-size:13px">Contact NV Construction if you have questions.</p>` : ''}
+        `)
+      )
+    }
     await loadAll()
     setExpanded(null)
   }
@@ -229,11 +241,20 @@ export default function Dashboard() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
-  async function inviteSubs(bidId) {
+  async function inviteSubs(bidId, pkg) {
     if (selectedEmails.length === 0) return
     setSendingInvites(true)
     for (const email of selectedEmails) {
       await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
+      sendEmail(email, `You're invited to bid — ${pkg.title}`,
+        emailWrap(`
+          <h2 style="color:#f1f1f1;margin:0 0 1rem">Bid invitation</h2>
+          <p style="color:#aaa">NV Construction has invited you to submit a bid for <strong style="color:#f1f1f1">${pkg.title}</strong>.</p>
+          ${pkg.due_date ? `<p style="color:#888;font-size:13px">Bids due: <strong style="color:#f1f1f1">${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}</strong></p>` : ''}
+          ${pkg.scope_of_work ? `<div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0"><p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Scope of work</p><p style="color:#aaa;font-size:13px;line-height:1.6;margin:0">${pkg.scope_of_work}</p></div>` : ''}
+          <p style="color:#888;font-size:13px">Log in to the sub portal to view plans and submit your bid.</p>
+        `)
+      )
     }
     setShowInviteFor(null)
     setSelectedEmails([])
@@ -246,6 +267,16 @@ export default function Dashboard() {
     await supabase.from('bid_submissions').update({ status: 'awarded' }).eq('id', submission.id)
     await supabase.from('bid_submissions').update({ status: 'rejected' }).eq('bid_package_id', bidId).neq('id', submission.id)
     await supabase.from('bid_packages').update({ status: 'awarded' }).eq('id', bidId)
+    const pkg = bidPackages.find(p => p.id === bidId)
+    if (submission.sub_email) {
+      sendEmail(submission.sub_email, `Your bid has been awarded — ${pkg?.title || 'Bid Package'}`,
+        emailWrap(`
+          <h2 style="color:#4ade80;margin:0 0 1rem">Congratulations!</h2>
+          <p style="color:#aaa">Your bid of <strong style="color:#f1f1f1">$${Number(submission.amount).toLocaleString()}</strong> for <strong style="color:#f1f1f1">${pkg?.title || 'Bid Package'}</strong> has been awarded.</p>
+          <p style="color:#888;font-size:13px">NV Construction will be in touch with next steps.</p>
+        `)
+      )
+    }
     await loadBidPackages()
     await loadBidDetail(bidId)
   }
@@ -493,8 +524,8 @@ export default function Dashboard() {
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               {sub.status === 'pending' && (
                                 <>
-                                  <button onClick={() => updateStatus(sub.id, 'approved')} style={s.btnSm('green')}>Approve</button>
-                                  <button onClick={() => updateStatus(sub.id, 'rejected')} style={s.btnSm('red')}>Reject</button>
+                                  <button onClick={() => updateStatus(sub, 'approved')} style={s.btnSm('green')}>Approve</button>
+                                  <button onClick={() => updateStatus(sub, 'rejected')} style={s.btnSm('red')}>Reject</button>
                                 </>
                               )}
                               <button onClick={() => {
@@ -891,7 +922,7 @@ export default function Dashboard() {
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button style={{ ...s.btnSm('orange'), opacity: sendingInvites || selectedEmails.length === 0 ? 0.6 : 1 }}
                                     disabled={sendingInvites || selectedEmails.length === 0}
-                                    onClick={() => inviteSubs(pkg.id)}>
+                                    onClick={() => inviteSubs(pkg.id, pkg)}>
                                     {sendingInvites ? 'Sending...' : `Send ${selectedEmails.length > 0 ? selectedEmails.length + ' ' : ''}invite${selectedEmails.length !== 1 ? 's' : ''}`}
                                   </button>
                                   <button style={s.btnSm('gray')} onClick={() => setShowInviteFor(null)}>Cancel</button>

@@ -2,6 +2,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { sendEmail, emailWrap } from '../../lib/email'
+
+const PM_EMAIL = 'pwhite@nvim.co'
 
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
@@ -139,6 +142,17 @@ export default function Submit() {
     })
     if (!error) {
       await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).eq('sub_email', user.email)
+      const inv = bidInvitations.find(i => i.bid_packages?.id === bidPackageId)
+      const pkgTitle = inv?.bid_packages?.title || 'Bid Package'
+      sendEmail(PM_EMAIL, `Bid received — ${profile?.company_name || user.email}`,
+        emailWrap(`
+          <h2 style="color:#f1f1f1;margin:0 0 1rem">New bid submitted</h2>
+          <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted a bid for <strong style="color:#f1f1f1">${pkgTitle}</strong>.</p>
+          <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(bidSubmitForm.amount).toLocaleString()}</p>
+          ${bidSubmitForm.notes ? `<p style="color:#888;font-size:13px">${bidSubmitForm.notes}</p>` : ''}
+          ${doc_url ? `<p style="color:#888;font-size:13px">📎 Estimate attached</p>` : ''}
+        `)
+      )
       await loadBidPackageDetail(bidPackageId)
       await loadBidInvitations(user.email)
       setBidSubmitForm({ amount: '', notes: '' })
@@ -180,8 +194,10 @@ export default function Submit() {
       const { error: upErr } = await supabase.storage.from('billing-docs').upload(path, billingFile)
       if (!upErr) doc_url = path
     }
+    const selectedJob = jobs.find(j => j.id === form.job_id)
     const { error } = await supabase.from('billing_submissions').insert({
       sub_id: user.id, job_id: form.job_id,
+      sub_email: user.email,
       company_name: profile?.company_name || 'Unknown',
       contact_name: profile?.full_name, contact_info: profile?.phone,
       amount_billed: parseFloat(form.amount_billed),
@@ -190,6 +206,16 @@ export default function Submit() {
       doc_url,
     })
     if (!error) {
+      sendEmail(PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
+        emailWrap(`
+          <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
+          <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
+          <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(form.amount_billed).toLocaleString()}</p>
+          ${form.pct_complete ? `<p style="color:#888;font-size:13px">${form.pct_complete}% complete on scope</p>` : ''}
+          <p style="color:#888;font-size:13px;line-height:1.6">${form.work_description}</p>
+          ${doc_url ? `<p style="color:#888;font-size:13px">📎 Attachment included</p>` : ''}
+        `)
+      )
       setSuccess(true)
       setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '' })
       setBillingFile(null)

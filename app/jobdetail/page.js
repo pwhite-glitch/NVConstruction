@@ -166,7 +166,7 @@ export default function JobDetail() {
   const [activeAia, setActiveAia] = useState(null)
   const [aiaLines, setAiaLines] = useState([])
   const [showNewAia, setShowNewAia] = useState(false)
-  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_to: '', retainage_pct: '10' })
+  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_to: '', retainage_pct: '10', markup_pct: '0' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
   const [periodBilling, setPeriodBilling] = useState([])
@@ -464,10 +464,12 @@ export default function JobDetail() {
   }
 
   function applyAmountsToAiaLines(byBudgetItem, billingId) {
+    const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
     setAiaLines(lines => {
       const updated = lines.map(line => {
-        const addAmt = byBudgetItem[line.budget_item_id]
-        if (!addAmt) return line
+        const rawAmt = byBudgetItem[line.budget_item_id]
+        if (!rawAmt) return line
+        const addAmt = Math.round(rawAmt * markupMultiplier * 100) / 100
         const budgetAmt = Number(line.budget_amount || 0)
         if (budgetAmt === 0) return line
         const addedPct = Math.round(addAmt / budgetAmt * 100 * 10) / 10
@@ -539,6 +541,7 @@ export default function JobDetail() {
       app_number: parseInt(newAiaForm.app_number) || (aiaApplications.length + 1),
       period_to: periodTo,
       retainage_pct: parseFloat(newAiaForm.retainage_pct) || 10,
+      markup_pct: parseFloat(newAiaForm.markup_pct) || 0,
       created_by: session.user.id,
     }).select().single()
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setSavingAia(false); return }
@@ -566,6 +569,7 @@ export default function JobDetail() {
     setSavingAia(true)
     await supabase.from('aia_applications').update({
       retainage_pct: parseFloat(activeAia.retainage_pct),
+      markup_pct: parseFloat(activeAia.markup_pct) || 0,
       status: activeAia.status || 'draft',
       updated_at: new Date().toISOString(),
     }).eq('id', activeAia.id)
@@ -2558,7 +2562,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {showNewAia && (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 100px', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                     <div>
                       <label style={s.label}>App #</label>
                       <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
@@ -2583,6 +2587,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <label style={s.label}>Retainage %</label>
                       <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Markup %</label>
+                      <input type="number" min="0" step="0.5" style={s.input} value={newAiaForm.markup_pct} onChange={e => setNewAiaForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
                     </div>
                   </div>
                   {aiaApplications.length > 0 && (
@@ -2648,6 +2656,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <label style={s.label}>Retainage %</label>
                                 <input type="number" min="0" max="100" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.retainage_pct} onChange={e => setActiveAia(a => ({ ...a, retainage_pct: e.target.value }))} />
                               </div>
+                              <div>
+                                <label style={s.label}>Markup %</label>
+                                <input type="number" min="0" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.markup_pct || 0} onChange={e => setActiveAia(a => ({ ...a, markup_pct: e.target.value }))} placeholder="0" />
+                                {parseFloat(activeAia.markup_pct) > 0 && (
+                                  <p style={{ fontSize: '10px', color: '#e8590c', margin: '3px 0 0', whiteSpace: 'nowrap' }}>Applied on G703 billing</p>
+                                )}
+                              </div>
                             </div>
 
                             {periodBilling.length > 0 && (
@@ -2668,7 +2683,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                                          <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</div>
+                                            {parseFloat(activeAia?.markup_pct) > 0 && (
+                                              <div style={{ fontSize: '10px', color: '#e8590c', marginTop: '1px' }}>
+                                                +{activeAia.markup_pct}% = ${Math.round(Number(b.amount_billed) * (1 + parseFloat(activeAia.markup_pct) / 100)).toLocaleString()} billed
+                                              </div>
+                                            )}
+                                          </div>
                                           <button
                                             style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
                                             disabled={applied}

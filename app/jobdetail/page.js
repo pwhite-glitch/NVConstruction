@@ -868,6 +868,7 @@ ${sovLines.length > 0 ? `
     const status = createBillingForm.auto_approve ? 'approved' : 'pending'
     const { error } = await supabase.from('billing_submissions').insert({
       job_id: id,
+      sub_id: createBillingForm.sub_id || null,
       company_name: createBillingForm.company_name,
       contact_name: createBillingForm.contact_name || null,
       contact_info: createBillingForm.contact_info || null,
@@ -1859,8 +1860,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       Approve immediately (skip pending queue)
                     </label>
                   </div>
+                  {(!createBillingForm.company_name || !createBillingForm.amount_billed) && (
+                    <p style={{ fontSize: '12px', color: '#e8590c', marginBottom: '10px' }}>
+                      {!createBillingForm.company_name ? 'Select a contractor or enter a company name. ' : ''}{!createBillingForm.amount_billed ? 'Enter the amount billed.' : ''}
+                    </p>
+                  )}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{ ...s.btn, opacity: creatingBilling ? 0.6 : 1 }} disabled={creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed} onClick={createBilling}>
+                    <button style={{ ...s.btn, opacity: (creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed) ? 0.4 : 1 }} disabled={creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed} onClick={createBilling}>
                       {creatingBilling ? 'Saving...' : createBillingForm.auto_approve ? 'Save & approve' : 'Save as pending'}
                     </button>
                     <button style={s.btnGray} onClick={() => { setShowCreateBilling(false); setCreateBillingForm(emptyCreateBilling) }}>Cancel</button>

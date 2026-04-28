@@ -160,7 +160,7 @@ export default function JobDetail() {
   const [costRejectNote, setCostRejectNote] = useState('')
   const [assigningCostId, setAssigningCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
 
@@ -343,9 +343,10 @@ export default function JobDetail() {
       cost_date: dcForm.cost_date, description: dcForm.description,
       category: dcForm.category, amount: parseFloat(dcForm.amount),
       receipt_url, notes: dcForm.notes || null,
+      budget_item_id: dcForm.budget_item_id || null,
       status: 'approved',
     })
-    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
     setDcFile(null)
     setShowDcForm(false)
     await loadDirectCosts()
@@ -761,7 +762,7 @@ ${sovLines.length > 0 ? `
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts() }
     if (activeTab === 'subs') { loadSubDirectory() }
@@ -988,6 +989,12 @@ ${sovLines.length > 0 ? `
 
   function committedForItem(budgetItemId) {
     return contracts.filter(c => c.budget_item_id === budgetItemId).reduce((a, c) => a + Number(c.adjusted_contract_value || c.contract_value || 0), 0)
+  }
+
+  async function saveForecastEac(budgetItemId, value) {
+    const val = value === '' ? null : parseFloat(value)
+    await supabase.from('budget_items').update({ forecast_eac: val }).eq('id', budgetItemId)
+    setBudgetItems(prev => prev.map(b => b.id === budgetItemId ? { ...b, forecast_eac: val } : b))
   }
 
   // ── Subs ────────────────────────────────────────────────────
@@ -1569,6 +1576,75 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </>
               )}
             </div>
+
+            {/* Cost to Complete Forecast */}
+            {budgetItems.length > 0 && (() => {
+              const forecastRows = budgetItems.map(item => {
+                const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
+                const contracted = committedForItem(item.id)
+                const autoEac = Math.max(contracted, spent)
+                const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
+                const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
+                return { item, spent, contracted, autoEac, eac, revenue, variance: Number(item.budget_amount) - eac, projProfit: revenue - eac }
+              })
+              const T = forecastRows.reduce((acc, r) => ({
+                budget: acc.budget + Number(r.item.budget_amount), revenue: acc.revenue + r.revenue,
+                spent: acc.spent + r.spent, contracted: acc.contracted + r.contracted,
+                eac: acc.eac + r.eac, variance: acc.variance + r.variance, projProfit: acc.projProfit + r.projProfit,
+              }), { budget: 0, revenue: 0, spent: 0, contracted: 0, eac: 0, variance: 0, projProfit: 0 })
+              const hdr = { fontSize: '11px', color: '#555', textAlign: 'right' }
+              const col = { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1.2fr 1fr 1fr', gap: '8px', padding: '8px 12px' }
+              return (
+                <div style={s.card}>
+                  <p style={{ ...s.cardTitle, marginBottom: '0.5rem' }}>Cost to Complete Forecast</p>
+                  <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates as max(contracted, direct costs spent). Enter a value to override.</p>
+                  <div style={{ ...s.statRow, marginBottom: '1.25rem' }}>
+                    <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#4ade80' : '#ff6b6b')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Budget variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Direct costs spent</div><div style={s.statValue()}>${T.spent.toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Total EAC</div><div style={s.statValue()}>${T.eac.toLocaleString()}</div></div>
+                  </div>
+                  <div style={{ ...col, borderBottom: '1px solid #1a1a1a', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '11px', color: '#555' }}>Description</span>
+                    {['Budget', 'Revenue', 'DC Spent', 'Contracted', 'EAC override', 'Variance', 'Proj. Profit'].map(h => <span key={h} style={hdr}>{h}</span>)}
+                  </div>
+                  {forecastRows.map(({ item, spent, contracted, autoEac, eac, revenue, variance, projProfit }) => (
+                    <div key={item.id} style={{ ...col, borderBottom: '1px solid #111', alignItems: 'center' }}>
+                      <div>
+                        {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code} · </span>}
+                        <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1' }}>${Number(item.budget_amount).toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa' }}>${revenue.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${spent.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${contracted.toLocaleString()}</div>
+                      <div>
+                        <input
+                          type="number" step="0.01"
+                          style={{ ...s.input, textAlign: 'right', padding: '4px 8px', fontSize: '12px' }}
+                          placeholder={autoEac.toLocaleString()}
+                          value={item.forecast_eac != null ? String(item.forecast_eac) : ''}
+                          onChange={e => setBudgetItems(prev => prev.map(b => b.id === item.id ? { ...b, forecast_eac: e.target.value === '' ? null : e.target.value } : b))}
+                          onBlur={e => saveForecastEac(item.id, e.target.value)}
+                        />
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{variance >= 0 ? '+' : '-'}${Math.abs(variance).toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{projProfit >= 0 ? '+' : '-'}${Math.abs(projProfit).toLocaleString()}</div>
+                    </div>
+                  ))}
+                  <div style={{ ...col, borderTop: '2px solid #222', marginTop: '4px' }}>
+                    <span style={{ fontSize: '13px', color: '#555', fontWeight: '700' }}>TOTAL</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1', fontWeight: '700' }}>${T.budget.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '700' }}>${T.revenue.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa', fontWeight: '700' }}>${T.spent.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa', fontWeight: '700' }}>${T.contracted.toLocaleString()}</span>
+                    <span />
+                    <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</span>
+                  </div>
+                </div>
+              )
+            })()}
           </>
         )}
 
@@ -2539,10 +2615,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
+                      </div>
+                      <div>
+                        <label style={s.label}>Budget line</label>
+                        <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                          <option value="">— Unassigned —</option>
+                          {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                        </select>
                       </div>
                       <div>
                         <label style={s.label}>Notes</label>

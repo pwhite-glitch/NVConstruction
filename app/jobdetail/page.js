@@ -173,6 +173,7 @@ export default function JobDetail() {
   const [appliedBillings, setAppliedBillings] = useState(new Set())
   const [manualMapBillingId, setManualMapBillingId] = useState(null)
   const [manualMapBudgetItemId, setManualMapBudgetItemId] = useState('')
+  const [pinnedLineIds, setPinnedLineIds] = useState(new Set())
 
   // Contract SOV state
   const [contractSovLines, setContractSovLines] = useState({})
@@ -192,6 +193,14 @@ export default function JobDetail() {
     const tab = params.get('tab')
     if (tab) setActiveTab(tab)
   }, [])
+
+  useEffect(() => {
+    if (!id) return
+    try {
+      const stored = localStorage.getItem(`aia_pinned_${id}`)
+      if (stored) setPinnedLineIds(new Set(JSON.parse(stored)))
+    } catch {}
+  }, [id])
 
   useEffect(() => {
     if (!id) return
@@ -455,18 +464,49 @@ export default function JobDetail() {
   }
 
   function applyAmountsToAiaLines(byBudgetItem, billingId) {
-    setAiaLines(lines => lines.map(line => {
-      const addAmt = byBudgetItem[line.budget_item_id]
-      if (!addAmt) return line
-      const budgetAmt = Number(line.budget_amount || 0)
-      if (budgetAmt === 0) return line
-      const addedPct = Math.round(addAmt / budgetAmt * 100 * 10) / 10
-      const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
-      return { ...line, pct_this: String(newPct) }
-    }))
+    setAiaLines(lines => {
+      const updated = lines.map(line => {
+        const addAmt = byBudgetItem[line.budget_item_id]
+        if (!addAmt) return line
+        const budgetAmt = Number(line.budget_amount || 0)
+        if (budgetAmt === 0) return line
+        const addedPct = Math.round(addAmt / budgetAmt * 100 * 10) / 10
+        const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
+        return { ...line, pct_this: String(newPct) }
+      })
+      return recalcPinnedLines(updated, pinnedLineIds)
+    })
     setAppliedBillings(prev => new Set([...prev, billingId]))
     setManualMapBillingId(null)
     setManualMapBudgetItemId('')
+  }
+
+  function recalcPinnedLines(lines, pinnedIds) {
+    if (!pinnedIds || pinnedIds.size === 0) return lines
+    const unpinnedLines = lines.filter(l => !pinnedIds.has(l.budget_item_id))
+    const totalSched = unpinnedLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
+    if (totalSched === 0) return lines
+    const totalDone = unpinnedLines.reduce((a, l) => {
+      const sched = Number(l.budget_amount || 0)
+      return a + sched * ((parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this) || 0)) / 100
+    }, 0)
+    const overallPct = totalDone / totalSched * 100
+    return lines.map(l => {
+      if (!pinnedIds.has(l.budget_item_id)) return l
+      const prevPct = parseFloat(l.pct_prev) || 0
+      const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
+      return { ...l, pct_this: String(Math.round(newThisPct * 10) / 10) }
+    })
+  }
+
+  function togglePinLine(budgetItemId) {
+    setPinnedLineIds(prev => {
+      const next = new Set(prev)
+      if (next.has(budgetItemId)) next.delete(budgetItemId)
+      else next.add(budgetItemId)
+      try { localStorage.setItem(`aia_pinned_${id}`, JSON.stringify([...next])) } catch {}
+      return next
+    })
   }
 
   function applyBillingManual(billing) {
@@ -475,18 +515,10 @@ export default function JobDetail() {
   }
 
   function autoCalcProRataLine(lineIndex) {
-    const otherLines = aiaLines.filter((_, idx) => idx !== lineIndex)
-    const totalOtherScheduled = otherLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
-    if (totalOtherScheduled === 0) return
-    const totalOtherCompleted = otherLines.reduce((a, l) => {
-      const sched = Number(l.budget_amount || 0)
-      return a + sched * ((parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this) || 0)) / 100
-    }, 0)
-    const overallPct = totalOtherCompleted / totalOtherScheduled * 100
-    const prevPct = parseFloat(aiaLines[lineIndex].pct_prev) || 0
-    const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
-    setAiaLines(lines => lines.map((l, idx) =>
-      idx === lineIndex ? { ...l, pct_this: String(Math.round(newThisPct * 10) / 10) } : l
+    const line = aiaLines[lineIndex]
+    setAiaLines(lines => recalcPinnedLines(
+      lines,
+      new Set([...(pinnedLineIds || []), line.budget_item_id])
     ))
   }
 
@@ -2708,27 +2740,46 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
                                         const total = prevAmt + thisAmt
                                         const balance = scheduled - total
+                                        const isPinnedRow = pinnedLineIds.has(line.budget_item_id)
                                         return (
-                                          <tr key={line.budget_item_id} style={{ borderBottom: '1px solid #111' }}>
+                                          <tr key={line.budget_item_id} style={{ borderBottom: '1px solid #111', background: isPinnedRow ? '#1a0e00' : 'transparent' }}>
                                             <td style={{ padding: '10px', color: '#ccc' }}>
                                               {line.cost_code && <span style={{ fontSize: '10px', color: '#555', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
                                               {line.description}
+                                              {isPinnedRow && <span style={{ fontSize: '10px', color: '#e8590c', marginLeft: '8px', fontWeight: '700', letterSpacing: '1px' }}>AUTO</span>}
                                             </td>
                                             <td style={{ padding: '10px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(scheduled).toLocaleString()}</td>
                                             <td style={{ padding: '10px', textAlign: 'center', color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>
                                               {parseFloat(line.pct_prev) || 0}%
                                             </td>
                                             <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-                                                <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
-                                                  value={line.pct_this}
-                                                  onChange={e => setAiaLines(v => v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l))} />
-                                                <button
-                                                  title="Set to overall % complete of all other lines (pro-rata profit)"
-                                                  onClick={() => autoCalcProRataLine(i)}
-                                                  style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                                                >≈%</button>
-                                              </div>
+                                              {(() => {
+                                                const isPinned = pinnedLineIds.has(line.budget_item_id)
+                                                return (
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                                    <input type="number" min="0" max="100" step="1"
+                                                      style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px', opacity: isPinned ? 0.5 : 1 }}
+                                                      value={line.pct_this}
+                                                      readOnly={isPinned}
+                                                      onChange={e => setAiaLines(v => {
+                                                        const updated = v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l)
+                                                        return recalcPinnedLines(updated, pinnedLineIds)
+                                                      })} />
+                                                    {!isPinned && (
+                                                      <button
+                                                        title="One-time: set to weighted average % of all other lines"
+                                                        onClick={() => autoCalcProRataLine(i)}
+                                                        style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                                      >≈%</button>
+                                                    )}
+                                                    <button
+                                                      title={isPinned ? 'Pinned — auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
+                                                      onClick={() => togglePinLine(line.budget_item_id)}
+                                                      style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer' }}
+                                                    >📌</button>
+                                                  </div>
+                                                )
+                                              })()}
                                             </td>
                                             <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                                             <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>

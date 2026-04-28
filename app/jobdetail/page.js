@@ -171,6 +171,8 @@ export default function JobDetail() {
   const [aiaLoading, setAiaLoading] = useState(false)
   const [periodBilling, setPeriodBilling] = useState([])
   const [appliedBillings, setAppliedBillings] = useState(new Set())
+  const [manualMapBillingId, setManualMapBillingId] = useState(null)
+  const [manualMapBudgetItemId, setManualMapBudgetItemId] = useState('')
 
   // Contract SOV state
   const [contractSovLines, setContractSovLines] = useState({})
@@ -434,7 +436,7 @@ export default function JobDetail() {
       }
     }
 
-    // Fall back: if no SOV lines mapped, use the contract's budget_item_id + total amount
+    // Fall back: contract's budget_item_id + total amount
     if (Object.keys(byBudgetItem).length === 0 && billing.sub_id) {
       const contract = contracts.find(c => c.sub_id === billing.sub_id)
       if (contract?.budget_item_id) {
@@ -442,11 +444,17 @@ export default function JobDetail() {
       }
     }
 
+    // No automatic mapping found — open manual picker
     if (Object.keys(byBudgetItem).length === 0) {
-      window.alert('Could not map this billing to any budget line items. Make sure the subcontract has a budget line assigned, or that the sub submitted with an SOV.')
+      setManualMapBillingId(billing.id)
+      setManualMapBudgetItemId('')
       return
     }
 
+    applyAmountsToAiaLines(byBudgetItem, billing.id)
+  }
+
+  function applyAmountsToAiaLines(byBudgetItem, billingId) {
     setAiaLines(lines => lines.map(line => {
       const addAmt = byBudgetItem[line.budget_item_id]
       if (!addAmt) return line
@@ -456,8 +464,14 @@ export default function JobDetail() {
       const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
       return { ...line, pct_this: String(newPct) }
     }))
+    setAppliedBillings(prev => new Set([...prev, billingId]))
+    setManualMapBillingId(null)
+    setManualMapBudgetItemId('')
+  }
 
-    setAppliedBillings(prev => new Set([...prev, billing.id]))
+  function applyBillingManual(billing) {
+    if (!manualMapBudgetItemId) return
+    applyAmountsToAiaLines({ [manualMapBudgetItemId]: Number(billing.amount_billed || 0) }, billing.id)
   }
 
   async function createAiaApplication() {
@@ -2595,24 +2609,60 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </p>
                                 {periodBilling.map((b, i) => {
                                   const applied = appliedBillings.has(b.id)
+                                  const needsManual = manualMapBillingId === b.id
                                   return (
-                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: i < periodBilling.length - 1 ? '1px solid #1a3a5a' : 'none' }}>
-                                      <div>
-                                        <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
-                                        {b.retainage_held > 0 && (
-                                          <span style={{ fontSize: '11px', color: '#facc15', marginLeft: '8px' }}>({Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })} ret.)</span>
-                                        )}
+                                    <div key={i} style={{ padding: '6px 0', borderBottom: i < periodBilling.length - 1 ? '1px solid #1a3a5a' : 'none' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                          <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
+                                          {b.retainage_held > 0 && (
+                                            <span style={{ fontSize: '11px', color: '#facc15', marginLeft: '8px' }}>({Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })} ret.)</span>
+                                          )}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                                          <button
+                                            style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                            disabled={applied}
+                                            onClick={() => applyBillingToAia(b)}
+                                          >
+                                            {applied ? '✓ Applied' : 'Apply to G703'}
+                                          </button>
+                                        </div>
                                       </div>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
-                                        <button
-                                          style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
-                                          disabled={applied}
-                                          onClick={() => applyBillingToAia(b)}
-                                        >
-                                          {applied ? '✓ Applied' : 'Apply to G703'}
-                                        </button>
-                                      </div>
+                                      {needsManual && (
+                                        <div style={{ marginTop: '8px', background: '#0f1a0f', border: '1px solid #2a4a1a', borderRadius: '6px', padding: '10px' }}>
+                                          <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked — pick one manually</p>
+                                          <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>To auto-map in future, assign a budget line item to this subcontract in the Contracts tab.</p>
+                                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                            <select
+                                              style={{ ...s.input, flex: 1, fontSize: '12px', padding: '7px 10px' }}
+                                              value={manualMapBudgetItemId}
+                                              onChange={e => setManualMapBudgetItemId(e.target.value)}
+                                            >
+                                              <option value="">— Select a budget line —</option>
+                                              {budgetItems.map(item => (
+                                                <option key={item.id} value={item.id}>
+                                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <button
+                                              style={{ padding: '7px 14px', background: '#1a3a0a', color: '#a3e635', border: '1px solid #3a5a1a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: manualMapBudgetItemId ? 'pointer' : 'default', opacity: manualMapBudgetItemId ? 1 : 0.4, whiteSpace: 'nowrap' }}
+                                              disabled={!manualMapBudgetItemId}
+                                              onClick={() => applyBillingManual(b)}
+                                            >
+                                              Confirm
+                                            </button>
+                                            <button
+                                              style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                                              onClick={() => { setManualMapBillingId(null); setManualMapBudgetItemId('') }}
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   )
                                 })}

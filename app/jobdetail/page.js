@@ -165,7 +165,7 @@ export default function JobDetail() {
   const [activeAia, setActiveAia] = useState(null)
   const [aiaLines, setAiaLines] = useState([])
   const [showNewAia, setShowNewAia] = useState(false)
-  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10' })
+  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_to: '', retainage_pct: '10' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
   const [periodBilling, setPeriodBilling] = useState([])
@@ -2351,7 +2351,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {!showNewAia && (
                   <button style={s.btnSmallOrange} onClick={() => {
                     setShowNewAia(true)
-                    setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10' })
+                    setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', retainage_pct: '10' })
                   }}>+ New application</button>
                 )}
               </div>

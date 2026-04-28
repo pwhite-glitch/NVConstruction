@@ -77,7 +77,7 @@ const s = {
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
+const emptyCreateBilling = { _contract_id: '', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
 
 export default function JobDetail() {
   const router = useRouter()
@@ -645,7 +645,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs() }
-    if (activeTab === 'billing') { loadBillingForJob() }
+    if (activeTab === 'billing') { loadBillingForJob(); loadContracts() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
@@ -1792,26 +1792,31 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create billing on behalf of subcontractor</p>
                   <p style={{ fontSize: '12px', color: '#555', margin: '-0.5rem 0 1rem' }}>Use when a sub emails you billing info and you want to enter and approve it directly.</p>
 
-                  {registeredSubs.length > 0 && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={s.label}>Auto-fill from sub (optional)</label>
-                      <select style={s.input} value={createBillingForm.sub_id}
-                        onChange={e => {
-                          const sub_id = e.target.value
-                          const subData = registeredSubs.find(s => s.sub_id === sub_id)
-                          setCreateBillingForm(f => ({
-                            ...f,
-                            sub_id,
-                            company_name: subData?.profiles?.company_name || f.company_name,
-                            contact_name: subData?.profiles?.full_name || f.contact_name,
-                            contact_info: subData?.profiles?.phone || f.contact_info,
-                          }))
-                        }}>
-                        <option value="">— Select to auto-fill —</option>
-                        {registeredSubs.map(a => <option key={a.sub_id} value={a.sub_id}>{a.profiles?.company_name || a.sub_email}</option>)}
-                      </select>
-                    </div>
-                  )}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Contractor on this project</label>
+                    <select style={s.input} value={createBillingForm._contract_id || ''}
+                      onChange={e => {
+                        const contractId = e.target.value
+                        if (!contractId) { setCreateBillingForm(f => ({ ...f, _contract_id: '', sub_id: '', company_name: '', contact_name: '', contact_info: '' })); return }
+                        const contract = contracts.find(c => c.id === contractId)
+                        const regSub = contract?.sub_id ? subs.find(s => s.sub_id === contract.sub_id) : null
+                        setCreateBillingForm(f => ({
+                          ...f,
+                          _contract_id: contractId,
+                          sub_id: contract?.sub_id || '',
+                          company_name: contract?.vendor_name || regSub?.profiles?.company_name || '',
+                          contact_name: regSub?.profiles?.full_name || '',
+                          contact_info: regSub?.profiles?.phone || '',
+                        }))
+                      }}>
+                      <option value="">— Select a contractor —</option>
+                      {contracts.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.vendor_name || 'Unknown'}{c.description ? ` — ${c.description}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   <div style={{ ...s.grid2, marginBottom: '12px' }}>
                     <div>

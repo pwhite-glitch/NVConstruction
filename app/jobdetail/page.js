@@ -2366,7 +2366,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <div>
                       <label style={s.label}>Billing period</label>
-                      <input type="month" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                      <select style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))}>
+                        <option value="">Select month...</option>
+                        {(() => {
+                          const opts = []
+                          const now = new Date()
+                          for (let i = 24; i >= -6; i--) {
+                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                            const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                            const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                            opts.push(<option key={val} value={val}>{label}</option>)
+                          }
+                          return opts
+                        })()}
+                      </select>
                     </div>
                     <div>
                       <label style={s.label}>Retainage %</label>

@@ -77,7 +77,7 @@ const s = {
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { _contract_id: '', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
+const emptyCreateBilling = { _contract_id: '', _contract_value: '', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
 
 export default function JobDetail() {
   const router = useRouter()
@@ -1798,12 +1798,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <select style={s.input} value={createBillingForm._contract_id || ''}
                       onChange={e => {
                         const contractId = e.target.value
-                        if (!contractId) { setCreateBillingForm(f => ({ ...f, _contract_id: '', sub_id: '', company_name: '', contact_name: '', contact_info: '' })); return }
+                        if (!contractId) { setCreateBillingForm(f => ({ ...f, _contract_id: '', _contract_value: '', sub_id: '', company_name: '', contact_name: '', contact_info: '' })); return }
                         const contract = contracts.find(c => c.id === contractId)
                         const regSub = contract?.sub_id ? subs.find(s => s.sub_id === contract.sub_id) : null
                         setCreateBillingForm(f => ({
                           ...f,
                           _contract_id: contractId,
+                          _contract_value: String(contract?.adjusted_contract_value || contract?.contract_value || ''),
                           sub_id: contract?.sub_id || '',
                           company_name: contract?.vendor_name || regSub?.profiles?.company_name || '',
                           contact_name: regSub?.profiles?.full_name || '',
@@ -1836,7 +1837,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <div>
                       <label style={s.label}>Amount billed ($) *</label>
-                      <input type="number" step="0.01" style={s.input} value={createBillingForm.amount_billed} onChange={e => setCreateBillingForm(f => ({ ...f, amount_billed: e.target.value }))} placeholder="0.00" required />
+                      <input type="number" step="0.01" style={s.input} value={createBillingForm.amount_billed} onChange={e => {
+                        const amt = parseFloat(e.target.value) || 0
+                        const contractVal = parseFloat(createBillingForm._contract_value) || 0
+                        const pct = contractVal > 0 ? Math.min(100, Math.round(amt / contractVal * 100)) : null
+                        setCreateBillingForm(f => ({ ...f, amount_billed: e.target.value, pct_complete: pct !== null ? String(pct) : f.pct_complete }))
+                      }} placeholder="0.00" required />
                     </div>
                     <div>
                       <label style={s.label}>% complete</label>

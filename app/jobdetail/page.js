@@ -474,6 +474,22 @@ export default function JobDetail() {
     applyAmountsToAiaLines({ [manualMapBudgetItemId]: Number(billing.amount_billed || 0) }, billing.id)
   }
 
+  function autoCalcProRataLine(lineIndex) {
+    const otherLines = aiaLines.filter((_, idx) => idx !== lineIndex)
+    const totalOtherScheduled = otherLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
+    if (totalOtherScheduled === 0) return
+    const totalOtherCompleted = otherLines.reduce((a, l) => {
+      const sched = Number(l.budget_amount || 0)
+      return a + sched * ((parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this) || 0)) / 100
+    }, 0)
+    const overallPct = totalOtherCompleted / totalOtherScheduled * 100
+    const prevPct = parseFloat(aiaLines[lineIndex].pct_prev) || 0
+    const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
+    setAiaLines(lines => lines.map((l, idx) =>
+      idx === lineIndex ? { ...l, pct_this: String(Math.round(newThisPct * 10) / 10) } : l
+    ))
+  }
+
   async function createAiaApplication() {
     if (!newAiaForm.period_to) return
     setSavingAia(true)
@@ -2703,9 +2719,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               {parseFloat(line.pct_prev) || 0}%
                                             </td>
                                             <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                              <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
-                                                value={line.pct_this}
-                                                onChange={e => setAiaLines(v => v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l))} />
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                                <input type="number" min="0" max="100" step="1" style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px' }}
+                                                  value={line.pct_this}
+                                                  onChange={e => setAiaLines(v => v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l))} />
+                                                <button
+                                                  title="Set to overall % complete of all other lines (pro-rata profit)"
+                                                  onClick={() => autoCalcProRataLine(i)}
+                                                  style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                                >≈%</button>
+                                              </div>
                                             </td>
                                             <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                                             <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>

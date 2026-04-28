@@ -170,6 +170,7 @@ export default function JobDetail() {
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
   const [periodBilling, setPeriodBilling] = useState([])
+  const [appliedBillings, setAppliedBillings] = useState(new Set())
 
   // Contract SOV state
   const [contractSovLines, setContractSovLines] = useState({})
@@ -393,14 +394,15 @@ export default function JobDetail() {
   }
 
   async function openAiaApp(app) {
-    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); return }
+    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); return }
     setAiaLoading(true)
     setActiveAia(app)
+    setAppliedBillings(new Set())
     const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
     const [{ data: lines }, { data: bills }] = await Promise.all([
       supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
       monthPrefix
-        ? supabase.from('billing_submissions').select('company_name, amount_billed').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
+        ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
         : Promise.resolve({ data: [] }),
     ])
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
@@ -414,6 +416,48 @@ export default function JobDetail() {
     })))
     setPeriodBilling(bills || [])
     setAiaLoading(false)
+  }
+
+  async function applyBillingToAia(billing) {
+    // Try SOV lines first: billing_sov_lines → subcontract_sov_lines → subcontracts → budget_item_id
+    const { data: sovLines } = await supabase
+      .from('billing_sov_lines')
+      .select('amount, subcontract_sov_lines(subcontract_id, subcontracts(budget_item_id))')
+      .eq('billing_submission_id', billing.id)
+
+    const byBudgetItem = {}
+    if (sovLines && sovLines.length > 0) {
+      for (const l of sovLines) {
+        const budgetItemId = l.subcontract_sov_lines?.subcontracts?.budget_item_id
+        if (!budgetItemId) continue
+        byBudgetItem[budgetItemId] = (byBudgetItem[budgetItemId] || 0) + Number(l.amount || 0)
+      }
+    }
+
+    // Fall back: if no SOV lines mapped, use the contract's budget_item_id + total amount
+    if (Object.keys(byBudgetItem).length === 0 && billing.sub_id) {
+      const contract = contracts.find(c => c.sub_id === billing.sub_id)
+      if (contract?.budget_item_id) {
+        byBudgetItem[contract.budget_item_id] = Number(billing.amount_billed || 0)
+      }
+    }
+
+    if (Object.keys(byBudgetItem).length === 0) {
+      window.alert('Could not map this billing to any budget line items. Make sure the subcontract has a budget line assigned, or that the sub submitted with an SOV.')
+      return
+    }
+
+    setAiaLines(lines => lines.map(line => {
+      const addAmt = byBudgetItem[line.budget_item_id]
+      if (!addAmt) return line
+      const budgetAmt = Number(line.budget_amount || 0)
+      if (budgetAmt === 0) return line
+      const addedPct = Math.round(addAmt / budgetAmt * 100 * 10) / 10
+      const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
+      return { ...line, pct_this: String(newPct) }
+    }))
+
+    setAppliedBillings(prev => new Set([...prev, billing.id]))
   }
 
   async function createAiaApplication() {
@@ -2549,12 +2593,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                   Approved billing this period — ${periodBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()} from {periodBilling.length} sub{periodBilling.length !== 1 ? 's' : ''}
                                 </p>
-                                {periodBilling.map((b, i) => (
-                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#aaa', padding: '3px 0' }}>
-                                    <span>{b.company_name}</span>
-                                    <span style={{ fontFamily: 'monospace' }}>${Number(b.amount_billed).toLocaleString()}</span>
-                                  </div>
-                                ))}
+                                {periodBilling.map((b, i) => {
+                                  const applied = appliedBillings.has(b.id)
+                                  return (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: i < periodBilling.length - 1 ? '1px solid #1a3a5a' : 'none' }}>
+                                      <div>
+                                        <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
+                                        {b.retainage_held > 0 && (
+                                          <span style={{ fontSize: '11px', color: '#facc15', marginLeft: '8px' }}>({Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })} ret.)</span>
+                                        )}
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                                        <button
+                                          style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                          disabled={applied}
+                                          onClick={() => applyBillingToAia(b)}
+                                        >
+                                          {applied ? '✓ Applied' : 'Apply to G703'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
                               </div>
                             )}
 

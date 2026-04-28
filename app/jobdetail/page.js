@@ -916,7 +916,8 @@ ${sovLines.length > 0 ? `
   }
 
   async function reviewPrimeCO(coId, status) {
-    await supabase.from('prime_change_orders').update({ status, reviewed_at: new Date().toISOString() }).eq('id', coId)
+    const { error } = await supabase.from('prime_change_orders').update({ status }).eq('id', coId)
+    if (error) { alert('Error updating prime CO: ' + error.message); return }
     await loadPrimeCOs()
   }
 

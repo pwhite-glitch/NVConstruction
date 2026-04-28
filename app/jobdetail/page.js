@@ -76,6 +76,7 @@ const s = {
 
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
+const emptyPrimeCO = { amount: '', description: '', budget_item_id: '', notes: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
 const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
 
@@ -106,6 +107,10 @@ export default function JobDetail() {
   const [showAddCO, setShowAddCO] = useState(false)
   const [coForm, setCoForm] = useState(emptyCO)
   const [addingCO, setAddingCO] = useState(false)
+  const [primeCOs, setPrimeCOs] = useState([])
+  const [showAddPrimeCO, setShowAddPrimeCO] = useState(false)
+  const [primeCOForm, setPrimeCOForm] = useState(emptyPrimeCO)
+  const [addingPrimeCO, setAddingPrimeCO] = useState(false)
 
   // Budget state
   const [budgetItems, setBudgetItems] = useState([])
@@ -594,7 +599,7 @@ export default function JobDetail() {
     if (!activeAia) return
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, parseFloat(app.retainage_pct) || 10)) / 100
-    const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+    const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const origContract = Number(job.contract_value || 0)
     const contractSumToDate = origContract + approvedCOsVal
     const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
@@ -757,12 +762,12 @@ ${sovLines.length > 0 ? `
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts() }
-    if (activeTab === 'changeorders') { loadContracts(); loadAllCOs() }
+    if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
-    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadAiaApplications() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications() }
   }, [activeTab, id])
 
 
@@ -884,6 +889,41 @@ ${sovLines.length > 0 ? `
     await supabase.from('change_orders').update({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq('id', coId)
     await loadAllCOs()
     await loadContracts()
+  }
+
+  // ── Prime Contract Change Orders ────────────────────────────
+  async function loadPrimeCOs() {
+    const { data } = await supabase.from('prime_change_orders').select('*, budget_items(description, cost_code)').eq('job_id', id).order('created_at', { ascending: false })
+    setPrimeCOs(data || [])
+  }
+
+  async function addPrimeCO() {
+    if (!primeCOForm.amount || !primeCOForm.description) return
+    setAddingPrimeCO(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await supabase.from('prime_change_orders').insert({
+      job_id: id,
+      description: primeCOForm.description,
+      amount: parseFloat(primeCOForm.amount),
+      budget_item_id: primeCOForm.budget_item_id || null,
+      notes: primeCOForm.notes || null,
+      status: 'pending',
+      created_by: session.user.id,
+    })
+    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
+    else { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO); await loadPrimeCOs() }
+    setAddingPrimeCO(false)
+  }
+
+  async function reviewPrimeCO(coId, status) {
+    await supabase.from('prime_change_orders').update({ status, reviewed_at: new Date().toISOString() }).eq('id', coId)
+    await loadPrimeCOs()
+  }
+
+  async function deletePrimeCO(coId) {
+    if (!window.confirm('Delete this prime contract change order?')) return
+    await supabase.from('prime_change_orders').delete().eq('id', coId)
+    await loadPrimeCOs()
   }
 
   // ── Budget ──────────────────────────────────────────────────
@@ -1834,15 +1874,90 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── CHANGE ORDERS TAB ── */}
         {activeTab === 'changeorders' && (
           <>
-            <div style={s.statRow}>
-              <div style={s.statCard}><div style={s.statLabel}>Pending</div><div style={s.statValue(pendingCOs > 0 ? '#e8590c' : undefined)}>{pendingCOs}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Approved CO value</div><div style={s.statValue('#4ade80')}>{approvedCOValue >= 0 ? '+' : ''}${approvedCOValue.toLocaleString()}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Total COs</div><div style={s.statValue()}>{allCOs.length}</div></div>
-            </div>
+            {(() => {
+              const approvedPrimeCOVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+              const pendingPrimeCOs = primeCOs.filter(co => co.status === 'pending').length
+              return (
+                <div style={s.statRow}>
+                  <div style={s.statCard}><div style={s.statLabel}>Sub COs pending</div><div style={s.statValue(pendingCOs > 0 ? '#e8590c' : undefined)}>{pendingCOs}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Sub CO approved value</div><div style={s.statValue('#4ade80')}>{approvedCOValue >= 0 ? '+' : ''}${approvedCOValue.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Prime COs pending</div><div style={s.statValue(pendingPrimeCOs > 0 ? '#e8590c' : undefined)}>{pendingPrimeCOs}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Prime CO approved value</div><div style={s.statValue('#4ade80')}>{approvedPrimeCOVal >= 0 ? '+' : ''}${approvedPrimeCOVal.toLocaleString()}</div></div>
+                </div>
+              )
+            })()}
 
+            {/* Prime Contract Change Orders */}
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Change Orders ({allCOs.length})</p>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Prime Contract Change Orders ({primeCOs.length})</p>
+                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems() }}>+ Add Prime CO</button>}
+              </div>
+
+              {showAddPrimeCO && (
+                <div style={s.inlineForm}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New prime contract change order</p>
+                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>Amount ($)</label>
+                      <input type="number" style={s.input} placeholder="0.00" value={primeCOForm.amount} onChange={e => setPrimeCOForm(f => ({ ...f, amount: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Description</label>
+                      <input style={s.input} placeholder="Scope change, owner directive..." value={primeCOForm.description} onChange={e => setPrimeCOForm(f => ({ ...f, description: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Budget Line (optional)</label>
+                      <select style={s.input} value={primeCOForm.budget_item_id} onChange={e => setPrimeCOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                        <option value="">— None —</option>
+                        {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} ` : ''}{bi.description}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Notes</label>
+                    <input style={s.input} placeholder="Additional notes..." value={primeCOForm.notes} onChange={e => setPrimeCOForm(f => ({ ...f, notes: e.target.value }))} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button style={{ ...s.btn, opacity: addingPrimeCO ? 0.6 : 1 }} disabled={addingPrimeCO} onClick={addPrimeCO}>{addingPrimeCO ? 'Saving...' : 'Save Prime CO'}</button>
+                    <button style={s.btnGray} onClick={() => { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {primeCOs.length === 0 && !showAddPrimeCO && <p style={{ color: '#444', fontSize: '14px' }}>No prime contract change orders yet.</p>}
+
+              {primeCOs.map(co => (
+                <div key={co.id} style={s.coRow}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{co.description}</span>
+                      {co.budget_items && <span style={{ fontSize: '11px', color: '#555' }}>{co.budget_items.cost_code ? `${co.budget_items.cost_code} · ` : ''}{co.budget_items.description}</span>}
+                      <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
+                    </div>
+                    {co.notes && <span style={{ fontSize: '13px', color: '#aaa' }}>{co.notes}</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                      {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
+                    </span>
+                    <span style={s.coBadge(co.status)}>{co.status}</span>
+                    {co.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button style={s.btnSmallGreen} onClick={() => reviewPrimeCO(co.id, 'approved')}>Approve</button>
+                        <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected')}>Reject</button>
+                      </div>
+                    )}
+                    <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px' }} onClick={() => deletePrimeCO(co.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Subcontract Change Orders */}
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Subcontract Change Orders ({allCOs.length})</p>
                 {!showAddCO && <button style={s.btnSmallOrange} onClick={() => setShowAddCO(true)}>+ Add CO</button>}
               </div>
 
@@ -2815,7 +2930,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                                 {(() => {
                                   const retPct = Math.max(0, Math.min(100, parseFloat(activeAia.retainage_pct) || 10)) / 100
-                                  const approvedCOsVal = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+                                  const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
                                   const contractSumToDate = Number(job.contract_value || 0) + approvedCOsVal
                                   const totalSov = aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
                                   const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01

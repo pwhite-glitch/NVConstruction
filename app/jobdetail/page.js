@@ -74,10 +74,10 @@ const s = {
   billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
 }
 
-const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '' }
+const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10' }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { _contract_id: '', _contract_value: '', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
+const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
 
 export default function JobDetail() {
   const router = useRouter()
@@ -121,6 +121,7 @@ export default function JobDetail() {
   const [showCreateBilling, setShowCreateBilling] = useState(false)
   const [createBillingForm, setCreateBillingForm] = useState(emptyCreateBilling)
   const [creatingBilling, setCreatingBilling] = useState(false)
+  const [createBillingError, setCreateBillingError] = useState('')
   const [editingBilling, setEditingBilling] = useState(null)
   const [editBillingForm, setEditBillingForm] = useState({})
 
@@ -213,11 +214,12 @@ export default function JobDetail() {
     const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
     if (!summary) { setContracts([]); return [] }
     // Fetch budget_item_id from the base table — the view may predate this column
-    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, vendor_name').eq('job_id', id)
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, vendor_name, retainage_pct').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
       budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
       vendor_name: raw?.find(r => r.id === c.id)?.vendor_name ?? null,
+      retainage_pct: raw?.find(r => r.id === c.id)?.retainage_pct ?? 10,
     }))
     setContracts(merged)
     return merged
@@ -718,6 +720,7 @@ ${sovLines.length > 0 ? `
       description: contractForm.description || null,
       onedrive_url: contractForm.onedrive_url || null,
       budget_item_id: contractForm.budget_item_id || null,
+      retainage_pct: parseFloat(contractForm.retainage_pct) || 0,
       created_by: session.user.id,
       status: 'active',
     })
@@ -732,6 +735,7 @@ ${sovLines.length > 0 ? `
       description: editContractForm.description || null,
       onedrive_url: editContractForm.onedrive_url || null,
       budget_item_id: editContractForm.budget_item_id || null,
+      retainage_pct: parseFloat(editContractForm.retainage_pct) || 0,
     }).eq('id', editingContract)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
     setEditingContract(null)
@@ -866,13 +870,17 @@ ${sovLines.length > 0 ? `
     setCreatingBilling(true)
     const now = new Date().toISOString()
     const status = createBillingForm.auto_approve ? 'approved' : 'pending'
+    const amtBilled = parseFloat(createBillingForm.amount_billed) || 0
+    const retPct = parseFloat(createBillingForm._retainage_pct) || 0
+    const retHeld = Math.round(amtBilled * retPct / 100 * 100) / 100
     const { error } = await supabase.from('billing_submissions').insert({
       job_id: id,
-      sub_id: createBillingForm.sub_id || null,
       company_name: createBillingForm.company_name,
       contact_name: createBillingForm.contact_name || null,
       contact_info: createBillingForm.contact_info || null,
-      amount_billed: parseFloat(createBillingForm.amount_billed),
+      amount_billed: amtBilled,
+      retainage_pct: retPct,
+      retainage_held: retHeld,
       pct_complete: createBillingForm.pct_complete ? parseFloat(createBillingForm.pct_complete) : null,
       work_description: createBillingForm.work_description || null,
       billing_period: createBillingForm.billing_period ? createBillingForm.billing_period + '-01' : null,
@@ -880,8 +888,9 @@ ${sovLines.length > 0 ? `
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
     })
-    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
+    if (error) { setCreateBillingError(error.message) }
     else {
+      setCreateBillingError('')
       setShowCreateBilling(false)
       setCreateBillingForm(emptyCreateBilling)
       await loadBillingForJob()
@@ -891,11 +900,15 @@ ${sovLines.length > 0 ? `
 
   async function updateBillingEntry() {
     const now = new Date().toISOString()
+    const editAmt = parseFloat(editBillingForm.amount_billed) || 0
+    const editRetPct = parseFloat(editBillingForm.retainage_pct) || 0
     await supabase.from('billing_submissions').update({
       company_name: editBillingForm.company_name,
       contact_name: editBillingForm.contact_name || null,
       contact_info: editBillingForm.contact_info || null,
-      amount_billed: parseFloat(editBillingForm.amount_billed),
+      amount_billed: editAmt,
+      retainage_pct: editRetPct,
+      retainage_held: Math.round(editAmt * editRetPct / 100 * 100) / 100,
       pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
       work_description: editBillingForm.work_description || null,
       billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
@@ -1444,6 +1457,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" style={s.input} placeholder="0.00" value={contractForm.contract_value} onChange={e => setContractForm(f => ({ ...f, contract_value: e.target.value }))} />
                     </div>
                   </div>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>Retainage %</label>
+                      <input type="number" min="0" max="100" step="0.5" style={s.input} placeholder="10" value={contractForm.retainage_pct} onChange={e => setContractForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                      <p style={{ fontSize: '12px', color: '#555', margin: 0 }}>
+                        {contractForm.retainage_pct > 0
+                          ? `${contractForm.retainage_pct}% of each billing will be withheld until project completion.`
+                          : 'No retainage — full payment on each billing.'}
+                      </p>
+                    </div>
+                  </div>
                   <div style={{ marginBottom: '12px' }}>
                     <label style={s.label}>Description / scope</label>
                     <input style={s.input} placeholder="Framing, electrical, plumbing..." value={contractForm.description} onChange={e => setContractForm(f => ({ ...f, description: e.target.value }))} />
@@ -1505,6 +1531,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Remaining</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#ff6b6b' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
                         </div>
+                        {(c.retainage_pct > 0) && (
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Retainage</div>
+                            <div style={{ fontSize: '14px', fontWeight: '700', color: '#facc15' }}>{Number(c.retainage_pct)}%</div>
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnSmallOrange} onClick={() => {
                             if (expandedSov === c.id) { setExpandedSov(null) }
@@ -1512,7 +1544,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           }}>
                             {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
                           </button>
-                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '' }) }}>
+                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', retainage_pct: String(c.retainage_pct ?? 10) }) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
                           <button style={s.btnSmallRed} onClick={() => deleteContract(c.id)}>Delete</button>
@@ -1544,9 +1576,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </select>
                           </div>
                         )}
-                        <div style={{ marginBottom: '1rem' }}>
-                          <label style={s.label}>OneDrive link</label>
-                          <input style={s.input} value={editContractForm.onedrive_url} onChange={e => setEditContractForm(f => ({ ...f, onedrive_url: e.target.value }))} placeholder="https://onedrive.live.com/..." />
+                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                          <div>
+                            <label style={s.label}>Retainage %</label>
+                            <input type="number" min="0" max="100" step="0.5" style={s.input} value={editContractForm.retainage_pct} onChange={e => setEditContractForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>OneDrive link</label>
+                            <input style={s.input} value={editContractForm.onedrive_url} onChange={e => setEditContractForm(f => ({ ...f, onedrive_url: e.target.value }))} placeholder="https://onedrive.live.com/..." />
+                          </div>
                         </div>
                         <button style={s.btnSmallOrange} onClick={updateContract}>Save changes</button>
                       </div>
@@ -1798,13 +1836,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <select style={s.input} value={createBillingForm._contract_id || ''}
                       onChange={e => {
                         const contractId = e.target.value
-                        if (!contractId) { setCreateBillingForm(f => ({ ...f, _contract_id: '', _contract_value: '', sub_id: '', company_name: '', contact_name: '', contact_info: '' })); return }
+                        if (!contractId) { setCreateBillingForm(f => ({ ...f, _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '' })); return }
                         const contract = contracts.find(c => c.id === contractId)
                         const regSub = contract?.sub_id ? subs.find(s => s.sub_id === contract.sub_id) : null
                         setCreateBillingForm(f => ({
                           ...f,
                           _contract_id: contractId,
                           _contract_value: String(contract?.adjusted_contract_value || contract?.contract_value || ''),
+                          _retainage_pct: String(contract?.retainage_pct ?? 0),
                           sub_id: contract?.sub_id || '',
                           company_name: contract?.vendor_name || regSub?.profiles?.company_name || '',
                           contact_name: regSub?.profiles?.full_name || '',
@@ -1843,6 +1882,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         const pct = contractVal > 0 ? Math.min(100, Math.round(amt / contractVal * 100)) : null
                         setCreateBillingForm(f => ({ ...f, amount_billed: e.target.value, pct_complete: pct !== null ? String(pct) : f.pct_complete }))
                       }} placeholder="0.00" required />
+                      {parseFloat(createBillingForm._retainage_pct) > 0 && parseFloat(createBillingForm.amount_billed) > 0 && (() => {
+                        const retHeld = Math.round(parseFloat(createBillingForm.amount_billed) * parseFloat(createBillingForm._retainage_pct) / 100 * 100) / 100
+                        const net = parseFloat(createBillingForm.amount_billed) - retHeld
+                        return (
+                          <div style={{ fontSize: '11px', marginTop: '5px', color: '#888' }}>
+                            <span style={{ color: '#facc15' }}>{createBillingForm._retainage_pct}% retainage held: ${retHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#4ade80', marginLeft: '10px' }}>Net payment: ${net.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div>
                       <label style={s.label}>% complete</label>
@@ -1855,9 +1904,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
                     </div>
                     <div>
-                      <label style={s.label}>Billing period</label>
-                      <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
-                      <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Retainage % (from contract)</label>
+                        <input type="number" min="0" max="100" step="0.5" style={s.input} value={createBillingForm._retainage_pct} onChange={e => setCreateBillingForm(f => ({ ...f, _retainage_pct: e.target.value }))} placeholder="0" />
+                      </div>
+                      <div>
+                        <label style={s.label}>Billing period</label>
+                        <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
+                        <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                      </div>
                     </div>
                   </div>
                   <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1871,11 +1926,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {!createBillingForm.company_name ? 'Select a contractor or enter a company name. ' : ''}{!createBillingForm.amount_billed ? 'Enter the amount billed.' : ''}
                     </p>
                   )}
+                  {createBillingError && (
+                    <p style={{ fontSize: '12px', color: '#ff6b6b', marginBottom: '10px' }}>{createBillingError}</p>
+                  )}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: (creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed) ? 0.4 : 1 }} disabled={creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed} onClick={createBilling}>
                       {creatingBilling ? 'Saving...' : createBillingForm.auto_approve ? 'Save & approve' : 'Save as pending'}
                     </button>
-                    <button style={s.btnGray} onClick={() => { setShowCreateBilling(false); setCreateBillingForm(emptyCreateBilling) }}>Cancel</button>
+                    <button style={s.btnGray} onClick={() => { setShowCreateBilling(false); setCreateBillingForm(emptyCreateBilling); setCreateBillingError('') }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -1903,7 +1961,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</div>
+                          {b.retainage_held > 0 && (
+                            <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                              <span style={{ color: '#facc15' }}>Ret: ${Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#4ade80', marginLeft: '8px' }}>Net: ${(Number(b.amount_billed) - Number(b.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          )}
+                        </div>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnSmallOrange} onClick={() => {
                             if (!isEditing) loadBillingSov(b.id)
@@ -1913,6 +1979,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               contact_name: b.contact_name || '',
                               contact_info: b.contact_info || '',
                               amount_billed: b.amount_billed || '',
+                              retainage_pct: b.retainage_pct ?? 0,
                               pct_complete: b.pct_complete ?? '',
                               work_description: b.work_description || '',
                               billing_period: b.billing_period ? b.billing_period.slice(0, 7) : '',
@@ -1939,7 +2006,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <input style={s.input} value={editBillingForm.contact_name} onChange={e => setEditBillingForm(f => ({ ...f, contact_name: e.target.value }))} />
                           </div>
                         </div>
-                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                           <div>
                             <label style={s.label}>Contact info</label>
                             <input style={s.input} value={editBillingForm.contact_info} onChange={e => setEditBillingForm(f => ({ ...f, contact_info: e.target.value }))} />
@@ -1947,6 +2014,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div>
                             <label style={s.label}>Amount billed ($)</label>
                             <input type="number" step="0.01" style={s.input} value={editBillingForm.amount_billed} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Retainage %</label>
+                            <input type="number" min="0" max="100" step="0.5" style={s.input} value={editBillingForm.retainage_pct} onChange={e => setEditBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                            {parseFloat(editBillingForm.retainage_pct) > 0 && parseFloat(editBillingForm.amount_billed) > 0 && (
+                              <div style={{ fontSize: '11px', marginTop: '4px', color: '#facc15' }}>
+                                Held: ${Math.round(parseFloat(editBillingForm.amount_billed) * parseFloat(editBillingForm.retainage_pct) / 100 * 100) / 100}
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label style={s.label}>% complete</label>

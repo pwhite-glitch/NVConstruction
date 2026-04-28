@@ -77,6 +77,7 @@ export default function Submit() {
   const [bidFile, setBidFile] = useState(null)
   const [jobSovContracts, setJobSovContracts] = useState([])
   const [sovForm, setSovForm] = useState([])
+  const [sovRetainageMap, setSovRetainageMap] = useState({})
 
   useEffect(() => {
     async function load() {
@@ -190,16 +191,19 @@ export default function Submit() {
 
   async function loadJobSov(jobId) {
     if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); return }
-    const { data: contracts } = await supabase.from('subcontracts').select('id, description').eq('sub_id', user.id).eq('job_id', jobId)
-    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); return }
+    const { data: contracts } = await supabase.from('subcontracts').select('id, description, retainage_pct').eq('sub_id', user.id).eq('job_id', jobId)
+    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); return }
     const contractIds = contracts.map(c => c.id)
-    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
+    const retMap = Object.fromEntries(contracts.map(c => [c.id, parseFloat(c.retainage_pct) || 0]))
+    setSovRetainageMap(retMap)
+    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description, retainage_pct)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
     setJobSovContracts(contracts)
     setSovForm((lines || []).map(l => ({
       sov_line_id: l.id,
       subcontract_id: l.subcontract_id,
       description: l.description,
       scheduled_value: Number(l.scheduled_value || 0),
+      retainage_pct: parseFloat(l.subcontracts?.retainage_pct) || 0,
       contract_description: l.subcontracts?.description || '',
       pct_this: '',
       amount_this: 0,
@@ -216,12 +220,21 @@ export default function Submit() {
       if (!upErr) doc_url = path
     }
     const selectedJob = jobs.find(j => j.id === form.job_id)
+    const totalAmtBilled = parseFloat(form.amount_billed) || 0
+    const retainageHeld = sovForm.length > 0
+      ? Math.round(sovForm.reduce((a, l) => a + l.amount_this * (l.retainage_pct || 0) / 100, 0) * 100) / 100
+      : 0
+    const weightedRetPct = totalAmtBilled > 0 && retainageHeld > 0
+      ? Math.round(retainageHeld / totalAmtBilled * 100 * 100) / 100
+      : 0
     const { data: newSub, error } = await supabase.from('billing_submissions').insert({
       sub_id: user.id, job_id: form.job_id,
       sub_email: user.email,
       company_name: profile?.company_name || 'Unknown',
       contact_name: profile?.full_name, contact_info: profile?.phone,
-      amount_billed: parseFloat(form.amount_billed),
+      amount_billed: totalAmtBilled,
+      retainage_pct: weightedRetPct,
+      retainage_held: retainageHeld,
       pct_complete: parseInt(form.pct_complete) || null,
       work_description: form.work_description,
       billing_period: form.billing_period ? form.billing_period + '-01' : null,
@@ -251,6 +264,7 @@ export default function Submit() {
       setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7) })
       setSovForm([])
       setJobSovContracts([])
+      setSovRetainageMap({})
       setBillingFile(null)
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
@@ -317,45 +331,86 @@ export default function Submit() {
                           <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
                             <th style={{ textAlign: 'left', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Line item</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Ret %</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', width: '120px' }}>% This period</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {sovForm.map((line, idx) => (
-                            <tr key={line.sov_line_id} style={{ borderBottom: '1px solid #111' }}>
-                              <td style={{ padding: '8px 12px', color: '#ccc' }}>
-                                {line.description}
-                                {line.contract_description && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{line.contract_description}</div>}
-                              </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>${line.scheduled_value.toLocaleString()}</td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                                <input
-                                  type="number" min="0" max="100" step="1"
-                                  value={line.pct_this}
-                                  placeholder="0"
-                                  onChange={e => {
-                                    const pct = parseFloat(e.target.value) || 0
-                                    const amt = Math.round(line.scheduled_value * pct / 100 * 100) / 100
-                                    const next = sovForm.map((l, i) => i === idx ? { ...l, pct_this: e.target.value, amount_this: amt } : l)
-                                    setSovForm(next)
-                                    const total = next.reduce((a, l) => a + l.amount_this, 0)
-                                    update('amount_billed', total.toFixed(2))
-                                  }}
-                                  style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'right' }}
-                                />
-                              </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>
-                                ${line.amount_this.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr style={{ background: '#111' }}>
-                            <td colSpan={3} style={{ padding: '8px 12px', color: '#888', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Total this period:</td>
-                            <td style={{ padding: '8px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '14px' }}>
-                              ${sovForm.reduce((a, l) => a + l.amount_this, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                          </tr>
+                          {sovForm.map((line, idx) => {
+                            const lineRetHeld = Math.round(line.amount_this * (line.retainage_pct || 0) / 100 * 100) / 100
+                            const lineNet = line.amount_this - lineRetHeld
+                            return (
+                              <tr key={line.sov_line_id} style={{ borderBottom: '1px solid #111' }}>
+                                <td style={{ padding: '8px 12px', color: '#ccc' }}>
+                                  {line.description}
+                                  {line.contract_description && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{line.contract_description}</div>}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>${line.scheduled_value.toLocaleString()}</td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right', color: line.retainage_pct > 0 ? '#facc15' : '#444' }}>
+                                  {line.retainage_pct > 0 ? `${line.retainage_pct}%` : '—'}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                  <input
+                                    type="number" min="0" max="100" step="1"
+                                    value={line.pct_this}
+                                    placeholder="0"
+                                    onChange={e => {
+                                      const pct = parseFloat(e.target.value) || 0
+                                      const amt = Math.round(line.scheduled_value * pct / 100 * 100) / 100
+                                      const next = sovForm.map((l, i) => i === idx ? { ...l, pct_this: e.target.value, amount_this: amt } : l)
+                                      setSovForm(next)
+                                      const total = next.reduce((a, l) => a + l.amount_this, 0)
+                                      update('amount_billed', total.toFixed(2))
+                                    }}
+                                    style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'right' }}
+                                  />
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                  <div style={{ fontWeight: '600', color: '#f1f1f1' }}>
+                                    ${line.amount_this.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </div>
+                                  {line.retainage_pct > 0 && line.amount_this > 0 && (
+                                    <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                                      <span style={{ color: '#facc15' }}>−${lineRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      <span style={{ color: '#4ade80', marginLeft: '6px' }}>=${lineNet.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          {(() => {
+                            const totalGross = sovForm.reduce((a, l) => a + l.amount_this, 0)
+                            const totalRetHeld = Math.round(sovForm.reduce((a, l) => a + l.amount_this * (l.retainage_pct || 0) / 100, 0) * 100) / 100
+                            const totalNet = totalGross - totalRetHeld
+                            return (
+                              <>
+                                <tr style={{ background: '#111' }}>
+                                  <td colSpan={4} style={{ padding: '8px 12px', color: '#888', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Gross this period:</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '14px' }}>
+                                    ${totalGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                </tr>
+                                {totalRetHeld > 0 && (
+                                  <>
+                                    <tr style={{ background: '#0f0f0f' }}>
+                                      <td colSpan={4} style={{ padding: '6px 12px', color: '#facc15', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Retainage held:</td>
+                                      <td style={{ padding: '6px 12px', textAlign: 'right', color: '#facc15', fontWeight: '700' }}>
+                                        −${totalRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                    <tr style={{ background: '#0a0a0a' }}>
+                                      <td colSpan={4} style={{ padding: '6px 12px', color: '#4ade80', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Net payment due:</td>
+                                      <td style={{ padding: '6px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '800', fontSize: '14px' }}>
+                                        ${totalNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </td>
+                                    </tr>
+                                  </>
+                                )}
+                              </>
+                            )
+                          })()}
                         </tbody>
                       </table>
                     </div>
@@ -497,7 +552,15 @@ export default function Submit() {
                     </p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <span style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</div>
+                      {s2.retainage_held > 0 && (
+                        <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                          <span style={{ color: '#facc15' }}>Ret: ${Number(s2.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <span style={{ color: '#4ade80', marginLeft: '6px' }}>Net: ${(Number(s2.amount_billed) - Number(s2.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                    </div>
                     <span style={s.badge(s2.status)}>{s2.status}</span>
                   </div>
                 </div>

@@ -472,7 +472,8 @@ export default function JobDetail() {
         const addAmt = Math.round(rawAmt * markupMultiplier * 100) / 100
         const budgetAmt = Number(line.budget_amount || 0)
         if (budgetAmt === 0) return line
-        const addedPct = Math.round(addAmt / budgetAmt * 100 * 10) / 10
+        // No rounding on the percentage — store full precision so dollar round-trip is exact
+        const addedPct = addAmt / budgetAmt * 100
         const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
         return { ...line, pct_this: String(newPct) }
       })
@@ -2687,7 +2688,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</div>
                                             {parseFloat(activeAia?.markup_pct) > 0 && (
                                               <div style={{ fontSize: '10px', color: '#e8590c', marginTop: '1px' }}>
-                                                +{activeAia.markup_pct}% = ${Math.round(Number(b.amount_billed) * (1 + parseFloat(activeAia.markup_pct) / 100)).toLocaleString()} billed
+                                                +{activeAia.markup_pct}% = ${(Math.round(Number(b.amount_billed) * (1 + parseFloat(activeAia.markup_pct) / 100) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} billed
                                               </div>
                                             )}
                                           </div>
@@ -2803,8 +2804,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                 )
                                               })()}
                                             </td>
-                                            <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                                            <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                           </tr>
                                         )
                                       })}

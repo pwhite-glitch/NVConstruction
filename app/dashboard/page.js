@@ -794,7 +794,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {profile?.role === 'pm' && (
               <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
             )}
-            <button style={s.tab(activeTab === 'estimator')} onClick={() => setActiveTab('estimator')}>Estimator</button>
+            {profile?.role === 'pm' && (
+              <button style={s.tab(activeTab === 'estimator')} onClick={() => setActiveTab('estimator')}>Estimator</button>
+            )}
           </div>
 
           <div style={s.cardBody}>

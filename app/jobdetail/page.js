@@ -192,6 +192,12 @@ export default function JobDetail() {
   const [editSovLineForm, setEditSovLineForm] = useState({})
   const [billingSovData, setBillingSovData] = useState({})
 
+  // Schedule tab state
+  const [scheduleFiles, setScheduleFiles] = useState([])
+  const [uploadingSchedule, setUploadingSchedule] = useState(false)
+  const [parsedTasks, setParsedTasks] = useState(null)
+  const [parsedFrom, setParsedFrom] = useState(null)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -771,6 +777,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications() }
+    if (activeTab === 'schedule') { loadScheduleFiles() }
   }, [activeTab, id])
 
 
@@ -822,6 +829,63 @@ ${sovLines.length > 0 ? `
   async function loadBillingSov(submissionId) {
     const { data } = await supabase.from('billing_sov_lines').select('*, subcontract_sov_lines(description, scheduled_value)').eq('billing_submission_id', submissionId)
     setBillingSovData(prev => ({ ...prev, [submissionId]: data || [] }))
+  }
+
+  // ── Schedule ────────────────────────────────────────────────
+  async function loadScheduleFiles() {
+    const { data } = await supabase.from('job_schedule_files').select('*').eq('job_id', id).order('uploaded_at', { ascending: false })
+    setScheduleFiles(data || [])
+  }
+
+  async function uploadScheduleFile(file) {
+    setUploadingSchedule(true)
+    const path = `${id}/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('schedule-files').upload(path, file)
+    if (error) { alert('Upload error: ' + error.message); setUploadingSchedule(false); return }
+    await supabase.from('job_schedule_files').insert({ job_id: id, file_name: file.name, storage_path: path, file_type: file.name.split('.').pop().toLowerCase() })
+    if (file.name.toLowerCase().endsWith('.xml')) {
+      const text = await file.text()
+      const tasks = parseProjectXml(text)
+      setParsedTasks(tasks)
+      setParsedFrom(file.name)
+    }
+    await loadScheduleFiles()
+    setUploadingSchedule(false)
+  }
+
+  async function openScheduleFile(storagePath) {
+    const { data } = await supabase.storage.from('schedule-files').createSignedUrl(storagePath, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function deleteScheduleFile(fileId, storagePath) {
+    if (!window.confirm('Delete this file?')) return
+    await supabase.storage.from('schedule-files').remove([storagePath])
+    await supabase.from('job_schedule_files').delete().eq('id', fileId)
+    await loadScheduleFiles()
+    if (parsedFrom && storagePath.includes(parsedFrom)) { setParsedTasks(null); setParsedFrom(null) }
+  }
+
+  function parseProjectXml(xmlText) {
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(xmlText, 'application/xml')
+      const taskNodes = doc.querySelectorAll('Tasks > Task')
+      const tasks = []
+      taskNodes.forEach(t => {
+        const uid = t.querySelector('UID')?.textContent
+        if (uid === '0') return
+        const name = t.querySelector('Name')?.textContent || ''
+        const start = t.querySelector('Start')?.textContent || ''
+        const finish = t.querySelector('Finish')?.textContent || ''
+        const pct = t.querySelector('PercentComplete')?.textContent || '0'
+        const milestone = t.querySelector('Milestone')?.textContent === '1'
+        const summary = t.querySelector('Summary')?.textContent === '1'
+        if (!name) return
+        tasks.push({ uid, name, start: start.slice(0, 10), finish: finish.slice(0, 10), pct: parseInt(pct, 10), milestone, summary })
+      })
+      return tasks
+    } catch { return [] }
   }
 
   // ── Contracts ──────────────────────────────────────────────
@@ -1511,6 +1575,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             Direct Costs{directCosts.filter(c => c.status === 'pending').length > 0 ? ` (${directCosts.filter(c => c.status === 'pending').length} pending)` : directCosts.length > 0 ? ` (${directCosts.length})` : ''}
           </button>
           <button style={s.tab(activeTab === 'prime')} onClick={() => setActiveTab('prime')}>Prime Contract</button>
+          <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
         </div>
 
         {/* ── DETAILS TAB ── */}
@@ -3371,6 +3436,158 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )
               })}
             </div>
+          </>
+        )}
+
+        {/* ── SCHEDULE TAB ── */}
+        {activeTab === 'schedule' && (
+          <>
+            <div style={s.card}>
+              <p style={s.cardTitle}>Project Schedule</p>
+              <p style={{ fontSize: '13px', color: '#666', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
+                Upload Microsoft Project files (.mpp, .xml), PDFs, or Excel schedules. XML exports from MS Project will be parsed to show task progress.
+              </p>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingSchedule ? '#111' : '#2a1200', color: uploadingSchedule ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingSchedule ? 'not-allowed' : 'pointer' }}>
+                {uploadingSchedule ? 'Uploading...' : '+ Upload Schedule File'}
+                <input type="file" accept=".mpp,.xml,.pdf,.xlsx,.xls,.csv" style={{ display: 'none' }} disabled={uploadingSchedule}
+                  onChange={e => { if (e.target.files?.[0]) uploadScheduleFile(e.target.files[0]); e.target.value = '' }} />
+              </label>
+            </div>
+
+            {scheduleFiles.length > 0 && (
+              <div style={s.card}>
+                <p style={s.cardTitle}>Uploaded Files</p>
+                {scheduleFiles.map(f => (
+                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                    <div>
+                      <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{f.file_name}</span>
+                      <span style={{ fontSize: '12px', color: '#555', marginLeft: '12px' }}>{new Date(f.uploaded_at).toLocaleDateString()}</span>
+                      {f.file_type && <span style={{ marginLeft: '8px', padding: '2px 8px', background: '#1a1a2a', color: '#60a5fa', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>{f.file_type}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {f.file_type === 'xml' && (
+                        <button style={s.btnSmallOrange} onClick={async () => {
+                          const { data } = await supabase.storage.from('schedule-files').createSignedUrl(f.storage_path, 3600)
+                          if (data?.signedUrl) {
+                            const res = await fetch(data.signedUrl)
+                            const text = await res.text()
+                            const tasks = parseProjectXml(text)
+                            setParsedTasks(tasks)
+                            setParsedFrom(f.file_name)
+                          }
+                        }}>Parse Tasks</button>
+                      )}
+                      <button style={s.btnSmall} onClick={() => openScheduleFile(f.storage_path)}>Open</button>
+                      <button style={s.btnSmallRed} onClick={() => deleteScheduleFile(f.id, f.storage_path)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {parsedTasks && parsedTasks.length > 0 && (() => {
+              const today = new Date().toISOString().slice(0, 10)
+              const upcoming = parsedTasks.filter(t => !t.summary && !t.milestone && t.pct < 100 && t.finish >= today)
+              const overdue = parsedTasks.filter(t => !t.summary && !t.milestone && t.pct < 100 && t.finish < today)
+              const inProgress = parsedTasks.filter(t => !t.summary && !t.milestone && t.pct > 0 && t.pct < 100)
+              return (
+                <>
+                  <div style={{ ...s.card, marginBottom: '1rem' }}>
+                    <p style={s.cardTitle}>What's Next — from {parsedFrom}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                      <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#e8590c' }}>{inProgress.length}</div>
+                        <div style={{ fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>In Progress</div>
+                      </div>
+                      <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#60a5fa' }}>{upcoming.length}</div>
+                        <div style={{ fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Upcoming</div>
+                      </div>
+                      <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#ff6b6b' }}>{overdue.length}</div>
+                        <div style={{ fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Overdue</div>
+                      </div>
+                    </div>
+
+                    {overdue.length > 0 && (
+                      <>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#ff6b6b', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Overdue</p>
+                        {overdue.map(t => (
+                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', marginBottom: '6px' }}>
+                            <div>
+                              <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
+                              <span style={{ fontSize: '12px', color: '#ff6b6b', marginLeft: '10px' }}>Due {t.finish}</span>
+                            </div>
+                            <span style={{ fontSize: '12px', color: '#ff6b6b', fontWeight: '700' }}>{t.pct}%</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {inProgress.length > 0 && (
+                      <>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', marginTop: overdue.length > 0 ? '1rem' : 0 }}>In Progress</p>
+                        {inProgress.map(t => (
+                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '6px', marginBottom: '6px' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
+                                <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700' }}>{t.pct}%</span>
+                              </div>
+                              <div style={{ background: '#1a1a1a', borderRadius: '4px', height: '4px' }}>
+                                <div style={{ background: '#e8590c', borderRadius: '4px', height: '4px', width: `${t.pct}%` }} />
+                              </div>
+                              <span style={{ fontSize: '11px', color: '#555' }}>{t.start} → {t.finish}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).length > 0 && (
+                      <>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', marginTop: (overdue.length > 0 || inProgress.length > 0) ? '1rem' : 0 }}>Upcoming (next 30 days)</p>
+                        {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).filter(t => t.start <= new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)).slice(0, 10).map(t => (
+                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#0a0a1a', border: '1px solid #1a2a3a', borderRadius: '6px', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
+                            <span style={{ fontSize: '12px', color: '#60a5fa' }}>{t.start} → {t.finish}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+
+                  <div style={s.card}>
+                    <p style={s.cardTitle}>All Tasks ({parsedTasks.filter(t => !t.summary).length})</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '6px 0 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e', marginBottom: '4px' }}>
+                      <span>Task</span><span>Start</span><span>Finish</span><span style={{ textAlign: 'right' }}>Complete</span>
+                    </div>
+                    {parsedTasks.filter(t => !t.summary).map(t => {
+                      const isOverdue = t.pct < 100 && t.finish < today
+                      const isInProg = t.pct > 0 && t.pct < 100
+                      return (
+                        <div key={t.uid} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '10px 0', borderBottom: '1px solid #111', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontSize: '13px', color: isOverdue ? '#ff6b6b' : '#f1f1f1' }}>{t.milestone ? '◆ ' : ''}{t.name}</span>
+                          </div>
+                          <span style={{ fontSize: '12px', color: '#555' }}>{t.start}</span>
+                          <span style={{ fontSize: '12px', color: isOverdue ? '#ff6b6b' : '#555' }}>{t.finish}</span>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: t.pct === 100 ? '#4ade80' : isOverdue ? '#ff6b6b' : isInProg ? '#e8590c' : '#555' }}>{t.pct}%</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )
+            })()}
+
+            {scheduleFiles.length === 0 && (
+              <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
+                <p style={{ color: '#555', margin: 0 }}>No schedule files uploaded yet. Upload an MS Project XML export to see task progress here.</p>
+              </div>
+            )}
           </>
         )}
 

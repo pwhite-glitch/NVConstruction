@@ -139,6 +139,7 @@ export default function Dashboard() {
   const [teamAssignMsg, setTeamAssignMsg] = useState({})
   const [teamAssigningId, setTeamAssigningId] = useState(null)
   const [updatingRoleId, setUpdatingRoleId] = useState(null)
+  const [roleMsg, setRoleMsg] = useState({})
   const [editingTeamId, setEditingTeamId] = useState(null)
   const [editTeamForm, setEditTeamForm] = useState({})
 
@@ -487,8 +488,15 @@ export default function Dashboard() {
 
   async function updateTeamRole(userId, role) {
     setUpdatingRoleId(userId)
-    await supabase.from('profiles').update({ role }).eq('id', userId)
-    await loadTeamData()
+    setRoleMsg(prev => ({ ...prev, [userId]: null }))
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId)
+    if (error) {
+      setRoleMsg(prev => ({ ...prev, [userId]: { ok: false, text: 'Failed: ' + (error.message || 'permission denied') } }))
+    } else {
+      await loadTeamData()
+      setRoleMsg(prev => ({ ...prev, [userId]: { ok: true, text: 'Saved' } }))
+      setTimeout(() => setRoleMsg(prev => { const n = { ...prev }; delete n[userId]; return n }), 3000)
+    }
     setUpdatingRoleId(null)
   }
 
@@ -1394,6 +1402,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                     <option value="admin">Office Admin</option>
                                   </select>
                                   {updatingRoleId === member.id && <span style={s.successInline}>Saving...</span>}
+                                  {roleMsg[member.id] && <span style={roleMsg[member.id].ok ? s.successInline : s.errorInline}>{roleMsg[member.id].text}</span>}
                                 </div>
                               </div>
 

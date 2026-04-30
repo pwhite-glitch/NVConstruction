@@ -153,6 +153,12 @@ export default function Dashboard() {
   const [editEstimateForm, setEditEstimateForm] = useState({})
   const [editEstimateLines, setEditEstimateLines] = useState([])
   const [savingEstimateEdit, setSavingEstimateEdit] = useState(false)
+  const [estimatorInnerTab, setEstimatorInnerTab] = useState('estimates')
+  const [convertingEst, setConvertingEst] = useState(null)
+  const [convertJobForm, setConvertJobForm] = useState({ job_number: '', start_date: '' })
+  const [convertingJob, setConvertingJob] = useState(false)
+  const [uploadingEstDoc, setUploadingEstDoc] = useState(null)
+  const [estDocs, setEstDocs] = useState({})
 
   useEffect(() => {
     async function load() {
@@ -176,9 +182,8 @@ export default function Dashboard() {
   }, [router])
 
   useEffect(() => {
-    if (activeTab === 'bids') loadBidPackages(assignedJobIds)
+    if (activeTab === 'estimator') { loadEstimates(); loadBidPackages(assignedJobIds) }
     if (activeTab === 'nv-directory') loadTeamData()
-    if (activeTab === 'estimates') loadEstimates()
   }, [activeTab])
 
 
@@ -674,6 +679,54 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     w.document.close()
   }
 
+  async function loadEstDocs(estimateId) {
+    const { data } = await supabase.from('estimate_docs').select('*').eq('estimate_id', estimateId).order('uploaded_at')
+    setEstDocs(prev => ({ ...prev, [estimateId]: data || [] }))
+  }
+
+  async function uploadEstDoc(estimateId, file) {
+    setUploadingEstDoc(estimateId)
+    const path = `${estimateId}/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('estimate-docs').upload(path, file)
+    if (!error) {
+      await supabase.from('estimate_docs').insert({ estimate_id: estimateId, file_name: file.name, storage_path: path })
+      await loadEstDocs(estimateId)
+    } else {
+      alert('Upload error: ' + error.message)
+    }
+    setUploadingEstDoc(null)
+  }
+
+  async function openEstDoc(path) {
+    const { data } = await supabase.storage.from('estimate-docs').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function convertToJob(estimate) {
+    if (!convertJobForm.job_number.trim()) { alert('Job number is required.'); return }
+    setConvertingJob(true)
+    const lines = estimate.estimate_line_items || []
+    const total = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+    const { data: job, error: jobError } = await supabase.from('jobs').insert({
+      job_number: convertJobForm.job_number.trim(),
+      project_name: estimate.project_name,
+      location: estimate.address || null,
+      contract_value: total || null,
+      start_date: convertJobForm.start_date || null,
+      status: 'active',
+    }).select('id').single()
+    if (jobError) { alert('Error creating job: ' + jobError.message); setConvertingJob(false); return }
+    if (lines.length > 0) {
+      await supabase.from('budget_items').insert(
+        lines.map(l => ({ job_id: job.id, description: l.description, budget_amount: Number(l.amount) || 0, category: 'General' }))
+      )
+    }
+    await supabase.from('estimates').update({ status: 'won' }).eq('id', estimate.id)
+    setConvertingJob(false)
+    setConvertingEst(null)
+    router.push(`/jobdetail?id=${job.id}&tab=budget`)
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
   const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
@@ -730,13 +783,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               Sub directory{pendingApps > 0 ? ` (${pendingApps})` : ''}
             </button>
             <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
-            <button style={s.tab(activeTab === 'bids')} onClick={() => setActiveTab('bids')}>
-              Bid Invites{bidPackages.filter(b => b.status === 'open').length > 0 ? ` (${bidPackages.filter(b => b.status === 'open').length} open)` : ''}
-            </button>
             {profile?.role === 'pm' && (
               <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
             )}
-            <button style={s.tab(activeTab === 'estimates')} onClick={() => setActiveTab('estimates')}>Estimates</button>
+            <button style={s.tab(activeTab === 'estimator')} onClick={() => setActiveTab('estimator')}>Estimator</button>
           </div>
 
           <div style={s.cardBody}>
@@ -1073,8 +1123,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               </>
             )}
 
-            {/* ── BID INVITES ── */}
-            {activeTab === 'bids' && (
+            {/* ── BID INVITES (inside Estimator) ── */}
+            {activeTab === 'estimator' && estimatorInnerTab === 'bids' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open</p>
@@ -1402,11 +1452,23 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               </>
             )}
 
-            {/* ── ESTIMATES ── */}
-            {activeTab === 'estimates' && (
+            {/* ── ESTIMATOR INNER NAV ── */}
+            {activeTab === 'estimator' && (
+              <div style={{ display: 'flex', borderBottom: '1px solid #1a1a1a', marginBottom: '1.5rem' }}>
+                <button style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === 'estimates' ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === 'estimates' ? '700' : '500', color: estimatorInnerTab === 'estimates' ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab('estimates')}>
+                  Estimates ({estimates.length})
+                </button>
+                <button style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === 'bids' ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === 'bids' ? '700' : '500', color: estimatorInnerTab === 'bids' ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab('bids')}>
+                  Bid Packages ({bidPackages.length})
+                </button>
+              </div>
+            )}
+
+            {/* ── ESTIMATES (inside Estimator) ── */}
+            {activeTab === 'estimator' && estimatorInnerTab === 'estimates' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''}</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''} · {estimates.filter(e => e.status === 'won').length} won · {estimates.filter(e => e.status === 'lost').length} lost</p>
                   <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>
                 </div>
 
@@ -1471,14 +1533,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   return (
                     <div key={est.id} style={s.rowBorder}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }}
-                        onClick={() => setExpandedEstimate(isExp ? null : est.id)}>
+                        onClick={() => { const newId = isExp ? null : est.id; setExpandedEstimate(newId); if (newId) loadEstDocs(newId) }}>
                         <div>
                           <p style={s.company}>{est.project_name}</p>
                           <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: est.status === 'sent' ? '#0a2a0a' : est.status === 'accepted' ? '#0a1a2a' : est.status === 'declined' ? '#2a0a0a' : '#1a1a1a', color: est.status === 'sent' ? '#4ade80' : est.status === 'accepted' ? '#60a5fa' : est.status === 'declined' ? '#ff6b6b' : '#888', border: `1px solid ${est.status === 'sent' ? '#1a4a1a' : est.status === 'accepted' ? '#1a3a5a' : est.status === 'declined' ? '#5a1a1a' : '#2a2a2a'}` }}>{est.status}</span>
+                          <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: est.status === 'won' ? '#0a2a0a' : est.status === 'lost' ? '#2a0a0a' : est.status === 'sent' ? '#1a2a00' : est.status === 'accepted' ? '#0a1a2a' : est.status === 'declined' ? '#2a0a0a' : '#1a1a1a', color: est.status === 'won' ? '#4ade80' : est.status === 'lost' ? '#ff6b6b' : est.status === 'sent' ? '#a3e635' : est.status === 'accepted' ? '#60a5fa' : est.status === 'declined' ? '#ff6b6b' : '#888', border: `1px solid ${est.status === 'won' ? '#1a4a1a' : est.status === 'lost' ? '#5a1a1a' : est.status === 'sent' ? '#2a4a00' : est.status === 'accepted' ? '#1a3a5a' : est.status === 'declined' ? '#5a1a1a' : '#2a2a2a'}` }}>{est.status}</span>
                           <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                         </div>
                       </div>
@@ -1506,6 +1568,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   <select style={s.input} value={editEstimateForm.status} onChange={e => setEditEstimateForm(f => ({ ...f, status: e.target.value }))}>
                                     <option value="draft">Draft</option>
                                     <option value="sent">Sent</option>
+                                    <option value="won">Won</option>
+                                    <option value="lost">Lost</option>
                                     <option value="accepted">Accepted</option>
                                     <option value="declined">Declined</option>
                                   </select>
@@ -1576,15 +1640,61 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   </div>
                                 </div>
                               )}
-                              <div style={{ display: 'flex', gap: '8px' }}>
+                              <div style={{ marginBottom: '1rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                  <div style={s.detailLabel}>Estimate documents</div>
+                                  <label style={{ ...s.btnSm('orange'), cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    {uploadingEstDoc === est.id ? 'Uploading...' : '+ Upload doc'}
+                                    <input type="file" accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg" style={{ display: 'none' }}
+                                      disabled={uploadingEstDoc === est.id}
+                                      onChange={e => e.target.files[0] && uploadEstDoc(est.id, e.target.files[0])} />
+                                  </label>
+                                </div>
+                                {!(estDocs[est.id] || []).length ? (
+                                  <p style={{ fontSize: '12px', color: '#444', margin: 0 }}>No documents uploaded.</p>
+                                ) : (estDocs[est.id] || []).map(doc => (
+                                  <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
+                                    <span style={{ fontSize: '12px', color: '#ccc' }}>📄 {doc.file_name}</span>
+                                    <button style={s.btnSm('gray')} onClick={() => openEstDoc(doc.storage_path)}>Open</button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: convertingEst === est.id ? '1rem' : 0 }}>
                                 <button style={s.btnSm('orange')} onClick={() => generateEstimatePDF(est)}>Export PDF</button>
                                 <button style={s.btnSm('gray')} onClick={() => {
                                   setEditingEstimate(est.id)
                                   setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft' })
                                   setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount) })))
                                 }}>Edit</button>
+                                {est.status !== 'won' && (
+                                  <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }) }}>Convert to Job</button>
+                                )}
                                 <button style={s.btnSm('red')} onClick={() => deleteEstimate(est.id)}>Delete</button>
                               </div>
+                              {convertingEst === est.id && (
+                                <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '1rem' }}>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', margin: '0 0 0.75rem', letterSpacing: '2px', textTransform: 'uppercase' }}>Convert to Active Job</p>
+                                  <div style={{ ...s.grid2, marginBottom: '0.75rem' }}>
+                                    <div>
+                                      <label style={s.label}>Job number *</label>
+                                      <input style={s.input} value={convertJobForm.job_number} onChange={e => setConvertJobForm(f => ({ ...f, job_number: e.target.value }))} placeholder="7469" />
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Start date</label>
+                                      <input type="date" style={s.input} value={convertJobForm.start_date} onChange={e => setConvertJobForm(f => ({ ...f, start_date: e.target.value }))} />
+                                    </div>
+                                  </div>
+                                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 0.75rem', lineHeight: '1.5' }}>
+                                    Creates job "{est.project_name}" with {lines.length} budget line{lines.length !== 1 ? 's' : ''} totaling ${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}. Estimate will be marked won.
+                                  </p>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button style={{ ...s.btnSm('green'), opacity: convertingJob || !convertJobForm.job_number ? 0.6 : 1 }} disabled={convertingJob || !convertJobForm.job_number} onClick={() => convertToJob(est)}>
+                                      {convertingJob ? 'Creating job...' : 'Create job & open'}
+                                    </button>
+                                    <button style={s.btnSm('gray')} onClick={() => setConvertingEst(null)}>Cancel</button>
+                                  </div>
+                                </div>
+                              )}
                             </>
                           )}
                         </div>

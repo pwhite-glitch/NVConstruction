@@ -1406,8 +1406,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 </div>
                               </div>
 
-                              {/* Job assignments (APM only) */}
-                              {member.role === 'apm' && (
+                              {/* Job assignments (APM / Super) */}
+                              {(member.role === 'apm' || member.role === 'super') && (
                                 <div>
                                   <div style={s.detailLabel}>Assigned jobs</div>
                                   {memberAssigns.length === 0 ? (

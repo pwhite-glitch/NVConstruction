@@ -113,6 +113,9 @@ export default function JobDetail() {
   const [showAddPrimeCO, setShowAddPrimeCO] = useState(false)
   const [primeCOForm, setPrimeCOForm] = useState(emptyPrimeCO)
   const [addingPrimeCO, setAddingPrimeCO] = useState(false)
+  const [pushCOId, setPushCOId] = useState(null)
+  const [pushMarkup, setPushMarkup] = useState('')
+  const [pushingToPrime, setPushingToPrime] = useState(false)
 
   // Budget state
   const [budgetItems, setBudgetItems] = useState([])
@@ -1234,9 +1237,15 @@ p{margin-bottom:9px;line-height:1.55}
     setAddingPrimeCO(false)
   }
 
-  async function reviewPrimeCO(coId, status) {
+  async function reviewPrimeCO(coId, status, coAmount) {
     const { error } = await supabase.from('prime_change_orders').update({ status }).eq('id', coId)
     if (error) { alert('Error updating prime CO: ' + error.message); return }
+    if (status === 'approved' && coAmount != null) {
+      const newVal = (Number(job.contract_value) || 0) + Number(coAmount)
+      await supabase.from('jobs').update({ contract_value: newVal }).eq('id', id)
+      setJob(j => ({ ...j, contract_value: newVal }))
+      setForm(f => ({ ...f, contract_value: newVal }))
+    }
     await loadPrimeCOs()
   }
 
@@ -1244,6 +1253,61 @@ p{margin-bottom:9px;line-height:1.55}
     if (!window.confirm('Delete this prime contract change order?')) return
     await supabase.from('prime_change_orders').delete().eq('id', coId)
     await loadPrimeCOs()
+  }
+
+  async function pushSubCOToPrime(co, subName) {
+    setPushingToPrime(true)
+    const markupPct = parseFloat(pushMarkup) || 0
+    const markedUpAmt = Math.round(Number(co.amount) * (1 + markupPct / 100) * 100) / 100
+    const { data: { session } } = await supabase.auth.getSession()
+    const { error } = await supabase.from('prime_change_orders').insert({
+      job_id: id,
+      description: `${subName} — ${co.description}`,
+      amount: markedUpAmt,
+      notes: markupPct > 0 ? `Sub amount: $${Number(co.amount).toLocaleString()} + ${markupPct}% markup` : `From sub CO: ${subName}`,
+      status: 'pending',
+      created_by: session.user.id,
+    })
+    if (error) { alert('Error: ' + error.message) }
+    else { setPushCOId(null); setPushMarkup(''); await loadPrimeCOs() }
+    setPushingToPrime(false)
+  }
+
+  function printPrimeCO(co, coNum) {
+    const w = window.open('', '_blank')
+    const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
+    const amount = Number(co.amount)
+    w.document.write(`<!DOCTYPE html><html><head><title>PCO-${String(coNum).padStart(3,'0')} — Job #${job.job_number}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;padding:60px;font-size:13px;line-height:1.5;max-width:800px;margin:0 auto}.print-btn{padding:8px 20px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:32px}.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:20px;border-bottom:2px solid #111}.co{font-size:22px;font-weight:800}.co-sub{font-size:12px;color:#888;margin-top:2px}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:3px}.val{font-size:14px;font-weight:600}.num-lbl{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#888;font-weight:700}.num{font-size:28px;font-weight:800}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}.amt-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}.amt{font-size:28px;font-weight:800;color:${amount>=0?'#22863a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px}.notes{background:#f8f8f8;border-radius:8px;padding:16px;margin-bottom:32px;font-size:13px;color:#555}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}.sig-block{border-top:1.5px solid #111;padding-top:12px}.sig-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:8px}.sig-line{height:32px;border-bottom:1px solid #ccc;margin-bottom:6px}.sig-field{font-size:12px;color:#aaa}.footer{margin-top:48px;padding-top:16px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center}@media print{.print-btn{display:none}}</style></head><body>
+<button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+<div class="hdr"><div><div class="co">NV Construction</div><div class="co-sub">Change Order — Prime Contract</div></div><div style="text-align:right"><div class="num-lbl">Change Order No.</div><div class="num">PCO-${String(coNum).padStart(3,'0')}</div></div></div>
+<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Date</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div>${job.owner_company||job.owner_name?`<div><div class="lbl">Owner</div><div class="val">${[job.owner_company,job.owner_name].filter(Boolean).join(' · ')}</div></div>`:''}</div>
+<div class="amt-box"><div><div class="num-lbl">Change Order Amount</div><div style="font-size:12px;color:#888;margin-top:4px">Status: ${co.status}</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+<div class="scope-box"><div class="lbl" style="margin-bottom:8px">Description of Change</div><div style="font-size:14px;line-height:1.7">${co.description}</div></div>
+${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppercase;letter-spacing:1px">Notes:</strong><br>${co.notes}</div>`:''}
+<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Owner / Authorized Representative</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div></div>
+<div class="footer">NV Construction · Generated ${new Date().toLocaleDateString()} · Job #${job.job_number}</div>
+</body></html>`)
+    w.document.close()
+  }
+
+  function printSubCO(co, subName, scope, coNum) {
+    const w = window.open('', '_blank')
+    const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
+    const amount = Number(co.amount)
+    const isPmToSub = co.direction === 'pm_to_sub'
+    w.document.write(`<!DOCTYPE html><html><head><title>SCO-${String(coNum).padStart(3,'0')} — ${subName}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;padding:60px;font-size:13px;line-height:1.5;max-width:800px;margin:0 auto}.print-btn{padding:8px 20px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:32px}.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #111}.co{font-size:22px;font-weight:800}.co-sub{font-size:12px;color:#888;margin-top:2px}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:3px}.val{font-size:14px;font-weight:600}.num-lbl{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#888;font-weight:700}.num{font-size:28px;font-weight:800}.badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:${isPmToSub?'#e8f4e8':'#fff3e0'};color:${isPmToSub?'#22863a':'#e65100'};margin-bottom:20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}.amt-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}.amt{font-size:28px;font-weight:800;color:${amount>=0?'#22863a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}.sig-block{border-top:1.5px solid #111;padding-top:12px}.sig-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:8px}.sig-line{height:32px;border-bottom:1px solid #ccc;margin-bottom:6px}.sig-field{font-size:12px;color:#aaa}.footer{margin-top:48px;padding-top:16px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center}@media print{.print-btn{display:none}}</style></head><body>
+<button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+<div class="hdr"><div><div class="co">NV Construction</div><div class="co-sub">Change Order — Subcontract</div></div><div style="text-align:right"><div class="num-lbl">Change Order No.</div><div class="num">SCO-${String(coNum).padStart(3,'0')}</div></div></div>
+<div class="badge">${isPmToSub?'NV Construction → Subcontractor':'Subcontractor Request'}</div>
+<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Subcontractor</div><div class="val">${subName}</div></div>${scope?`<div><div class="lbl">Contract Scope</div><div class="val">${scope}</div></div>`:''}<div><div class="lbl">Date</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div></div>
+<div class="amt-box"><div><div class="num-lbl">Change Order Amount</div><div style="font-size:12px;color:#888;margin-top:4px">Status: ${co.status}</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+<div class="scope-box"><div class="lbl" style="margin-bottom:8px">Description of Change</div><div style="font-size:14px;line-height:1.7">${co.description}</div></div>
+<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Subcontractor — ${subName}</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div></div>
+<div class="footer">NV Construction · Generated ${new Date().toLocaleDateString()} · Job #${job.job_number}</div>
+</body></html>`)
+    w.document.close()
   }
 
   // ── Budget ──────────────────────────────────────────────────
@@ -1409,6 +1473,7 @@ p{margin-bottom:9px;line-height:1.55}
     const { error } = await supabase.from('jobs').update({
       job_number: form.job_number, project_name: form.project_name, location: form.location,
       contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
+      markup_pct: form.markup_pct ? parseFloat(form.markup_pct) : null,
       start_date: form.start_date || null, status: form.status,
       owner_company: form.owner_company, owner_name: form.owner_name, owner_email: form.owner_email, owner_phone: form.owner_phone,
       architect_name: form.architect_name, architect_company: form.architect_company, architect_email: form.architect_email,
@@ -1591,6 +1656,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ ...s.grid3, marginBottom: '12px' }}>
                   <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={form.contract_value || ''} onChange={e => update('contract_value', e.target.value)} /></div>
+                  <div><label style={s.label}>Default markup %</label><input type="number" style={s.input} placeholder="0" value={form.markup_pct || ''} onChange={e => update('markup_pct', e.target.value)} /></div>
                   <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={form.start_date || ''} onChange={e => update('start_date', e.target.value)} /></div>
                   <div><label style={s.label}>Status</label>
                     <select style={s.input} value={form.status || 'active'} onChange={e => update('status', e.target.value)}>
@@ -2386,10 +2452,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={s.coBadge(co.status)}>{co.status}</span>
                     {co.status === 'pending' && (
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        <button style={s.btnSmallGreen} onClick={() => reviewPrimeCO(co.id, 'approved')}>Approve</button>
-                        <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected')}>Reject</button>
+                        <button style={s.btnSmallGreen} onClick={() => reviewPrimeCO(co.id, 'approved', co.amount)}>Approve</button>
+                        <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
                       </div>
                     )}
+                    <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1) }}>Print CO</button>
                     <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px' }} onClick={() => deletePrimeCO(co.id)}>Delete</button>
                   </div>
                 </div>
@@ -2442,34 +2509,68 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {allCOs.length === 0 && !showAddCO && <p style={{ color: '#444', fontSize: '14px' }}>No change orders yet.</p>}
 
-              {allCOs.map(co => {
+              {allCOs.map((co, coIdx) => {
                 const subId = co.subcontracts?.sub_id
                 const matchedContract = contracts.find(c => c.id === co.subcontract_id)
                 const subName = matchedContract?.vendor_name || registeredSubs.find(s => s.sub_id === subId)?.profiles?.company_name || 'Unknown sub'
                 const scope = co.subcontracts?.description
+                const isPushing = pushCOId === co.id
+                const markedUpPreview = pushMarkup !== '' ? Math.round(Number(co.amount) * (1 + parseFloat(pushMarkup || 0) / 100) * 100) / 100 : null
                 return (
-                  <div key={co.id} style={s.coRow}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
-                        {scope && <span style={{ fontSize: '11px', color: '#555' }}>{scope}</span>}
-                        <span style={{ fontSize: '11px', color: '#555' }}>{co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'}</span>
-                        <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
-                        {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
-                      </span>
-                      <span style={s.coBadge(co.status)}>{co.status}</span>
-                      {co.status === 'pending' && (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button style={s.btnSmallGreen} onClick={() => reviewCO(co.id, 'approved')}>Approve</button>
-                          <button style={s.btnSmallRed} onClick={() => reviewCO(co.id, 'rejected')}>Reject</button>
+                  <div key={co.id} style={{ ...s.coRow, flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: isPushing ? '10px' : 0 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
+                          {scope && <span style={{ fontSize: '11px', color: '#555' }}>{scope}</span>}
+                          <span style={{ fontSize: '11px', color: '#555' }}>{co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'}</span>
+                          <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                         </div>
-                      )}
+                        <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                          {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
+                        </span>
+                        <span style={s.coBadge(co.status)}>{co.status}</span>
+                        {co.status === 'pending' && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button style={s.btnSmallGreen} onClick={() => reviewCO(co.id, 'approved')}>Approve</button>
+                            <button style={s.btnSmallRed} onClick={() => reviewCO(co.id, 'rejected')}>Reject</button>
+                          </div>
+                        )}
+                        {co.direction === 'sub_to_pm' && (
+                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')) } }}>
+                            {isPushing ? '✕ Cancel' : '↑ Push to Prime'}
+                          </button>
+                        )}
+                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const num = allCOs.length - coIdx; printSubCO(co, subName, scope, num) }}>Print CO</button>
+                      </div>
                     </div>
+                    {isPushing && (
+                      <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px 16px', marginTop: '8px' }}>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>Push to Prime Contract CO</p>
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div>
+                            <label style={s.label}>Sub amount</label>
+                            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', paddingTop: '6px' }}>${Number(co.amount).toLocaleString()}</div>
+                          </div>
+                          <div>
+                            <label style={s.label}>Markup %</label>
+                            <input type="number" style={{ ...s.input, width: '90px' }} placeholder="0" value={pushMarkup} onChange={e => setPushMarkup(e.target.value)} />
+                          </div>
+                          {markedUpPreview != null && (
+                            <div>
+                              <label style={s.label}>Prime CO amount</label>
+                              <div style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80', paddingTop: '6px' }}>${markedUpPreview.toLocaleString()}</div>
+                            </div>
+                          )}
+                          <button style={{ ...s.btn, opacity: pushingToPrime ? 0.6 : 1, flexShrink: 0 }} disabled={pushingToPrime} onClick={() => pushSubCOToPrime(co, subName)}>
+                            {pushingToPrime ? 'Creating...' : 'Create Prime CO'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}

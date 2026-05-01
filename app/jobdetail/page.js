@@ -2784,12 +2784,129 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   {expandedFieldReport === r.id && (
                     <div style={s.billingEntryExpanded}>
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work performed</p>
-                      <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
-                      {r.issues && <>
-                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / delays</p>
-                        <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.issues}</p>
-                      </>}
+                      {/* Weather */}
+                      {(r.weather || r.weather_temp) && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Weather</p>
+                          <p style={{ fontSize: '13px', color: '#ccc', margin: 0 }}>
+                            {[r.weather, r.weather_temp && `${r.weather_temp}°F`].filter(Boolean).join(' · ')}
+                            {r.weather_delay && <span style={{ marginLeft: '8px', color: '#e8590c', fontWeight: '700', fontSize: '11px' }}>DELAY</span>}
+                          </p>
+                        </div>
+                      )}
+                      {/* Work Performed */}
+                      {r.work_performed && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work Performed</p>
+                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
+                        </div>
+                      )}
+                      {/* Crew Log */}
+                      {r.crew_log?.length > 0 && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Crew / Manpower</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                            <span>Name</span><span>Company</span><span>Trade</span><span>Hrs</span>
+                          </div>
+                          {r.crew_log.map((c, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                              <span>{c.name || '—'}</span><span>{c.company || '—'}</span><span>{c.trade || '—'}</span><span>{c.hours || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Subcontractor Activity */}
+                      {r.subcontractor_activity?.length > 0 && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Subcontractor Activity</p>
+                          {r.subcontractor_activity.map((sub, i) => (
+                            <div key={i} style={{ padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '6px' }}>
+                              <p style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: '600', margin: '0 0 4px' }}>{sub.company || '—'} {sub.trade ? `· ${sub.trade}` : ''} {sub.crew_size ? `· ${sub.crew_size} crew` : ''}</p>
+                              {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: 0, whiteSpace: 'pre-wrap' }}>{sub.notes}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Equipment */}
+                      {r.equipment_log?.length > 0 && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Equipment</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                            <span>Equipment</span><span>Operator</span><span>Hrs</span>
+                          </div>
+                          {r.equipment_log.map((e, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                              <span>{e.equipment || '—'}</span><span>{e.operator || '—'}</span><span>{e.hours || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Materials Delivered */}
+                      {r.materials_delivered?.length > 0 && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Materials Delivered</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                            <span>Material</span><span>Supplier</span><span>Qty</span>
+                          </div>
+                          {r.materials_delivered.map((m, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                              <span>{m.material || '—'}</span><span>{m.supplier || '—'}</span><span>{m.quantity || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Visitors / Inspections */}
+                      {r.visitors?.length > 0 && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Visitors / Inspections</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                            <span>Name</span><span>Company</span><span>Purpose</span>
+                          </div>
+                          {r.visitors.map((v, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                              <span>{v.name || '—'}</span><span>{v.company || '—'}</span><span>{v.purpose || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Safety */}
+                      {r.safety_observations && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Safety Observations</p>
+                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.safety_observations}</p>
+                        </div>
+                      )}
+                      {/* Toolbox Talk */}
+                      {r.toolbox_talk && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p>
+                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.toolbox_talk}</p>
+                        </div>
+                      )}
+                      {/* Issues / Delays */}
+                      {r.issues && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / Delays</p>
+                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.issues}</p>
+                        </div>
+                      )}
+                      {/* Photos */}
+                      {r.photos?.length > 0 && (
+                        <div style={{ marginBottom: '1.2rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {r.photos.map((ph, i) => (
+                              <div key={i} style={{ fontSize: '12px', color: '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
+                                onClick={async () => {
+                                  const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(ph.path, 3600)
+                                  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                                }}>
+                                {ph.name || `Photo ${i + 1}`}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

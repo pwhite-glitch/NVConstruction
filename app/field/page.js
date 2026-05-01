@@ -47,7 +47,14 @@ export default function Field() {
   const [activeTab, setActiveTab] = useState('daily')
 
   const [dailyReports, setDailyReports] = useState([])
-  const [dailyForm, setDailyForm] = useState({ report_date: new Date().toISOString().split('T')[0], weather: '', crew_count: '', work_performed: '', issues: '' })
+  const [dailyForm, setDailyForm] = useState({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
+  const [crewLog, setCrewLog] = useState([{ name: '', company: '', trade: '', hours: '' }])
+  const [equipmentLog, setEquipmentLog] = useState([])
+  const [materialsLog, setMaterialsLog] = useState([])
+  const [visitorsLog, setVisitorsLog] = useState([])
+  const [subActivityLog, setSubActivityLog] = useState([])
+  const [reportPhotos, setReportPhotos] = useState([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [submittingDaily, setSubmittingDaily] = useState(false)
   const [dailySuccess, setDailySuccess] = useState(false)
   const [expandedReport, setExpandedReport] = useState(null)
@@ -164,20 +171,51 @@ export default function Field() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function uploadReportPhoto(file) {
+    setUploadingPhoto(true)
+    const path = `${selectedJobId}/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
+    if (!error) setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
+    else alert('Photo upload failed: ' + error.message)
+    setUploadingPhoto(false)
+  }
+
+  async function openReportPhoto(path) {
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   async function submitDailyReport(e) {
     e.preventDefault()
     setSubmittingDaily(true)
+    const filledCrew = crewLog.filter(r => r.name || r.company)
     const { error } = await supabase.from('daily_reports').insert({
       job_id: selectedJobId, super_id: user.id,
       report_date: dailyForm.report_date,
       weather: dailyForm.weather || null,
-      crew_count: dailyForm.crew_count ? parseInt(dailyForm.crew_count) : null,
+      weather_temp: dailyForm.weather_temp || null,
+      weather_delay: dailyForm.weather_delay || false,
+      crew_count: dailyForm.crew_count ? parseInt(dailyForm.crew_count) : filledCrew.length || null,
       work_performed: dailyForm.work_performed,
       issues: dailyForm.issues || null,
+      safety_observations: dailyForm.safety_observations || null,
+      toolbox_talk: dailyForm.toolbox_talk || null,
+      crew_log: filledCrew.length ? filledCrew : null,
+      equipment_log: equipmentLog.filter(r => r.name).length ? equipmentLog.filter(r => r.name) : null,
+      materials_delivered: materialsLog.filter(r => r.description).length ? materialsLog.filter(r => r.description) : null,
+      visitors: visitorsLog.filter(r => r.name).length ? visitorsLog.filter(r => r.name) : null,
+      subcontractor_activity: subActivityLog.filter(r => r.company).length ? subActivityLog.filter(r => r.company) : null,
+      photos: reportPhotos.length ? reportPhotos : null,
     })
     if (!error) {
       setDailySuccess(true)
-      setDailyForm({ report_date: new Date().toISOString().split('T')[0], weather: '', crew_count: '', work_performed: '', issues: '' })
+      setDailyForm({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
+      setCrewLog([{ name: '', company: '', trade: '', hours: '' }])
+      setEquipmentLog([])
+      setMaterialsLog([])
+      setVisitorsLog([])
+      setSubActivityLog([])
+      setReportPhotos([])
       await loadDailyReports()
       setTimeout(() => setDailySuccess(false), 3000)
     }
@@ -296,12 +334,14 @@ export default function Field() {
                 {/* ── DAILY REPORTS ── */}
                 {activeTab === 'daily' && (
                   <>
-                    {dailySuccess && <div style={s.success}>Daily report submitted.</div>}
+                    {dailySuccess && <div style={s.success}>Daily report submitted successfully.</div>}
                     <div style={s.card}>
                       <h2 style={s.cardTitle}>Submit daily report</h2>
                       <form onSubmit={submitDailyReport}>
+
+                        {/* Header */}
                         <div style={{ ...s.grid3, marginBottom: '1rem' }}>
-                          <div><label style={s.label}>Date</label><input type="date" style={s.input} value={dailyForm.report_date} onChange={e => setDailyForm(f => ({ ...f, report_date: e.target.value }))} required /></div>
+                          <div><label style={s.label}>Date *</label><input type="date" style={s.input} value={dailyForm.report_date} onChange={e => setDailyForm(f => ({ ...f, report_date: e.target.value }))} required /></div>
                           <div>
                             <label style={s.label}>Weather</label>
                             <select style={s.input} value={dailyForm.weather} onChange={e => setDailyForm(f => ({ ...f, weather: e.target.value }))}>
@@ -309,30 +349,152 @@ export default function Field() {
                               {WEATHER.map(w => <option key={w} value={w}>{w}</option>)}
                             </select>
                           </div>
-                          <div><label style={s.label}>Crew count</label><input type="number" min="0" style={s.input} value={dailyForm.crew_count} onChange={e => setDailyForm(f => ({ ...f, crew_count: e.target.value }))} placeholder="0" /></div>
+                          <div><label style={s.label}>Temp (°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75°F" /></div>
                         </div>
-                        <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
+                          <input type="checkbox" id="weather_delay" checked={dailyForm.weather_delay} onChange={e => setDailyForm(f => ({ ...f, weather_delay: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                          <label htmlFor="weather_delay" style={{ fontSize: '13px', color: '#aaa', cursor: 'pointer' }}>Weather caused a delay today</label>
+                        </div>
+
+                        {/* Work performed */}
+                        <div style={{ marginBottom: '1.5rem' }}>
                           <label style={s.label}>Work performed *</label>
                           <textarea required rows={4} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.work_performed} onChange={e => setDailyForm(f => ({ ...f, work_performed: e.target.value }))} placeholder="Describe work completed today..." />
                         </div>
+
+                        {/* Crew / Manpower */}
                         <div style={{ marginBottom: '1.5rem' }}>
-                          <label style={s.label}>Issues / delays</label>
-                          <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.issues} onChange={e => setDailyForm(f => ({ ...f, issues: e.target.value }))} placeholder="Delays, safety incidents, problems..." />
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label style={s.label}>Crew / Manpower</label>
+                            <button type="button" onClick={() => setCrewLog(l => [...l, { name: '', company: '', trade: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                          </div>
+                          {crewLog.map((row, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                              <input style={s.input} placeholder="Name" value={row.name} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
+                              <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                            </div>
+                          ))}
                         </div>
+
+                        {/* Subcontractor Activity */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label style={s.label}>Subcontractor Activity</label>
+                            <button type="button" onClick={() => setSubActivityLog(l => [...l, { company: '', trade: '', crew_count: '', work_performed: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                          </div>
+                          {subActivityLog.map((row, i) => (
+                            <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                                <input style={s.input} placeholder="Company" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
+                                <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
+                                <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                              </div>
+                              <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} placeholder="Work performed..." value={row.work_performed} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, work_performed: e.target.value } : r))} />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Equipment */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label style={s.label}>Equipment On Site</label>
+                            <button type="button" onClick={() => setEquipmentLog(l => [...l, { name: '', quantity: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                          </div>
+                          {equipmentLog.map((row, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                              <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
+                              <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Materials Delivered */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label style={s.label}>Materials Delivered</label>
+                            <button type="button" onClick={() => setMaterialsLog(l => [...l, { description: '', quantity: '', supplier: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                          </div>
+                          {materialsLog.map((row, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                              <input style={s.input} placeholder="Material description" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
+                              <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Visitors */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label style={s.label}>Visitors / Inspections</label>
+                            <button type="button" onClick={() => setVisitorsLog(l => [...l, { name: '', company: '', purpose: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                          </div>
+                          {visitorsLog.map((row, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 3fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                              <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                              <input style={s.input} placeholder="Purpose / notes" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
+                              <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Safety */}
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Toolbox Talk / Safety Topic</label>
+                          <input style={{ ...s.input, marginBottom: '10px' }} value={dailyForm.toolbox_talk} onChange={e => setDailyForm(f => ({ ...f, toolbox_talk: e.target.value }))} placeholder="Topic discussed at morning meeting..." />
+                          <label style={s.label}>Safety Observations / Incidents</label>
+                          <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.safety_observations} onChange={e => setDailyForm(f => ({ ...f, safety_observations: e.target.value }))} placeholder="Near misses, hazards observed, corrective actions taken..." />
+                        </div>
+
+                        {/* Issues */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <label style={s.label}>Issues / Delays</label>
+                          <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.issues} onChange={e => setDailyForm(f => ({ ...f, issues: e.target.value }))} placeholder="Anything that held up work today..." />
+                        </div>
+
+                        {/* Photos */}
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <label style={s.label}>Site Photos</label>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                            {uploadingPhoto ? 'Uploading...' : '+ Add Photo'}
+                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { if (e.target.files?.[0]) uploadReportPhoto(e.target.files[0]); e.target.value = '' }} />
+                          </label>
+                          {reportPhotos.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                              {reportPhotos.map((p, i) => (
+                                <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span>📷 {p.name}</span>
+                                  <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                           <button type="submit" disabled={submittingDaily} style={{ ...s.btn, opacity: submittingDaily ? 0.6 : 1 }}>{submittingDaily ? 'Submitting...' : 'Submit report'}</button>
                         </div>
                       </form>
                     </div>
+
                     {dailyReports.length > 0 && (
                       <>
                         <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>Past reports ({dailyReports.length})</p>
                         {dailyReports.map(r => (
                           <div key={r.id} style={s.row}>
                             <div style={s.rowHead} onClick={() => setExpandedReport(expandedReport === r.id ? null : r.id)}>
-                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                                {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}</span>}
+                                {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}{r.weather_temp ? ` · ${r.weather_temp}` : ''}</span>}
+                                {r.weather_delay && <span style={{ fontSize: '11px', color: '#ff6b6b', fontWeight: '700' }}>WEATHER DELAY</span>}
                                 {r.crew_count != null && <span style={{ fontSize: '12px', color: '#555' }}>{r.crew_count} crew</span>}
                               </div>
                               <span style={{ color: '#555' }}>{expandedReport === r.id ? '▲' : '▼'}</span>
@@ -341,10 +503,40 @@ export default function Field() {
                               <div style={s.rowBody}>
                                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work performed</p>
                                 <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
-                                {r.issues && <>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / delays</p>
-                                  <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.issues}</p>
-                                </>}
+                                {r.crew_log?.length > 0 && (<>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Crew</p>
+                                  {r.crew_log.map((c, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{c.name}{c.company ? ` — ${c.company}` : ''}{c.trade ? ` (${c.trade})` : ''}{c.hours ? ` · ${c.hours}hrs` : ''}</p>)}
+                                  <div style={{ marginBottom: '1rem' }} />
+                                </>)}
+                                {r.subcontractor_activity?.length > 0 && (<>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Subcontractor Activity</p>
+                                  {r.subcontractor_activity.map((c, i) => <div key={i} style={{ marginBottom: '6px' }}><p style={{ fontSize: '12px', color: '#aaa', margin: '0 0 2px', fontWeight: '600' }}>{c.company}{c.trade ? ` — ${c.trade}` : ''}{c.crew_count ? ` (${c.crew_count} crew)` : ''}</p>{c.work_performed && <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{c.work_performed}</p>}</div>)}
+                                  <div style={{ marginBottom: '1rem' }} />
+                                </>)}
+                                {r.equipment_log?.length > 0 && (<>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Equipment</p>
+                                  {r.equipment_log.map((e, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{e.name}{e.quantity ? ` × ${e.quantity}` : ''}{e.hours ? ` · ${e.hours}hrs` : ''}</p>)}
+                                  <div style={{ marginBottom: '1rem' }} />
+                                </>)}
+                                {r.materials_delivered?.length > 0 && (<>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Materials Delivered</p>
+                                  {r.materials_delivered.map((m, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{m.description}{m.quantity ? ` · ${m.quantity}` : ''}{m.supplier ? ` — ${m.supplier}` : ''}</p>)}
+                                  <div style={{ marginBottom: '1rem' }} />
+                                </>)}
+                                {r.visitors?.length > 0 && (<>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Visitors</p>
+                                  {r.visitors.map((v, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{v.name}{v.company ? ` — ${v.company}` : ''}{v.purpose ? ` · ${v.purpose}` : ''}</p>)}
+                                  <div style={{ marginBottom: '1rem' }} />
+                                </>)}
+                                {r.toolbox_talk && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p><p style={{ fontSize: '13px', color: '#ccc', margin: '0 0 1rem' }}>{r.toolbox_talk}</p></>)}
+                                {r.safety_observations && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#facc15', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Safety</p><p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.safety_observations}</p></>)}
+                                {r.issues && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / Delays</p><p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.issues}</p></>)}
+                                {r.photos?.length > 0 && (<>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {r.photos.map((p, i) => <button key={i} type="button" onClick={() => openReportPhoto(p.path)} style={{ background: '#1a1a2a', border: '1px solid #2a2a3a', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', color: '#60a5fa', cursor: 'pointer' }}>📷 {p.name || `Photo ${i + 1}`}</button>)}
+                                  </div>
+                                </>)}
                               </div>
                             )}
                           </div>

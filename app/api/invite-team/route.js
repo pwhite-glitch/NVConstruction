@@ -11,8 +11,10 @@ export async function POST(request) {
     return Response.json({ error: 'Email and role are required.' }, { status: 400 })
   }
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
   const { data, error } = await adminSupabase.auth.admin.inviteUserByEmail(email, {
     data: { full_name, role },
+    redirectTo: `${siteUrl}/set-password`,
   })
 
   if (error) {

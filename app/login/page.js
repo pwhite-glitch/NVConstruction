@@ -24,6 +24,16 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [resetting, setResetting] = useState(false)
+
+  async function handleReset() {
+    if (!email) { setError('Enter your email above first.'); return }
+    setResetting(true)
+    await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/set-password` })
+    setResetSent(true)
+    setResetting(false)
+  }
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -57,6 +67,14 @@ export default function Login() {
           </button>
         </form>
         <div style={s.divider} />
+        <div style={s.footer}>
+          {resetSent ? (
+            <span style={{ color: '#4ade80' }}>Password reset email sent — check your inbox.</span>
+          ) : (
+            <span>Forgot password? <button onClick={handleReset} disabled={resetting} style={{ background: 'none', border: 'none', color: '#e8590c', fontWeight: '600', cursor: 'pointer', fontSize: '13px', padding: 0 }}>{resetting ? 'Sending...' : 'Reset it'}</button></span>
+          )}
+        </div>
+        <div style={{ ...s.divider, marginTop: '1rem' }} />
         <div style={s.footer}>
           New subcontractor? <a href="/register" style={s.link}>Create account</a>
         </div>

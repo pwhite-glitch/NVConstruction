@@ -142,6 +142,8 @@ export default function Dashboard() {
   const [roleMsg, setRoleMsg] = useState({})
   const [editingTeamId, setEditingTeamId] = useState(null)
   const [editTeamForm, setEditTeamForm] = useState({})
+  const [savingTeamEdit, setSavingTeamEdit] = useState(false)
+  const [teamEditMsg, setTeamEditMsg] = useState(null)
   const [showTeamInviteForm, setShowTeamInviteForm] = useState(false)
   const [teamInviteForm, setTeamInviteForm] = useState({ email: '', full_name: '', role: 'apm', phone: '' })
   const [teamInviting, setTeamInviting] = useState(false)
@@ -541,31 +543,39 @@ export default function Dashboard() {
   }
 
   async function saveTeamEdit() {
-    await supabase.from('profiles').update({
-      full_name: editTeamForm.full_name || null,
-      phone: editTeamForm.phone || null,
-      company_name: editTeamForm.company_name || null,
-    }).eq('id', editingTeamId)
+    setSavingTeamEdit(true)
+    setTeamEditMsg(null)
+    try {
+      const { error: profError } = await supabase.from('profiles').update({
+        full_name: editTeamForm.full_name || null,
+        phone: editTeamForm.phone || null,
+        company_name: editTeamForm.company_name || null,
+      }).eq('id', editingTeamId)
+      if (profError) { setTeamEditMsg({ ok: false, text: 'Save failed: ' + profError.message }); setSavingTeamEdit(false); return }
 
-    const originalMember = teamMembers.find(m => m.id === editingTeamId)
-    if (editTeamForm.email && editTeamForm.email !== originalMember?.email) {
-      const res = await fetch('/api/invite-team', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: editingTeamId,
-          email: editTeamForm.email,
-          full_name: editTeamForm.full_name,
-          role: originalMember?.role,
-        }),
-      })
-      const json = await res.json()
-      if (json.error) { alert('Email update error: ' + json.error); return }
-      if (json.emailError) { alert(`Email updated but invite email failed: ${json.emailError}\n\nSend them this link manually:\n${json.inviteUrl}`) }
+      const originalMember = teamMembers.find(m => m.id === editingTeamId)
+      if (editTeamForm.email && editTeamForm.email !== originalMember?.email) {
+        const res = await fetch('/api/invite-team', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: editingTeamId,
+            email: editTeamForm.email,
+            full_name: editTeamForm.full_name,
+            role: originalMember?.role,
+          }),
+        })
+        const json = await res.json()
+        if (json.error) { setTeamEditMsg({ ok: false, text: 'Email update failed: ' + json.error }); setSavingTeamEdit(false); return }
+        if (json.emailError) { setTeamEditMsg({ ok: false, text: `Email updated but invite failed: ${json.emailError} — invite link: ${json.inviteUrl}` }); setSavingTeamEdit(false); return }
+      }
+
+      setEditingTeamId(null)
+      await loadTeamData()
+    } catch (e) {
+      setTeamEditMsg({ ok: false, text: 'Unexpected error: ' + e.message })
     }
-
-    setEditingTeamId(null)
-    await loadTeamData()
+    setSavingTeamEdit(false)
   }
 
   // ── Estimates ───────────────────────────────────────────────
@@ -1464,9 +1474,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 <label style={s.label}>Company / title</label>
                                 <input style={s.input} value={editTeamForm.company_name} onChange={e => setEditTeamForm(f => ({ ...f, company_name: e.target.value }))} placeholder="Project Manager" />
                               </div>
+                              {teamEditMsg && <p style={{ fontSize: '12px', color: teamEditMsg.ok ? '#4ade80' : '#ff6b6b', margin: '0 0 10px', wordBreak: 'break-all' }}>{teamEditMsg.text}</p>}
                               <div style={{ display: 'flex', gap: '8px' }}>
-                                <button onClick={saveTeamEdit} style={s.btnSm('orange')}>Save</button>
-                                <button onClick={() => setEditingTeamId(null)} style={s.btnSm('gray')}>Cancel</button>
+                                <button onClick={saveTeamEdit} disabled={savingTeamEdit} style={{ ...s.btnSm('orange'), opacity: savingTeamEdit ? 0.6 : 1 }}>{savingTeamEdit ? 'Saving...' : 'Save'}</button>
+                                <button onClick={() => { setEditingTeamId(null); setTeamEditMsg(null) }} style={s.btnSm('gray')}>Cancel</button>
                               </div>
                             </>
                           ) : (

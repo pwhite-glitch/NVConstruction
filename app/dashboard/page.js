@@ -544,6 +544,23 @@ export default function Dashboard() {
       phone: editTeamForm.phone || null,
       company_name: editTeamForm.company_name || null,
     }).eq('id', editingTeamId)
+
+    const originalMember = teamMembers.find(m => m.id === editingTeamId)
+    if (editTeamForm.email && editTeamForm.email !== originalMember?.email) {
+      const res = await fetch('/api/invite-team', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: editingTeamId,
+          email: editTeamForm.email,
+          full_name: editTeamForm.full_name,
+          role: originalMember?.role,
+        }),
+      })
+      const json = await res.json()
+      if (json.error) { alert('Email update error: ' + json.error); return }
+    }
+
     setEditingTeamId(null)
     await loadTeamData()
   }
@@ -1433,6 +1450,13 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 <div><label style={s.label}>Full name</label><input style={s.input} value={editTeamForm.full_name} onChange={e => setEditTeamForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Smith" /></div>
                                 <div><label style={s.label}>Phone</label><input style={s.input} value={editTeamForm.phone} onChange={e => setEditTeamForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                               </div>
+                              <div style={{ marginBottom: '12px' }}>
+                                <label style={s.label}>Email</label>
+                                <input style={s.input} type="email" value={editTeamForm.email || ''} onChange={e => setEditTeamForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@email.com" />
+                                {editTeamForm.email && editTeamForm.email !== teamMembers.find(m => m.id === editingTeamId)?.email && (
+                                  <p style={{ fontSize: '11px', color: '#e8590c', marginTop: '4px', marginBottom: 0 }}>A new invite will be sent to this address.</p>
+                                )}
+                              </div>
                               <div style={{ marginBottom: '1.25rem' }}>
                                 <label style={s.label}>Company / title</label>
                                 <input style={s.input} value={editTeamForm.company_name} onChange={e => setEditTeamForm(f => ({ ...f, company_name: e.target.value }))} placeholder="Project Manager" />
@@ -1446,6 +1470,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             <>
                               {/* Details row */}
                               <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
+                                <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{member.email || '—'}</div></div>
                                 <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{member.phone || '—'}</div></div>
                                 <div><div style={s.detailLabel}>Title</div><div style={s.detailValue}>{member.company_name || '—'}</div></div>
                               </div>
@@ -1455,6 +1480,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 <button onClick={() => {
                                   setEditingTeamId(member.id)
                                   setEditTeamForm({ full_name: member.full_name || '', phone: member.phone || '', company_name: member.company_name || '' })
+                                  setEditTeamForm(f => ({ ...f, email: member.email || '' }))
                                 }} style={s.btnSm('orange')}>Edit details</button>
                                 <button onClick={() => deleteTeamMember(member)} style={s.btnSm('red')}>Remove</button>
                               </div>

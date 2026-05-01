@@ -1521,7 +1521,8 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       engineer_name: form.engineer_name, engineer_company: form.engineer_company, engineer_email: form.engineer_email,
       permit_number: form.permit_number, permit_date: form.permit_date || null, scope_notes: form.scope_notes,
     }).eq('id', id)
-    if (!error) { setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
+    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000) }
+    else { setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
     setSaving(false)
   }
 

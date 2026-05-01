@@ -145,7 +145,7 @@ export default function Dashboard() {
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'apm', phone: '' })
   const [inviting, setInviting] = useState(false)
-  const [inviteMsg, setInviteMsg] = useState(null)
+  const [teamInviteMsg, setTeamInviteMsg] = useState(null)
 
   // Estimates state
   const [estimates, setEstimates] = useState([])
@@ -507,7 +507,7 @@ export default function Dashboard() {
   async function inviteTeamMember() {
     if (!inviteForm.email) return
     setInviting(true)
-    setInviteMsg(null)
+    setTeamInviteMsg(null)
     const res = await fetch('/api/invite-team', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -515,9 +515,9 @@ export default function Dashboard() {
     })
     const json = await res.json()
     if (json.error) {
-      setInviteMsg({ ok: false, text: json.error })
+      setTeamInviteMsg({ ok: false, text: json.error })
     } else {
-      setInviteMsg({ ok: true, text: `Invite sent to ${inviteForm.email}` })
+      setTeamInviteMsg({ ok: true, text: `Invite sent to ${inviteForm.email}` })
       setInviteForm({ email: '', full_name: '', role: 'apm', phone: '' })
       setShowInviteForm(false)
       await loadTeamData()
@@ -1359,7 +1359,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
                     Internal team — {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
                   </p>
-                  <button style={s.btnSm('orange')} onClick={() => { setShowInviteForm(v => !v); setInviteMsg(null) }}>
+                  <button style={s.btnSm('orange')} onClick={() => { setShowInviteForm(v => !v); setTeamInviteMsg(null) }}>
                     {showInviteForm ? 'Cancel' : '+ Add Team Member'}
                   </button>
                 </div>
@@ -1367,8 +1367,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 {showInviteForm && (
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Invite team member</p>
-                    {inviteMsg && (
-                      <p style={{ fontSize: '13px', color: inviteMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem', marginTop: 0 }}>{inviteMsg.text}</p>
+                    {teamInviteMsg && (
+                      <p style={{ fontSize: '13px', color: teamInviteMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem', marginTop: 0 }}>{teamInviteMsg.text}</p>
                     )}
                     <div style={{ ...s.grid2, marginBottom: '12px' }}>
                       <div><label style={s.label}>Email *</label><input style={s.input} type="email" value={inviteForm.email} onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@email.com" /></div>

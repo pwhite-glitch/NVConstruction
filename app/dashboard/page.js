@@ -142,9 +142,9 @@ export default function Dashboard() {
   const [roleMsg, setRoleMsg] = useState({})
   const [editingTeamId, setEditingTeamId] = useState(null)
   const [editTeamForm, setEditTeamForm] = useState({})
-  const [showInviteForm, setShowInviteForm] = useState(false)
-  const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'apm', phone: '' })
-  const [inviting, setInviting] = useState(false)
+  const [showTeamInviteForm, setShowTeamInviteForm] = useState(false)
+  const [teamInviteForm, setTeamInviteForm] = useState({ email: '', full_name: '', role: 'apm', phone: '' })
+  const [teamInviting, setTeamInviting] = useState(false)
   const [teamInviteMsg, setTeamInviteMsg] = useState(null)
 
   // Estimates state
@@ -505,24 +505,24 @@ export default function Dashboard() {
   }
 
   async function inviteTeamMember() {
-    if (!inviteForm.email) return
-    setInviting(true)
+    if (!teamInviteForm.email) return
+    setTeamInviting(true)
     setTeamInviteMsg(null)
     const res = await fetch('/api/invite-team', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(inviteForm),
+      body: JSON.stringify(teamInviteForm),
     })
     const json = await res.json()
     if (json.error) {
       setTeamInviteMsg({ ok: false, text: json.error })
     } else {
-      setTeamInviteMsg({ ok: true, text: `Invite sent to ${inviteForm.email}` })
-      setInviteForm({ email: '', full_name: '', role: 'apm', phone: '' })
-      setShowInviteForm(false)
+      setTeamInviteMsg({ ok: true, text: `Invite sent to ${teamInviteForm.email}` })
+      setTeamInviteForm({ email: '', full_name: '', role: 'apm', phone: '' })
+      setShowTeamInviteForm(false)
       await loadTeamData()
     }
-    setInviting(false)
+    setTeamInviting(false)
   }
 
   async function saveTeamEdit() {
@@ -1359,35 +1359,35 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
                     Internal team — {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
                   </p>
-                  <button style={s.btnSm('orange')} onClick={() => { setShowInviteForm(v => !v); setTeamInviteMsg(null) }}>
-                    {showInviteForm ? 'Cancel' : '+ Add Team Member'}
+                  <button style={s.btnSm('orange')} onClick={() => { setShowTeamInviteForm(v => !v); setTeamInviteMsg(null) }}>
+                    {showTeamInviteForm ? 'Cancel' : '+ Add Team Member'}
                   </button>
                 </div>
 
-                {showInviteForm && (
+                {showTeamInviteForm && (
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Invite team member</p>
                     {teamInviteMsg && (
                       <p style={{ fontSize: '13px', color: teamInviteMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem', marginTop: 0 }}>{teamInviteMsg.text}</p>
                     )}
                     <div style={{ ...s.grid2, marginBottom: '12px' }}>
-                      <div><label style={s.label}>Email *</label><input style={s.input} type="email" value={inviteForm.email} onChange={e => setInviteForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@email.com" /></div>
-                      <div><label style={s.label}>Full name</label><input style={s.input} value={inviteForm.full_name} onChange={e => setInviteForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Smith" /></div>
+                      <div><label style={s.label}>Email *</label><input style={s.input} type="email" value={teamInviteForm.email} onChange={e => setTeamInviteForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@email.com" /></div>
+                      <div><label style={s.label}>Full name</label><input style={s.input} value={teamInviteForm.full_name} onChange={e => setTeamInviteForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Smith" /></div>
                     </div>
                     <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
                       <div>
                         <label style={s.label}>Role *</label>
-                        <select style={s.input} value={inviteForm.role} onChange={e => setInviteForm(f => ({ ...f, role: e.target.value }))}>
+                        <select style={s.input} value={teamInviteForm.role} onChange={e => setTeamInviteForm(f => ({ ...f, role: e.target.value }))}>
                           <option value="pm">PM</option>
                           <option value="apm">Assistant PM</option>
                           <option value="super">Superintendent</option>
                           <option value="admin">Office Admin</option>
                         </select>
                       </div>
-                      <div><label style={s.label}>Phone</label><input style={s.input} value={inviteForm.phone} onChange={e => setInviteForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
+                      <div><label style={s.label}>Phone</label><input style={s.input} value={teamInviteForm.phone} onChange={e => setTeamInviteForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                     </div>
-                    <button style={{ ...s.btnSm('orange'), opacity: inviting || !inviteForm.email ? 0.6 : 1 }} disabled={inviting || !inviteForm.email} onClick={inviteTeamMember}>
-                      {inviting ? 'Sending invite...' : 'Send invite'}
+                    <button style={{ ...s.btnSm('orange'), opacity: teamInviting || !teamInviteForm.email ? 0.6 : 1 }} disabled={teamInviting || !teamInviteForm.email} onClick={inviteTeamMember}>
+                      {teamInviting ? 'Sending invite...' : 'Send invite'}
                     </button>
                     <p style={{ fontSize: '12px', color: '#444', marginTop: '10px', marginBottom: 0 }}>They'll receive an email to set their password and access the system.</p>
                   </div>

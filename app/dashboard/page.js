@@ -525,6 +525,19 @@ export default function Dashboard() {
     setTeamInviting(false)
   }
 
+  async function deleteTeamMember(member) {
+    if (!window.confirm(`Remove ${member.full_name || member.email} from the team? This cannot be undone.`)) return
+    const res = await fetch('/api/invite-team', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: member.id }),
+    })
+    const json = await res.json()
+    if (json.error) { alert('Error: ' + json.error); return }
+    setTeamExpandedId(null)
+    await loadTeamData()
+  }
+
   async function saveTeamEdit() {
     await supabase.from('profiles').update({
       full_name: editTeamForm.full_name || null,
@@ -1437,12 +1450,13 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 <div><div style={s.detailLabel}>Title</div><div style={s.detailValue}>{member.company_name || '—'}</div></div>
                               </div>
 
-                              {/* Edit button */}
-                              <div style={{ marginBottom: '1.25rem' }}>
+                              {/* Edit / Delete buttons */}
+                              <div style={{ display: 'flex', gap: '8px', marginBottom: '1.25rem' }}>
                                 <button onClick={() => {
                                   setEditingTeamId(member.id)
                                   setEditTeamForm({ full_name: member.full_name || '', phone: member.phone || '', company_name: member.company_name || '' })
                                 }} style={s.btnSm('orange')}>Edit details</button>
+                                <button onClick={() => deleteTeamMember(member)} style={s.btnSm('red')}>Remove</button>
                               </div>
 
                               {/* Role changer */}

@@ -31,3 +31,11 @@ export async function POST(request) {
 
   return Response.json({ ok: true })
 }
+
+export async function DELETE(request) {
+  const { user_id } = await request.json()
+  if (!user_id) return Response.json({ error: 'user_id required' }, { status: 400 })
+  const { error } = await adminSupabase.auth.admin.deleteUser(user_id)
+  if (error) return Response.json({ error: error.message }, { status: 400 })
+  return Response.json({ ok: true })
+}

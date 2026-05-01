@@ -1279,7 +1279,20 @@ p{margin-bottom:9px;line-height:1.55}
 
   async function deletePrimeCO(coId) {
     if (!window.confirm('Delete this prime contract change order?')) return
+    const co = primeCOs.find(c => c.id === coId)
     await supabase.from('prime_change_orders').delete().eq('id', coId)
+    if (co?.status === 'approved') {
+      const newVal = (Number(job.contract_value) || 0) - Number(co.amount)
+      await supabase.from('jobs').update({ contract_value: newVal }).eq('id', id)
+      setJob(j => ({ ...j, contract_value: newVal }))
+      setForm(f => ({ ...f, contract_value: newVal }))
+      for (const sovItem of co.sov || []) {
+        if (!sovItem.budget_item_id || !sovItem.amount) continue
+        const { data: item } = await supabase.from('budget_items').select('budget_amount').eq('id', sovItem.budget_item_id).single()
+        if (item) await supabase.from('budget_items').update({ budget_amount: Number(item.budget_amount) - Number(sovItem.amount) }).eq('id', sovItem.budget_item_id)
+      }
+      await loadBudgetItems()
+    }
     await loadPrimeCOs()
   }
 

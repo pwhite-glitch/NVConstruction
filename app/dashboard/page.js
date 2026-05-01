@@ -567,7 +567,7 @@ export default function Dashboard() {
         })
         const json = await res.json()
         if (json.error) { setTeamEditMsg({ ok: false, text: 'Email update failed: ' + json.error }); setSavingTeamEdit(false); return }
-        if (json.emailError) { setTeamEditMsg({ ok: false, text: `Email updated but invite failed: ${json.emailError} — invite link: ${json.inviteUrl}` }); setSavingTeamEdit(false); return }
+        if (json.emailError) { setTeamEditMsg({ ok: false, text: `Email updated. Send them this link to set their password: ${json.resetUrl}` }); setSavingTeamEdit(false); return }
       }
 
       setEditingTeamId(null)

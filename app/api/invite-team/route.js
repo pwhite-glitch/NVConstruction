@@ -136,6 +136,7 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  try {
   const { user_id, email, full_name, role } = await request.json()
   if (!user_id || !email) return Response.json({ error: 'user_id and email required' }, { status: 400 })
 
@@ -153,7 +154,9 @@ export async function PATCH(request) {
   })
   const resetUrl = linkData?.properties?.action_link
 
-  await resend.emails.send({
+  let emailError = null
+  try {
+    const { error: sendErr } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
     to: email,
     subject: 'Your NV Construction login email has been updated',
@@ -196,9 +199,16 @@ export async function PATCH(request) {
   </table>
 </body>
 </html>`,
-  })
+    })
+    if (sendErr) emailError = sendErr.message
+  } catch (e) {
+    emailError = e.message
+  }
 
-  return Response.json({ ok: true, emailError: emailError?.message || null })
+  return Response.json({ ok: true, emailError: emailError || null, resetUrl })
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
 }
 
 export async function DELETE(request) {

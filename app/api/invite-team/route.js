@@ -22,6 +22,9 @@ export async function POST(request) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
 
+  let userId = null
+  let inviteUrl = null
+
   const { data, error } = await adminSupabase.auth.admin.generateLink({
     type: 'invite',
     email,
@@ -32,21 +35,34 @@ export async function POST(request) {
   })
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 400 })
+    // User already exists — look them up and generate a recovery link instead
+    if (error.message?.includes('already been registered') || error.message?.includes('already exists')) {
+      const { data: { users } } = await adminSupabase.auth.admin.listUsers()
+      const existing = users.find(u => u.email?.toLowerCase() === email.toLowerCase())
+      if (!existing) return Response.json({ error: error.message }, { status: 400 })
+      userId = existing.id
+      const { data: linkData } = await adminSupabase.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${siteUrl}/set-password` },
+      })
+      inviteUrl = linkData?.properties?.action_link
+    } else {
+      return Response.json({ error: error.message }, { status: 400 })
+    }
+  } else {
+    userId = data.user.id
+    inviteUrl = data.properties?.action_link
   }
 
   await adminSupabase.from('profiles').upsert({
-    id: data.user.id,
-    email,
+    id: userId,
     full_name: full_name || null,
     role,
     phone: phone || null,
   }, { onConflict: 'id' })
 
-  // Force the role in case a trigger already created the profile with wrong role
-  await adminSupabase.from('profiles').update({ role, full_name: full_name || null, phone: phone || null }).eq('id', data.user.id)
-
-  const inviteUrl = data.properties?.action_link
+  await adminSupabase.from('profiles').update({ role, full_name: full_name || null, phone: phone || null }).eq('id', userId)
   const roleLabel = ROLE_LABELS[role] || role
   const firstName = full_name ? full_name.split(' ')[0] : 'there'
 

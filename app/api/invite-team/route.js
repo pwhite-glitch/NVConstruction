@@ -66,7 +66,7 @@ export async function POST(request) {
   const roleLabel = ROLE_LABELS[role] || role
   const firstName = full_name ? full_name.split(' ')[0] : 'there'
 
-  await resend.emails.send({
+  const { error: emailError } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
     to: email,
     subject: "You've been invited to NV Construction",
@@ -132,7 +132,7 @@ export async function POST(request) {
 </html>`,
   })
 
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, emailError: emailError?.message || null, inviteUrl })
 }
 
 export async function PATCH(request) {
@@ -198,7 +198,7 @@ export async function PATCH(request) {
 </html>`,
   })
 
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, emailError: emailError?.message || null })
 }
 
 export async function DELETE(request) {

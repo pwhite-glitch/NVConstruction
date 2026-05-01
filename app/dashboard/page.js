@@ -516,6 +516,8 @@ export default function Dashboard() {
     const json = await res.json()
     if (json.error) {
       setTeamInviteMsg({ ok: false, text: json.error })
+    } else if (json.emailError) {
+      setTeamInviteMsg({ ok: false, text: `Account created but email failed (${json.emailError}). Send them this link: ${json.inviteUrl}` })
     } else {
       setTeamInviteMsg({ ok: true, text: `Invite sent to ${teamInviteForm.email}` })
       setTeamInviteForm({ email: '', full_name: '', role: 'apm', phone: '' })
@@ -559,6 +561,7 @@ export default function Dashboard() {
       })
       const json = await res.json()
       if (json.error) { alert('Email update error: ' + json.error); return }
+      if (json.emailError) { alert(`Email updated but invite email failed: ${json.emailError}\n\nSend them this link manually:\n${json.inviteUrl}`) }
     }
 
     setEditingTeamId(null)

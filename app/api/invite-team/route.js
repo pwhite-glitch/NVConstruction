@@ -41,7 +41,10 @@ export async function POST(request) {
     full_name: full_name || null,
     role,
     phone: phone || null,
-  })
+  }, { onConflict: 'id' })
+
+  // Force the role in case a trigger already created the profile with wrong role
+  await adminSupabase.from('profiles').update({ role, full_name: full_name || null, phone: phone || null }).eq('id', data.user.id)
 
   const inviteUrl = data.properties?.action_link
   const roleLabel = ROLE_LABELS[role] || role

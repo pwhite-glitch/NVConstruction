@@ -172,6 +172,8 @@ export default function JobDetail() {
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
 
+  const [billingByItem, setBillingByItem] = useState({})
+
   // Prime Contract tab state
   const [primeContractFile, setPrimeContractFile] = useState(null)
   const [uploadingPrimeContract, setUploadingPrimeContract] = useState(false)
@@ -259,6 +261,17 @@ export default function JobDetail() {
   async function loadBudgetItems() {
     const { data } = await supabase.from('budget_items').select('*').eq('job_id', id).order('cost_code', { ascending: true })
     setBudgetItems(data || [])
+  }
+
+  async function loadBillingByItem() {
+    const { data: latestApp } = await supabase.from('aia_applications').select('id').eq('job_id', id).order('app_number', { ascending: false }).limit(1).single()
+    if (!latestApp) { setBillingByItem({}); return }
+    const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, pct_prev, pct_this_period').eq('application_id', latestApp.id)
+    const map = {}
+    for (const l of lines || []) {
+      map[l.budget_item_id] = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
+    }
+    setBillingByItem(map)
   }
 
   async function loadAllCOs() {
@@ -776,7 +789,7 @@ ${sovLines.length > 0 ? `
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts() }
     if (activeTab === 'subs') { loadSubDirectory() }
@@ -2068,6 +2081,80 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span />
                     <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</span>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* ── Owner Billing vs Budget ── */}
+            {budgetItems.length > 0 && (() => {
+              const hasBilling = Object.keys(billingByItem).length > 0
+              const rows = budgetItems.map(item => {
+                const ownerSOV = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
+                const pct = billingByItem[item.id] || 0
+                const billed = Math.round(ownerSOV * pct / 100 * 100) / 100
+                const remaining = ownerSOV - billed
+                return { item, ownerSOV, pct, billed, remaining }
+              })
+              const totalOwner = rows.reduce((a, r) => a + r.ownerSOV, 0)
+              const totalBilledOwner = rows.reduce((a, r) => a + r.billed, 0)
+              const totalRemaining = totalOwner - totalBilledOwner
+              const totalPct = totalOwner > 0 ? (totalBilledOwner / totalOwner) * 100 : 0
+              const colStyle = { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 80px', gap: '12px', padding: '10px 12px', alignItems: 'center' }
+              return (
+                <div style={s.card}>
+                  <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Owner Billing vs Budget</p>
+                  <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>
+                    {hasBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found — create one in the Prime Contract tab to track billing progress per line.'}
+                  </p>
+
+                  {/* Summary stats */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
+                    {[
+                      { label: 'Owner SOV Total', val: `$${totalOwner.toLocaleString()}`, color: undefined },
+                      { label: 'Billed to Date', val: `$${totalBilledOwner.toLocaleString()}`, color: '#60a5fa' },
+                      { label: 'Remaining to Bill', val: `$${totalRemaining.toLocaleString()}`, color: totalRemaining > 0 ? '#e8590c' : '#4ade80' },
+                      { label: '% Complete', val: `${totalPct.toFixed(1)}%`, color: totalPct >= 100 ? '#4ade80' : '#f1f1f1' },
+                    ].map(stat => (
+                      <div key={stat.label} style={s.statCard}>
+                        <div style={s.statLabel}>{stat.label}</div>
+                        <div style={{ ...s.statValue(stat.color) }}>{stat.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Table */}
+                  <div style={{ ...colStyle, padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e' }}>
+                    <span>Line Item</span>
+                    <span style={{ textAlign: 'right' }}>Owner SOV</span>
+                    <span style={{ textAlign: 'right' }}>Billed</span>
+                    <span style={{ textAlign: 'right' }}>Remaining</span>
+                    <span style={{ textAlign: 'right' }}>% Billed</span>
+                  </div>
+                  {rows.map(({ item, ownerSOV, pct, billed, remaining }) => (
+                    <div key={item.id} style={{ ...colStyle, borderBottom: '1px solid #111' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                          {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code}</span>}
+                          <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
+                        </div>
+                        <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '6px', maxWidth: '200px' }}>
+                          <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: pct >= 100 ? '#4ade80' : pct > 75 ? '#e8590c' : '#60a5fa', borderRadius: '2px', transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${ownerSOV.toLocaleString()}</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '600' }}>${billed.toLocaleString()}</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: remaining > 0 ? '#e8590c' : '#4ade80', fontWeight: '600' }}>${remaining.toLocaleString()}</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#4ade80' : '#f1f1f1' }}>{pct.toFixed(1)}%</span>
+                    </div>
+                  ))}
+                  {/* Total row */}
+                  <div style={{ ...colStyle, borderTop: '2px solid #222', marginTop: '2px' }}>
+                    <span style={{ fontSize: '13px', color: '#555', fontWeight: '700' }}>TOTAL</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1', fontWeight: '700' }}>${totalOwner.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '700' }}>${totalBilledOwner.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: totalRemaining > 0 ? '#e8590c' : '#4ade80', fontWeight: '700' }}>${totalRemaining.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: totalPct >= 100 ? '#4ade80' : '#f1f1f1', fontWeight: '700' }}>{totalPct.toFixed(1)}%</span>
                   </div>
                 </div>
               )

@@ -206,6 +206,12 @@ export default function AdminPortal() {
     setDirectory(data || [])
   }
 
+  async function getDocUrl(filePath) {
+    const res = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', file_path: filePath }) })
+    const data = await res.json()
+    if (data?.url) window.open(data.url, '_blank')
+  }
+
   function printLienWaiver(sub) {
     const job = jobs.find(j => j.id === sub.job_id) || sub.jobs || {}
     const amt = parseFloat(sub.payment_amount || sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -640,9 +646,13 @@ export default function AdminPortal() {
                               </td>
                               <td style={s.td}><span style={s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none')}>{statusLabel}</span></td>
                               <td style={s.td}>
-                                {editingCOI !== d.id && (
-                                  <button style={s.btnSm('orange')} onClick={() => { setEditingCOI(d.id); setCoiDate(d.coi_expiration || '') }}>Update date</button>
-                                )}
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                  {editingCOI !== d.id && (
+                                    <button style={s.btnSm('orange')} onClick={() => { setEditingCOI(d.id); setCoiDate(d.coi_expiration || '') }}>Update date</button>
+                                  )}
+                                  {d.w9_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.w9_url)}>View W-9</button>}
+                                  {d.coi_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.coi_url)}>View COI</button>}
+                                </div>
                               </td>
                             </tr>
                           )

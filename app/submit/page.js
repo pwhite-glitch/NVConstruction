@@ -124,7 +124,7 @@ export default function Submit() {
       const { data } = await supabase.storage.from('documents').upload(`coi/${Date.now()}_${docsCoiFile.name}`, docsCoiFile, { upsert: true })
       if (data) coi_url = data.path
     }
-    await supabase.from('sub_directory').update({ w9_url, coi_url, coi_expiration: docsCoiExpiry || null }).eq('id', dirEntry.id)
+    await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, w9_url, coi_url, coi_expiration: docsCoiExpiry || null }) })
     setDirEntry(prev => ({ ...prev, w9_url, coi_url, coi_expiration: docsCoiExpiry }))
     setDocsW9File(null)
     setDocsCoiFile(null)

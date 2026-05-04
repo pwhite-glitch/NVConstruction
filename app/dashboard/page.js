@@ -538,9 +538,10 @@ export default function Dashboard() {
     setAssigningId(null)
   }
 
-  async function getDocUrl(path) {
-    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  async function getDocUrl(filePath) {
+    const res = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', file_path: filePath }) })
+    const data = await res.json()
+    if (data?.url) window.open(data.url, '_blank')
   }
 
   async function openBillingDoc(path) {

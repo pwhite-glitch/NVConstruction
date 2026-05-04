@@ -42,7 +42,10 @@ export default function Login() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
     const { data: prof } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
-    router.push(prof?.role === 'pm' ? '/dashboard' : '/submit')
+    const role = prof?.role
+    if (role === 'admin') router.push('/admin')
+    else if (role === 'pm' || role === 'apm' || role === 'super') router.push('/dashboard')
+    else router.push('/submit')
   }
 
   return (

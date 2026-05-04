@@ -36,7 +36,17 @@ export default function Register() {
     })
     if (error) { setError(error.message); setLoading(false); return }
     if (data.user) {
-      await supabase.from('profiles').update({ company_name: form.company_name, phone: form.phone }).eq('id', data.user.id)
+      await Promise.all([
+        supabase.from('profiles').update({ company_name: form.company_name, phone: form.phone }).eq('id', data.user.id),
+        supabase.from('sub_directory').insert({
+          company_name: form.company_name,
+          contact_name: form.full_name,
+          email: form.email.toLowerCase().trim(),
+          phone: form.phone || null,
+          status: 'pending',
+          applied_at: new Date().toISOString(),
+        }),
+      ])
     }
     router.push('/submit')
   }

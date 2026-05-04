@@ -259,6 +259,12 @@ export default function Dashboard() {
   }
 
   async function loadBidPackages(jobIds = null) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (profile?.role === 'apm') {
+      const { data } = await supabase.from('bid_packages').select('*').contains('allowed_users', [session.user.id]).order('created_at', { ascending: false })
+      setBidPackages(data || [])
+      return
+    }
     const ids = jobIds !== undefined ? jobIds : assignedJobIds
     let q = supabase.from('bid_packages').select('*').order('created_at', { ascending: false })
     if (ids !== null && ids.length > 0) q = q.in('job_id', ids)
@@ -274,6 +280,22 @@ export default function Dashboard() {
       supabase.from('bid_submissions').select('*').eq('bid_package_id', bidId).order('submitted_at'),
     ])
     setBidDetails(prev => ({ ...prev, [bidId]: { plans: plans || [], invitations: invites || [], submissions: subs || [] } }))
+  }
+
+  async function toggleEstimateAccess(estId, userId) {
+    const est = estimates.find(e => e.id === estId)
+    const current = est?.allowed_users || []
+    const updated = current.includes(userId) ? current.filter(id => id !== userId) : [...current, userId]
+    await supabase.from('estimates').update({ allowed_users: updated }).eq('id', estId)
+    setEstimates(prev => prev.map(e => e.id === estId ? { ...e, allowed_users: updated } : e))
+  }
+
+  async function toggleBidAccess(bidId, userId) {
+    const pkg = bidPackages.find(b => b.id === bidId)
+    const current = pkg?.allowed_users || []
+    const updated = current.includes(userId) ? current.filter(id => id !== userId) : [...current, userId]
+    await supabase.from('bid_packages').update({ allowed_users: updated }).eq('id', bidId)
+    setBidPackages(prev => prev.map(b => b.id === bidId ? { ...b, allowed_users: updated } : b))
   }
 
   async function createBidPackage(e) {
@@ -580,7 +602,10 @@ export default function Dashboard() {
 
   // ── Estimates ───────────────────────────────────────────────
   async function loadEstimates() {
-    const { data } = await supabase.from('estimates').select('*, estimate_line_items(*)').order('created_at', { ascending: false })
+    const { data: { session } } = await supabase.auth.getSession()
+    let q = supabase.from('estimates').select('*, estimate_line_items(*)').order('created_at', { ascending: false })
+    if (profile?.role === 'apm') q = q.contains('allowed_users', [session.user.id])
+    const { data } = await q
     setEstimates((data || []).map(e => ({ ...e, estimate_line_items: (e.estimate_line_items || []).sort((a, b) => a.sort_order - b.sort_order) })))
   }
 
@@ -862,7 +887,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {profile?.role === 'pm' && (
               <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
             )}
-            {profile?.role === 'pm' && (
+            {(profile?.role === 'pm' || profile?.role === 'apm') && (
               <button style={s.tab(activeTab === 'estimator')} onClick={() => setActiveTab('estimator')}>Estimator</button>
             )}
           </div>
@@ -1206,9 +1231,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open</p>
-                  <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>
-                    {showCreateBid ? 'Cancel' : '+ New bid package'}
-                  </button>
+                  {profile?.role === 'pm' && <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>{showCreateBid ? 'Cancel' : '+ New bid package'}</button>}
                 </div>
 
                 {showCreateBid && (
@@ -1283,11 +1306,32 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                          {profile?.role === 'pm' && (
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                             {pkg.status === 'open' && <button style={s.btnSm('gray')} onClick={() => setBidStatus(pkg.id, 'closed')}>Close bidding</button>}
                             {pkg.status === 'closed' && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
                             <button style={s.btnSm('red')} onClick={() => deleteBidPackage(pkg.id)}>Delete package</button>
                           </div>
+                          )}
+                          {profile?.role === 'pm' && (() => {
+                            const apms = teamMembers.filter(m => m.role === 'apm')
+                            if (!apms.length) return null
+                            return (
+                              <div style={{ marginBottom: '1.5rem', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>APM Access</p>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  {apms.map(apm => {
+                                    const hasAccess = (pkg.allowed_users || []).includes(apm.id)
+                                    return (
+                                      <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#4ade80' : '#333'}`, background: hasAccess ? '#0a2a0a' : '#111', color: hasAccess ? '#4ade80' : '#555', transition: 'all 0.15s' }} onClick={() => toggleBidAccess(pkg.id, apm.id)}>
+                                        {hasAccess ? '✓ ' : ''}{apm.full_name || apm.email}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })()}
 
                           {/* Plans */}
                           <div style={{ marginBottom: '1.5rem' }}>
@@ -1591,7 +1635,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''} · {estimates.filter(e => e.status === 'won').length} won · {estimates.filter(e => e.status === 'lost').length} lost</p>
-                  <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>
+                  {profile?.role === 'pm' && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
                 {showNewEstimate && (
@@ -1781,17 +1825,38 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   </div>
                                 ))}
                               </div>
+                              {profile?.role === 'pm' && (() => {
+                                const apms = teamMembers.filter(m => m.role === 'apm')
+                                if (!apms.length) return null
+                                return (
+                                  <div style={{ marginBottom: '1rem', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px' }}>
+                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>APM Access</p>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                      {apms.map(apm => {
+                                        const hasAccess = (est.allowed_users || []).includes(apm.id)
+                                        return (
+                                          <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#4ade80' : '#333'}`, background: hasAccess ? '#0a2a0a' : '#111', color: hasAccess ? '#4ade80' : '#555', transition: 'all 0.15s' }} onClick={() => toggleEstimateAccess(est.id, apm.id)}>
+                                            {hasAccess ? '✓ ' : ''}{apm.full_name || apm.email}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: convertingEst === est.id ? '1rem' : 0 }}>
                                 <button style={s.btnSm('orange')} onClick={() => generateEstimatePDF(est)}>Export PDF</button>
-                                <button style={s.btnSm('gray')} onClick={() => {
-                                  setEditingEstimate(est.id)
-                                  setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft' })
-                                  setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount) })))
-                                }}>Edit</button>
-                                {est.status !== 'won' && (
-                                  <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }) }}>Convert to Job</button>
-                                )}
-                                <button style={s.btnSm('red')} onClick={() => deleteEstimate(est.id)}>Delete</button>
+                                {profile?.role === 'pm' && <>
+                                  <button style={s.btnSm('gray')} onClick={() => {
+                                    setEditingEstimate(est.id)
+                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft' })
+                                    setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount) })))
+                                  }}>Edit</button>
+                                  {est.status !== 'won' && (
+                                    <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }) }}>Convert to Job</button>
+                                  )}
+                                  <button style={s.btnSm('red')} onClick={() => deleteEstimate(est.id)}>Delete</button>
+                                </>}
                               </div>
                               {convertingEst === est.id && (
                                 <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '1rem' }}>

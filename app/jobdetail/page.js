@@ -1528,6 +1528,7 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       job_number: form.job_number, project_name: form.project_name, location: form.location,
       contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
       markup_pct: form.markup_pct ? parseFloat(form.markup_pct) : null,
+      payment_type: form.payment_type || 'nv_pays',
       billing_frequency: form.billing_frequency || 'monthly',
       billing_due_day: form.billing_due_day !== undefined && form.billing_due_day !== '' ? parseInt(form.billing_due_day) : null,
       billing_anchor_date: form.billing_frequency === 'biweekly' && form.billing_due_day !== '' && form.billing_due_day !== undefined && !form.billing_anchor_date ? (() => { const d = new Date(); const diff = (parseInt(form.billing_due_day) - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff); return d.toISOString().split('T')[0] })() : (form.billing_anchor_date || null),
@@ -1751,6 +1752,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <option value="active">Active</option>
                       <option value="on_hold">On hold</option>
                       <option value="complete">Complete</option>
+                    </select>
+                  </div>
+                  <div><label style={s.label}>Who pays subs</label>
+                    <select style={s.input} value={form.payment_type || 'nv_pays'} onChange={e => update('payment_type', e.target.value)}>
+                      <option value="nv_pays">NV Construction pays subs</option>
+                      <option value="owner_pays_direct">Owner pays subs directly</option>
                     </select>
                   </div>
                 </div>

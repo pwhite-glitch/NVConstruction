@@ -127,6 +127,10 @@ export default function Dashboard() {
   const [showInviteFor, setShowInviteFor] = useState(null)
   const [selectedEmails, setSelectedEmails] = useState([])
   const [sendingInvites, setSendingInvites] = useState(false)
+  const [showManualBidFor, setShowManualBidFor] = useState(null)
+  const [manualBidForm, setManualBidForm] = useState({ company_name: '', amount: '', notes: '' })
+  const [manualBidFile, setManualBidFile] = useState(null)
+  const [submittingManualBid, setSubmittingManualBid] = useState(false)
 
   // Role / APM filtering
   const [assignedJobIds, setAssignedJobIds] = useState(null) // null = no filter (PM), array = APM filter
@@ -388,6 +392,31 @@ export default function Dashboard() {
     }
     await loadBidPackages()
     await loadBidDetail(bidId)
+  }
+
+  async function submitManualBid(pkgId) {
+    if (!manualBidForm.company_name || !manualBidForm.amount) return
+    setSubmittingManualBid(true)
+    let doc_url = null
+    if (manualBidFile) {
+      const path = `${pkgId}/manual-${Date.now()}-${manualBidFile.name}`
+      const { error: upErr } = await supabase.storage.from('bid-docs').upload(path, manualBidFile)
+      if (!upErr) doc_url = path
+    }
+    await supabase.from('bid_submissions').insert({
+      bid_package_id: pkgId,
+      sub_id: null,
+      sub_email: manualBidForm.company_name,
+      company_name: manualBidForm.company_name,
+      amount: parseFloat(manualBidForm.amount),
+      notes: manualBidForm.notes || null,
+      doc_url,
+    })
+    setManualBidForm({ company_name: '', amount: '', notes: '' })
+    setManualBidFile(null)
+    setShowManualBidFor(null)
+    setSubmittingManualBid(false)
+    await loadBidDetail(pkgId)
   }
 
   async function setBidStatus(bidId, status) {
@@ -1420,13 +1449,47 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
                           {/* Submitted bids */}
                           <div>
-                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '0.75rem' }}>Submitted bids ({submissions.length})</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Submitted bids ({submissions.length})</span>
+                              <button style={s.btnSm('orange')} onClick={() => { setShowManualBidFor(showManualBidFor === pkg.id ? null : pkg.id); setManualBidForm({ company_name: '', amount: '', notes: '' }); setManualBidFile(null) }}>
+                                {showManualBidFor === pkg.id ? 'Cancel' : '+ Add bid manually'}
+                              </button>
+                            </div>
+
+                            {showManualBidFor === pkg.id && (
+                              <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
+                                <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Enter bid received by email/phone</p>
+                                <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                                  <div>
+                                    <label style={s.label}>Company name *</label>
+                                    <input style={s.input} placeholder="ABC Concrete Co." value={manualBidForm.company_name} onChange={e => setManualBidForm(f => ({ ...f, company_name: e.target.value }))} />
+                                  </div>
+                                  <div>
+                                    <label style={s.label}>Bid amount *</label>
+                                    <input style={s.input} type="number" placeholder="0.00" value={manualBidForm.amount} onChange={e => setManualBidForm(f => ({ ...f, amount: e.target.value }))} />
+                                  </div>
+                                </div>
+                                <div style={{ marginBottom: '10px' }}>
+                                  <label style={s.label}>Notes</label>
+                                  <input style={s.input} placeholder="Inclusions, exclusions, qualifications..." value={manualBidForm.notes} onChange={e => setManualBidForm(f => ({ ...f, notes: e.target.value }))} />
+                                </div>
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={s.label}>Attach estimate (PDF/image)</label>
+                                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setManualBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#888' }} />
+                                </div>
+                                <button style={{ ...s.btn, opacity: submittingManualBid || !manualBidForm.company_name || !manualBidForm.amount ? 0.6 : 1 }} disabled={submittingManualBid || !manualBidForm.company_name || !manualBidForm.amount} onClick={() => submitManualBid(pkg.id)}>
+                                  {submittingManualBid ? 'Saving...' : 'Save bid'}
+                                </button>
+                              </div>
+                            )}
+
                             {submissions.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No bids submitted yet.</p> : submissions.map(sub => (
                               <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#0f0f0f', borderRadius: '8px', marginBottom: '6px', flexWrap: 'wrap', gap: '12px', border: sub.status === 'awarded' ? '1px solid #1a4a1a' : '1px solid transparent' }}>
                                 <div style={{ flex: 1, minWidth: '180px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                                     <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
                                     <span style={s.badge(sub.status === 'awarded' ? 'approved' : sub.status === 'rejected' ? 'rejected' : 'pending')}>{sub.status}</span>
+                                    {!sub.sub_id && <span style={{ fontSize: '10px', color: '#666', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '2px 6px', letterSpacing: '0.5px' }}>manual entry</span>}
                                   </div>
                                   {sub.notes && <p style={{ fontSize: '12px', color: '#888', margin: '0', lineHeight: '1.5' }}>{sub.notes}</p>}
                                   <span style={{ fontSize: '11px', color: '#444' }}>{new Date(sub.submitted_at).toLocaleDateString()}</span>

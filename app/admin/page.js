@@ -513,7 +513,7 @@ export default function AdminPortal() {
                             <span style={s.badge(sub.status)}>{sub.status}</span>
                             {isPaid && <span style={s.badge('paid')}>Paid</span>}
                             {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
-                            {sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
+                            {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
                           </div>
                           <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
                         </div>

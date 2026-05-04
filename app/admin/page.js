@@ -548,7 +548,7 @@ export default function AdminPortal() {
 
                           {isOwnerPays && !isPaid && (
                             <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', fontSize: '13px', color: '#60a5fa' }}>
-                              This job is set to Owner Pays Direct. Please record all payments whether from NV or Owner.
+                              This job is set to Owner Pays Direct. However, NV Cuts Check will appear above if that's the case. Please record all payments whether from NV or Owner.
                             </div>
                           )}
 

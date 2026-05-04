@@ -513,21 +513,11 @@ export default function AdminPortal() {
                             <span style={s.badge(sub.status)}>{sub.status}</span>
                             {isPaid && <span style={s.badge('paid')}>Paid</span>}
                             {isOwnerPays && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
-                            {sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Cuts Check</span>}
+                            {sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
                           </div>
                           <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <select
-                            style={{ fontSize: '11px', padding: '4px 8px', background: sub.nv_cuts_check ? '#2a1200' : '#1a1a1a', border: `1px solid ${sub.nv_cuts_check ? '#4a2200' : '#2a2a2a'}`, color: sub.nv_cuts_check ? '#e8590c' : '#555', borderRadius: '6px', cursor: 'pointer', outline: 'none' }}
-                            value={sub.nv_cuts_check ? 'nv' : 'owner'}
-                            disabled={togglingNvCheck === sub.id}
-                            onClick={e => e.stopPropagation()}
-                            onChange={e => { e.stopPropagation(); toggleNvCutsCheck(sub.id, sub.nv_cuts_check) }}
-                          >
-                            <option value="owner">{isOwnerPays ? 'Owner pays' : 'Standard'}</option>
-                            <option value="nv">NV cuts check</option>
-                          </select>
                           <span style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${parseFloat(sub.amount_billed || 0).toLocaleString()}</span>
                           <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
                         </div>

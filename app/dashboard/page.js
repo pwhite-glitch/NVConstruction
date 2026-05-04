@@ -89,13 +89,14 @@ export default function Dashboard() {
   const [expanded, setExpanded] = useState(null)
   const [expandedDir, setExpandedDir] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('billing')
+  const [activeTab, setActiveTab] = useState('jobs')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterJob, setFilterJob] = useState('')
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active', billing_frequency: 'monthly', billing_due_day: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '' })
+  const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -463,15 +464,12 @@ export default function Dashboard() {
   async function addJob(e) {
     e.preventDefault()
     const { data, error } = await supabase.from('jobs').insert({
-      job_number: newJob.job_number, project_name: newJob.project_name,
-      location: newJob.location || null, contract_value: newJob.contract_value ? parseFloat(newJob.contract_value) : null,
-      start_date: newJob.start_date || null, status: newJob.status,
-      billing_frequency: newJob.billing_frequency || 'monthly',
-      billing_due_day: newJob.billing_due_day !== '' ? parseInt(newJob.billing_due_day) : null,
-      billing_anchor_date: newJob.billing_frequency === 'biweekly' && newJob.billing_due_day !== '' ? (() => { const d = new Date(); const diff = (parseInt(newJob.billing_due_day) - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff); return d.toISOString().split('T')[0] })() : null,
+      job_number: newJob.job_number,
+      project_name: newJob.project_name,
+      status: 'active',
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
-    router.push(`/jobdetail?id=${data.id}&tab=budget`)
+    router.push(`/jobdetail?id=${data.id}`)
   }
 
   async function inviteSub(e) {
@@ -926,11 +924,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
         <div style={s.card}>
           <div style={s.tabs}>
-            <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
+            <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
             <button style={s.tab(activeTab === 'directory')} onClick={() => setActiveTab('directory')}>
               Sub directory{pendingApps > 0 ? ` (${pendingApps})` : ''}
             </button>
-            <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
+            <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
             {profile?.role === 'pm' && (
               <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
             )}
@@ -1240,57 +1238,28 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
-                <div style={s.formBox}>
-                  <p style={s.formTitle}>Add new job</p>
-                  <form onSubmit={addJob}>
-                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
-                      <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" /></div>
-                      <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
-                    </div>
-                    <div style={{ ...s.grid3, marginBottom: '12px' }}>
-                      <div><label style={s.label}>Location</label><input style={s.input} value={newJob.location} onChange={e => setNewJob(j => ({ ...j, location: e.target.value }))} placeholder="Lubbock, TX" /></div>
-                      <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={newJob.contract_value} onChange={e => setNewJob(j => ({ ...j, contract_value: e.target.value }))} placeholder="0.00" /></div>
-                      <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
-                    </div>
-                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                      <div>
-                        <label style={s.label}>Billing frequency</label>
-                        <select style={s.input} value={newJob.billing_frequency} onChange={e => setNewJob(j => ({ ...j, billing_frequency: e.target.value, billing_due_day: '' }))}>
-                          <option value="monthly">Monthly</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="biweekly">Bi-weekly</option>
-                        </select>
-                      </div>
-                      <div>
-                        {newJob.billing_frequency === 'monthly' ? (
-                          <>
-                            <label style={s.label}>Due day of month (1–28)</label>
-                            <input type="number" min="1" max="28" style={s.input} value={newJob.billing_due_day} onChange={e => setNewJob(j => ({ ...j, billing_due_day: e.target.value }))} placeholder="e.g. 25" />
-                          </>
-                        ) : (
-                          <>
-                            <label style={s.label}>Due day of week</label>
-                            <select style={s.input} value={newJob.billing_due_day} onChange={e => setNewJob(j => ({ ...j, billing_due_day: e.target.value }))}>
-                              <option value="">Select day...</option>
-                              <option value="0">Sunday</option>
-                              <option value="1">Monday</option>
-                              <option value="2">Tuesday</option>
-                              <option value="3">Wednesday</option>
-                              <option value="4">Thursday</option>
-                              <option value="5">Friday</option>
-                              <option value="6">Saturday</option>
-                            </select>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <p style={{ margin: '0 0 1.25rem', fontSize: '12px', color: '#555' }}>Vendors receive an automatic reminder email 3 days before each due date.</p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <button type="submit" style={s.btn}>Add job</button>
-                      {jobMsg && <span style={s.successInline}>{jobMsg}</span>}
-                    </div>
-                  </form>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '' }); setJobMsg('') }}>
+                    {showNewJobForm ? 'Cancel' : '+ New job'}
+                  </button>
                 </div>
+
+                {showNewJobForm && (
+                  <div style={{ ...s.formBox, marginBottom: '1.25rem' }}>
+                    <p style={s.formTitle}>New job</p>
+                    <form onSubmit={addJob}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /></div>
+                        <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button type="submit" style={s.btn}>Create & open job</button>
+                        {jobMsg && <span style={s.successInline}>{jobMsg}</span>}
+                      </div>
+                    </form>
+                  </div>
+                )}
+
                 {jobs.length === 0 ? <div style={s.emptyMsg}>No jobs yet.</div> : jobs.map(j => (
                   <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
                     <div>

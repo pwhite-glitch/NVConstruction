@@ -186,6 +186,21 @@ export default function Dashboard() {
       setLoading(false)
     }
     load()
+
+    async function handleVisibilityChange() {
+      if (document.visibilityState !== 'visible') return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      if (prof?.role === 'apm') {
+        const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id').eq('user_id', session.user.id)
+        const jobIds = (assigns || []).map(a => a.job_id)
+        setAssignedJobIds(jobIds)
+        await loadAll(jobIds)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [router])
 
   useEffect(() => {

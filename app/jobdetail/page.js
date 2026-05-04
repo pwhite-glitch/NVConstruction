@@ -138,6 +138,7 @@ export default function JobDetail() {
   const [editingBilling, setEditingBilling] = useState(null)
   const [editBillingForm, setEditBillingForm] = useState({})
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
+  const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
@@ -1531,6 +1532,13 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     setTogglingNvCheck(billingId)
     await supabase.from('billing_submissions').update({ nv_cuts_check: !current }).eq('id', billingId)
     setTogglingNvCheck(null)
+    await loadBillingForJob()
+  }
+
+  async function toggleReadyToPay(billingId, current) {
+    setTogglingReadyToPay(billingId)
+    await supabase.from('billing_submissions').update({ ready_to_pay: !current }).eq('id', billingId)
+    setTogglingReadyToPay(null)
     await loadBillingForJob()
   }
 
@@ -3054,13 +3062,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const isEditing = editingBilling === b.id
                 const isOwnerPay = job?.payment_type === 'owner_pays_direct'
                 return (
-                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.nv_cuts_check ? '1px solid #4a2200' : '1px solid #1e1e1e' }}>
-                    <div style={{ ...s.billingEntryHeader, background: b.nv_cuts_check ? '#140a00' : '#0f0f0f' }}>
+                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.ready_to_pay ? '1px solid #1a4a1a' : b.nv_cuts_check ? '1px solid #4a2200' : '1px solid #1e1e1e' }}>
+                    <div style={{ ...s.billingEntryHeader, background: b.ready_to_pay ? '#0a1a0a' : b.nv_cuts_check ? '#140a00' : '#0f0f0f' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '3px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</span>
                           {b.contact_name && <span style={{ fontSize: '12px', color: '#555' }}>{b.contact_name}</span>}
                           <span style={s.coBadge(b.status)}>{b.status}</span>
+                          {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
                           {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
@@ -3081,6 +3090,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                         </div>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {b.status === 'approved' && (
+                            <button
+                              title={b.ready_to_pay ? 'Mark as not ready' : 'Mark as ready to pay'}
+                              disabled={togglingReadyToPay === b.id}
+                              onClick={() => toggleReadyToPay(b.id, b.ready_to_pay)}
+                              style={{ fontSize: '11px', padding: '4px 10px', background: b.ready_to_pay ? '#0a2a0a' : '#1a1a1a', border: `1px solid ${b.ready_to_pay ? '#1a4a1a' : '#2a2a2a'}`, color: b.ready_to_pay ? '#4ade80' : '#888', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: togglingReadyToPay === b.id ? 0.5 : 1 }}
+                            >
+                              {b.ready_to_pay ? '✓ Ready to pay' : 'Mark ready to pay'}
+                            </button>
+                          )}
                           {isOwnerPay && (
                             <select
                               title="Flag if NV Construction needs to cut this check"

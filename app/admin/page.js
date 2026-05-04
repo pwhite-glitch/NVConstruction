@@ -69,6 +69,7 @@ export default function AdminPortal() {
   const [filterBillStatus, setFilterBillStatus] = useState('')
   const [filterBillPaid, setFilterBillPaid] = useState('')
   const [filterBillNvCheck, setFilterBillNvCheck] = useState(false)
+  const [filterBillReadyToPay, setFilterBillReadyToPay] = useState(false)
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingQb, setTogglingQb] = useState(null)
 
@@ -304,7 +305,8 @@ export default function AdminPortal() {
     (!filterBillJob || b.job_id === filterBillJob) &&
     (!filterBillStatus || b.status === filterBillStatus) &&
     (!filterBillPaid || (filterBillPaid === 'paid' ? !!b.paid_at : !b.paid_at)) &&
-    (!filterBillNvCheck || b.nv_cuts_check)
+    (!filterBillNvCheck || b.nv_cuts_check) &&
+    (!filterBillReadyToPay || b.ready_to_pay)
   )
 
   const coiList = directory.filter(d => {
@@ -492,6 +494,7 @@ export default function AdminPortal() {
                     <option value="unpaid">Unpaid only</option>
                     <option value="paid">Paid only</option>
                   </select>
+                  <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
                   <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
                 </div>
 
@@ -500,13 +503,14 @@ export default function AdminPortal() {
                   const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
                   const isExpanded = expandedBill === sub.id
                   return (
-                    <div key={sub.id} style={{ border: `1px solid ${sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => setExpandedBill(isExpanded ? null : sub.id)}>
+                    <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a4a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.ready_to_pay ? '#0a1a0a' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => setExpandedBill(isExpanded ? null : sub.id)}>
                         <div style={{ flex: 1, minWidth: '200px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
                             <span style={s.badge(sub.status)}>{sub.status}</span>
                             {isPaid && <span style={s.badge('paid')}>Paid</span>}
+                            {sub.ready_to_pay && !isPaid && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Ready to Pay</span>}
                             {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
                             {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
                           </div>

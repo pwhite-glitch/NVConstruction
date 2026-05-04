@@ -70,6 +70,7 @@ export default function AdminPortal() {
   const [filterBillPaid, setFilterBillPaid] = useState('')
   const [filterBillNvCheck, setFilterBillNvCheck] = useState(false)
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
+  const [togglingQb, setTogglingQb] = useState(null)
 
   // COI state
   const [filterCOI, setFilterCOI] = useState('all')
@@ -164,6 +165,13 @@ export default function AdminPortal() {
     setPayingId(null)
     setSavingPay(false)
     await loadBilling()
+  }
+
+  async function toggleQb(costId, current) {
+    setTogglingQb(costId)
+    await supabase.from('direct_costs').update({ logged_to_quickbooks: !current }).eq('id', costId)
+    setTogglingQb(null)
+    await loadCosts()
   }
 
   async function toggleNvCutsCheck(subId, current) {
@@ -422,6 +430,7 @@ export default function AdminPortal() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
+                          <th style={{ ...s.th, textAlign: 'center', width: '48px' }}>QB</th>
                           <th style={s.th}>Date</th>
                           <th style={s.th}>Job</th>
                           <th style={s.th}>Description</th>
@@ -435,6 +444,16 @@ export default function AdminPortal() {
                       <tbody>
                         {filteredCosts.map(c => (
                           <tr key={c.id}>
+                            <td style={{ ...s.td, textAlign: 'center' }}>
+                              <button
+                                title={c.logged_to_quickbooks ? 'Logged to QuickBooks' : 'Mark as logged to QuickBooks'}
+                                disabled={togglingQb === c.id}
+                                onClick={() => toggleQb(c.id, c.logged_to_quickbooks)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', opacity: togglingQb === c.id ? 0.4 : 1, padding: '2px' }}
+                              >
+                                {c.logged_to_quickbooks ? '✅' : '⬜'}
+                              </button>
+                            </td>
                             <td style={s.td}>{c.cost_date ? new Date(c.cost_date).toLocaleDateString() : '—'}</td>
                             <td style={s.td}><span style={{ color: '#f1f1f1', fontWeight: '600' }}>#{c.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#555' }}>{c.jobs?.project_name}</span></td>
                             <td style={s.td}>{c.description}{c.notes ? <><br /><span style={{ fontSize: '11px', color: '#555' }}>{c.notes}</span></> : ''}</td>
@@ -446,6 +465,7 @@ export default function AdminPortal() {
                           </tr>
                         ))}
                         <tr>
+                          <td style={s.td} />
                           <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#888', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</td>
                           <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '16px' }}>${filteredCosts.reduce((a, c) => a + parseFloat(c.amount || 0), 0).toLocaleString()}</td>
                           <td style={s.td} />

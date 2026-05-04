@@ -137,6 +137,7 @@ export default function JobDetail() {
   const [createBillingError, setCreateBillingError] = useState('')
   const [editingBilling, setEditingBilling] = useState(null)
   const [editBillingForm, setEditBillingForm] = useState({})
+  const [togglingNvCheck, setTogglingNvCheck] = useState(null)
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
@@ -1517,6 +1518,13 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
   async function deleteBillingEntry(billingId) {
     if (!window.confirm('Delete this billing submission?')) return
     await supabase.from('billing_submissions').delete().eq('id', billingId)
+    await loadBillingForJob()
+  }
+
+  async function toggleNvCutsCheck(billingId, current) {
+    setTogglingNvCheck(billingId)
+    await supabase.from('billing_submissions').update({ nv_cuts_check: !current }).eq('id', billingId)
+    setTogglingNvCheck(null)
     await loadBillingForJob()
   }
 
@@ -3038,14 +3046,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {billingSubmissions.map(b => {
                 const isEditing = editingBilling === b.id
+                const isOwnerPay = job?.payment_type === 'owner_pays_direct'
                 return (
-                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1 }}>
-                    <div style={s.billingEntryHeader}>
+                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.nv_cuts_check ? '1px solid #4a2200' : '1px solid #1e1e1e' }}>
+                    <div style={{ ...s.billingEntryHeader, background: b.nv_cuts_check ? '#140a00' : '#0f0f0f' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '3px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '3px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</span>
                           {b.contact_name && <span style={{ fontSize: '12px', color: '#555' }}>{b.contact_name}</span>}
                           <span style={s.coBadge(b.status)}>{b.status}</span>
+                          {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(b.submitted_at).toLocaleDateString()}
@@ -3064,7 +3074,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
                           )}
                         </div>
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {isOwnerPay && (
+                            <select
+                              title="Flag if NV Construction needs to cut this check"
+                              value={b.nv_cuts_check ? 'nv' : 'owner'}
+                              disabled={togglingNvCheck === b.id}
+                              onChange={e => toggleNvCutsCheck(b.id, b.nv_cuts_check)}
+                              style={{ fontSize: '11px', padding: '4px 8px', background: b.nv_cuts_check ? '#2a1200' : '#1a1a1a', border: `1px solid ${b.nv_cuts_check ? '#4a2200' : '#2a2a2a'}`, color: b.nv_cuts_check ? '#e8590c' : '#555', borderRadius: '6px', cursor: 'pointer', outline: 'none' }}
+                            >
+                              <option value="owner">Owner pays</option>
+                              <option value="nv">NV cuts check</option>
+                            </select>
+                          )}
                           <button style={s.btnSmallOrange} onClick={() => {
                             if (!isEditing) loadBillingSov(b.id)
                             setEditingBilling(isEditing ? null : b.id)

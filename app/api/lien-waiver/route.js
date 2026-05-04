@@ -1,5 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import fs from 'fs'
+import path from 'path'
+
+function logoSrc() {
+  try {
+    const buf = fs.readFileSync(path.join(process.cwd(), 'public', 'logo.png'))
+    return `data:image/png;base64,${buf.toString('base64')}`
+  } catch { return '' }
+}
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -21,6 +30,7 @@ export async function POST(request) {
   if (!sub.sub_email) return Response.json({ error: 'No email on file for this sub' }, { status: 400 })
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
+  const logo = logoSrc()
   const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const period = sub.billing_period
     ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -42,7 +52,7 @@ export async function POST(request) {
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#141414;border:1px solid #222;border-radius:16px;overflow:hidden;">
         <tr>
           <td style="background:#141414;border-bottom:1px solid #222;padding:28px 40px;text-align:center;">
-            <img src="${siteUrl}/logo.png" alt="NV Construction" width="60" height="60" style="object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+            ${logo ? `<img src="${logo}" alt="NV Construction" width="60" height="60" style="object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />` : ''}
             <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:4px;color:#555;text-transform:uppercase;">NV Construction</p>
           </td>
         </tr>

@@ -1,6 +1,15 @@
 import { Resend } from 'resend'
+import fs from 'fs'
+import path from 'path'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+
+function logoSrc() {
+  try {
+    const buf = fs.readFileSync(path.join(process.cwd(), 'public', 'logo.png'))
+    return `data:image/png;base64,${buf.toString('base64')}`
+  } catch { return '' }
+}
 
 export async function POST(request) {
   const { to_email, to_name, company_name, subject, message } = await request.json()
@@ -8,6 +17,7 @@ export async function POST(request) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
   const firstName = to_name?.split(' ')[0] || 'there'
+  const logo = logoSrc()
 
   const { error } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
@@ -23,7 +33,7 @@ export async function POST(request) {
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#141414;border:1px solid #222;border-radius:16px;overflow:hidden;">
         <tr>
           <td style="background:#141414;border-bottom:1px solid #222;padding:28px 40px;text-align:center;">
-            <img src="${siteUrl}/logo.png" alt="NV Construction" width="60" height="60" style="object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+            ${logo ? `<img src="${logo}" alt="NV Construction" width="60" height="60" style="object-fit:contain;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />` : ''}
             <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:4px;color:#555;text-transform:uppercase;">NV Construction</p>
           </td>
         </tr>

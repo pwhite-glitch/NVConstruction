@@ -1528,7 +1528,9 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       job_number: form.job_number, project_name: form.project_name, location: form.location,
       contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
       markup_pct: form.markup_pct ? parseFloat(form.markup_pct) : null,
-      billing_due_day: form.billing_due_day ? parseInt(form.billing_due_day) : null,
+      billing_frequency: form.billing_frequency || 'monthly',
+      billing_due_day: form.billing_due_day !== undefined && form.billing_due_day !== '' ? parseInt(form.billing_due_day) : null,
+      billing_anchor_date: form.billing_frequency === 'biweekly' && form.billing_due_day !== '' && form.billing_due_day !== undefined && !form.billing_anchor_date ? (() => { const d = new Date(); const diff = (parseInt(form.billing_due_day) - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff); return d.toISOString().split('T')[0] })() : (form.billing_anchor_date || null),
       start_date: form.start_date || null, status: form.status,
       owner_company: form.owner_company, owner_name: form.owner_name, owner_email: form.owner_email, owner_phone: form.owner_phone,
       architect_name: form.architect_name, architect_company: form.architect_company, architect_email: form.architect_email,
@@ -1713,7 +1715,36 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ ...s.grid3, marginBottom: '12px' }}>
                   <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={form.contract_value || ''} onChange={e => update('contract_value', e.target.value)} /></div>
                   <div><label style={s.label}>Default markup %</label><input type="number" style={s.input} placeholder="0" value={form.markup_pct || ''} onChange={e => update('markup_pct', e.target.value)} /></div>
-                  <div><label style={s.label}>Billing due day</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 25" value={form.billing_due_day || ''} onChange={e => update('billing_due_day', e.target.value)} /></div>
+                  <div>
+                    <label style={s.label}>Billing frequency</label>
+                    <select style={s.input} value={form.billing_frequency || 'monthly'} onChange={e => update('billing_frequency', e.target.value)}>
+                      <option value="monthly">Monthly</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Bi-weekly</option>
+                    </select>
+                  </div>
+                  <div>
+                    {(form.billing_frequency || 'monthly') === 'monthly' ? (
+                      <>
+                        <label style={s.label}>Due day of month (1–28)</label>
+                        <input type="number" min="1" max="28" style={s.input} placeholder="e.g. 25" value={form.billing_due_day || ''} onChange={e => update('billing_due_day', e.target.value)} />
+                      </>
+                    ) : (
+                      <>
+                        <label style={s.label}>Due day of week</label>
+                        <select style={s.input} value={form.billing_due_day ?? ''} onChange={e => { update('billing_due_day', e.target.value); update('billing_anchor_date', '') }}>
+                          <option value="">Select day...</option>
+                          <option value="0">Sunday</option>
+                          <option value="1">Monday</option>
+                          <option value="2">Tuesday</option>
+                          <option value="3">Wednesday</option>
+                          <option value="4">Thursday</option>
+                          <option value="5">Friday</option>
+                          <option value="6">Saturday</option>
+                        </select>
+                      </>
+                    )}
+                  </div>
                   <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={form.start_date || ''} onChange={e => update('start_date', e.target.value)} /></div>
                   <div><label style={s.label}>Status</label>
                     <select style={s.input} value={form.status || 'active'} onChange={e => update('status', e.target.value)}>
@@ -1760,20 +1791,36 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               </div>
 
-              {form.billing_due_day && (() => {
+              {(form.billing_due_day !== undefined && form.billing_due_day !== '' && form.billing_due_day !== null) && (() => {
+                const freq = form.billing_frequency || 'monthly'
                 const dueDay = parseInt(form.billing_due_day)
-                const today = new Date()
+                const today = new Date(); today.setHours(0,0,0,0)
+                const DOW = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+                const ord = n => n + (n===1?'st':n===2?'nd':n===3?'rd':'th')
                 const dates = []
-                let month = today.getMonth(), year = today.getFullYear()
-                if (today.getDate() >= dueDay) { month++; if (month > 11) { month = 0; year++ } }
-                for (let i = 0; i < 12; i++) {
-                  const lastDay = new Date(year, month + 1, 0).getDate()
-                  dates.push(new Date(year, month, Math.min(dueDay, lastDay)))
-                  month++; if (month > 11) { month = 0; year++ }
+                if (freq === 'monthly') {
+                  let month = today.getMonth(), year = today.getFullYear()
+                  if (today.getDate() >= dueDay) { month++; if (month > 11) { month = 0; year++ } }
+                  for (let i = 0; i < 12; i++) {
+                    const lastDay = new Date(year, month + 1, 0).getDate()
+                    dates.push(new Date(year, month, Math.min(dueDay, lastDay)))
+                    month++; if (month > 11) { month = 0; year++ }
+                  }
+                } else if (freq === 'weekly') {
+                  const diff = (dueDay - today.getDay() + 7) % 7 || 7
+                  let cur = new Date(today); cur.setDate(today.getDate() + diff)
+                  for (let i = 0; i < 12; i++) { dates.push(new Date(cur)); cur.setDate(cur.getDate() + 7) }
+                } else if (freq === 'biweekly') {
+                  const anchor = form.billing_anchor_date ? new Date(form.billing_anchor_date) : (() => { const d = new Date(today); const diff2 = (dueDay - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff2); return d })()
+                  anchor.setHours(0,0,0,0)
+                  let cur = new Date(anchor)
+                  while (cur <= today) cur.setDate(cur.getDate() + 14)
+                  for (let i = 0; i < 12; i++) { dates.push(new Date(cur)); cur.setDate(cur.getDate() + 14) }
                 }
+                const title = freq === 'monthly' ? `Due on the ${ord(dueDay)} of each month` : freq === 'weekly' ? `Due every ${DOW[dueDay]}` : `Due every other ${DOW[dueDay]}`
                 return (
                   <div style={{ ...s.card, marginBottom: '1rem' }}>
-                    <p style={s.cardTitle}>Billing calendar — due on the {dueDay}{dueDay === 1 ? 'st' : dueDay === 2 ? 'nd' : dueDay === 3 ? 'rd' : 'th'} of each month</p>
+                    <p style={s.cardTitle}>Billing calendar — {title}</p>
                     <p style={{ fontSize: '12px', color: '#555', margin: '0 0 1rem' }}>Vendors receive an automatic reminder email 3 days before each due date.</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '8px' }}>
                       {dates.map((d, i) => {

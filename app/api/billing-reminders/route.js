@@ -8,7 +8,6 @@ const adminSupabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function GET(request) {
-  // Verify cron secret so only Vercel can call this
   const auth = request.headers.get('authorization')
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -16,41 +15,64 @@ export async function GET(request) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
 
-  // Reminder date = 3 days from now
   const reminderDate = new Date()
   reminderDate.setDate(reminderDate.getDate() + 3)
+  reminderDate.setHours(0, 0, 0, 0)
   const reminderDay = reminderDate.getDate()
+  const reminderDow = reminderDate.getDay()
   const reminderMonth = reminderDate.getMonth()
   const reminderYear = reminderDate.getFullYear()
 
-  // Get all active jobs with a billing_due_day set
   const { data: jobs, error: jobsErr } = await adminSupabase
     .from('jobs')
-    .select('id, job_number, project_name')
+    .select('id, job_number, project_name, billing_frequency, billing_due_day, billing_anchor_date')
     .eq('status', 'active')
     .not('billing_due_day', 'is', null)
 
   if (jobsErr) return Response.json({ error: jobsErr.message }, { status: 500 })
 
-  // Filter: billing due date for the reminder month matches the reminder date
   const targetJobs = (jobs || []).filter(job => {
+    const freq = job.billing_frequency || 'monthly'
     const dueDay = parseInt(job.billing_due_day)
-    if (!dueDay) return false
-    const lastDayOfMonth = new Date(reminderYear, reminderMonth + 1, 0).getDate()
-    return Math.min(dueDay, lastDayOfMonth) === reminderDay
+    if (isNaN(dueDay)) return false
+
+    if (freq === 'monthly') {
+      const lastDay = new Date(reminderYear, reminderMonth + 1, 0).getDate()
+      return Math.min(dueDay, lastDay) === reminderDay
+    }
+    if (freq === 'weekly') {
+      return dueDay === reminderDow
+    }
+    if (freq === 'biweekly') {
+      if (dueDay !== reminderDow) return false
+      const anchor = job.billing_anchor_date ? new Date(job.billing_anchor_date) : null
+      if (!anchor) return false
+      anchor.setHours(0, 0, 0, 0)
+      const daysDiff = Math.round((reminderDate - anchor) / 86400000)
+      return daysDiff >= 0 && daysDiff % 14 === 0
+    }
+    return false
   })
 
   if (targetJobs.length === 0) {
     return Response.json({ ok: true, sent: 0, message: 'No billing due in 3 days.' })
   }
 
+  const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   let totalSent = 0
   const errors = []
 
   for (const job of targetJobs) {
-    const dueDate = reminderDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const freq = job.billing_frequency || 'monthly'
+    const dueDay = parseInt(job.billing_due_day)
+    let dueDateLabel
+    if (freq === 'monthly') {
+      dueDateLabel = reminderDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    } else {
+      dueDateLabel = `${DOW_NAMES[dueDay]}, ${reminderDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
+    }
+    const freqLabel = freq === 'weekly' ? 'weekly' : freq === 'biweekly' ? 'bi-weekly' : 'monthly'
 
-    // Get all vendors assigned to this job
     const { data: assignments } = await adminSupabase
       .from('job_assignments')
       .select('sub_email, profiles(company_name, full_name)')
@@ -59,13 +81,12 @@ export async function GET(request) {
 
     for (const asgn of assignments || []) {
       if (!asgn.sub_email) continue
-      const companyName = asgn.profiles?.company_name || asgn.sub_email
       const firstName = asgn.profiles?.full_name?.split(' ')[0] || 'there'
 
       const { error: emailErr } = await resend.emails.send({
         from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
         to: asgn.sub_email,
-        subject: `Billing due ${dueDate} — #${job.job_number} ${job.project_name}`,
+        subject: `Billing due ${dueDateLabel} — #${job.job_number} ${job.project_name}`,
         html: `
 <!DOCTYPE html>
 <html>
@@ -84,7 +105,7 @@ export async function GET(request) {
           <td style="padding:40px;">
             <h1 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#f1f1f1;">Billing reminder, ${firstName}</h1>
             <p style="margin:0 0 24px;font-size:14px;color:#888;line-height:1.6;">
-              Your billing submission for <strong style="color:#f1f1f1;">#${job.job_number} — ${job.project_name}</strong> is due in <strong style="color:#e8590c;">3 days</strong> on <strong style="color:#f1f1f1;">${dueDate}</strong>.
+              Your ${freqLabel} billing for <strong style="color:#f1f1f1;">#${job.job_number} — ${job.project_name}</strong> is due in <strong style="color:#e8590c;">3 days</strong> on <strong style="color:#f1f1f1;">${dueDateLabel}</strong>.
             </p>
             <table cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
               <tr>

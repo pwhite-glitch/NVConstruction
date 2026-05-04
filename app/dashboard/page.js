@@ -95,7 +95,7 @@ export default function Dashboard() {
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active', billing_due_day: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active', billing_frequency: 'monthly', billing_due_day: '' })
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -466,7 +466,9 @@ export default function Dashboard() {
       job_number: newJob.job_number, project_name: newJob.project_name,
       location: newJob.location || null, contract_value: newJob.contract_value ? parseFloat(newJob.contract_value) : null,
       start_date: newJob.start_date || null, status: newJob.status,
-      billing_due_day: newJob.billing_due_day ? parseInt(newJob.billing_due_day) : null,
+      billing_frequency: newJob.billing_frequency || 'monthly',
+      billing_due_day: newJob.billing_due_day !== '' ? parseInt(newJob.billing_due_day) : null,
+      billing_anchor_date: newJob.billing_frequency === 'biweekly' && newJob.billing_due_day !== '' ? (() => { const d = new Date(); const diff = (parseInt(newJob.billing_due_day) - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff); return d.toISOString().split('T')[0] })() : null,
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     router.push(`/jobdetail?id=${data.id}&tab=budget`)
@@ -1250,15 +1252,39 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={newJob.contract_value} onChange={e => setNewJob(j => ({ ...j, contract_value: e.target.value }))} placeholder="0.00" /></div>
                       <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
                     </div>
-                    <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
                       <div>
-                        <label style={s.label}>Billing due day of month</label>
-                        <input type="number" min="1" max="28" style={s.input} value={newJob.billing_due_day} onChange={e => setNewJob(j => ({ ...j, billing_due_day: e.target.value }))} placeholder="e.g. 25 = due every 25th" />
+                        <label style={s.label}>Billing frequency</label>
+                        <select style={s.input} value={newJob.billing_frequency} onChange={e => setNewJob(j => ({ ...j, billing_frequency: e.target.value, billing_due_day: '' }))}>
+                          <option value="monthly">Monthly</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="biweekly">Bi-weekly</option>
+                        </select>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#555', lineHeight: '1.6' }}>Vendors will receive an automatic reminder email 3 days before billing is due each month.</p>
+                      <div>
+                        {newJob.billing_frequency === 'monthly' ? (
+                          <>
+                            <label style={s.label}>Due day of month (1–28)</label>
+                            <input type="number" min="1" max="28" style={s.input} value={newJob.billing_due_day} onChange={e => setNewJob(j => ({ ...j, billing_due_day: e.target.value }))} placeholder="e.g. 25" />
+                          </>
+                        ) : (
+                          <>
+                            <label style={s.label}>Due day of week</label>
+                            <select style={s.input} value={newJob.billing_due_day} onChange={e => setNewJob(j => ({ ...j, billing_due_day: e.target.value }))}>
+                              <option value="">Select day...</option>
+                              <option value="0">Sunday</option>
+                              <option value="1">Monday</option>
+                              <option value="2">Tuesday</option>
+                              <option value="3">Wednesday</option>
+                              <option value="4">Thursday</option>
+                              <option value="5">Friday</option>
+                              <option value="6">Saturday</option>
+                            </select>
+                          </>
+                        )}
                       </div>
                     </div>
+                    <p style={{ margin: '0 0 1.25rem', fontSize: '12px', color: '#555' }}>Vendors receive an automatic reminder email 3 days before each due date.</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button type="submit" style={s.btn}>Add job</button>
                       {jobMsg && <span style={s.successInline}>{jobMsg}</span>}

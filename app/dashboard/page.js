@@ -95,7 +95,7 @@ export default function Dashboard() {
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', location: '', contract_value: '', start_date: '', status: 'active', billing_due_day: '' })
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -466,6 +466,7 @@ export default function Dashboard() {
       job_number: newJob.job_number, project_name: newJob.project_name,
       location: newJob.location || null, contract_value: newJob.contract_value ? parseFloat(newJob.contract_value) : null,
       start_date: newJob.start_date || null, status: newJob.status,
+      billing_due_day: newJob.billing_due_day ? parseInt(newJob.billing_due_day) : null,
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     router.push(`/jobdetail?id=${data.id}&tab=budget`)
@@ -1244,10 +1245,19 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" /></div>
                       <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
                     </div>
-                    <div style={{ ...s.grid3, marginBottom: '1.25rem' }}>
+                    <div style={{ ...s.grid3, marginBottom: '12px' }}>
                       <div><label style={s.label}>Location</label><input style={s.input} value={newJob.location} onChange={e => setNewJob(j => ({ ...j, location: e.target.value }))} placeholder="Lubbock, TX" /></div>
                       <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={newJob.contract_value} onChange={e => setNewJob(j => ({ ...j, contract_value: e.target.value }))} placeholder="0.00" /></div>
                       <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
+                      <div>
+                        <label style={s.label}>Billing due day of month</label>
+                        <input type="number" min="1" max="28" style={s.input} value={newJob.billing_due_day} onChange={e => setNewJob(j => ({ ...j, billing_due_day: e.target.value }))} placeholder="e.g. 25 = due every 25th" />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#555', lineHeight: '1.6' }}>Vendors will receive an automatic reminder email 3 days before billing is due each month.</p>
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <button type="submit" style={s.btn}>Add job</button>

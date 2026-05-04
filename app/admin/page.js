@@ -49,12 +49,14 @@ export default function AdminPortal() {
   const [budgetItemsMap, setBudgetItemsMap] = useState({})
   const [billing, setBilling] = useState([])
   const [directory, setDirectory] = useState([])
+  const [teamMap, setTeamMap] = useState({}) // userId → full_name
 
   // Direct costs state
   const [showAddCost, setShowAddCost] = useState(false)
   const [costForm, setCostForm] = useState({ job_id: '', budget_item_id: '', cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
   const [savingCost, setSavingCost] = useState(false)
   const [filterCostJob, setFilterCostJob] = useState('')
+  const [filterCostLogged, setFilterCostLogged] = useState('')
   const [filterCostCat, setFilterCostCat] = useState('')
   const [filterCostStatus, setFilterCostStatus] = useState('')
 
@@ -66,6 +68,8 @@ export default function AdminPortal() {
   const [filterBillJob, setFilterBillJob] = useState('')
   const [filterBillStatus, setFilterBillStatus] = useState('')
   const [filterBillPaid, setFilterBillPaid] = useState('')
+  const [filterBillNvCheck, setFilterBillNvCheck] = useState(false)
+  const [togglingNvCheck, setTogglingNvCheck] = useState(null)
 
   // COI state
   const [filterCOI, setFilterCOI] = useState('all')
@@ -85,12 +89,16 @@ export default function AdminPortal() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       if (!prof || prof.role !== 'admin') { router.push('/login'); return }
       setProfile(prof)
-      const [{ data: jobList }, { data: dir }] = await Promise.all([
+      const [{ data: jobList }, { data: dir }, { data: team }] = await Promise.all([
         supabase.from('jobs').select('id, job_number, project_name, payment_type').order('created_at', { ascending: false }),
         supabase.from('sub_directory').select('*').order('company_name'),
+        supabase.from('profiles').select('id, full_name').in('role', ['pm', 'apm', 'admin', 'super']),
       ])
       setJobs(jobList || [])
       setDirectory(dir || [])
+      const map = {}
+      for (const t of team || []) map[t.id] = t.full_name || 'Unknown'
+      setTeamMap(map)
       setLoading(false)
     }
     load()
@@ -155,6 +163,13 @@ export default function AdminPortal() {
     }).eq('id', subId)
     setPayingId(null)
     setSavingPay(false)
+    await loadBilling()
+  }
+
+  async function toggleNvCutsCheck(subId, current) {
+    setTogglingNvCheck(subId)
+    await supabase.from('billing_submissions').update({ nv_cuts_check: !current }).eq('id', subId)
+    setTogglingNvCheck(null)
     await loadBilling()
   }
 
@@ -272,13 +287,15 @@ export default function AdminPortal() {
   const filteredCosts = costs.filter(c =>
     (!filterCostJob || c.job_id === filterCostJob) &&
     (!filterCostCat || c.category === filterCostCat) &&
-    (!filterCostStatus || c.status === filterCostStatus)
+    (!filterCostStatus || c.status === filterCostStatus) &&
+    (!filterCostLogged || c.submitted_by === filterCostLogged)
   )
 
   const filteredBilling = billing.filter(b =>
     (!filterBillJob || b.job_id === filterBillJob) &&
     (!filterBillStatus || b.status === filterBillStatus) &&
-    (!filterBillPaid || (filterBillPaid === 'paid' ? !!b.paid_at : !b.paid_at))
+    (!filterBillPaid || (filterBillPaid === 'paid' ? !!b.paid_at : !b.paid_at)) &&
+    (!filterBillNvCheck || b.nv_cuts_check)
   )
 
   const coiList = directory.filter(d => {
@@ -340,6 +357,10 @@ export default function AdminPortal() {
                       <option value="pending">Pending</option>
                       <option value="approved">Approved</option>
                       <option value="rejected">Rejected</option>
+                    </select>
+                    <select style={s.filterSelect} value={filterCostLogged} onChange={e => setFilterCostLogged(e.target.value)}>
+                      <option value="">All staff</option>
+                      {Object.entries(teamMap).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                     </select>
                   </div>
                   <button style={s.btnSm('orange')} onClick={() => setShowAddCost(v => !v)}>{showAddCost ? 'Cancel' : '+ Add direct cost'}</button>
@@ -408,6 +429,7 @@ export default function AdminPortal() {
                           <th style={s.th}>Budget line</th>
                           <th style={{ ...s.th, textAlign: 'right' }}>Amount</th>
                           <th style={s.th}>Status</th>
+                          <th style={s.th}>Logged by</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -420,11 +442,13 @@ export default function AdminPortal() {
                             <td style={s.td}>{c.budget_items ? <>{c.budget_items.cost_code ? <span style={{ color: '#555', fontSize: '11px' }}>{c.budget_items.cost_code} · </span> : ''}{c.budget_items.description}</> : <span style={{ color: '#333' }}>—</span>}</td>
                             <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#f1f1f1' }}>${parseFloat(c.amount || 0).toLocaleString()}</td>
                             <td style={s.td}><span style={s.badge(c.status)}>{c.status}</span></td>
+                            <td style={s.td}>{teamMap[c.submitted_by] || '—'}<br /><span style={{ fontSize: '11px', color: '#555' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span></td>
                           </tr>
                         ))}
                         <tr>
                           <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#888', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</td>
                           <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '16px' }}>${filteredCosts.reduce((a, c) => a + parseFloat(c.amount || 0), 0).toLocaleString()}</td>
+                          <td style={s.td} />
                           <td style={s.td} />
                         </tr>
                       </tbody>
@@ -453,6 +477,7 @@ export default function AdminPortal() {
                     <option value="unpaid">Unpaid only</option>
                     <option value="paid">Paid only</option>
                   </select>
+                  <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
                 </div>
 
                 {filteredBilling.length === 0 ? <div style={s.emptyMsg}>No billing submissions found.</div> : filteredBilling.map(sub => {
@@ -460,18 +485,29 @@ export default function AdminPortal() {
                   const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
                   const isExpanded = expandedBill === sub.id
                   return (
-                    <div key={sub.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => setExpandedBill(isExpanded ? null : sub.id)}>
+                    <div key={sub.id} style={{ border: `1px solid ${sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => setExpandedBill(isExpanded ? null : sub.id)}>
                         <div style={{ flex: 1, minWidth: '200px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
                             <span style={s.badge(sub.status)}>{sub.status}</span>
                             {isPaid && <span style={s.badge('paid')}>Paid</span>}
                             {isOwnerPays && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
+                            {sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Cuts Check</span>}
                           </div>
                           <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <select
+                            style={{ fontSize: '11px', padding: '4px 8px', background: sub.nv_cuts_check ? '#2a1200' : '#1a1a1a', border: `1px solid ${sub.nv_cuts_check ? '#4a2200' : '#2a2a2a'}`, color: sub.nv_cuts_check ? '#e8590c' : '#555', borderRadius: '6px', cursor: 'pointer', outline: 'none' }}
+                            value={sub.nv_cuts_check ? 'nv' : 'owner'}
+                            disabled={togglingNvCheck === sub.id}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => { e.stopPropagation(); toggleNvCutsCheck(sub.id, sub.nv_cuts_check) }}
+                          >
+                            <option value="owner">{isOwnerPays ? 'Owner pays' : 'Standard'}</option>
+                            <option value="nv">NV cuts check</option>
+                          </select>
                           <span style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${parseFloat(sub.amount_billed || 0).toLocaleString()}</span>
                           <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
                         </div>

@@ -3,6 +3,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
+const TRADES = [
+  'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
+  'Roofing', 'Drywall', 'Painting', 'Flooring', 'Doors & Windows',
+  'Mechanical / HVAC', 'Electrical', 'Plumbing', 'Fire Protection',
+  'Site Work / Grading', 'Landscaping', 'Insulation', 'Waterproofing',
+  'Signage', 'Cleaning', 'Other',
+]
+
 const s = {
   page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '1rem' },
   card: { width: '100%', maxWidth: '480px', background: '#141414', border: '1px solid #222', borderRadius: '16px', padding: '2.5rem' },
@@ -21,7 +29,7 @@ const s = {
 
 export default function Register() {
   const router = useRouter()
-  const [form, setForm] = useState({ full_name: '', company_name: '', phone: '', email: '', password: '' })
+  const [form, setForm] = useState({ full_name: '', company_name: '', phone: '', email: '', password: '', trade: '', coi_expiration: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
@@ -43,6 +51,8 @@ export default function Register() {
           contact_name: form.full_name,
           email: form.email.toLowerCase().trim(),
           phone: form.phone || null,
+          trade: form.trade || null,
+          coi_expiration: form.coi_expiration || null,
           status: 'pending',
           applied_at: new Date().toISOString(),
         }),
@@ -65,6 +75,14 @@ export default function Register() {
             <div><label style={s.label}>Company</label><input style={s.input} value={form.company_name} onChange={e => update('company_name', e.target.value)} required placeholder="ABC Concrete" /></div>
           </div>
           <div style={{ marginBottom: '1rem' }}><label style={s.label}>Phone</label><input style={s.input} value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="(555) 555-5555" /></div>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={s.label}>Primary trade</label>
+            <select style={s.input} value={form.trade} onChange={e => update('trade', e.target.value)}>
+              <option value="">Select your trade...</option>
+              {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={{ marginBottom: '1rem' }}><label style={s.label}>COI expiration date</label><input style={s.input} type="date" value={form.coi_expiration} onChange={e => update('coi_expiration', e.target.value)} /></div>
           <div style={{ marginBottom: '1rem' }}><label style={s.label}>Email</label><input style={s.input} type="email" value={form.email} onChange={e => update('email', e.target.value)} required placeholder="you@company.com" /></div>
           <div style={{ marginBottom: '1.5rem' }}><label style={s.label}>Password</label><input style={s.input} type="password" value={form.password} onChange={e => update('password', e.target.value)} required minLength={6} placeholder="Min. 6 characters" /></div>
           <button style={{ ...s.btn, opacity: loading ? 0.6 : 1 }} type="submit" disabled={loading}>

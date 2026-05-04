@@ -114,6 +114,11 @@ export default function Dashboard() {
 
   // Manual sub add state
   const [showAddSubManual, setShowAddSubManual] = useState(false)
+  const [notifySubId, setNotifySubId] = useState(null)
+  const [notifySubject, setNotifySubject] = useState('')
+  const [notifyMessage, setNotifyMessage] = useState('')
+  const [sendingNotify, setSendingNotify] = useState(false)
+  const [notifyResult, setNotifyResult] = useState({})
   const [newSubManual, setNewSubManual] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
   const [addingSubManual, setAddingSubManual] = useState(false)
 
@@ -459,6 +464,26 @@ export default function Dashboard() {
     if (error) { alert('Delete error: ' + error.message); return }
     setDirectory(prev => prev.filter(s => s.id !== id))
     setExpandedDir(null)
+  }
+
+  async function sendNotification(sub) {
+    if (!notifySubject.trim() || !notifyMessage.trim()) return
+    setSendingNotify(true)
+    const res = await fetch('/api/notify-sub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email: sub.email, to_name: sub.contact_name || sub.company_name, company_name: sub.company_name, subject: notifySubject, message: notifyMessage }),
+    })
+    setSendingNotify(false)
+    if (res.ok) {
+      setNotifyResult(prev => ({ ...prev, [sub.id]: { ok: true, text: 'Sent!' } }))
+      setNotifySubject('')
+      setNotifyMessage('')
+      setNotifySubId(null)
+    } else {
+      setNotifyResult(prev => ({ ...prev, [sub.id]: { ok: false, text: 'Failed to send.' } }))
+    }
+    setTimeout(() => setNotifyResult(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
   }
 
   async function addJob(e) {
@@ -1205,6 +1230,31 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                       #{a.jobs?.job_number} — {a.jobs?.project_name}
                                     </span>
                                   ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {sub.email && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            {notifySubId !== sub.id ? (
+                              <button style={s.btnSm('blue')} onClick={() => { setNotifySubId(sub.id); setNotifySubject(''); setNotifyMessage('') }}>Send notification</button>
+                            ) : (
+                              <div style={{ background: '#0a0f1a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '1rem' }}>
+                                <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1px', textTransform: 'uppercase' }}>Notify {sub.company_name}</p>
+                                <div style={{ marginBottom: '8px' }}>
+                                  <label style={s.label}>Subject</label>
+                                  <input style={s.input} value={notifySubject} onChange={e => setNotifySubject(e.target.value)} placeholder="e.g. COI renewal needed" />
+                                </div>
+                                <div style={{ marginBottom: '10px' }}>
+                                  <label style={s.label}>Message</label>
+                                  <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={notifyMessage} onChange={e => setNotifyMessage(e.target.value)} placeholder="Your message to the subcontractor..." />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  <button style={{ ...s.btnSm('blue'), opacity: sendingNotify || !notifySubject || !notifyMessage ? 0.5 : 1 }} disabled={sendingNotify || !notifySubject || !notifyMessage} onClick={() => sendNotification(sub)}>{sendingNotify ? 'Sending...' : 'Send'}</button>
+                                  <button style={s.btnSm('gray')} onClick={() => setNotifySubId(null)}>Cancel</button>
+                                  {notifyResult[sub.id] && <span style={{ fontSize: '12px', color: notifyResult[sub.id].ok ? '#4ade80' : '#ff6b6b' }}>{notifyResult[sub.id].text}</span>}
                                 </div>
                               </div>
                             )}

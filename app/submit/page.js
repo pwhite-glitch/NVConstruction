@@ -75,6 +75,12 @@ export default function Submit() {
   const [submittingBidFor, setSubmittingBidFor] = useState(null)
   const [billingFile, setBillingFile] = useState(null)
   const [bidFile, setBidFile] = useState(null)
+  const [dirEntry, setDirEntry] = useState(null)
+  const [docsW9File, setDocsW9File] = useState(null)
+  const [docsCoiFile, setDocsCoiFile] = useState(null)
+  const [docsCoiExpiry, setDocsCoiExpiry] = useState('')
+  const [savingDocs, setSavingDocs] = useState(false)
+  const [docsSaved, setDocsSaved] = useState(false)
   const [jobSovContracts, setJobSovContracts] = useState([])
   const [sovForm, setSovForm] = useState([])
   const [sovRetainageMap, setSovRetainageMap] = useState({})
@@ -94,6 +100,8 @@ export default function Submit() {
       setSubmissions(subs || [])
       await loadMyContracts(session.user.id)
       await loadBidInvitations(session.user.email)
+      const { data: dir } = await supabase.from('sub_directory').select('*').eq('email', session.user.email).maybeSingle()
+      if (dir) { setDirEntry(dir); setDocsCoiExpiry(dir.coi_expiration?.split('T')[0] || '') }
     }
     load()
   }, [router])
@@ -101,6 +109,28 @@ export default function Submit() {
   async function loadBidInvitations(email) {
     const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*)').eq('sub_email', email).order('sent_at', { ascending: false })
     setBidInvitations(data || [])
+  }
+
+  async function saveDocs() {
+    if (!dirEntry) return
+    setSavingDocs(true)
+    let w9_url = dirEntry.w9_url || null
+    let coi_url = dirEntry.coi_url || null
+    if (docsW9File) {
+      const { data } = await supabase.storage.from('documents').upload(`w9/${Date.now()}_${docsW9File.name}`, docsW9File, { upsert: true })
+      if (data) w9_url = data.path
+    }
+    if (docsCoiFile) {
+      const { data } = await supabase.storage.from('documents').upload(`coi/${Date.now()}_${docsCoiFile.name}`, docsCoiFile, { upsert: true })
+      if (data) coi_url = data.path
+    }
+    await supabase.from('sub_directory').update({ w9_url, coi_url, coi_expiration: docsCoiExpiry || null }).eq('id', dirEntry.id)
+    setDirEntry(prev => ({ ...prev, w9_url, coi_url, coi_expiration: docsCoiExpiry }))
+    setDocsW9File(null)
+    setDocsCoiFile(null)
+    setSavingDocs(false)
+    setDocsSaved(true)
+    setTimeout(() => setDocsSaved(false), 3000)
   }
 
   async function loadBidPackageDetail(bidPackageId) {
@@ -306,6 +336,7 @@ export default function Submit() {
           <button style={s.tab(activeTab === 'bids')} onClick={() => setActiveTab('bids')}>
             Bid Invites{bidInvitations.length > 0 ? ` (${bidInvitations.length})` : ''}
           </button>
+          <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>My Documents</button>
         </div>
 
         {/* ── SUBMIT BILLING TAB ── */}
@@ -675,6 +706,54 @@ export default function Submit() {
               })}
             </>
           )
+        )}
+
+        {/* ── MY DOCUMENTS ── */}
+        {activeTab === 'docs' && (
+          <div style={s.card}>
+            <h2 style={s.cardTitle}>My Documents & Compliance</h2>
+            {!dirEntry ? (
+              <p style={{ color: '#555', fontSize: '14px' }}>No directory record found for your account. Contact NV Construction to get set up.</p>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                  <div>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>W-9</p>
+                    {dirEntry.w9_url
+                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>✓ On file</p>
+                      : <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c' }}>Not on file</p>}
+                    <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', marginBottom: 0 }}>
+                      {docsW9File ? `📎 ${docsW9File.name}` : dirEntry.w9_url ? 'Replace W-9' : 'Upload W-9'}
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => setDocsW9File(e.target.files[0] || null)} />
+                    </label>
+                  </div>
+                  <div>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Certificate of Insurance (COI)</p>
+                    {dirEntry.coi_url
+                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>✓ On file</p>
+                      : <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c' }}>Not on file</p>}
+                    <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', marginBottom: 0 }}>
+                      {docsCoiFile ? `📎 ${docsCoiFile.name}` : dirEntry.coi_url ? 'Replace COI' : 'Upload COI'}
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => setDocsCoiFile(e.target.files[0] || null)} />
+                    </label>
+                  </div>
+                </div>
+                <div style={{ marginBottom: '1.5rem', maxWidth: '280px' }}>
+                  <label style={s.label}>COI expiration date</label>
+                  <input type="date" style={s.input} value={docsCoiExpiry} onChange={e => setDocsCoiExpiry(e.target.value)} />
+                  {dirEntry.coi_expiration && !docsCoiExpiry && (
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#555' }}>Current: {new Date(dirEntry.coi_expiration).toLocaleDateString()}</p>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <button style={{ ...s.btn, opacity: savingDocs ? 0.6 : 1 }} disabled={savingDocs} onClick={saveDocs}>
+                    {savingDocs ? 'Saving...' : 'Save documents'}
+                  </button>
+                  {docsSaved && <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Saved — NV Construction can now view your documents.</span>}
+                </div>
+              </>
+            )}
+          </div>
         )}
 
       </main>

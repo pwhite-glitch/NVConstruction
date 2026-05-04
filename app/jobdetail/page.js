@@ -1495,6 +1495,12 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
   }
 
   async function updateBillingEntry() {
+    if (editBillingForm.status === 'rejected') {
+      await supabase.from('billing_submissions').delete().eq('id', editingBilling)
+      setEditingBilling(null)
+      await loadBillingForJob()
+      return
+    }
     const now = new Date().toISOString()
     const editAmt = parseFloat(editBillingForm.amount_billed) || 0
     const editRetPct = parseFloat(editBillingForm.retainage_pct) || 0

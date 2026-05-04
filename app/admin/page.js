@@ -122,6 +122,7 @@ export default function AdminPortal() {
     const { data } = await supabase
       .from('billing_submissions')
       .select('*, jobs(job_number, project_name, payment_type)')
+      .eq('status', 'approved')
       .order('submitted_at', { ascending: false })
     setBilling(data || [])
   }
@@ -485,12 +486,6 @@ export default function AdminPortal() {
                   <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-                  </select>
-                  <select style={s.filterSelect} value={filterBillStatus} onChange={e => setFilterBillStatus(e.target.value)}>
-                    <option value="">All statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
                   </select>
                   <select style={s.filterSelect} value={filterBillPaid} onChange={e => setFilterBillPaid(e.target.value)}>
                     <option value="">Paid & unpaid</option>

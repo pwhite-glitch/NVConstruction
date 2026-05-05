@@ -3059,7 +3059,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>Retainage % (from contract)</label>
-                        <input type="number" min="0" max="100" step="0.5" style={s.input} value={createBillingForm._retainage_pct} onChange={e => setCreateBillingForm(f => ({ ...f, _retainage_pct: e.target.value }))} placeholder="0" />
+                        <input type="number" min="0" max="100" step="0.5" style={s.input} value={createBillingForm._retainage_pct} onChange={e => setCreateBillingForm(f => ({ ...f, _retainage_pct: e.target.value }))} onFocus={e => e.target.select()} placeholder="0" />
                       </div>
                       <div>
                         <label style={s.label}>Billing period</label>
@@ -3195,7 +3195,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Retainage %</label>
-                            <input type="number" min="0" max="100" step="0.5" style={s.input} value={editBillingForm.retainage_pct} onChange={e => setEditBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                            <input type="number" min="0" max="100" step="0.5" style={s.input} value={editBillingForm.retainage_pct} onChange={e => setEditBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
                             {parseFloat(editBillingForm.retainage_pct) > 0 && parseFloat(editBillingForm.amount_billed) > 0 && (
                               <div style={{ fontSize: '11px', marginTop: '4px', color: '#facc15' }}>
                                 Held: ${Math.round(parseFloat(editBillingForm.amount_billed) * parseFloat(editBillingForm.retainage_pct) / 100 * 100) / 100}

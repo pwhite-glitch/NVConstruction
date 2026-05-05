@@ -5,9 +5,12 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+const ALLOWED_FIELDS = ['w9_url', 'coi_url', 'coi_expiration', 'company_name', 'contact_name', 'email', 'phone', 'address', 'trade', 'license_number', 'scope_description']
+
 export async function POST(request) {
   try {
-    const { action, directory_id, w9_url, coi_url, coi_expiration, file_path } = await request.json()
+    const body = await request.json()
+    const { action, directory_id, file_path } = body
 
     if (action === 'signed-url') {
       if (!file_path) return Response.json({ error: 'file_path required' }, { status: 400 })
@@ -21,9 +24,9 @@ export async function POST(request) {
     if (!directory_id) return Response.json({ error: 'directory_id required' }, { status: 400 })
 
     const updates = {}
-    if (w9_url !== undefined) updates.w9_url = w9_url
-    if (coi_url !== undefined) updates.coi_url = coi_url
-    if (coi_expiration !== undefined) updates.coi_expiration = coi_expiration || null
+    for (const key of ALLOWED_FIELDS) {
+      if (key in body) updates[key] = body[key] || null
+    }
 
     const { error } = await adminSupabase
       .from('sub_directory')

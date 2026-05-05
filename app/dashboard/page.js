@@ -122,6 +122,12 @@ export default function Dashboard() {
   const [newSubManual, setNewSubManual] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
   const [addingSubManual, setAddingSubManual] = useState(false)
 
+  // Sub directory edit state
+  const [editingSubId, setEditingSubId] = useState(null)
+  const [editSubForm, setEditSubForm] = useState({})
+  const [savingSubEdit, setSavingSubEdit] = useState(false)
+  const [subEditMsg, setSubEditMsg] = useState(null)
+
   // Bid invites state
   const [bidPackages, setBidPackages] = useState([])
   const [expandedBid, setExpandedBid] = useState(null)
@@ -464,6 +470,26 @@ export default function Dashboard() {
     if (error) { alert('Delete error: ' + error.message); return }
     setDirectory(prev => prev.filter(s => s.id !== id))
     setExpandedDir(null)
+  }
+
+  async function saveSubEdit(id) {
+    setSavingSubEdit(true)
+    setSubEditMsg(null)
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory_id: id, ...editSubForm }),
+    })
+    const data = await res.json()
+    if (data.error) {
+      setSubEditMsg({ ok: false, text: 'Error: ' + data.error })
+    } else {
+      setSubEditMsg({ ok: true, text: 'Saved.' })
+      setEditingSubId(null)
+      await loadAll()
+      setTimeout(() => setSubEditMsg(null), 3000)
+    }
+    setSavingSubEdit(false)
   }
 
   async function sendNotification(sub) {
@@ -1177,24 +1203,91 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     </div>
                     {expandedDir === sub.id && (
                       <div style={s.detail}>
-                        <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
-                          <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{sub.email}</div></div>
-                          <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{sub.phone || '—'}</div></div>
-                          <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{sub.address || '—'}</div></div>
-                          <div><div style={s.detailLabel}>Trade</div><div style={s.detailValue}>{sub.trade || '—'}</div></div>
-                          <div><div style={s.detailLabel}>COI expiration</div><div style={{ ...s.detailValue, color: sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#e8590c' : '#ccc' }}>{sub.coi_expiration ? new Date(sub.coi_expiration).toLocaleDateString() : '—'}</div></div>
-                          <div><div style={s.detailLabel}>License</div><div style={s.detailValue}>{sub.license_number || '—'}</div></div>
+
+                        {/* ── Document status ── */}
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: sub.w9_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.w9_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#4ade80' : '#ff6b6b' }}>{sub.w9_url ? '✓' : '✗'} W-9</span>
+                            {sub.w9_url && <button onClick={() => getDocUrl(sub.w9_url)} style={{ ...s.btnSm('gray'), padding: '3px 10px', fontSize: '11px' }}>View</button>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: sub.coi_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#4ade80' : '#ff6b6b' }}>{sub.coi_url ? '✓' : '✗'} COI</span>
+                            {sub.coi_url && <button onClick={() => getDocUrl(sub.coi_url)} style={{ ...s.btnSm('gray'), padding: '3px 10px', fontSize: '11px' }}>View</button>}
+                          </div>
+                          {sub.coi_expiration && (
+                            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', background: new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#2a1200' : '#0f0f0f', border: `1px solid ${new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#e8590c' : '#888' }}>
+                                COI exp: {new Date(sub.coi_expiration).toLocaleDateString()}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        {sub.scope_description && (
-                          <div style={{ marginBottom: '1rem' }}>
-                            <div style={s.detailLabel}>Scope description</div>
-                            <div style={{ ...s.detailValue, lineHeight: '1.7' }}>{sub.scope_description}</div>
+
+                        {/* ── View / Edit toggle ── */}
+                        {editingSubId !== sub.id ? (
+                          <>
+                            <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
+                              <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{sub.email}</div></div>
+                              <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{sub.phone || '—'}</div></div>
+                              <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{sub.address || '—'}</div></div>
+                              <div><div style={s.detailLabel}>Trade</div><div style={s.detailValue}>{sub.trade || '—'}</div></div>
+                              <div><div style={s.detailLabel}>COI expiration</div><div style={s.detailValue}>{sub.coi_expiration ? new Date(sub.coi_expiration).toLocaleDateString() : '—'}</div></div>
+                              <div><div style={s.detailLabel}>License</div><div style={s.detailValue}>{sub.license_number || '—'}</div></div>
+                            </div>
+                            {sub.scope_description && (
+                              <div style={{ marginBottom: '1rem' }}>
+                                <div style={s.detailLabel}>Scope description</div>
+                                <div style={{ ...s.detailValue, lineHeight: '1.7' }}>{sub.scope_description}</div>
+                              </div>
+                            )}
+                            <button style={{ ...s.btnSm('orange'), marginBottom: '1rem' }} onClick={() => {
+                              setEditingSubId(sub.id)
+                              setEditSubForm({
+                                company_name: sub.company_name || '',
+                                contact_name: sub.contact_name || '',
+                                email: sub.email || '',
+                                phone: sub.phone || '',
+                                address: sub.address || '',
+                                trade: sub.trade || '',
+                                license_number: sub.license_number || '',
+                                coi_expiration: sub.coi_expiration ? sub.coi_expiration.split('T')[0] : '',
+                                scope_description: sub.scope_description || '',
+                              })
+                              setSubEditMsg(null)
+                            }}>Edit info</button>
+                          </>
+                        ) : (
+                          <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem', marginBottom: '1rem' }}>
+                            <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#e8590c', letterSpacing: '0.5px' }}>Editing {sub.company_name}</p>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                              <div><label style={s.label}>Company name</label><input style={s.input} value={editSubForm.company_name} onChange={e => setEditSubForm(f => ({ ...f, company_name: e.target.value }))} /></div>
+                              <div><label style={s.label}>Contact name</label><input style={s.input} value={editSubForm.contact_name} onChange={e => setEditSubForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
+                              <div><label style={s.label}>Email</label><input type="email" style={s.input} value={editSubForm.email} onChange={e => setEditSubForm(f => ({ ...f, email: e.target.value }))} /></div>
+                              <div><label style={s.label}>Phone</label><input style={s.input} value={editSubForm.phone} onChange={e => setEditSubForm(f => ({ ...f, phone: e.target.value }))} /></div>
+                              <div><label style={s.label}>Address</label><input style={s.input} value={editSubForm.address} onChange={e => setEditSubForm(f => ({ ...f, address: e.target.value }))} /></div>
+                              <div>
+                                <label style={s.label}>Trade</label>
+                                <select style={s.input} value={editSubForm.trade} onChange={e => setEditSubForm(f => ({ ...f, trade: e.target.value }))}>
+                                  <option value="">— Select trade —</option>
+                                  {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                              </div>
+                              <div><label style={s.label}>License number</label><input style={s.input} value={editSubForm.license_number} onChange={e => setEditSubForm(f => ({ ...f, license_number: e.target.value }))} /></div>
+                              <div><label style={s.label}>COI expiration</label><input type="date" style={s.input} value={editSubForm.coi_expiration} onChange={e => setEditSubForm(f => ({ ...f, coi_expiration: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={s.label}>Scope description</label>
+                              <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} value={editSubForm.scope_description} onChange={e => setEditSubForm(f => ({ ...f, scope_description: e.target.value }))} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <button style={{ ...s.btnSm('green'), opacity: savingSubEdit ? 0.6 : 1 }} disabled={savingSubEdit} onClick={() => saveSubEdit(sub.id)}>
+                                {savingSubEdit ? 'Saving...' : 'Save changes'}
+                              </button>
+                              <button style={s.btnSm('gray')} onClick={() => { setEditingSubId(null); setSubEditMsg(null) }}>Cancel</button>
+                              {subEditMsg && <span style={{ fontSize: '12px', color: subEditMsg.ok ? '#4ade80' : '#ff6b6b' }}>{subEditMsg.text}</span>}
+                            </div>
                           </div>
                         )}
-                        <div style={{ display: 'flex', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                          {sub.w9_url && <button onClick={() => getDocUrl(sub.w9_url)} style={s.btnSm('gray')}>View W-9</button>}
-                          {sub.coi_url && <button onClick={() => getDocUrl(sub.coi_url)} style={s.btnSm('gray')}>View COI</button>}
-                        </div>
 
                         {/* Assign to job */}
                         {sub.status === 'approved' && (

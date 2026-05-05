@@ -582,7 +582,7 @@ export default function JobDetail() {
       job_id: id,
       app_number: parseInt(newAiaForm.app_number) || (aiaApplications.length + 1),
       period_to: periodTo,
-      retainage_pct: parseFloat(newAiaForm.retainage_pct) || 10,
+      retainage_pct: isNaN(parseFloat(newAiaForm.retainage_pct)) ? 10 : parseFloat(newAiaForm.retainage_pct),
       markup_pct: parseFloat(newAiaForm.markup_pct) || 0,
       created_by: session.user.id,
     }).select().single()
@@ -634,7 +634,7 @@ export default function JobDetail() {
   function generateAIAFromApp() {
     if (!activeAia) return
     const app = activeAia
-    const retPct = Math.max(0, Math.min(100, parseFloat(app.retainage_pct) || 10)) / 100
+    const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const origContract = Number(job.contract_value || 0)
     const contractSumToDate = origContract + approvedCOsVal
@@ -3786,7 +3786,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <div>
                       <label style={s.label}>Retainage %</label>
-                      <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                      <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
                     </div>
                     <div>
                       <label style={s.label}>Markup %</label>
@@ -3854,7 +3854,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               </div>
                               <div>
                                 <label style={s.label}>Retainage %</label>
-                                <input type="number" min="0" max="100" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.retainage_pct} onChange={e => setActiveAia(a => ({ ...a, retainage_pct: e.target.value }))} />
+                                <input type="number" min="0" max="100" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.retainage_pct} onChange={e => setActiveAia(a => ({ ...a, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
                               </div>
                               <div>
                                 <label style={s.label}>Markup %</label>
@@ -4013,7 +4013,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </div>
 
                                 {(() => {
-                                  const retPct = Math.max(0, Math.min(100, parseFloat(activeAia.retainage_pct) || 10)) / 100
+                                  const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(activeAia.retainage_pct)) ? 10 : parseFloat(activeAia.retainage_pct))) / 100
                                   const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
                                   const contractSumToDate = Number(job.contract_value || 0) + approvedCOsVal
                                   const totalSov = aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)

@@ -1531,34 +1531,42 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
   async function updateBillingEntry() {
     if (editBillingForm.status === 'rejected') {
-      await supabase.from('billing_submissions').delete().eq('id', editingBilling)
+      await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingBilling }) })
       setEditingBilling(null)
       await loadBillingForJob()
       return
     }
     const now = new Date().toISOString()
     const editAmt = parseFloat(editBillingForm.amount_billed) || 0
-    const editRetPct = parseFloat(editBillingForm.retainage_pct) || 0
-    await supabase.from('billing_submissions').update({
-      company_name: editBillingForm.company_name,
-      contact_name: editBillingForm.contact_name || null,
-      contact_info: editBillingForm.contact_info || null,
-      amount_billed: editAmt,
-      retainage_pct: editRetPct,
-      retainage_held: Math.round(editAmt * editRetPct / 100 * 100) / 100,
-      pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
-      work_description: editBillingForm.work_description || null,
-      billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
-      status: editBillingForm.status,
-      reviewed_at: editBillingForm.status !== 'pending' ? now : null,
-    }).eq('id', editingBilling)
+    const retPctRaw = parseFloat(editBillingForm.retainage_pct)
+    const editRetPct = isNaN(retPctRaw) ? 0 : retPctRaw
+    const res = await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: editingBilling,
+        company_name: editBillingForm.company_name,
+        contact_name: editBillingForm.contact_name || null,
+        contact_info: editBillingForm.contact_info || null,
+        amount_billed: editAmt,
+        retainage_pct: editRetPct,
+        retainage_held: Math.round(editAmt * editRetPct / 100 * 100) / 100,
+        pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
+        work_description: editBillingForm.work_description || null,
+        billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
+        status: editBillingForm.status,
+        reviewed_at: editBillingForm.status !== 'pending' ? now : null,
+      }),
+    })
+    const result = await res.json()
+    if (result.error) { alert('Save error: ' + result.error); return }
     setEditingBilling(null)
     await loadBillingForJob()
   }
 
   async function deleteBillingEntry(billingId) {
     if (!window.confirm('Delete this billing submission?')) return
-    await supabase.from('billing_submissions').delete().eq('id', billingId)
+    await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
     await loadBillingForJob()
   }
 

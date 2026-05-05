@@ -84,6 +84,11 @@ export default function Field() {
   const [dcSuccess, setDcSuccess] = useState(false)
   const [showDcForm, setShowDcForm] = useState(false)
 
+  const [jobDocs, setJobDocs] = useState([])
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [docCategory, setDocCategory] = useState('plans')
+  const [filterDocCategory, setFilterDocCategory] = useState('all')
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -108,6 +113,7 @@ export default function Field() {
     else if (activeTab === 'schedule') loadMilestones()
     else if (activeTab === 'subs') loadSubContacts()
     else if (activeTab === 'costs') loadDirectCosts()
+    else if (activeTab === 'docs') loadJobDocs()
   }, [selectedJobId, activeTab])
 
   async function loadDailyReports() {
@@ -137,6 +143,26 @@ export default function Field() {
   async function loadDirectCosts() {
     const { data } = await supabase.from('direct_costs').select('*').eq('job_id', selectedJobId).order('cost_date', { ascending: false })
     setDirectCosts(data || [])
+  }
+
+  async function loadJobDocs() {
+    const { data } = await supabase.from('job_documents').select('*').eq('job_id', selectedJobId).order('uploaded_at', { ascending: false })
+    setJobDocs(data || [])
+  }
+
+  async function uploadJobDoc(file) {
+    setUploadingDoc(true)
+    const path = `${selectedJobId}/${docCategory}/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('job-documents').upload(path, file)
+    if (error) { alert('Upload error: ' + error.message); setUploadingDoc(false); return }
+    await supabase.from('job_documents').insert({ job_id: selectedJobId, file_name: file.name, storage_path: path, category: docCategory, uploaded_by: user.id })
+    await loadJobDocs()
+    setUploadingDoc(false)
+  }
+
+  async function openJobDoc(storagePath) {
+    const { data } = await supabase.storage.from('job-documents').createSignedUrl(storagePath, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
   async function submitDirectCost(e) {
@@ -329,6 +355,9 @@ export default function Field() {
                   <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
                   <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>Sub Contacts</button>
                   <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
+                  <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>
+                    Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
+                  </button>
                 </div>
 
                 {/* ── DAILY REPORTS ── */}
@@ -790,6 +819,80 @@ export default function Field() {
                 )}
               </>
             )}
+
+                {/* ── DOCUMENTS ── */}
+                {activeTab === 'docs' && (
+                  <>
+                    <div style={s.card}>
+                      <p style={s.cardTitle}>Project Documents</p>
+                      <p style={{ fontSize: '13px', color: '#666', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
+                        View and upload plans, geotech reports, permits, and other project documents.
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select
+                          value={docCategory}
+                          onChange={e => setDocCategory(e.target.value)}
+                          style={{ padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', outline: 'none' }}
+                        >
+                          <option value="plans">Plans</option>
+                          <option value="geotech">Geotech / Soil Reports</option>
+                          <option value="permits">Permits</option>
+                          <option value="specs">Specifications</option>
+                          <option value="other">Other</option>
+                        </select>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingDoc ? '#111' : '#2a1200', color: uploadingDoc ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingDoc ? 'not-allowed' : 'pointer' }}>
+                          {uploadingDoc ? 'Uploading...' : '+ Upload Document'}
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.dwg,.zip" style={{ display: 'none' }} disabled={uploadingDoc}
+                            onChange={e => { if (e.target.files?.[0]) uploadJobDoc(e.target.files[0]); e.target.value = '' }} />
+                        </label>
+                      </div>
+                    </div>
+
+                    {jobDocs.length > 0 && (
+                      <div style={s.card}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                          <p style={{ ...s.cardTitle, marginBottom: 0 }}>Uploaded Documents ({jobDocs.length})</p>
+                          <select
+                            value={filterDocCategory}
+                            onChange={e => setFilterDocCategory(e.target.value)}
+                            style={{ padding: '7px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', color: '#aaa', outline: 'none' }}
+                          >
+                            <option value="all">All categories</option>
+                            <option value="plans">Plans</option>
+                            <option value="geotech">Geotech / Soil Reports</option>
+                            <option value="permits">Permits</option>
+                            <option value="specs">Specifications</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).map(d => (
+                          <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                            <div>
+                              <span style={{ fontSize: '14px', color: '#f1f1f1' }}>📄 {d.file_name}</span>
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
+                                <span style={{ padding: '2px 8px', background: '#1a1200', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
+                                  {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
+                                </span>
+                                <span style={{ fontSize: '12px', color: '#555' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                            <button style={s.btnSm('orange')} onClick={() => openJobDoc(d.storage_path)}>Open</button>
+                          </div>
+                        ))}
+                        {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).length === 0 && (
+                          <p style={{ color: '#555', fontSize: '13px', margin: 0 }}>No documents in this category.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {jobDocs.length === 0 && (
+                      <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
+                        <p style={{ color: '#555', margin: 0 }}>No documents uploaded yet for this job.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
           </>
         )}
       </main>

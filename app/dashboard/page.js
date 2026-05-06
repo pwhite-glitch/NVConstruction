@@ -183,6 +183,23 @@ export default function Dashboard() {
   const [uploadingEstDoc, setUploadingEstDoc] = useState(null)
   const [estDocs, setEstDocs] = useState({})
 
+  // Business Development state
+  const [bdOpportunities, setBdOpportunities] = useState([])
+  const [bdGoals, setBdGoals] = useState([])
+  const [bdYear, setBdYear] = useState(new Date().getFullYear())
+  const [bdFilterStage, setBdFilterStage] = useState('all')
+  const [showAddBd, setShowAddBd] = useState(false)
+  const [addBdForm, setAddBdForm] = useState({ project_name: '', client_name: '', stage: 'prospect', bid_amount: '', contract_value: '', bid_date: '', trade_type: '', notes: '' })
+  const [savingBd, setSavingBd] = useState(false)
+  const [expandedBd, setExpandedBd] = useState(null)
+  const [editingBdId, setEditingBdId] = useState(null)
+  const [editBdForm, setEditBdForm] = useState({})
+  const [savingBdEdit, setSavingBdEdit] = useState(false)
+  const [bdMsg, setBdMsg] = useState(null)
+  const [bdGoalInput, setBdGoalInput] = useState('')
+  const [savingBdGoal, setSavingBdGoal] = useState(false)
+  const [bdLoaded, setBdLoaded] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -222,6 +239,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab === 'estimator') { loadEstimates(); loadBidPackages(assignedJobIds) }
     if (activeTab === 'nv-directory') loadTeamData()
+    if (activeTab === 'bd' && !bdLoaded) loadBD()
   }, [activeTab])
 
 
@@ -882,6 +900,65 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     setEstDocs(prev => ({ ...prev, [estimateId]: data || [] }))
   }
 
+  // ── Business Development ─────────────────────────────────────────
+  async function loadBD() {
+    const res = await fetch('/api/bd')
+    const data = await res.json()
+    setBdOpportunities(data.opportunities || [])
+    setBdGoals(data.goals || [])
+    const currentGoal = (data.goals || []).find(g => g.year === new Date().getFullYear())
+    if (currentGoal) setBdGoalInput(String(currentGoal.revenue_goal))
+    setBdLoaded(true)
+  }
+
+  async function saveBdOpportunity() {
+    if (!addBdForm.project_name.trim()) return
+    setSavingBd(true)
+    const res = await fetch('/api/bd', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addBdForm) })
+    const data = await res.json()
+    if (data.error) { setBdMsg({ text: data.error, ok: false }); setSavingBd(false); return }
+    setBdOpportunities(prev => [data.opportunity, ...prev])
+    setAddBdForm({ project_name: '', client_name: '', stage: 'prospect', bid_amount: '', contract_value: '', bid_date: '', trade_type: '', notes: '' })
+    setShowAddBd(false)
+    setSavingBd(false)
+  }
+
+  async function updateBdOpportunity() {
+    if (!editingBdId) return
+    setSavingBdEdit(true)
+    const res = await fetch('/api/bd', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingBdId, ...editBdForm }) })
+    const data = await res.json()
+    if (data.error) { setBdMsg({ text: data.error, ok: false }); setSavingBdEdit(false); return }
+    setBdOpportunities(prev => prev.map(o => o.id === editingBdId ? { ...o, ...editBdForm } : o))
+    setEditingBdId(null)
+    setSavingBdEdit(false)
+    setBdMsg({ text: 'Saved', ok: true })
+    setTimeout(() => setBdMsg(null), 2000)
+  }
+
+  async function deleteBdOpportunity(id) {
+    if (!confirm('Delete this opportunity?')) return
+    await fetch('/api/bd', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setBdOpportunities(prev => prev.filter(o => o.id !== id))
+    if (expandedBd === id) setExpandedBd(null)
+  }
+
+  async function saveBdGoal() {
+    setSavingBdGoal(true)
+    const res = await fetch('/api/bd', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'goal', year: bdYear, revenue_goal: bdGoalInput }) })
+    const data = await res.json()
+    if (!data.error) {
+      setBdGoals(prev => {
+        const exists = prev.find(g => g.year === bdYear)
+        if (exists) return prev.map(g => g.year === bdYear ? { ...g, revenue_goal: parseFloat(bdGoalInput) || 0 } : g)
+        return [...prev, { year: bdYear, revenue_goal: parseFloat(bdGoalInput) || 0 }]
+      })
+      setBdMsg({ text: 'Goal saved', ok: true })
+      setTimeout(() => setBdMsg(null), 2000)
+    }
+    setSavingBdGoal(false)
+  }
+
   async function uploadEstDoc(estimateId, file) {
     setUploadingEstDoc(estimateId)
     const path = `${estimateId}/${Date.now()}-${file.name}`
@@ -986,6 +1063,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             )}
             {(profile?.role === 'pm' || profile?.role === 'apm') && (
               <button style={s.tab(activeTab === 'estimator')} onClick={() => setActiveTab('estimator')}>Estimator</button>
+            )}
+            {profile?.role === 'pm' && (
+              <button style={s.tab(activeTab === 'bd')} onClick={() => setActiveTab('bd')}>Business Dev</button>
             )}
           </div>
 
@@ -2118,6 +2198,203 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 })}
               </>
             )}
+
+            {/* ── BUSINESS DEVELOPMENT ── */}
+            {activeTab === 'bd' && (() => {
+              const fmt = (n) => n != null ? '$' + Number(n).toLocaleString() : '—'
+              const stageCfg = {
+                prospect: { label: 'Prospect', color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' },
+                bidding:  { label: 'Bidding',  color: '#facc15', bg: '#2a2a0a', border: '#4a4a0a' },
+                won:      { label: 'Won',       color: '#4ade80', bg: '#0a2a0a', border: '#1a4a1a' },
+                lost:     { label: 'Lost',      color: '#ff6b6b', bg: '#2a0a0a', border: '#5a1a1a' },
+              }
+              const stageBadge = (stage) => {
+                const c = stageCfg[stage] || stageCfg.prospect
+                return { padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }
+              }
+              const yearOpps = bdOpportunities.filter(o => {
+                const d = o.bid_date || o.created_at
+                return new Date(d).getFullYear() === bdYear
+              })
+              const filtered = bdFilterStage === 'all' ? yearOpps : yearOpps.filter(o => o.stage === bdFilterStage)
+              const wonOpps = yearOpps.filter(o => o.stage === 'won')
+              const biddingOrWon = yearOpps.filter(o => o.stage === 'bidding' || o.stage === 'won' || o.stage === 'lost')
+              const winRate = biddingOrWon.length > 0 ? Math.round((wonOpps.length / biddingOrWon.length) * 100) : 0
+              const totalBidVal = yearOpps.reduce((s, o) => s + (parseFloat(o.bid_amount) || 0), 0)
+              const wonVal = wonOpps.reduce((s, o) => s + (parseFloat(o.contract_value) || parseFloat(o.bid_amount) || 0), 0)
+              const currentGoal = bdGoals.find(g => g.year === bdYear)
+              const goalAmt = currentGoal ? parseFloat(currentGoal.revenue_goal) : 0
+              const goalPct = goalAmt > 0 ? Math.min(100, Math.round((wonVal / goalAmt) * 100)) : 0
+              const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i)
+              return (
+                <>
+                  {/* Year selector + goal */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <select value={bdYear} onChange={e => { setBdYear(parseInt(e.target.value)); const g = bdGoals.find(g => g.year === parseInt(e.target.value)); setBdGoalInput(g ? String(g.revenue_goal) : '') }} style={s.filterSelect}>
+                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                      <button style={s.btn} onClick={() => { setShowAddBd(v => !v); setEditingBdId(null) }}>{showAddBd ? 'Cancel' : '+ Add Opportunity'}</button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', color: '#666' }}>Revenue Goal</span>
+                      <input style={{ ...s.input, width: '140px' }} placeholder="$0" value={bdGoalInput} onChange={e => setBdGoalInput(e.target.value)} onFocus={e => e.target.select()} />
+                      <button style={s.btnGray} onClick={saveBdGoal} disabled={savingBdGoal}>{savingBdGoal ? 'Saving…' : 'Set Goal'}</button>
+                    </div>
+                  </div>
+
+                  {bdMsg && <p style={{ fontSize: '13px', color: bdMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem' }}>{bdMsg.text}</p>}
+
+                  {/* Stats */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '1.25rem' }}>
+                    {[
+                      { label: 'Bids This Year', value: biddingOrWon.length, accent: '#f1f1f1' },
+                      { label: 'Won', value: wonOpps.length, accent: '#4ade80' },
+                      { label: 'Win Rate', value: winRate + '%', accent: winRate >= 50 ? '#4ade80' : '#e8590c' },
+                      { label: 'Total Bid Value', value: fmt(totalBidVal), accent: '#60a5fa' },
+                      { label: 'Won Value', value: fmt(wonVal), accent: '#4ade80' },
+                    ].map(({ label, value, accent }) => (
+                      <div key={label} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '14px 16px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
+                        <div style={{ fontSize: '22px', fontWeight: '800', color: accent }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Revenue goal progress */}
+                  {goalAmt > 0 && (
+                    <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '14px 16px', marginBottom: '1.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>{bdYear} Revenue Goal</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: goalPct >= 100 ? '#4ade80' : '#f1f1f1' }}>{fmt(wonVal)} / {fmt(goalAmt)} &mdash; {goalPct}%</span>
+                      </div>
+                      <div style={{ background: '#1a1a1a', borderRadius: '99px', height: '8px', overflow: 'hidden' }}>
+                        <div style={{ width: goalPct + '%', height: '100%', background: goalPct >= 100 ? '#4ade80' : '#e8590c', borderRadius: '99px', transition: 'width 0.4s' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Add opportunity form */}
+                  {showAddBd && (
+                    <div style={{ ...s.formBox, marginBottom: '1.25rem' }}>
+                      <p style={s.formTitle}>New Opportunity</p>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Project Name *</label><input style={s.input} value={addBdForm.project_name} onChange={e => setAddBdForm(f => ({ ...f, project_name: e.target.value }))} /></div>
+                        <div><label style={s.label}>Client / GC</label><input style={s.input} value={addBdForm.client_name} onChange={e => setAddBdForm(f => ({ ...f, client_name: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div>
+                          <label style={s.label}>Stage</label>
+                          <select style={s.input} value={addBdForm.stage} onChange={e => setAddBdForm(f => ({ ...f, stage: e.target.value }))}>
+                            <option value="prospect">Prospect</option>
+                            <option value="bidding">Bidding</option>
+                            <option value="won">Won</option>
+                            <option value="lost">Lost</option>
+                          </select>
+                        </div>
+                        <div><label style={s.label}>Bid Amount</label><input style={s.input} type="number" placeholder="0" value={addBdForm.bid_amount} onChange={e => setAddBdForm(f => ({ ...f, bid_amount: e.target.value }))} onFocus={e => e.target.select()} /></div>
+                        <div><label style={s.label}>Bid Date</label><input style={s.input} type="date" value={addBdForm.bid_date} onChange={e => setAddBdForm(f => ({ ...f, bid_date: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Contract Value (if won)</label><input style={s.input} type="number" placeholder="0" value={addBdForm.contract_value} onChange={e => setAddBdForm(f => ({ ...f, contract_value: e.target.value }))} onFocus={e => e.target.select()} /></div>
+                        <div><label style={s.label}>Trade Type</label><input style={s.input} placeholder="e.g. Commercial, Industrial" value={addBdForm.trade_type} onChange={e => setAddBdForm(f => ({ ...f, trade_type: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} value={addBdForm.notes} onChange={e => setAddBdForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button style={s.btn} onClick={saveBdOpportunity} disabled={savingBd}>{savingBd ? 'Saving…' : 'Save Opportunity'}</button>
+                        <button style={s.btnGray} onClick={() => setShowAddBd(false)}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stage filter */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                    {['all', 'prospect', 'bidding', 'won', 'lost'].map(st => {
+                      const active = bdFilterStage === st
+                      const c = stageCfg[st] || { color: '#888', bg: '#1a1a1a', border: '#2a2a2a' }
+                      return (
+                        <button key={st} onClick={() => setBdFilterStage(st)} style={{ padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${active ? c.border : '#2a2a2a'}`, background: active ? c.bg : '#111', color: active ? c.color : '#555', textTransform: 'capitalize', letterSpacing: '0.5px' }}>
+                          {st === 'all' ? `All (${yearOpps.length})` : `${stageCfg[st]?.label} (${yearOpps.filter(o => o.stage === st).length})`}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Opportunities list */}
+                  {filtered.length === 0 ? (
+                    <p style={s.emptyMsg}>No opportunities for {bdYear}{bdFilterStage !== 'all' ? ` — ${bdFilterStage}` : ''}.</p>
+                  ) : filtered.map(opp => {
+                    const isExp = expandedBd === opp.id
+                    const isEditing = editingBdId === opp.id
+                    return (
+                      <div key={opp.id} style={{ ...s.rowBorder, borderBottom: '1px solid #1a1a1a' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 1fr 80px', gap: '1rem', padding: '14px 8px', cursor: 'pointer', borderRadius: '8px' }} onClick={() => { setExpandedBd(isExp ? null : opp.id); setEditingBdId(null) }}>
+                          <div>
+                            <p style={s.company}>{opp.project_name}</p>
+                            {opp.client_name && <p style={s.meta}>{opp.client_name}</p>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center' }}><span style={stageBadge(opp.stage)}>{stageCfg[opp.stage]?.label || opp.stage}</span></div>
+                          <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: '13px', color: '#ccc' }}>{opp.bid_amount ? fmt(opp.bid_amount) : '—'}</span></div>
+                          <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: '12px', color: '#555' }}>{opp.bid_date ? new Date(opp.bid_date + 'T12:00:00').toLocaleDateString() : '—'}</span></div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}><span style={{ fontSize: '12px', color: '#444' }}>{isExp ? '▲' : '▼'}</span></div>
+                        </div>
+                        {isExp && (
+                          <div style={{ ...s.detail, marginBottom: '8px' }}>
+                            {isEditing ? (
+                              <>
+                                <p style={{ ...s.detailLabel, fontSize: '12px', marginBottom: '1rem' }}>Edit Opportunity</p>
+                                <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                  <div><label style={s.label}>Project Name</label><input style={s.input} value={editBdForm.project_name} onChange={e => setEditBdForm(f => ({ ...f, project_name: e.target.value }))} /></div>
+                                  <div><label style={s.label}>Client / GC</label><input style={s.input} value={editBdForm.client_name || ''} onChange={e => setEditBdForm(f => ({ ...f, client_name: e.target.value }))} /></div>
+                                </div>
+                                <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                                  <div>
+                                    <label style={s.label}>Stage</label>
+                                    <select style={s.input} value={editBdForm.stage} onChange={e => setEditBdForm(f => ({ ...f, stage: e.target.value }))}>
+                                      <option value="prospect">Prospect</option>
+                                      <option value="bidding">Bidding</option>
+                                      <option value="won">Won</option>
+                                      <option value="lost">Lost</option>
+                                    </select>
+                                  </div>
+                                  <div><label style={s.label}>Bid Amount</label><input style={s.input} type="number" value={editBdForm.bid_amount || ''} onChange={e => setEditBdForm(f => ({ ...f, bid_amount: e.target.value }))} onFocus={e => e.target.select()} /></div>
+                                  <div><label style={s.label}>Bid Date</label><input style={s.input} type="date" value={editBdForm.bid_date || ''} onChange={e => setEditBdForm(f => ({ ...f, bid_date: e.target.value }))} /></div>
+                                </div>
+                                <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                  <div><label style={s.label}>Contract Value (if won)</label><input style={s.input} type="number" value={editBdForm.contract_value || ''} onChange={e => setEditBdForm(f => ({ ...f, contract_value: e.target.value }))} onFocus={e => e.target.select()} /></div>
+                                  <div><label style={s.label}>Trade Type</label><input style={s.input} value={editBdForm.trade_type || ''} onChange={e => setEditBdForm(f => ({ ...f, trade_type: e.target.value }))} /></div>
+                                </div>
+                                <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editBdForm.notes || ''} onChange={e => setEditBdForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button style={s.btnSm('orange')} onClick={updateBdOpportunity} disabled={savingBdEdit}>{savingBdEdit ? 'Saving…' : 'Save'}</button>
+                                  <button style={s.btnSm('gray')} onClick={() => setEditingBdId(null)}>Cancel</button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div style={s.detailGrid}>
+                                  <div><p style={s.detailLabel}>Client / GC</p><p style={s.detailValue}>{opp.client_name || '—'}</p></div>
+                                  <div><p style={s.detailLabel}>Stage</p><p style={s.detailValue}><span style={stageBadge(opp.stage)}>{stageCfg[opp.stage]?.label || opp.stage}</span></p></div>
+                                  <div><p style={s.detailLabel}>Bid Amount</p><p style={s.detailValue}>{fmt(opp.bid_amount)}</p></div>
+                                  <div><p style={s.detailLabel}>Contract Value</p><p style={s.detailValue}>{fmt(opp.contract_value)}</p></div>
+                                  <div><p style={s.detailLabel}>Bid Date</p><p style={s.detailValue}>{opp.bid_date ? new Date(opp.bid_date + 'T12:00:00').toLocaleDateString() : '—'}</p></div>
+                                  <div><p style={s.detailLabel}>Trade Type</p><p style={s.detailValue}>{opp.trade_type || '—'}</p></div>
+                                </div>
+                                {opp.notes && <div style={{ marginBottom: '1rem' }}><p style={s.detailLabel}>Notes</p><p style={{ ...s.detailValue, whiteSpace: 'pre-wrap' }}>{opp.notes}</p></div>}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button style={s.btnSm('orange')} onClick={() => { setEditingBdId(opp.id); setEditBdForm({ project_name: opp.project_name, client_name: opp.client_name || '', stage: opp.stage, bid_amount: opp.bid_amount || '', contract_value: opp.contract_value || '', bid_date: opp.bid_date || '', trade_type: opp.trade_type || '', notes: opp.notes || '' }) }}>Edit</button>
+                                  <button style={s.btnSm('red')} onClick={() => deleteBdOpportunity(opp.id)}>Delete</button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              )
+            })()}
 
           </div>
         </div>

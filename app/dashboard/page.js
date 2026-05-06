@@ -374,17 +374,25 @@ export default function Dashboard() {
   async function uploadPlan(bidId, file) {
     setUploadingPlanFor(bidId)
     const path = `${bidId}/${Date.now()}-${file.name}`
-    const { error: uploadError } = await supabase.storage.from('bid-plans').upload(path, file)
-    if (!uploadError) {
-      await supabase.from('bid_plans').insert({ bid_package_id: bidId, file_name: file.name, storage_path: path })
-      await loadBidDetail(bidId)
-    }
+    // Get signed upload URL via service role
+    const urlRes = await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-url', path }) })
+    const urlData = await urlRes.json()
+    if (urlData.error) { alert('Upload error: ' + urlData.error); setUploadingPlanFor(null); return }
+    // Upload directly to signed URL
+    const uploadRes = await fetch(urlData.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    if (!uploadRes.ok) { alert('Upload failed — please try again'); setUploadingPlanFor(null); return }
+    // Insert record
+    const insertRes = await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'insert', bid_package_id: bidId, file_name: file.name, storage_path: path }) })
+    const insertData = await insertRes.json()
+    if (insertData.error) { alert('Upload error: ' + insertData.error); setUploadingPlanFor(null); return }
+    await loadBidDetail(bidId)
     setUploadingPlanFor(null)
   }
 
   async function openPlan(storagePath) {
-    const { data } = await supabase.storage.from('bid-plans').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    const res = await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', path: storagePath }) })
+    const data = await res.json()
+    if (data.url) window.open(data.url, '_blank')
   }
 
   async function inviteSubs(bidId, pkg) {

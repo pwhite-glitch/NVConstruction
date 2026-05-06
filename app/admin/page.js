@@ -473,9 +473,8 @@ export default function AdminPortal() {
   )
 
   const filteredBilling = billing.filter(b =>
+    !b.paid_at &&
     (!filterBillJob || b.job_id === filterBillJob) &&
-    (!filterBillStatus || b.status === filterBillStatus) &&
-    (!filterBillPaid || (filterBillPaid === 'paid' ? !!b.paid_at : !b.paid_at)) &&
     (!filterBillNvCheck || b.nv_cuts_check) &&
     (!filterBillReadyToPay || b.ready_to_pay)
   )
@@ -665,11 +664,6 @@ export default function AdminPortal() {
                   <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-                  </select>
-                  <select style={s.filterSelect} value={filterBillPaid} onChange={e => setFilterBillPaid(e.target.value)}>
-                    <option value="">Paid & unpaid</option>
-                    <option value="unpaid">Unpaid only</option>
-                    <option value="paid">Paid only</option>
                   </select>
                   <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
                   <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>

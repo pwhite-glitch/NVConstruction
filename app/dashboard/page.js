@@ -804,63 +804,110 @@ export default function Dashboard() {
     await loadEstimates()
   }
 
-  function generateEstimatePDF(estimate) {
+  async function generateEstimatePDF(estimate) {
+    // Fetch logo as base64 so it embeds into the printed PDF
+    let logoSrc = ''
+    try {
+      const res = await fetch('/logo.png')
+      const blob = await res.blob()
+      logoSrc = await new Promise(resolve => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.readAsDataURL(blob)
+      })
+    } catch { /* logo optional */ }
+
     const w = window.open('', '_blank')
     const lines = estimate.estimate_line_items || []
     const total = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
     const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const estDate = new Date(estimate.created_at).toLocaleDateString()
-    const genDate = new Date().toLocaleDateString()
+    const estDate = new Date(estimate.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+
     w.document.write(`<!DOCTYPE html><html><head>
 <title>Estimate ${estimate.estimate_number} — ${estimate.project_name}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 40px; line-height: 1.5; }
-.btn { padding: 8px 20px; background: #111; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; margin-right: 8px; margin-bottom: 20px; }
-@media print { .no-print { display: none; } }
-.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; border-bottom: 3px solid #111; padding-bottom: 18px; }
-.co-name { font-size: 22px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
-.co-sub { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; }
-.est-title { font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: #333; text-align: right; }
-.est-meta { font-size: 12px; color: #888; text-align: right; margin-top: 4px; }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
-.info-block { padding: 14px 16px; border: 1px solid #ddd; border-radius: 6px; }
-.info-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; font-weight: 700; margin-bottom: 8px; }
-.info-name { font-size: 14px; font-weight: 700; }
-.info-detail { font-size: 12px; color: #555; margin-top: 3px; }
-.section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #888; font-weight: 700; margin-bottom: 10px; margin-top: 22px; }
-.scope-box { border: 1px solid #ddd; border-radius: 6px; padding: 14px; font-size: 13px; color: #444; line-height: 1.7; white-space: pre-wrap; }
-table { width: 100%; border-collapse: collapse; }
-thead th { padding: 8px 12px; border-bottom: 2px solid #111; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #555; font-weight: 700; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; line-height: 1.5; }
+.page { max-width: 820px; margin: 0 auto; padding: 48px 52px; }
+.no-print { padding: 16px 52px; background: #f4f4f4; border-bottom: 1px solid #ddd; display: flex; gap: 10px; }
+.btn { padding: 8px 20px; background: #1a1a1a; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+.btn-outline { padding: 8px 20px; background: white; color: #555; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; font-size: 12px; }
+@media print { .no-print { display: none !important; } body { padding: 0; } }
+
+/* Header */
+.header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 24px; margin-bottom: 28px; border-bottom: 3px solid #e8590c; }
+.brand { display: flex; align-items: center; gap: 16px; }
+.brand-logo { width: 64px; height: 64px; object-fit: contain; }
+.brand-text {}
+.co-name { font-size: 20px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #111; }
+.co-tagline { font-size: 10px; color: #888; letter-spacing: 2.5px; text-transform: uppercase; margin-top: 3px; }
+.co-contact { font-size: 10px; color: #666; margin-top: 6px; line-height: 1.8; }
+.est-block { text-align: right; }
+.est-label { font-size: 28px; font-weight: 900; text-transform: uppercase; letter-spacing: 4px; color: #e8590c; }
+.est-num { font-size: 13px; color: #555; margin-top: 4px; font-weight: 600; }
+.est-date { font-size: 11px; color: #999; margin-top: 2px; }
+
+/* Info grid */
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.info-block { padding: 14px 16px; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; }
+.info-block-accent { border-left: 3px solid #e8590c; }
+.info-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #e8590c; font-weight: 800; margin-bottom: 8px; }
+.info-name { font-size: 14px; font-weight: 700; color: #111; }
+.info-detail { font-size: 11px; color: #555; margin-top: 3px; }
+
+/* Section */
+.section-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2.5px; color: #e8590c; font-weight: 800; margin-bottom: 10px; margin-top: 26px; }
+.scope-box { border: 1px solid #e0e0e0; border-radius: 6px; padding: 14px 16px; font-size: 12px; color: #444; line-height: 1.8; white-space: pre-wrap; background: #fafafa; }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+thead tr { background: #1a1a1a; }
+thead th { padding: 9px 14px; font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #fff; font-weight: 700; text-align: left; }
 thead th.right { text-align: right; }
-tbody td { padding: 11px 12px; border-bottom: 1px solid #eee; font-size: 13px; vertical-align: middle; }
-tbody td.num { text-align: center; color: #aaa; width: 32px; font-size: 11px; }
-tbody td.right { text-align: right; font-family: monospace; }
-.total-row td { padding: 12px; font-weight: 800; font-size: 15px; border-top: 2px solid #111; background: #f8f8f8; border-bottom: none; }
-.total-row td.right { font-family: monospace; font-size: 17px; }
-.footer-note { font-size: 11px; color: #aaa; margin-top: 6px; }
-.terms { margin-top: 28px; border-top: 1px solid #ddd; padding-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-.sig-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #999; font-weight: 700; margin-bottom: 10px; }
-.sig-line { border-bottom: 1px solid #888; height: 44px; width: 100%; margin-bottom: 6px; }
+tbody tr:nth-child(even) { background: #f9f9f9; }
+tbody td { padding: 11px 14px; border-bottom: 1px solid #eee; font-size: 12px; color: #222; vertical-align: middle; }
+tbody td.num { text-align: center; color: #bbb; width: 36px; font-size: 11px; }
+tbody td.right { text-align: right; font-family: 'Courier New', monospace; font-size: 12px; }
+.total-row td { padding: 13px 14px; font-weight: 800; border-top: 2px solid #e8590c; border-bottom: none; background: #fff8f5; }
+.total-row td.right { font-family: 'Courier New', monospace; font-size: 16px; color: #e8590c; }
+.total-label { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #e8590c; }
+.footer-note { font-size: 10px; color: #bbb; margin-top: 6px; }
+
+/* Signature */
+.terms { margin-top: 32px; border-top: 1px solid #e0e0e0; padding-top: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
+.sig-label { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #888; font-weight: 700; margin-bottom: 12px; }
+.sig-line { border-bottom: 1px solid #aaa; height: 44px; width: 100%; margin-bottom: 6px; }
 .sig-sub { font-size: 10px; color: #aaa; }
-.validity { font-size: 10px; color: #bbb; margin-top: 24px; text-align: center; border-top: 1px solid #eee; padding-top: 12px; }
+.validity { font-size: 10px; color: #bbb; margin-top: 28px; text-align: center; border-top: 1px solid #eee; padding-top: 14px; letter-spacing: 0.5px; }
 </style></head><body>
 <div class="no-print">
-  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
-  <button class="btn" style="background:#666" onclick="window.close()">Close</button>
+  <button class="btn" onclick="window.print()">&#x2399; Print / Save as PDF</button>
+  <button class="btn-outline" onclick="window.close()">Close</button>
 </div>
+<div class="page">
+
 <div class="header">
-  <div>
-    <div class="co-name">NV Construction</div>
-    <div class="co-sub">General Contractor</div>
+  <div class="brand">
+    ${logoSrc ? `<img src="${logoSrc}" class="brand-logo" alt="NV Construction" />` : ''}
+    <div class="brand-text">
+      <div class="co-name">NV Construction</div>
+      <div class="co-tagline">General Contractor</div>
+      <div class="co-contact">
+        office@nvim.co<br>
+        nvim.co
+      </div>
+    </div>
   </div>
-  <div>
-    <div class="est-title">Estimate</div>
-    <div class="est-meta">${estimate.estimate_number} &nbsp;·&nbsp; ${estDate}</div>
+  <div class="est-block">
+    <div class="est-label">Estimate</div>
+    <div class="est-num">${estimate.estimate_number}</div>
+    <div class="est-date">Date: ${estDate}</div>
   </div>
 </div>
+
 <div class="info-grid">
-  <div class="info-block">
+  <div class="info-block info-block-accent">
     <div class="info-label">Prepared for</div>
     ${estimate.owner_name ? `<div class="info-name">${estimate.owner_name}</div>` : ''}
     ${estimate.owner_company ? `<div class="info-detail">${estimate.owner_company}</div>` : ''}
@@ -868,19 +915,21 @@ tbody td.right { text-align: right; font-family: monospace; }
     ${estimate.owner_phone ? `<div class="info-detail">${estimate.owner_phone}</div>` : ''}
     ${!estimate.owner_name && !estimate.owner_company ? '<div class="info-detail" style="color:#ccc">—</div>' : ''}
   </div>
-  <div class="info-block">
+  <div class="info-block info-block-accent">
     <div class="info-label">Project</div>
     <div class="info-name">${estimate.project_name}</div>
-    ${estimate.address ? `<div class="info-detail" style="margin-top:6px">${estimate.address.replace(/\n/g, '<br>')}</div>` : ''}
+    ${estimate.address ? `<div class="info-detail" style="margin-top:5px">${estimate.address.replace(/\n/g, '<br>')}</div>` : ''}
   </div>
 </div>
-${estimate.notes ? `<div class="section-label">Scope of work</div><div class="scope-box">${estimate.notes.replace(/</g, '&lt;')}</div>` : ''}
+
+${estimate.notes ? `<div class="section-label">Scope of work</div><div class="scope-box">${estimate.notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+
 <div class="section-label">Schedule of values</div>
 <table>
   <thead><tr>
     <th class="num">#</th>
     <th>Description</th>
-    <th class="right" style="width:180px">Amount</th>
+    <th class="right" style="width:160px">Amount</th>
   </tr></thead>
   <tbody>
     ${lines.map((l, i) => `<tr>
@@ -890,25 +939,28 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     </tr>`).join('')}
     <tr class="total-row">
       <td></td>
-      <td><strong>TOTAL ESTIMATE</strong></td>
+      <td><span class="total-label">Total Estimate</span></td>
       <td class="right">${fmt(total)}</td>
     </tr>
   </tbody>
 </table>
-<div class="footer-note">All prices in USD · Subject to change if scope changes</div>
+<div class="footer-note">All prices in USD &nbsp;·&nbsp; Subject to revision if scope changes</div>
+
 <div class="terms">
   <div>
     <div class="sig-label">Client acceptance</div>
     <div class="sig-line"></div>
-    <div class="sig-sub">Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</div>
+    <div class="sig-sub">Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</div>
   </div>
   <div>
-    <div class="sig-label">NV Construction</div>
+    <div class="sig-label">NV Construction — Authorized signature</div>
     <div class="sig-line"></div>
-    <div class="sig-sub">Authorized signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</div>
+    <div class="sig-sub">Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date</div>
   </div>
 </div>
-<div class="validity">This estimate is valid for 30 days from the date above &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Generated ${genDate}</div>
+<div class="validity">This estimate is valid for 30 days &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Generated ${genDate}</div>
+
+</div>
 </body></html>`)
     w.document.close()
   }

@@ -200,6 +200,7 @@ export default function Dashboard() {
   const [bdGoalInput, setBdGoalInput] = useState('')
   const [savingBdGoal, setSavingBdGoal] = useState(false)
   const [bdLoaded, setBdLoaded] = useState(false)
+  const [bdProfits, setBdProfits] = useState({})
 
   useEffect(() => {
     async function load() {
@@ -913,6 +914,13 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     setBdBidPackages(bids || [])
     const currentGoal = (res.goals || []).find(g => g.year === new Date().getFullYear())
     if (currentGoal) setBdGoalInput(String(currentGoal.revenue_goal))
+    // Fetch forecast profit for all jobs
+    const jobIds = jobs.map(j => j.id)
+    if (jobIds.length > 0) {
+      const pr = await fetch('/api/job-profit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_ids: jobIds }) })
+      const pd = await pr.json()
+      setBdProfits(pd.profits || {})
+    }
     setBdLoaded(true)
   }
 
@@ -2253,6 +2261,12 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               const totalRev   = activeRev + completeRev
               const wonBdVal   = wonOpps.reduce((s, o) => s + (parseFloat(o.contract_value) || parseFloat(o.bid_amount) || 0), 0)
 
+              // Profit from forecast data
+              const jobsWithBudget = [...activeJobs, ...completeJobs].filter(j => bdProfits[j.id]?.has_budget)
+              const totalProjProfit = jobsWithBudget.reduce((s, j) => s + (bdProfits[j.id]?.projected_profit || 0), 0)
+              const totalContractForMargin = jobsWithBudget.reduce((s, j) => s + (bdProfits[j.id]?.contract_value || 0), 0)
+              const avgMargin = totalContractForMargin > 0 ? Math.round((totalProjProfit / totalContractForMargin) * 100) : null
+
               const currentGoal = bdGoals.find(g => g.year === bdYear)
               const goalAmt = currentGoal ? parseFloat(currentGoal.revenue_goal) : 0
               const goalVal = totalRev + wonBdVal
@@ -2290,11 +2304,12 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   {/* Stats */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '1.25rem' }}>
                     {[
-                      { label: 'Bidding',      value: biddingTotal,           accent: '#facc15' },
-                      { label: 'Active Jobs',  value: activeJobs.length,      accent: '#60a5fa' },
-                      { label: 'Complete',     value: completeJobs.length,    accent: '#4ade80' },
-                      { label: 'BD Win Rate',  value: (wonOpps.length + lostOpps.length) > 0 ? winRate + '%' : '—', accent: winRate >= 50 ? '#4ade80' : '#e8590c' },
-                      { label: 'Revenue',      value: fmt(totalRev || null),  accent: '#4ade80' },
+                      { label: 'Bidding',       value: biddingTotal,          accent: '#facc15' },
+                      { label: 'Active Jobs',   value: activeJobs.length,     accent: '#60a5fa' },
+                      { label: 'Complete',      value: completeJobs.length,   accent: '#4ade80' },
+                      { label: 'Revenue',       value: fmt(totalRev || null), accent: '#f1f1f1' },
+                      { label: 'Proj. Profit',  value: jobsWithBudget.length > 0 ? fmt(totalProjProfit) : '—', accent: totalProjProfit >= 0 ? '#4ade80' : '#ff6b6b' },
+                      { label: 'Avg Margin',    value: avgMargin != null ? avgMargin + '%' : '—', accent: avgMargin != null && avgMargin >= 15 ? '#4ade80' : avgMargin != null ? '#e8590c' : '#555' },
                     ].map(({ label, value, accent }) => (
                       <div key={label} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '14px 16px' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
@@ -2394,17 +2409,29 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         {isExp && (
                           <div style={{ ...s.detail, marginBottom: '8px' }}>
                             {/* Job row — read only, link to detail */}
-                            {item._type === 'job' && (
-                              <>
-                                <div style={s.detailGrid}>
-                                  <div><p style={s.detailLabel}>Job Number</p><p style={s.detailValue}>{item.job_number}</p></div>
-                                  <div><p style={s.detailLabel}>Status</p><p style={s.detailValue}><span style={stageBadge(item._stage)}>{stageCfg[item._stage]?.label}</span></p></div>
-                                  <div><p style={s.detailLabel}>Contract Value</p><p style={s.detailValue}>{fmt(item.contract_value)}</p></div>
-                                  <div><p style={s.detailLabel}>Created</p><p style={s.detailValue}>{new Date(item.created_at).toLocaleDateString()}</p></div>
-                                </div>
-                                <button style={s.btnSm('orange')} onClick={() => router.push(`/jobdetail?id=${item.id}`)}>Open Job</button>
-                              </>
-                            )}
+                            {item._type === 'job' && (() => {
+                              const p = bdProfits[item.id]
+                              const profitColor = p && p.projected_profit >= 0 ? '#4ade80' : '#ff6b6b'
+                              return (
+                                <>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                                    <div><p style={s.detailLabel}>Job Number</p><p style={s.detailValue}>{item.job_number}</p></div>
+                                    <div><p style={s.detailLabel}>Status</p><p style={s.detailValue}><span style={stageBadge(item._stage)}>{stageCfg[item._stage]?.label}</span></p></div>
+                                    <div><p style={s.detailLabel}>Contract Value</p><p style={s.detailValue}>{fmt(item.contract_value)}</p></div>
+                                    {p?.has_budget ? (
+                                      <>
+                                        <div><p style={s.detailLabel}>Est. Cost at Completion</p><p style={s.detailValue}>{fmt(p.eac)}</p></div>
+                                        <div><p style={s.detailLabel}>Proj. Profit</p><p style={{ ...s.detailValue, color: profitColor, fontWeight: '700' }}>{fmt(p.projected_profit)}</p></div>
+                                        <div><p style={s.detailLabel}>Margin</p><p style={{ ...s.detailValue, color: profitColor, fontWeight: '700' }}>{p.margin_pct}%</p></div>
+                                      </>
+                                    ) : (
+                                      <div style={{ gridColumn: '1/-1' }}><p style={{ fontSize: '12px', color: '#555' }}>No budget set — open job to add budget items for profit tracking.</p></div>
+                                    )}
+                                  </div>
+                                  <button style={s.btnSm('orange')} onClick={() => router.push(`/jobdetail?id=${item.id}`)}>Open Job</button>
+                                </>
+                              )
+                            })()}
 
                             {/* Bid package row — read only */}
                             {item._type === 'bid' && (

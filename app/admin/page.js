@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
 const DOW_LABELS = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday' }
+const TRADES = ['Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing', 'Roofing', 'Drywall', 'Painting', 'Flooring', 'Doors & Windows', 'Mechanical / HVAC', 'Electrical', 'Plumbing', 'Fire Protection', 'Site Work / Grading', 'Landscaping', 'Insulation', 'Waterproofing', 'Signage', 'Cleaning', 'Other']
 
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
@@ -73,13 +74,26 @@ export default function AdminPortal() {
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingQb, setTogglingQb] = useState(null)
 
-  // COI / Documents state
+  // Sub directory state
   const [filterCOI, setFilterCOI] = useState('all')
   const [editingCOI, setEditingCOI] = useState(null)
   const [coiDate, setCoiDate] = useState('')
   const [savingCOI, setSavingCOI] = useState(false)
-  const [requestingDoc, setRequestingDoc] = useState(null) // 'dirId-type'
-  const [docRequestSent, setDocRequestSent] = useState({}) // { 'dirId-type': true }
+  const [requestingDoc, setRequestingDoc] = useState(null)
+  const [docRequestSent, setDocRequestSent] = useState({})
+  const [showAddDir, setShowAddDir] = useState(false)
+  const [addDirForm, setAddDirForm] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '', scope_description: '' })
+  const [savingDir, setSavingDir] = useState(false)
+  const [expandedDirId, setExpandedDirId] = useState(null)
+  const [editingDirId, setEditingDirId] = useState(null)
+  const [editDirForm, setEditDirForm] = useState({})
+  const [savingDirEdit, setSavingDirEdit] = useState(false)
+  const [dirMsg, setDirMsg] = useState('')
+  const [dirSearch, setDirSearch] = useState('')
+  const [filterDirTrade, setFilterDirTrade] = useState('')
+  const [filterDirDocs, setFilterDirDocs] = useState('all')
+  const [uploadingW9For, setUploadingW9For] = useState(null)
+  const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
 
   // Lien waiver state
   const [filterLienJob, setFilterLienJob] = useState('')
@@ -234,10 +248,97 @@ export default function AdminPortal() {
     }
   }
 
+  async function reloadDirectory() {
+    const { data } = await supabase.from('sub_directory').select('*').order('company_name')
+    setDirectory(data || [])
+  }
+
+  async function addDirEntry(e) {
+    e.preventDefault()
+    setSavingDir(true)
+    setDirMsg('')
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'insert', ...addDirForm }),
+    })
+    const data = await res.json()
+    setSavingDir(false)
+    if (data?.ok) {
+      setShowAddDir(false)
+      setAddDirForm({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '', scope_description: '' })
+      await reloadDirectory()
+    } else {
+      setDirMsg('Error: ' + (data?.error || 'Unknown'))
+    }
+  }
+
+  async function saveDirEdit(id) {
+    setSavingDirEdit(true)
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory_id: id, ...editDirForm }),
+    })
+    const data = await res.json()
+    setSavingDirEdit(false)
+    if (data?.ok) {
+      setEditingDirId(null)
+      await reloadDirectory()
+    } else {
+      setDirMsg('Error saving: ' + (data?.error || 'Unknown'))
+    }
+  }
+
+  async function deleteDirEntry(id) {
+    if (!window.confirm('Delete this subcontractor from the directory? This cannot be undone.')) return
+    await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', directory_id: id }) })
+    setExpandedDirId(null)
+    setEditingDirId(null)
+    await reloadDirectory()
+  }
+
+  async function uploadSubDoc(dirId, type, file) {
+    if (type === 'w9') setUploadingW9For(dirId)
+    else setUploadingCoiFor(dirId)
+    const ext = file.name.split('.').pop()
+    const path = `${dirId}/${type}-${Date.now()}.${ext}`
+    const urlRes = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upload-url', path }),
+    })
+    const { signedUrl, error: urlErr } = await urlRes.json()
+    if (urlErr) { alert('Upload error: ' + urlErr); setUploadingW9For(null); setUploadingCoiFor(null); return }
+    await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    const field = type === 'w9' ? 'w9_url' : 'coi_url'
+    await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory_id: dirId, [field]: path }),
+    })
+    if (type === 'w9') setUploadingW9For(null)
+    else setUploadingCoiFor(null)
+    await reloadDirectory()
+  }
+
   async function getDocUrl(filePath) {
     const res = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', file_path: filePath }) })
     const data = await res.json()
     if (data?.url) window.open(data.url, '_blank')
+  }
+
+  async function downloadDoc(filePath, fileName) {
+    const res = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', file_path: filePath, download: true }) })
+    const data = await res.json()
+    if (data?.url) {
+      const a = document.createElement('a')
+      a.href = data.url
+      a.download = fileName || 'document'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    }
   }
 
   function printLienWaiver(sub) {
@@ -380,7 +481,7 @@ export default function AdminPortal() {
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
             <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing & Payments</button>
-            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Documents</button>
+            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Sub Directory</button>
             <button style={s.tab(activeTab === 'liens')} onClick={() => setActiveTab('liens')}>Lien Waivers</button>
           </div>
 
@@ -625,113 +726,225 @@ export default function AdminPortal() {
               </>
             )}
 
-            {/* ── DOCUMENTS ── */}
-            {activeTab === 'coi' && (
-              <>
-                <div style={s.filterRow}>
-                  <select style={s.filterSelect} value={filterCOI} onChange={e => setFilterCOI(e.target.value)}>
-                    <option value="all">All subs</option>
-                    <option value="issues">Issues only (missing / expired / expiring)</option>
-                    <option value="expired">COI expired</option>
-                    <option value="warning">COI expiring within 30 days</option>
-                    <option value="active">COI active</option>
-                  </select>
-                  <span style={{ fontSize: '13px', color: '#555', marginLeft: '4px' }}>{coiList.length} sub{coiList.length !== 1 ? 's' : ''}</span>
-                </div>
+            {/* ── SUB DIRECTORY ── */}
+            {activeTab === 'coi' && (() => {
+              const dirFiltered = directory.filter(d => {
+                const q = dirSearch.toLowerCase()
+                if (q && !d.company_name?.toLowerCase().includes(q) && !d.contact_name?.toLowerCase().includes(q) && !d.email?.toLowerCase().includes(q)) return false
+                if (filterDirTrade && d.trade !== filterDirTrade) return false
+                if (filterDirDocs === 'missing-w9') return !d.w9_url
+                if (filterDirDocs === 'missing-coi') { const st = coiStatus(d.coi_expiration); return !d.coi_url || st === 'expired' || st === 'warning' }
+                if (filterDirDocs === 'issues') { const st = coiStatus(d.coi_expiration); return !d.w9_url || !d.coi_url || st === 'expired' || st === 'warning' }
+                return true
+              })
+              return (
+                <>
+                  {dirMsg && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
 
-                {coiList.length === 0 ? <div style={s.emptyMsg}>No subs found.</div> : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr>
-                          <th style={s.th}>Company</th>
-                          <th style={s.th}>Contact / Email</th>
-                          <th style={s.th}>W-9</th>
-                          <th style={s.th}>COI</th>
-                          <th style={s.th}>COI Expiration</th>
-                          <th style={s.th}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {coiList.map(d => {
-                          const st = coiStatus(d.coi_expiration)
-                          const hasW9 = !!d.w9_url
-                          const hasCOI = !!d.coi_url
-                          const needsW9 = !hasW9
-                          const needsCOI = !hasCOI || st === 'expired' || st === 'warning'
-                          const w9Key = `${d.id}-w9`
-                          const coiKey = `${d.id}-coi`
-                          const bothKey = `${d.id}-both`
-                          return (
-                            <tr key={d.id}>
-                              <td style={s.td}>
-                                <span style={{ fontWeight: '600', color: '#f1f1f1' }}>{d.company_name}</span>
-                                {d.trade && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{d.trade}</div>}
-                              </td>
-                              <td style={s.td}>
-                                {d.contact_name || '—'}
-                                {d.email && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{d.email}</div>}
-                                {!d.email && <div style={{ fontSize: '11px', color: '#ff6b6b', marginTop: '2px' }}>No email on file</div>}
-                              </td>
-                              <td style={s.td}>
-                                {hasW9
-                                  ? <span style={s.badge('approved')}>On file</span>
-                                  : <span style={s.badge('rejected')}>Missing</span>}
-                              </td>
-                              <td style={s.td}>
-                                <span style={s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none')}>
-                                  {st === 'active' ? 'Active' : st === 'expired' ? 'Expired' : st === 'warning' ? 'Expiring' : 'Missing'}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={s.filterRow} style={{ margin: 0, flexWrap: 'wrap', gap: '8px', display: 'flex', alignItems: 'center' }}>
+                      <input style={{ ...s.filterSelect, minWidth: '220px', color: '#f1f1f1' }} placeholder="Search company, contact, email..." value={dirSearch} onChange={e => setDirSearch(e.target.value)} />
+                      <select style={s.filterSelect} value={filterDirTrade} onChange={e => setFilterDirTrade(e.target.value)}>
+                        <option value="">All trades</option>
+                        {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <select style={s.filterSelect} value={filterDirDocs} onChange={e => setFilterDirDocs(e.target.value)}>
+                        <option value="all">All subs</option>
+                        <option value="issues">Issues only</option>
+                        <option value="missing-w9">Missing W-9</option>
+                        <option value="missing-coi">COI missing/expired</option>
+                      </select>
+                      <span style={{ fontSize: '12px', color: '#555' }}>{dirFiltered.length} sub{dirFiltered.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <button style={s.btnSm('orange')} onClick={() => { setShowAddDir(v => !v); setDirMsg('') }}>
+                      {showAddDir ? 'Cancel' : '+ Add subcontractor'}
+                    </button>
+                  </div>
+
+                  {showAddDir && (
+                    <div style={s.formBox}>
+                      <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Add subcontractor</p>
+                      <form onSubmit={addDirEntry}>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                          <div><label style={s.label}>Company name *</label><input style={s.input} required value={addDirForm.company_name} onChange={e => setAddDirForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing LLC" /></div>
+                          <div><label style={s.label}>Contact name</label><input style={s.input} value={addDirForm.contact_name} onChange={e => setAddDirForm(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
+                        </div>
+                        <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                          <div><label style={s.label}>Email</label><input type="email" style={s.input} value={addDirForm.email} onChange={e => setAddDirForm(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
+                          <div><label style={s.label}>Phone</label><input style={s.input} value={addDirForm.phone} onChange={e => setAddDirForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
+                          <div><label style={s.label}>Address</label><input style={s.input} value={addDirForm.address} onChange={e => setAddDirForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St" /></div>
+                        </div>
+                        <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                          <div><label style={s.label}>Trade</label><select style={s.input} value={addDirForm.trade} onChange={e => setAddDirForm(f => ({ ...f, trade: e.target.value }))}><option value="">— Select —</option>{TRADES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                          <div><label style={s.label}>License #</label><input style={s.input} value={addDirForm.license_number} onChange={e => setAddDirForm(f => ({ ...f, license_number: e.target.value }))} placeholder="TX-12345" /></div>
+                          <div><label style={s.label}>COI expiration</label><input type="date" style={s.input} value={addDirForm.coi_expiration} onChange={e => setAddDirForm(f => ({ ...f, coi_expiration: e.target.value }))} /></div>
+                        </div>
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Scope description</label>
+                          <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={addDirForm.scope_description} onChange={e => setAddDirForm(f => ({ ...f, scope_description: e.target.value }))} placeholder="General scope of work..." />
+                        </div>
+                        <button type="submit" style={{ ...s.btn, opacity: savingDir ? 0.6 : 1 }} disabled={savingDir}>{savingDir ? 'Saving...' : 'Add to directory'}</button>
+                      </form>
+                    </div>
+                  )}
+
+                  {dirFiltered.length === 0
+                    ? <div style={s.emptyMsg}>No subcontractors found.</div>
+                    : dirFiltered.map(d => {
+                        const st = coiStatus(d.coi_expiration)
+                        const hasW9 = !!d.w9_url
+                        const hasCOI = !!d.coi_url
+                        const needsW9 = !hasW9
+                        const needsCOI = !hasCOI || st === 'expired' || st === 'warning'
+                        const w9Key = `${d.id}-w9`
+                        const coiKey = `${d.id}-coi`
+                        const bothKey = `${d.id}-both`
+                        const isExpanded = expandedDirId === d.id
+                        return (
+                          <div key={d.id} style={{ border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '8px', overflow: 'hidden' }}>
+                            {/* Row header */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', background: '#0f0f0f' }}
+                              onClick={() => { setExpandedDirId(isExpanded ? null : d.id); setEditingDirId(null) }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontWeight: '700', color: '#f1f1f1', fontSize: '14px' }}>{d.company_name}</span>
+                                {d.trade && <span style={{ fontSize: '12px', color: '#555', marginLeft: '10px' }}>{d.trade}</span>}
+                                {d.contact_name && <span style={{ fontSize: '12px', color: '#888', marginLeft: '10px' }}>{d.contact_name}</span>}
+                                {d.email && <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>{d.email}</span>}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                <span style={{ ...s.badge(hasW9 ? 'approved' : 'rejected'), fontSize: '10px' }}>{hasW9 ? 'W-9 ✓' : 'W-9 ✗'}</span>
+                                <span style={{ ...s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none'), fontSize: '10px' }}>
+                                  COI {st === 'active' ? '✓' : st === 'expired' ? 'Exp' : st === 'warning' ? '~30d' : '✗'}
                                 </span>
-                              </td>
-                              <td style={s.td}>
-                                {editingCOI === d.id ? (
-                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                    <input type="date" style={{ ...s.input, maxWidth: '150px', padding: '6px 10px' }} value={coiDate} onChange={e => setCoiDate(e.target.value)} />
-                                    <button style={s.btnSm('green')} disabled={savingCOI} onClick={() => saveCOIDate(d.id)}>{savingCOI ? '...' : 'Save'}</button>
-                                    <button style={s.btnSm('gray')} onClick={() => setEditingCOI(null)}>✕</button>
+                                <span style={{ color: '#555', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
+                              </div>
+                            </div>
+
+                            {/* Expanded detail */}
+                            {isExpanded && (
+                              <div style={{ padding: '1.25rem', borderTop: '1px solid #1e1e1e', background: '#080808' }}>
+
+                                {/* Info / Edit */}
+                                {editingDirId !== d.id ? (
+                                  <div style={{ marginBottom: '1.25rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '10px' }}>
+                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Email</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.email || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Phone</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.phone || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>License</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.license_number || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Address</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.address || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>COI Expiration</div><div style={{ fontSize: '13px', color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : '#ccc' }}>{d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : '—'}</div></div>
+                                      {d.scope_description && <div style={{ gridColumn: 'span 3' }}><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Scope</div><div style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.6' }}>{d.scope_description}</div></div>}
+                                    </div>
+                                    <button style={s.btnSm('orange')} onClick={() => {
+                                      setEditingDirId(d.id)
+                                      setEditDirForm({
+                                        company_name: d.company_name || '', contact_name: d.contact_name || '',
+                                        email: d.email || '', phone: d.phone || '', address: d.address || '',
+                                        trade: d.trade || '', license_number: d.license_number || '',
+                                        coi_expiration: d.coi_expiration ? d.coi_expiration.split('T')[0] : '',
+                                        scope_description: d.scope_description || '',
+                                      })
+                                    }}>Edit info</button>
                                   </div>
                                 ) : (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : st === 'none' ? '#555' : '#ccc', fontSize: '13px' }}>
-                                      {d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : 'Not on file'}
-                                    </span>
-                                    <button style={s.btnSm('orange')} onClick={() => { setEditingCOI(d.id); setCoiDate(d.coi_expiration || '') }}>Edit</button>
+                                  <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                    <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase' }}>Editing {d.company_name}</p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                                      <div><label style={s.label}>Company name</label><input style={s.input} value={editDirForm.company_name} onChange={e => setEditDirForm(f => ({ ...f, company_name: e.target.value }))} /></div>
+                                      <div><label style={s.label}>Contact name</label><input style={s.input} value={editDirForm.contact_name} onChange={e => setEditDirForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
+                                      <div><label style={s.label}>Email</label><input type="email" style={s.input} value={editDirForm.email} onChange={e => setEditDirForm(f => ({ ...f, email: e.target.value }))} /></div>
+                                      <div><label style={s.label}>Phone</label><input style={s.input} value={editDirForm.phone} onChange={e => setEditDirForm(f => ({ ...f, phone: e.target.value }))} /></div>
+                                      <div><label style={s.label}>Address</label><input style={s.input} value={editDirForm.address} onChange={e => setEditDirForm(f => ({ ...f, address: e.target.value }))} /></div>
+                                      <div><label style={s.label}>Trade</label><select style={s.input} value={editDirForm.trade} onChange={e => setEditDirForm(f => ({ ...f, trade: e.target.value }))}><option value="">— Select —</option>{TRADES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                                      <div><label style={s.label}>License #</label><input style={s.input} value={editDirForm.license_number} onChange={e => setEditDirForm(f => ({ ...f, license_number: e.target.value }))} /></div>
+                                      <div><label style={s.label}>COI expiration</label><input type="date" style={s.input} value={editDirForm.coi_expiration} onChange={e => setEditDirForm(f => ({ ...f, coi_expiration: e.target.value }))} /></div>
+                                    </div>
+                                    <div style={{ marginBottom: '10px' }}><label style={s.label}>Scope</label><textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editDirForm.scope_description} onChange={e => setEditDirForm(f => ({ ...f, scope_description: e.target.value }))} /></div>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                      <button style={{ ...s.btnSm('green'), opacity: savingDirEdit ? 0.6 : 1 }} disabled={savingDirEdit} onClick={() => saveDirEdit(d.id)}>{savingDirEdit ? 'Saving...' : 'Save changes'}</button>
+                                      <button style={s.btnSm('gray')} onClick={() => setEditingDirId(null)}>Cancel</button>
+                                    </div>
                                   </div>
                                 )}
-                              </td>
-                              <td style={s.td}>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                  {hasW9 && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.w9_url)}>View W-9</button>}
-                                  {hasCOI && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.coi_url)}>View COI</button>}
-                                  {d.email && needsW9 && !docRequestSent[w9Key] && (
-                                    <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === w9Key ? 0.6 : 1 }} disabled={requestingDoc === w9Key} onClick={() => sendDocRequest(d.id, 'w9')}>
-                                      {requestingDoc === w9Key ? '...' : 'Request W-9'}
-                                    </button>
-                                  )}
-                                  {d.email && needsCOI && !docRequestSent[coiKey] && !docRequestSent[bothKey] && (
-                                    <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === coiKey ? 0.6 : 1 }} disabled={requestingDoc === coiKey} onClick={() => sendDocRequest(d.id, 'coi')}>
-                                      {requestingDoc === coiKey ? '...' : 'Request COI'}
-                                    </button>
-                                  )}
-                                  {d.email && needsW9 && needsCOI && !docRequestSent[bothKey] && (
-                                    <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === bothKey ? 0.6 : 1 }} disabled={requestingDoc === bothKey} onClick={() => sendDocRequest(d.id, 'both')}>
-                                      {requestingDoc === bothKey ? '...' : 'Request Both'}
-                                    </button>
-                                  )}
-                                  {(docRequestSent[w9Key] || docRequestSent[coiKey] || docRequestSent[bothKey]) && (
-                                    <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>
-                                  )}
+
+                                {/* Documents */}
+                                <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                                  <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Documents</p>
+
+                                  {/* W-9 */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasW9 ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${hasW9 ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
+                                      <span style={{ fontSize: '12px', fontWeight: '700', color: hasW9 ? '#4ade80' : '#ff6b6b' }}>{hasW9 ? '✓' : '✗'} W-9</span>
+                                    </div>
+                                    {hasW9 && (
+                                      <>
+                                        <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.w9_url)}>View</button>
+                                        <button style={s.btnSm('gray')} onClick={() => downloadDoc(d.w9_url, `W9-${d.company_name}.pdf`)}>Download</button>
+                                      </>
+                                    )}
+                                    <label style={{ ...s.btnSm('blue'), cursor: 'pointer', opacity: uploadingW9For === d.id ? 0.6 : 1 }}>
+                                      {uploadingW9For === d.id ? 'Uploading...' : hasW9 ? 'Replace W-9' : 'Upload W-9'}
+                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingW9For === d.id}
+                                        onChange={e => { if (e.target.files?.[0]) uploadSubDoc(d.id, 'w9', e.target.files[0]); e.target.value = '' }} />
+                                    </label>
+                                  </div>
+
+                                  {/* COI */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasCOI && st === 'active' ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${hasCOI && st === 'active' ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
+                                      <span style={{ fontSize: '12px', fontWeight: '700', color: hasCOI && st === 'active' ? '#4ade80' : st === 'warning' ? '#e8590c' : '#ff6b6b' }}>
+                                        {hasCOI ? '✓' : '✗'} COI{d.coi_expiration ? ` · ${new Date(d.coi_expiration).toLocaleDateString()}` : ''}
+                                      </span>
+                                    </div>
+                                    {hasCOI && (
+                                      <>
+                                        <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.coi_url)}>View</button>
+                                        <button style={s.btnSm('gray')} onClick={() => downloadDoc(d.coi_url, `COI-${d.company_name}.pdf`)}>Download</button>
+                                      </>
+                                    )}
+                                    <label style={{ ...s.btnSm('blue'), cursor: 'pointer', opacity: uploadingCoiFor === d.id ? 0.6 : 1 }}>
+                                      {uploadingCoiFor === d.id ? 'Uploading...' : hasCOI ? 'Replace COI' : 'Upload COI'}
+                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingCoiFor === d.id}
+                                        onChange={e => { if (e.target.files?.[0]) uploadSubDoc(d.id, 'coi', e.target.files[0]); e.target.value = '' }} />
+                                    </label>
+                                  </div>
                                 </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
+
+                                {/* Request buttons */}
+                                {d.email && (needsW9 || needsCOI) && (
+                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                                    <span style={{ fontSize: '11px', color: '#555', alignSelf: 'center', letterSpacing: '1px', textTransform: 'uppercase' }}>Request via email:</span>
+                                    {needsW9 && !docRequestSent[w9Key] && (
+                                      <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === w9Key ? 0.6 : 1 }} disabled={requestingDoc === w9Key} onClick={() => sendDocRequest(d.id, 'w9')}>
+                                        {requestingDoc === w9Key ? '...' : 'Request W-9'}
+                                      </button>
+                                    )}
+                                    {needsCOI && !docRequestSent[coiKey] && !docRequestSent[bothKey] && (
+                                      <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === coiKey ? 0.6 : 1 }} disabled={requestingDoc === coiKey} onClick={() => sendDocRequest(d.id, 'coi')}>
+                                        {requestingDoc === coiKey ? '...' : 'Request COI'}
+                                      </button>
+                                    )}
+                                    {needsW9 && needsCOI && !docRequestSent[bothKey] && (
+                                      <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === bothKey ? 0.6 : 1 }} disabled={requestingDoc === bothKey} onClick={() => sendDocRequest(d.id, 'both')}>
+                                        {requestingDoc === bothKey ? '...' : 'Request Both'}
+                                      </button>
+                                    )}
+                                    {(docRequestSent[w9Key] || docRequestSent[coiKey] || docRequestSent[bothKey]) && (
+                                      <span style={{ fontSize: '12px', color: '#4ade80', alignSelf: 'center' }}>✓ Request sent</span>
+                                    )}
+                                  </div>
+                                )}
+
+                                <button style={s.btnSm('red')} onClick={() => deleteDirEntry(d.id)}>Delete from directory</button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                  }
+                </>
+              )
+            })()}
 
             {/* ── LIEN WAIVERS ── */}
             {activeTab === 'liens' && (

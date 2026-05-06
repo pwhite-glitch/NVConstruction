@@ -12,13 +12,44 @@ export async function POST(request) {
     const body = await request.json()
     const { action, directory_id, file_path } = body
 
-    if (action === 'signed-url') {
-      if (!file_path) return Response.json({ error: 'file_path required' }, { status: 400 })
+    if (action === 'upload-url') {
+      if (!body.path) return Response.json({ error: 'path required' }, { status: 400 })
       const { data, error } = await adminSupabase.storage
         .from('documents')
-        .createSignedUrl(file_path, 3600)
+        .createSignedUploadUrl(body.path)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ signedUrl: data.signedUrl })
+    }
+
+    if (action === 'signed-url') {
+      if (!file_path) return Response.json({ error: 'file_path required' }, { status: 400 })
+      const opts = body.download ? { download: true } : undefined
+      const { data, error } = await adminSupabase.storage
+        .from('documents')
+        .createSignedUrl(file_path, 3600, opts)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ url: data.signedUrl })
+    }
+
+    if (action === 'insert') {
+      const fields = {}
+      for (const key of ALLOWED_FIELDS) {
+        if (key in body) fields[key] = body[key] || null
+      }
+      const { data, error } = await adminSupabase.from('sub_directory').insert({
+        ...fields,
+        status: 'approved',
+        applied_at: new Date().toISOString(),
+      }).select().single()
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ ok: true, id: data.id })
+    }
+
+    if (action === 'delete') {
+      if (!directory_id) return Response.json({ error: 'directory_id required' }, { status: 400 })
+      const { error } = await adminSupabase.from('sub_directory').delete().eq('id', directory_id)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ ok: true })
     }
 
     if (!directory_id) return Response.json({ error: 'directory_id required' }, { status: 400 })

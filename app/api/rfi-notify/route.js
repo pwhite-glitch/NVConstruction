@@ -1,0 +1,83 @@
+import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
+
+const adminSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+function wrap(body) {
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;background:#0a0a0a;padding:2rem;border-radius:12px;border:1px solid #222"><div style="margin-bottom:1.5rem"><span style="font-weight:800;font-size:15px;color:#e8590c;letter-spacing:2px;text-transform:uppercase">NV Construction</span></div>${body}<div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #222;font-size:12px;color:#555">NV Construction · Project Management</div></div>`
+}
+
+async function mail(to, subject, html) {
+  await resend.emails.send({
+    from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
+    to, subject, html,
+  })
+}
+
+export async function POST(request) {
+  try {
+    const body = await request.json()
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || ''
+
+    if (body.action === 'submitted') {
+      const { data: job } = await adminSupabase
+        .from('jobs').select('project_name, job_number, created_by').eq('id', body.job_id).single()
+
+      const { data: assignments } = await adminSupabase
+        .from('pm_job_assignments').select('user_id').eq('job_id', body.job_id)
+
+      const userIds = [...new Set([
+        ...(assignments || []).map(a => a.user_id),
+        ...(job?.created_by ? [job.created_by] : []),
+      ])]
+
+      if (userIds.length === 0) return Response.json({ ok: true })
+
+      const { data: pmProfiles } = await adminSupabase
+        .from('profiles').select('email, full_name').in('id', userIds)
+
+      const jobLabel = job ? `#${job.job_number} — ${job.project_name}` : 'a job'
+
+      for (const pm of (pmProfiles || [])) {
+        if (!pm.email) continue
+        await mail(pm.email, `New RFI: ${body.title} — ${jobLabel}`, wrap(`
+          <h2 style="color:#f1f1f1;margin:0 0 1rem">New RFI Submitted</h2>
+          <p style="color:#aaa"><strong style="color:#f1f1f1">${body.super_name}</strong> submitted an RFI on <strong style="color:#f1f1f1">${jobLabel}</strong>.</p>
+          <div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0">
+            <p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Subject</p>
+            <p style="color:#f1f1f1;font-weight:700;margin:0 0 ${body.description ? '12px' : '0'}">${body.title}</p>
+            ${body.description ? `<p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Description</p><p style="color:#aaa;font-size:13px;line-height:1.6;margin:0">${body.description}</p>` : ''}
+          </div>
+          <a href="${siteUrl}/jobdetail?id=${body.job_id}" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">View RFI &amp; Respond</a>
+        `))
+      }
+      return Response.json({ ok: true })
+    }
+
+    if (body.action === 'responded') {
+      const { data: superProfile } = await adminSupabase
+        .from('profiles').select('email, full_name').eq('id', body.super_id).single()
+
+      if (!superProfile?.email) return Response.json({ ok: true })
+
+      await mail(superProfile.email, `RFI Answered: ${body.title}`, wrap(`
+        <h2 style="color:#4ade80;margin:0 0 1rem">Your RFI Has Been Answered</h2>
+        <p style="color:#aaa">A response has been posted for your RFI: <strong style="color:#f1f1f1">${body.title}</strong></p>
+        <div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0">
+          <p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Response</p>
+          <p style="color:#f1f1f1;font-size:14px;line-height:1.6;margin:0">${body.response}</p>
+        </div>
+        <a href="${siteUrl}/field" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">View in Field Portal</a>
+      `))
+      return Response.json({ ok: true })
+    }
+
+    return Response.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
+}

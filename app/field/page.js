@@ -251,15 +251,18 @@ export default function Field() {
   async function submitRfi(e) {
     e.preventDefault()
     setSubmittingRfi(true)
+    const title = rfiForm.title
+    const description = rfiForm.description
     const { error } = await supabase.from('rfis').insert({
       job_id: selectedJobId, super_id: user.id,
-      title: rfiForm.title, description: rfiForm.description || null,
+      title, description: description || null,
     })
     if (!error) {
       setRfiSuccess(true)
       setRfiForm({ title: '', description: '' })
       await loadRfis()
       setTimeout(() => setRfiSuccess(false), 3000)
+      fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'submitted', job_id: selectedJobId, title, description, super_name: profile?.full_name || profile?.email || 'Superintendent' }) })
     }
     setSubmittingRfi(false)
   }

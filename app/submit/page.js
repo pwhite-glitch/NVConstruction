@@ -84,6 +84,7 @@ export default function Submit() {
   const [jobSovContracts, setJobSovContracts] = useState([])
   const [sovForm, setSovForm] = useState([])
   const [sovRetainageMap, setSovRetainageMap] = useState({})
+  const [sovError, setSovError] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -227,7 +228,21 @@ export default function Submit() {
     const retMap = Object.fromEntries(contracts.map(c => [c.id, parseFloat(c.retainage_pct) || 0]))
     setSovRetainageMap(retMap)
     const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description, retainage_pct)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
+    const lineIds = (lines || []).map(l => l.id)
+    const prevPctMap = {}
+    if (lineIds.length > 0) {
+      const { data: prevBilled } = await supabase
+        .from('billing_sov_lines')
+        .select('sov_line_id, pct_this_period, billing_submissions(status)')
+        .in('sov_line_id', lineIds)
+      for (const pl of (prevBilled || [])) {
+        if (pl.billing_submissions?.status !== 'rejected') {
+          prevPctMap[pl.sov_line_id] = (prevPctMap[pl.sov_line_id] || 0) + (parseFloat(pl.pct_this_period) || 0)
+        }
+      }
+    }
     setJobSovContracts(contracts)
+    setSovError('')
     setSovForm((lines || []).map(l => ({
       sov_line_id: l.id,
       subcontract_id: l.subcontract_id,
@@ -235,6 +250,7 @@ export default function Submit() {
       scheduled_value: Number(l.scheduled_value || 0),
       retainage_pct: parseFloat(l.subcontracts?.retainage_pct) || 0,
       contract_description: l.subcontracts?.description || '',
+      pct_prev: Math.min(100, Math.round((prevPctMap[l.id] || 0) * 100) / 100),
       pct_this: '',
       amount_this: 0,
     })))
@@ -242,6 +258,14 @@ export default function Submit() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (sovForm.length > 0) {
+      const overBilled = sovForm.filter(l => (l.pct_prev || 0) + (parseFloat(l.pct_this) || 0) > 100)
+      if (overBilled.length > 0) {
+        setSovError(`Over-billing on: ${overBilled.map(l => l.description).join(', ')}. Cumulative % would exceed 100%.`)
+        return
+      }
+    }
+    setSovError('')
     setLoading(true)
     let doc_url = null
     if (billingFile) {
@@ -364,6 +388,7 @@ export default function Submit() {
                             <th style={{ textAlign: 'left', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Line item</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Ret %</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Prev %</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', width: '120px' }}>% This period</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount</th>
                           </tr>
@@ -372,8 +397,10 @@ export default function Submit() {
                           {sovForm.map((line, idx) => {
                             const lineRetHeld = Math.round(line.amount_this * (line.retainage_pct || 0) / 100 * 100) / 100
                             const lineNet = line.amount_this - lineRetHeld
+                            const remaining = Math.max(0, 100 - (line.pct_prev || 0))
+                            const isOver = (line.pct_prev || 0) + (parseFloat(line.pct_this) || 0) > 100
                             return (
-                              <tr key={line.sov_line_id} style={{ borderBottom: '1px solid #111' }}>
+                              <tr key={line.sov_line_id} style={{ borderBottom: '1px solid #111', background: isOver ? 'rgba(255,50,50,0.05)' : 'transparent' }}>
                                 <td style={{ padding: '8px 12px', color: '#ccc' }}>
                                   {line.description}
                                   {line.contract_description && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{line.contract_description}</div>}
@@ -383,8 +410,16 @@ export default function Submit() {
                                   {line.retainage_pct > 0 ? `${line.retainage_pct}%` : '—'}
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                  {(line.pct_prev || 0) > 0 ? (
+                                    <div>
+                                      <span style={{ color: '#888', fontSize: '13px' }}>{line.pct_prev}%</span>
+                                      <div style={{ fontSize: '11px', color: remaining > 0 ? '#555' : '#ff6b6b', marginTop: '2px' }}>{remaining}% left</div>
+                                    </div>
+                                  ) : <span style={{ color: '#333' }}>—</span>}
+                                </td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                   <input
-                                    type="number" min="0" max="100" step="1"
+                                    type="number" min="0" max={remaining} step="1"
                                     value={line.pct_this}
                                     placeholder="0"
                                     onChange={e => {
@@ -392,10 +427,11 @@ export default function Submit() {
                                       const amt = Math.round(line.scheduled_value * pct / 100 * 100) / 100
                                       const next = sovForm.map((l, i) => i === idx ? { ...l, pct_this: e.target.value, amount_this: amt } : l)
                                       setSovForm(next)
+                                      setSovError('')
                                       const total = next.reduce((a, l) => a + l.amount_this, 0)
                                       update('amount_billed', total.toFixed(2))
                                     }}
-                                    style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'right' }}
+                                    style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'right', borderColor: isOver ? '#ff6b6b' : '#2a2a2a' }}
                                   />
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
@@ -419,7 +455,7 @@ export default function Submit() {
                             return (
                               <>
                                 <tr style={{ background: '#111' }}>
-                                  <td colSpan={4} style={{ padding: '8px 12px', color: '#888', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Gross this period:</td>
+                                  <td colSpan={5} style={{ padding: '8px 12px', color: '#888', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Gross this period:</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '14px' }}>
                                     ${totalGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </td>
@@ -427,13 +463,13 @@ export default function Submit() {
                                 {totalRetHeld > 0 && (
                                   <>
                                     <tr style={{ background: '#0f0f0f' }}>
-                                      <td colSpan={4} style={{ padding: '6px 12px', color: '#facc15', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Retainage held:</td>
+                                      <td colSpan={5} style={{ padding: '6px 12px', color: '#facc15', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Retainage held:</td>
                                       <td style={{ padding: '6px 12px', textAlign: 'right', color: '#facc15', fontWeight: '700' }}>
                                         −${totalRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </td>
                                     </tr>
                                     <tr style={{ background: '#0a0a0a' }}>
-                                      <td colSpan={4} style={{ padding: '6px 12px', color: '#4ade80', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Net payment due:</td>
+                                      <td colSpan={5} style={{ padding: '6px 12px', color: '#4ade80', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Net payment due:</td>
                                       <td style={{ padding: '6px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '800', fontSize: '14px' }}>
                                         ${totalNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </td>
@@ -462,6 +498,7 @@ export default function Submit() {
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
                   {billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {billingFile.name}</div>}
                 </div>
+                {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Submitting...' : 'Submit billing'}</button>
                 </div>

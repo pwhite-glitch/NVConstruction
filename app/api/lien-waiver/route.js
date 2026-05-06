@@ -27,7 +27,14 @@ export async function POST(request) {
     .single()
 
   if (subErr || !sub) return Response.json({ error: 'Submission not found' }, { status: 404 })
-  if (!sub.sub_email) return Response.json({ error: 'No email on file for this sub' }, { status: 400 })
+
+  // Fall back to profile email if sub_email is missing
+  let recipientEmail = sub.sub_email
+  if (!recipientEmail && sub.sub_id) {
+    const { data: prof } = await adminSupabase.from('profiles').select('email').eq('id', sub.sub_id).single()
+    recipientEmail = prof?.email
+  }
+  if (!recipientEmail) return Response.json({ error: 'No email on file for this sub' }, { status: 400 })
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
   const logo = logoSrc()
@@ -40,7 +47,8 @@ export async function POST(request) {
 
   const { error: emailErr } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
-    to: sub.sub_email,
+    reply_to: process.env.PM_EMAIL || 'office@nvim.co',
+    to: recipientEmail,
     subject: `Lien Waiver Required — #${sub.jobs?.job_number} ${sub.jobs?.project_name}`,
     html: `
 <!DOCTYPE html>

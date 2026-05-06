@@ -73,16 +73,19 @@ export default function AdminPortal() {
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingQb, setTogglingQb] = useState(null)
 
-  // COI state
+  // COI / Documents state
   const [filterCOI, setFilterCOI] = useState('all')
   const [editingCOI, setEditingCOI] = useState(null)
   const [coiDate, setCoiDate] = useState('')
   const [savingCOI, setSavingCOI] = useState(false)
+  const [requestingDoc, setRequestingDoc] = useState(null) // 'dirId-type'
+  const [docRequestSent, setDocRequestSent] = useState({}) // { 'dirId-type': true }
 
   // Lien waiver state
   const [filterLienJob, setFilterLienJob] = useState('')
   const [sendingWaiver, setSendingWaiver] = useState(null)
   const [markingReceived, setMarkingReceived] = useState(null)
+  const [lienMsg, setLienMsg] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -185,8 +188,16 @@ export default function AdminPortal() {
 
   async function sendLienWaiver(sub) {
     setSendingWaiver(sub.id)
-    await fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id }) })
+    setLienMsg('')
+    const res = await fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id }) })
+    const data = await res.json()
     setSendingWaiver(null)
+    if (data?.ok) {
+      setLienMsg(`✓ Waiver emailed to ${sub.company_name}`)
+      setTimeout(() => setLienMsg(''), 4000)
+    } else {
+      setLienMsg(`Error: ${data?.error || 'Unknown error — check Resend logs'}`)
+    }
     await loadBilling()
   }
 
@@ -204,6 +215,23 @@ export default function AdminPortal() {
     setSavingCOI(false)
     const { data } = await supabase.from('sub_directory').select('*').order('company_name')
     setDirectory(data || [])
+  }
+
+  async function sendDocRequest(dirId, type) {
+    const key = `${dirId}-${type}`
+    setRequestingDoc(key)
+    const res = await fetch('/api/doc-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directory_id: dirId, type }),
+    })
+    const data = await res.json()
+    setRequestingDoc(null)
+    if (data?.ok) {
+      setDocRequestSent(prev => ({ ...prev, [key]: true }))
+    } else {
+      alert('Failed to send: ' + (data?.error || 'Unknown error'))
+    }
   }
 
   async function getDocUrl(filePath) {
@@ -318,11 +346,13 @@ export default function AdminPortal() {
   const coiList = directory.filter(d => {
     if (filterCOI === 'all') return true
     const st = coiStatus(d.coi_expiration)
-    if (filterCOI === 'issues') return st === 'expired' || st === 'warning' || st === 'none'
+    if (filterCOI === 'issues') return st === 'expired' || st === 'warning' || st === 'none' || !d.w9_url
     return st === filterCOI
   }).sort((a, b) => {
     const stA = coiStatus(a.coi_expiration), stB = coiStatus(b.coi_expiration)
     const order = { expired: 0, warning: 1, none: 2, active: 3 }
+    const w9A = a.w9_url ? 1 : 0, w9B = b.w9_url ? 1 : 0
+    if (w9A !== w9B) return w9A - w9B
     return (order[stA] ?? 4) - (order[stB] ?? 4)
   })
 
@@ -350,7 +380,7 @@ export default function AdminPortal() {
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
             <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing & Payments</button>
-            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>COI Alerts</button>
+            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Documents</button>
             <button style={s.tab(activeTab === 'liens')} onClick={() => setActiveTab('liens')}>Lien Waivers</button>
           </div>
 
@@ -595,16 +625,16 @@ export default function AdminPortal() {
               </>
             )}
 
-            {/* ── COI ALERTS ── */}
+            {/* ── DOCUMENTS ── */}
             {activeTab === 'coi' && (
               <>
                 <div style={s.filterRow}>
                   <select style={s.filterSelect} value={filterCOI} onChange={e => setFilterCOI(e.target.value)}>
                     <option value="all">All subs</option>
-                    <option value="issues">Issues only (expired, expiring, missing)</option>
-                    <option value="expired">Expired</option>
-                    <option value="warning">Expiring within 30 days</option>
-                    <option value="active">Active</option>
+                    <option value="issues">Issues only (missing / expired / expiring)</option>
+                    <option value="expired">COI expired</option>
+                    <option value="warning">COI expiring within 30 days</option>
+                    <option value="active">COI active</option>
                   </select>
                   <span style={{ fontSize: '13px', color: '#555', marginLeft: '4px' }}>{coiList.length} sub{coiList.length !== 1 ? 's' : ''}</span>
                 </div>
@@ -615,43 +645,82 @@ export default function AdminPortal() {
                       <thead>
                         <tr>
                           <th style={s.th}>Company</th>
-                          <th style={s.th}>Trade</th>
-                          <th style={s.th}>Contact</th>
+                          <th style={s.th}>Contact / Email</th>
+                          <th style={s.th}>W-9</th>
+                          <th style={s.th}>COI</th>
                           <th style={s.th}>COI Expiration</th>
-                          <th style={s.th}>Status</th>
-                          <th style={s.th}>Action</th>
+                          <th style={s.th}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {coiList.map(d => {
                           const st = coiStatus(d.coi_expiration)
-                          const statusLabel = st === 'expired' ? 'Expired' : st === 'warning' ? 'Expiring soon' : st === 'none' ? 'No COI on file' : 'Active'
+                          const hasW9 = !!d.w9_url
+                          const hasCOI = !!d.coi_url
+                          const needsW9 = !hasW9
+                          const needsCOI = !hasCOI || st === 'expired' || st === 'warning'
+                          const w9Key = `${d.id}-w9`
+                          const coiKey = `${d.id}-coi`
+                          const bothKey = `${d.id}-both`
                           return (
                             <tr key={d.id}>
-                              <td style={s.td}><span style={{ fontWeight: '600', color: '#f1f1f1' }}>{d.company_name}</span></td>
-                              <td style={s.td}>{d.trade || '—'}</td>
-                              <td style={s.td}>{d.contact_name || '—'}{d.email ? <><br /><span style={{ fontSize: '11px', color: '#555' }}>{d.email}</span></> : ''}</td>
+                              <td style={s.td}>
+                                <span style={{ fontWeight: '600', color: '#f1f1f1' }}>{d.company_name}</span>
+                                {d.trade && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{d.trade}</div>}
+                              </td>
+                              <td style={s.td}>
+                                {d.contact_name || '—'}
+                                {d.email && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{d.email}</div>}
+                                {!d.email && <div style={{ fontSize: '11px', color: '#ff6b6b', marginTop: '2px' }}>No email on file</div>}
+                              </td>
+                              <td style={s.td}>
+                                {hasW9
+                                  ? <span style={s.badge('approved')}>On file</span>
+                                  : <span style={s.badge('rejected')}>Missing</span>}
+                              </td>
+                              <td style={s.td}>
+                                <span style={s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none')}>
+                                  {st === 'active' ? 'Active' : st === 'expired' ? 'Expired' : st === 'warning' ? 'Expiring' : 'Missing'}
+                                </span>
+                              </td>
                               <td style={s.td}>
                                 {editingCOI === d.id ? (
                                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                                    <input type="date" style={{ ...s.input, maxWidth: '160px', padding: '6px 10px' }} value={coiDate} onChange={e => setCoiDate(e.target.value)} />
+                                    <input type="date" style={{ ...s.input, maxWidth: '150px', padding: '6px 10px' }} value={coiDate} onChange={e => setCoiDate(e.target.value)} />
                                     <button style={s.btnSm('green')} disabled={savingCOI} onClick={() => saveCOIDate(d.id)}>{savingCOI ? '...' : 'Save'}</button>
                                     <button style={s.btnSm('gray')} onClick={() => setEditingCOI(null)}>✕</button>
                                   </div>
                                 ) : (
-                                  <span style={{ color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : st === 'none' ? '#555' : '#ccc' }}>
-                                    {d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : 'Not on file'}
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : st === 'none' ? '#555' : '#ccc', fontSize: '13px' }}>
+                                      {d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : 'Not on file'}
+                                    </span>
+                                    <button style={s.btnSm('orange')} onClick={() => { setEditingCOI(d.id); setCoiDate(d.coi_expiration || '') }}>Edit</button>
+                                  </div>
                                 )}
                               </td>
-                              <td style={s.td}><span style={s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none')}>{statusLabel}</span></td>
                               <td style={s.td}>
                                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                  {editingCOI !== d.id && (
-                                    <button style={s.btnSm('orange')} onClick={() => { setEditingCOI(d.id); setCoiDate(d.coi_expiration || '') }}>Update date</button>
+                                  {hasW9 && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.w9_url)}>View W-9</button>}
+                                  {hasCOI && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.coi_url)}>View COI</button>}
+                                  {d.email && needsW9 && !docRequestSent[w9Key] && (
+                                    <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === w9Key ? 0.6 : 1 }} disabled={requestingDoc === w9Key} onClick={() => sendDocRequest(d.id, 'w9')}>
+                                      {requestingDoc === w9Key ? '...' : 'Request W-9'}
+                                    </button>
                                   )}
-                                  {d.w9_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.w9_url)}>View W-9</button>}
-                                  {d.coi_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(d.coi_url)}>View COI</button>}
+                                  {d.email && needsCOI && !docRequestSent[coiKey] && !docRequestSent[bothKey] && (
+                                    <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === coiKey ? 0.6 : 1 }} disabled={requestingDoc === coiKey} onClick={() => sendDocRequest(d.id, 'coi')}>
+                                      {requestingDoc === coiKey ? '...' : 'Request COI'}
+                                    </button>
+                                  )}
+                                  {d.email && needsW9 && needsCOI && !docRequestSent[bothKey] && (
+                                    <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === bothKey ? 0.6 : 1 }} disabled={requestingDoc === bothKey} onClick={() => sendDocRequest(d.id, 'both')}>
+                                      {requestingDoc === bothKey ? '...' : 'Request Both'}
+                                    </button>
+                                  )}
+                                  {(docRequestSent[w9Key] || docRequestSent[coiKey] || docRequestSent[bothKey]) && (
+                                    <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -667,6 +736,11 @@ export default function AdminPortal() {
             {/* ── LIEN WAIVERS ── */}
             {activeTab === 'liens' && (
               <>
+                {lienMsg && (
+                  <div style={{ background: lienMsg.startsWith('✓') ? '#0a1a0a' : '#2a0a0a', border: `1px solid ${lienMsg.startsWith('✓') ? '#1a4a1a' : '#5a1a1a'}`, color: lienMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
+                    {lienMsg}
+                  </div>
+                )}
                 <div style={s.filterRow}>
                   <select style={s.filterSelect} value={filterLienJob} onChange={e => setFilterLienJob(e.target.value)}>
                     <option value="">All jobs</option>

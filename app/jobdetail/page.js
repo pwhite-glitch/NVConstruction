@@ -207,6 +207,8 @@ export default function JobDetail() {
   const [uploadingSchedule, setUploadingSchedule] = useState(false)
   const [parsedTasks, setParsedTasks] = useState(null)
   const [parsedFrom, setParsedFrom] = useState(null)
+  const [scheduleUploadMeta, setScheduleUploadMeta] = useState({ revision: '', notes: '' })
+  const [showScheduleUpload, setShowScheduleUpload] = useState(false)
 
   // Documents tab state
   const [jobDocs, setJobDocs] = useState([])
@@ -322,7 +324,11 @@ export default function JobDetail() {
   async function respondToRfi(rfiId) {
     setSavingRfiResponse(true)
     const { data: { session } } = await supabase.auth.getSession()
+    const rfi = fieldRfis.find(r => r.id === rfiId)
     await supabase.from('rfis').update({ response: rfiResponse, status: 'answered', responded_at: new Date().toISOString(), responded_by: session.user.id }).eq('id', rfiId)
+    if (rfi?.super_id) {
+      fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'responded', super_id: rfi.super_id, title: rfi.title, response: rfiResponse }) })
+    }
     setRespondingRfi(null)
     setRfiResponse('')
     await loadFieldData()
@@ -865,12 +871,17 @@ ${sovLines.length > 0 ? `
     setScheduleFiles(data || [])
   }
 
-  async function uploadScheduleFile(file) {
+  async function uploadScheduleFile(file, meta = {}) {
     setUploadingSchedule(true)
     const path = `${id}/${Date.now()}-${file.name}`
     const { error } = await supabase.storage.from('schedule-files').upload(path, file)
     if (error) { alert('Upload error: ' + error.message); setUploadingSchedule(false); return }
-    await supabase.from('job_schedule_files').insert({ job_id: id, file_name: file.name, storage_path: path, file_type: file.name.split('.').pop().toLowerCase() })
+    await supabase.from('job_schedule_files').insert({
+      job_id: id, file_name: file.name, storage_path: path,
+      file_type: file.name.split('.').pop().toLowerCase(),
+      revision: meta.revision || null,
+      notes: meta.notes || null,
+    })
     if (file.name.toLowerCase().endsWith('.xml')) {
       const text = await file.text()
       const tasks = parseProjectXml(text)
@@ -879,6 +890,8 @@ ${sovLines.length > 0 ? `
     }
     await loadScheduleFiles()
     setUploadingSchedule(false)
+    setShowScheduleUpload(false)
+    setScheduleUploadMeta({ revision: '', notes: '' })
   }
 
   async function openScheduleFile(storagePath) {
@@ -4091,11 +4104,34 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <p style={{ fontSize: '13px', color: '#666', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
                 Upload Microsoft Project files (.mpp, .xml), PDFs, or Excel schedules. XML exports from MS Project will be parsed to show task progress.
               </p>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingSchedule ? '#111' : '#2a1200', color: uploadingSchedule ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingSchedule ? 'not-allowed' : 'pointer' }}>
-                {uploadingSchedule ? 'Uploading...' : '+ Upload Schedule File'}
-                <input type="file" accept=".mpp,.xml,.pdf,.xlsx,.xls,.csv" style={{ display: 'none' }} disabled={uploadingSchedule}
-                  onChange={e => { if (e.target.files?.[0]) uploadScheduleFile(e.target.files[0]); e.target.value = '' }} />
-              </label>
+              {!showScheduleUpload ? (
+                <button style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }}
+                  onClick={() => setShowScheduleUpload(true)}>
+                  + Upload Schedule File
+                </button>
+              ) : (
+                <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', maxWidth: '480px' }}>
+                  <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Upload schedule</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label style={s.label}>Revision #</label>
+                      <input style={s.input} placeholder="Rev 3" value={scheduleUploadMeta.revision} onChange={e => setScheduleUploadMeta(m => ({ ...m, revision: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Notes (optional)</label>
+                      <input style={s.input} placeholder="Updated critical path..." value={scheduleUploadMeta.notes} onChange={e => setScheduleUploadMeta(m => ({ ...m, notes: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', background: uploadingSchedule ? '#111' : '#2a1200', color: uploadingSchedule ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingSchedule ? 'not-allowed' : 'pointer' }}>
+                      {uploadingSchedule ? 'Uploading...' : 'Select File'}
+                      <input type="file" accept=".mpp,.xml,.pdf,.xlsx,.xls,.csv" style={{ display: 'none' }} disabled={uploadingSchedule}
+                        onChange={e => { if (e.target.files?.[0]) uploadScheduleFile(e.target.files[0], scheduleUploadMeta); e.target.value = '' }} />
+                    </label>
+                    <button style={{ padding: '9px 16px', background: 'none', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#555', fontSize: '12px', cursor: 'pointer' }} onClick={() => { setShowScheduleUpload(false); setScheduleUploadMeta({ revision: '', notes: '' }) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {scheduleFiles.length > 0 && (
@@ -4104,9 +4140,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {scheduleFiles.map(f => (
                   <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
                     <div>
-                      <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{f.file_name}</span>
-                      <span style={{ fontSize: '12px', color: '#555', marginLeft: '12px' }}>{new Date(f.uploaded_at).toLocaleDateString()}</span>
-                      {f.file_type && <span style={{ marginLeft: '8px', padding: '2px 8px', background: '#1a1a2a', color: '#60a5fa', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>{f.file_type}</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{f.file_name}</span>
+                        {f.revision && <span style={{ padding: '2px 8px', background: '#1a2a1a', color: '#4ade80', borderRadius: '4px', fontSize: '11px', fontWeight: '700' }}>{f.revision}</span>}
+                        {f.file_type && <span style={{ padding: '2px 8px', background: '#1a1a2a', color: '#60a5fa', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>{f.file_type}</span>}
+                        <span style={{ fontSize: '12px', color: '#555' }}>{new Date(f.uploaded_at).toLocaleDateString()}</span>
+                      </div>
+                      {f.notes && <div style={{ fontSize: '12px', color: '#666', marginTop: '3px' }}>{f.notes}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       {f.file_type === 'xml' && (

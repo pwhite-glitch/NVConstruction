@@ -142,6 +142,7 @@ export default function Dashboard() {
   const [showManualBidFor, setShowManualBidFor] = useState(null)
   const [manualBidForm, setManualBidForm] = useState({ company_name: '', amount: '', notes: '' })
   const [manualBidFile, setManualBidFile] = useState(null)
+  const [showBidCompare, setShowBidCompare] = useState(null)
   const [submittingManualBid, setSubmittingManualBid] = useState(false)
 
   // Role / APM filtering
@@ -1709,7 +1710,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           {/* Submitted bids */}
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Submitted bids ({submissions.length})</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Submitted bids ({submissions.length})</span>
+                                {submissions.length >= 2 && (
+                                  <button style={s.btnSm(showBidCompare === pkg.id ? 'orange' : 'gray')} onClick={() => setShowBidCompare(showBidCompare === pkg.id ? null : pkg.id)}>
+                                    {showBidCompare === pkg.id ? 'List view' : 'Compare'}
+                                  </button>
+                                )}
+                              </div>
                               <button style={s.btnSm('orange')} onClick={() => { setShowManualBidFor(showManualBidFor === pkg.id ? null : pkg.id); setManualBidForm({ company_name: '', amount: '', notes: '' }); setManualBidFile(null) }}>
                                 {showManualBidFor === pkg.id ? 'Cancel' : '+ Add bid manually'}
                               </button>
@@ -1742,7 +1750,61 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               </div>
                             )}
 
-                            {submissions.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No bids submitted yet.</p> : submissions.map(sub => (
+                            {submissions.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No bids submitted yet.</p> : showBidCompare === pkg.id ? (() => {
+                              const sorted = [...submissions].filter(s => s.status !== 'rejected').sort((a, b) => Number(a.amount) - Number(b.amount))
+                              const low = sorted.length > 0 ? Number(sorted[0].amount) : 0
+                              return (
+                                <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                    <thead>
+                                      <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Rank</th>
+                                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Company</th>
+                                        <th style={{ padding: '10px 12px', textAlign: 'right', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Bid amount</th>
+                                        <th style={{ padding: '10px 12px', textAlign: 'right', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>vs Low</th>
+                                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Notes</th>
+                                        <th style={{ padding: '10px 12px' }}></th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {sorted.map((sub, rank) => {
+                                        const diff = Number(sub.amount) - low
+                                        const isLow = rank === 0
+                                        const isAwarded = sub.status === 'awarded'
+                                        return (
+                                          <tr key={sub.id} style={{ borderBottom: '1px solid #111', background: isLow ? 'rgba(74,222,128,0.04)' : isAwarded ? 'rgba(74,222,128,0.07)' : 'transparent' }}>
+                                            <td style={{ padding: '10px 12px', color: isLow ? '#4ade80' : '#666', fontWeight: '700', fontSize: '12px' }}>#{rank + 1}{isLow && ' ★'}</td>
+                                            <td style={{ padding: '10px 12px' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ color: '#f1f1f1', fontWeight: '600' }}>{sub.company_name}</span>
+                                                {isAwarded && <span style={s.badge('approved')}>awarded</span>}
+                                                {!sub.sub_id && <span style={{ fontSize: '10px', color: '#666', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '2px 6px' }}>manual</span>}
+                                              </div>
+                                            </td>
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: isLow ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</td>
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', color: isLow ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600' }}>
+                                              {isLow ? '—' : `+$${diff.toLocaleString()}`}
+                                            </td>
+                                            <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px', maxWidth: '180px' }}>{sub.notes || '—'}</td>
+                                            <td style={{ padding: '10px 12px' }}>
+                                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                                {sub.doc_url && <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎</button>}
+                                                {sub.status === 'pending' && pkg.status !== 'awarded' && (
+                                                  <>
+                                                    <button style={s.btnSm('green')} onClick={() => awardBid(sub, pkg.id)}>Award</button>
+                                                    <button style={s.btnSm('red')} onClick={async () => { await supabase.from('bid_submissions').update({ status: 'rejected' }).eq('id', sub.id); loadBidDetail(pkg.id) }}>Pass</button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )
+                            })() : submissions.map(sub => (
                               <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#0f0f0f', borderRadius: '8px', marginBottom: '6px', flexWrap: 'wrap', gap: '12px', border: sub.status === 'awarded' ? '1px solid #1a4a1a' : '1px solid transparent' }}>
                                 <div style={{ flex: 1, minWidth: '180px' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>

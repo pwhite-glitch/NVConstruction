@@ -406,7 +406,8 @@ export default function Dashboard() {
           <p style="color:#aaa">NV Construction has invited you to submit a bid for <strong style="color:#f1f1f1">${pkg.title}</strong>.</p>
           ${pkg.due_date ? `<p style="color:#888;font-size:13px">Bids due: <strong style="color:#f1f1f1">${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}</strong></p>` : ''}
           ${pkg.scope_of_work ? `<div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0"><p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Scope of work</p><p style="color:#aaa;font-size:13px;line-height:1.6;margin:0">${pkg.scope_of_work}</p></div>` : ''}
-          <p style="color:#888;font-size:13px">Log in to the sub portal to view plans and submit your bid.</p>
+          <p style="color:#888;font-size:13px;margin:1rem 0">Log in to the sub portal to view plans and submit your bid:</p>
+          <a href="${process.env.NEXT_PUBLIC_SITE_URL}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">Open Sub Portal</a>
         `)
       )
     }

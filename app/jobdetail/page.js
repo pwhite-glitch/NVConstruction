@@ -2219,15 +2219,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa' }}>${revenue.toLocaleString()}</div>
                       <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${spent.toLocaleString()}</div>
                       <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${contracted.toLocaleString()}</div>
-                      <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <input
-                          type="number" step="0.01"
-                          style={{ ...s.input, textAlign: 'right', padding: '4px 8px', fontSize: '12px' }}
-                          placeholder={autoEac.toLocaleString()}
-                          value={item.forecast_eac != null ? String(item.forecast_eac) : ''}
+                          type="number" step="1"
+                          style={{ ...s.input, textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: item.forecast_eac != null ? '#e8590c' : '#aaa' }}
+                          value={item.forecast_eac != null ? String(item.forecast_eac) : String(Math.round(autoEac))}
                           onChange={e => setBudgetItems(prev => prev.map(b => b.id === item.id ? { ...b, forecast_eac: e.target.value === '' ? null : e.target.value } : b))}
-                          onBlur={e => saveForecastEac(item.id, e.target.value)}
+                          onFocus={e => e.target.select()}
+                          onBlur={e => saveForecastEac(item.id, e.target.value === '' ? '' : e.target.value)}
                         />
+                        {item.forecast_eac != null && (
+                          <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                        )}
                       </div>
                       <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{variance >= 0 ? '+' : '-'}${Math.abs(variance).toLocaleString()}</div>
                       <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{projProfit >= 0 ? '+' : '-'}${Math.abs(projProfit).toLocaleString()}</div>

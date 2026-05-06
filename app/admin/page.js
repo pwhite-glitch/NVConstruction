@@ -644,10 +644,18 @@ export default function AdminPortal() {
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (
               <>
+                {payMsg && (
+                  <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>
+                )}
                 <div style={s.filterRow}>
                   <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                  </select>
+                  <select style={s.filterSelect} value={filterBillPaid} onChange={e => setFilterBillPaid(e.target.value)}>
+                    <option value="">Paid & unpaid</option>
+                    <option value="unpaid">Unpaid only</option>
+                    <option value="paid">Paid only</option>
                   </select>
                   <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
                   <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
@@ -661,13 +669,12 @@ export default function AdminPortal() {
                   const retainageAmt = parseFloat(sub.retainage_held || 0)
                   const netAmt = grossAmt - retainageAmt
                   return (
-                    <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a4a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.ready_to_pay ? '#0a1a0a' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => setExpandedBill(isExpanded ? null : sub.id)}>
+                    <div key={sub.id} style={{ border: `1px solid ${isPaid ? '#1a4a1a' : sub.ready_to_pay ? '#1a3a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isPaid ? '#0a1a0a' : sub.ready_to_pay ? '#091209' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
                         <div style={{ flex: 1, minWidth: '200px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
-                            <span style={s.badge(sub.status)}>{sub.status}</span>
-                            {isPaid && <span style={s.badge('paid')}>Paid</span>}
+                            {isPaid ? <span style={s.badge('paid')}>Paid</span> : <span style={s.badge('approved')}>Unpaid</span>}
                             {sub.ready_to_pay && !isPaid && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Ready to Pay</span>}
                             {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
                             {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
@@ -693,86 +700,14 @@ export default function AdminPortal() {
                             <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>${netAmt.toLocaleString()}</div></div>
                           </div>
                           {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button
-                              style={s.btnSm(sub.nv_cuts_check ? 'orange' : 'gray')}
-                              disabled={togglingNvCheck === sub.id}
-                              onClick={() => toggleNvCutsCheck(sub.id, sub.nv_cuts_check)}
-                            >{togglingNvCheck === sub.id ? '...' : sub.nv_cuts_check ? 'NV Check: On' : 'NV Check: Off'}</button>
-                            <button
-                              style={s.btnSm(sub.ready_to_pay ? 'green' : 'gray')}
-                              onClick={() => toggleReadyToPay(sub.id, sub.ready_to_pay)}
-                            >{sub.ready_to_pay ? 'Ready to Pay: On' : 'Ready to Pay: Off'}</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </>
-            )}
 
-            {/* ── PAYMENTS ── */}
-            {activeTab === 'payments' && (
-              <>
-                {payMsg && (
-                  <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>
-                )}
-                <div style={s.filterRow}>
-                  <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
-                    <option value="">All jobs</option>
-                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-                  </select>
-                  <select style={s.filterSelect} value={filterBillPaid} onChange={e => setFilterBillPaid(e.target.value)}>
-                    <option value="">Paid & unpaid</option>
-                    <option value="unpaid">Unpaid only</option>
-                    <option value="paid">Paid only</option>
-                  </select>
-                  <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
-                  <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
-                </div>
-
-                {filteredBilling.length === 0 ? <div style={s.emptyMsg}>No approved billing found.</div> : filteredBilling.map(sub => {
-                  const isPaid = !!sub.paid_at
-                  const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
-                  const isExpanded = expandedBill === sub.id
-                  const grossAmt = parseFloat(sub.amount_billed || 0)
-                  const retainageAmt = parseFloat(sub.retainage_held || 0)
-                  const netAmt = grossAmt - retainageAmt
-                  return (
-                    <div key={sub.id} style={{ border: `1px solid ${isPaid ? '#1a4a1a' : sub.ready_to_pay ? '#1a3a1a' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isPaid ? '#0a1a0a' : sub.ready_to_pay ? '#091209' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
-                        <div style={{ flex: 1, minWidth: '200px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
-                            {isPaid ? <span style={s.badge('paid')}>Paid</span> : <span style={s.badge('approved')}>Unpaid</span>}
-                            {sub.ready_to_pay && !isPaid && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Ready to Pay</span>}
-                            {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
-                            {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${netAmt.toLocaleString()}</div>
-                            {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#555' }}>Gross ${grossAmt.toLocaleString()} · -${retainageAmt.toLocaleString()} ret.</div>}
-                          </div>
-                          <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', marginBottom: '1rem' }}>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#ccc' }}>${grossAmt.toLocaleString()}</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>-${retainageAmt.toLocaleString()}</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>${netAmt.toLocaleString()}</div></div>
-                            {isPaid && <>
-                              <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Paid date</div><div style={{ fontSize: '13px', color: '#4ade80' }}>{new Date(sub.paid_at).toLocaleDateString()}</div></div>
-                              <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Method</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.payment_method || '—'}{sub.check_number ? ` · Check #${sub.check_number}` : ''}</div></div>
-                              {sub.payment_notes && <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Notes</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.payment_notes}</div></div>}
-                            </>}
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                            <button style={s.btnSm(sub.nv_cuts_check ? 'orange' : 'gray')} disabled={togglingNvCheck === sub.id} onClick={() => toggleNvCutsCheck(sub.id, sub.nv_cuts_check)}>
+                              {togglingNvCheck === sub.id ? '...' : sub.nv_cuts_check ? 'NV Check: On' : 'NV Check: Off'}
+                            </button>
+                            <button style={s.btnSm(sub.ready_to_pay ? 'green' : 'gray')} onClick={() => toggleReadyToPay(sub.id, sub.ready_to_pay)}>
+                              {sub.ready_to_pay ? 'Ready to Pay: On' : 'Ready to Pay: Off'}
+                            </button>
                           </div>
 
                           {payingId === sub.id ? (
@@ -822,6 +757,66 @@ export default function AdminPortal() {
                 })}
               </>
             )}
+
+            {/* ── PAYMENTS (paid history) ── */}
+            {activeTab === 'payments' && (() => {
+              const paidList = billing.filter(b => !!b.paid_at && (!filterBillJob || b.job_id === filterBillJob))
+              const totalPaid = paidList.reduce((sum, b) => sum + parseFloat(b.payment_amount || b.amount_billed || 0), 0)
+              return (
+                <>
+                  <div style={s.filterRow}>
+                    <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
+                      <option value="">All jobs</option>
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    </select>
+                    <span style={{ fontSize: '12px', color: '#555', alignSelf: 'center' }}>{paidList.length} payment{paidList.length !== 1 ? 's' : ''}</span>
+                  </div>
+
+                  {paidList.length === 0 ? <div style={s.emptyMsg}>No payments recorded yet.</div> : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            <th style={s.th}>Sub</th>
+                            <th style={s.th}>Job</th>
+                            <th style={s.th}>Period</th>
+                            <th style={{ ...s.th, textAlign: 'right' }}>Gross</th>
+                            <th style={{ ...s.th, textAlign: 'right' }}>Retainage</th>
+                            <th style={{ ...s.th, textAlign: 'right' }}>Paid</th>
+                            <th style={s.th}>Date</th>
+                            <th style={s.th}>Method / Check #</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paidList.map(sub => {
+                            const grossAmt = parseFloat(sub.amount_billed || 0)
+                            const retainageAmt = parseFloat(sub.retainage_held || 0)
+                            const paidAmt = parseFloat(sub.payment_amount || grossAmt - retainageAmt)
+                            return (
+                              <tr key={sub.id}>
+                                <td style={s.td}><span style={{ fontWeight: '600', color: '#f1f1f1' }}>{sub.company_name}</span></td>
+                                <td style={s.td}><span style={{ color: '#f1f1f1' }}>#{sub.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#555' }}>{sub.jobs?.project_name}</span></td>
+                                <td style={s.td}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
+                                <td style={{ ...s.td, textAlign: 'right', color: '#888' }}>${grossAmt.toLocaleString()}</td>
+                                <td style={{ ...s.td, textAlign: 'right', color: '#e8590c' }}>{retainageAmt > 0 ? `-$${retainageAmt.toLocaleString()}` : '—'}</td>
+                                <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#4ade80' }}>${paidAmt.toLocaleString()}</td>
+                                <td style={s.td}>{new Date(sub.paid_at).toLocaleDateString()}</td>
+                                <td style={s.td}>{sub.payment_method || '—'}{sub.check_number ? <><br /><span style={{ fontSize: '11px', color: '#555' }}>Check #{sub.check_number}</span></> : ''}</td>
+                              </tr>
+                            )
+                          })}
+                          <tr>
+                            <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#888', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total paid</td>
+                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#4ade80', fontSize: '16px' }}>${totalPaid.toLocaleString()}</td>
+                            <td colSpan={2} style={s.td} />
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
 
             {/* ── SUB DIRECTORY ── */}
             {activeTab === 'coi' && (() => {

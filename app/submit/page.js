@@ -112,18 +112,33 @@ export default function Submit() {
     setBidInvitations(data || [])
   }
 
+  async function uploadDocFile(file, folder) {
+    const ext = file.name.split('.').pop()
+    const path = `${dirEntry.id}/${folder}-${Date.now()}.${ext}`
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upload-url', path }),
+    })
+    const { signedUrl, error } = await res.json()
+    if (error || !signedUrl) throw new Error(error || 'Could not get upload URL')
+    const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    if (!up.ok) throw new Error('Upload failed')
+    return path
+  }
+
   async function saveDocs() {
     if (!dirEntry) return
     setSavingDocs(true)
     let w9_url = dirEntry.w9_url || null
     let coi_url = dirEntry.coi_url || null
-    if (docsW9File) {
-      const { data } = await supabase.storage.from('documents').upload(`w9/${Date.now()}_${docsW9File.name}`, docsW9File, { upsert: true })
-      if (data) w9_url = data.path
-    }
-    if (docsCoiFile) {
-      const { data } = await supabase.storage.from('documents').upload(`coi/${Date.now()}_${docsCoiFile.name}`, docsCoiFile, { upsert: true })
-      if (data) coi_url = data.path
+    try {
+      if (docsW9File) w9_url = await uploadDocFile(docsW9File, 'w9')
+      if (docsCoiFile) coi_url = await uploadDocFile(docsCoiFile, 'coi')
+    } catch (err) {
+      alert('Upload failed: ' + err.message)
+      setSavingDocs(false)
+      return
     }
     await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, w9_url, coi_url, coi_expiration: docsCoiExpiry || null }) })
     setDirEntry(prev => ({ ...prev, w9_url, coi_url, coi_expiration: docsCoiExpiry }))

@@ -395,6 +395,11 @@ export default function Dashboard() {
     if (data.url) window.open(data.url, '_blank')
   }
 
+  async function uninviteSub(invitationId, bidId) {
+    await supabase.from('bid_invitations').delete().eq('id', invitationId)
+    await loadBidDetail(bidId)
+  }
+
   async function inviteSubs(bidId, pkg) {
     if (selectedEmails.length === 0) return
     setSendingInvites(true)
@@ -1692,7 +1697,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               return (
                                 <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
                                   <span style={{ fontSize: '13px', color: '#ccc', fontWeight: '600' }}>{subEntry?.company_name || inv.sub_email}</span>
-                                  <span style={s.badge(invBadge)}>{inv.status}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={s.badge(invBadge)}>{inv.status}</span>
+                                    <button onClick={() => uninviteSub(inv.id, pkg.id)} style={{ background: 'none', border: '1px solid #3a1a1a', borderRadius: '6px', color: '#ff6b6b', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '3px 10px' }}>Remove</button>
+                                  </div>
                                 </div>
                               )
                             })}

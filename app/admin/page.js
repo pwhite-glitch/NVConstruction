@@ -66,6 +66,7 @@ export default function AdminPortal() {
   const [payingId, setPayingId] = useState(null)
   const [payForm, setPayForm] = useState({ paid_at: new Date().toISOString().split('T')[0], payment_amount: '', payment_method: 'Check', check_number: '', payment_notes: '' })
   const [savingPay, setSavingPay] = useState(false)
+  const [payMsg, setPayMsg] = useState('')
   const [filterBillJob, setFilterBillJob] = useState('')
   const [filterBillStatus, setFilterBillStatus] = useState('')
   const [filterBillPaid, setFilterBillPaid] = useState('')
@@ -94,6 +95,8 @@ export default function AdminPortal() {
   const [filterDirDocs, setFilterDirDocs] = useState('all')
   const [uploadingW9For, setUploadingW9For] = useState(null)
   const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
+  const [invitingSubFor, setInvitingSubFor] = useState(null)
+  const [inviteSentFor, setInviteSentFor] = useState({})
 
   // Lien waiver state
   const [filterLienJob, setFilterLienJob] = useState('')
@@ -125,7 +128,7 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (activeTab === 'costs') loadCosts()
-    if (activeTab === 'billing') loadBilling()
+    if (activeTab === 'billing' || activeTab === 'payments') loadBilling()
   }, [activeTab])
 
   async function loadCosts() {
@@ -174,15 +177,22 @@ export default function AdminPortal() {
 
   async function markPaid(subId) {
     setSavingPay(true)
-    await supabase.from('billing_submissions').update({
-      paid_at: payForm.paid_at ? new Date(payForm.paid_at).toISOString() : new Date().toISOString(),
+    setPayMsg('')
+    const { error } = await supabase.from('billing_submissions').update({
+      paid_at: payForm.paid_at ? new Date(payForm.paid_at + 'T12:00:00').toISOString() : new Date().toISOString(),
       payment_amount: payForm.payment_amount ? parseFloat(payForm.payment_amount) : null,
       payment_method: payForm.payment_method,
       check_number: payForm.check_number || null,
       payment_notes: payForm.payment_notes || null,
     }).eq('id', subId)
-    setPayingId(null)
     setSavingPay(false)
+    if (error) { setPayMsg('Error saving payment: ' + error.message); return }
+    setPayingId(null)
+    await loadBilling()
+  }
+
+  async function toggleReadyToPay(subId, current) {
+    await supabase.from('billing_submissions').update({ ready_to_pay: !current }).eq('id', subId)
     await loadBilling()
   }
 
@@ -341,6 +351,18 @@ export default function AdminPortal() {
     }
   }
 
+  async function inviteSub(dirId) {
+    setInvitingSubFor(dirId)
+    const res = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId }) })
+    const data = await res.json()
+    setInvitingSubFor(null)
+    if (data?.ok) {
+      setInviteSentFor(prev => ({ ...prev, [dirId]: data.action }))
+    } else {
+      setDirMsg('Invite failed: ' + (data?.error || 'Unknown error'))
+    }
+  }
+
   function printLienWaiver(sub) {
     const job = jobs.find(j => j.id === sub.job_id) || sub.jobs || {}
     const amt = parseFloat(sub.payment_amount || sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -480,7 +502,8 @@ export default function AdminPortal() {
         <div style={s.card}>
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
-            <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing & Payments</button>
+            <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
+            <button style={s.tab(activeTab === 'payments')} onClick={() => setActiveTab('payments')}>Payments</button>
             <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Sub Directory</button>
             <button style={s.tab(activeTab === 'liens')} onClick={() => setActiveTab('liens')}>Lien Waivers</button>
           </div>
@@ -618,18 +641,13 @@ export default function AdminPortal() {
               </>
             )}
 
-            {/* ── BILLING & PAYMENTS ── */}
+            {/* ── BILLING ── */}
             {activeTab === 'billing' && (
               <>
                 <div style={s.filterRow}>
                   <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-                  </select>
-                  <select style={s.filterSelect} value={filterBillPaid} onChange={e => setFilterBillPaid(e.target.value)}>
-                    <option value="">Paid & unpaid</option>
-                    <option value="unpaid">Unpaid only</option>
-                    <option value="paid">Paid only</option>
                   </select>
                   <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
                   <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
@@ -639,6 +657,9 @@ export default function AdminPortal() {
                   const isPaid = !!sub.paid_at
                   const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
                   const isExpanded = expandedBill === sub.id
+                  const grossAmt = parseFloat(sub.amount_billed || 0)
+                  const retainageAmt = parseFloat(sub.retainage_held || 0)
+                  const netAmt = grossAmt - retainageAmt
                   return (
                     <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a4a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.ready_to_pay ? '#0a1a0a' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => setExpandedBill(isExpanded ? null : sub.id)}>
@@ -654,7 +675,10 @@ export default function AdminPortal() {
                           <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${parseFloat(sub.amount_billed || 0).toLocaleString()}</span>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${netAmt.toLocaleString()}</div>
+                            {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#555' }}>Gross ${grossAmt.toLocaleString()} · -${retainageAmt.toLocaleString()} ret.</div>}
+                          </div>
                           <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
                         </div>
                       </div>
@@ -664,19 +688,92 @@ export default function AdminPortal() {
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', marginBottom: '1rem' }}>
                             <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
                             <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>% Complete</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.pct_complete ?? '—'}%</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage</div><div style={{ fontSize: '13px', color: '#ccc' }}>${parseFloat(sub.retainage_held || 0).toLocaleString()}</div></div>
-                            {isPaid && <>
-                              <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Paid date</div><div style={{ fontSize: '13px', color: '#4ade80' }}>{new Date(sub.paid_at).toLocaleDateString()}</div></div>
-                              <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Method</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.payment_method || '—'}{sub.check_number ? ` #${sub.check_number}` : ''}</div></div>
-                            </>}
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#ccc' }}>${grossAmt.toLocaleString()}</div></div>
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>-${retainageAmt.toLocaleString()}</div></div>
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>${netAmt.toLocaleString()}</div></div>
                           </div>
                           {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                              style={s.btnSm(sub.nv_cuts_check ? 'orange' : 'gray')}
+                              disabled={togglingNvCheck === sub.id}
+                              onClick={() => toggleNvCutsCheck(sub.id, sub.nv_cuts_check)}
+                            >{togglingNvCheck === sub.id ? '...' : sub.nv_cuts_check ? 'NV Check: On' : 'NV Check: Off'}</button>
+                            <button
+                              style={s.btnSm(sub.ready_to_pay ? 'green' : 'gray')}
+                              onClick={() => toggleReadyToPay(sub.id, sub.ready_to_pay)}
+                            >{sub.ready_to_pay ? 'Ready to Pay: On' : 'Ready to Pay: Off'}</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            )}
 
-                          {isOwnerPays && !isPaid && (
-                            <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', fontSize: '13px', color: '#60a5fa' }}>
-                              This job is set to Owner Pays Direct. However, NV Cuts Check will appear above if that's the case. Please record all payments whether from NV or Owner.
-                            </div>
-                          )}
+            {/* ── PAYMENTS ── */}
+            {activeTab === 'payments' && (
+              <>
+                {payMsg && (
+                  <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>
+                )}
+                <div style={s.filterRow}>
+                  <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
+                    <option value="">All jobs</option>
+                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                  </select>
+                  <select style={s.filterSelect} value={filterBillPaid} onChange={e => setFilterBillPaid(e.target.value)}>
+                    <option value="">Paid & unpaid</option>
+                    <option value="unpaid">Unpaid only</option>
+                    <option value="paid">Paid only</option>
+                  </select>
+                  <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
+                  <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
+                </div>
+
+                {filteredBilling.length === 0 ? <div style={s.emptyMsg}>No approved billing found.</div> : filteredBilling.map(sub => {
+                  const isPaid = !!sub.paid_at
+                  const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
+                  const isExpanded = expandedBill === sub.id
+                  const grossAmt = parseFloat(sub.amount_billed || 0)
+                  const retainageAmt = parseFloat(sub.retainage_held || 0)
+                  const netAmt = grossAmt - retainageAmt
+                  return (
+                    <div key={sub.id} style={{ border: `1px solid ${isPaid ? '#1a4a1a' : sub.ready_to_pay ? '#1a3a1a' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isPaid ? '#0a1a0a' : sub.ready_to_pay ? '#091209' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
+                            {isPaid ? <span style={s.badge('paid')}>Paid</span> : <span style={s.badge('approved')}>Unpaid</span>}
+                            {sub.ready_to_pay && !isPaid && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Ready to Pay</span>}
+                            {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
+                            {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${netAmt.toLocaleString()}</div>
+                            {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#555' }}>Gross ${grossAmt.toLocaleString()} · -${retainageAmt.toLocaleString()} ret.</div>}
+                          </div>
+                          <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', marginBottom: '1rem' }}>
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#ccc' }}>${grossAmt.toLocaleString()}</div></div>
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>-${retainageAmt.toLocaleString()}</div></div>
+                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>${netAmt.toLocaleString()}</div></div>
+                            {isPaid && <>
+                              <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Paid date</div><div style={{ fontSize: '13px', color: '#4ade80' }}>{new Date(sub.paid_at).toLocaleDateString()}</div></div>
+                              <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Method</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.payment_method || '—'}{sub.check_number ? ` · Check #${sub.check_number}` : ''}</div></div>
+                              {sub.payment_notes && <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Notes</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.payment_notes}</div></div>}
+                            </>}
+                          </div>
 
                           {payingId === sub.id ? (
                             <div style={{ ...s.formBox, marginTop: 0 }}>
@@ -684,11 +781,11 @@ export default function AdminPortal() {
                               <div style={{ ...s.grid3, marginBottom: '10px' }}>
                                 <div>
                                   <label style={s.label}>Payment date</label>
-                                  <input type="date" style={s.input} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} />
+                                  <input type="date" style={{ ...s.input, colorScheme: 'dark' }} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} />
                                 </div>
                                 <div>
                                   <label style={s.label}>Amount paid</label>
-                                  <input type="number" style={s.input} placeholder={sub.amount_billed} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} />
+                                  <input type="number" style={s.input} placeholder={netAmt} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} />
                                 </div>
                                 <div>
                                   <label style={s.label}>Payment method</label>
@@ -707,15 +804,15 @@ export default function AdminPortal() {
                                   <input style={s.input} placeholder="Optional" value={payForm.payment_notes} onChange={e => setPayForm(f => ({ ...f, payment_notes: e.target.value }))} />
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', gap: '8px' }}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 <button style={{ ...s.btn, opacity: savingPay ? 0.6 : 1 }} disabled={savingPay} onClick={() => markPaid(sub.id)}>{savingPay ? 'Saving...' : 'Save payment'}</button>
-                                <button style={s.btnGray} onClick={() => setPayingId(null)}>Cancel</button>
+                                <button style={s.btnGray} onClick={() => { setPayingId(null); setPayMsg('') }}>Cancel</button>
                               </div>
                             </div>
                           ) : (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              {!isPaid && <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: sub.amount_billed || '', payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>}
-                              {isPaid && <button style={s.btnSm('orange')} onClick={() => { setPayingId(sub.id); setPayForm({ paid_at: sub.paid_at?.split('T')[0] || '', payment_amount: sub.payment_amount || sub.amount_billed || '', payment_method: sub.payment_method || 'Check', check_number: sub.check_number || '', payment_notes: sub.payment_notes || '' }) }}>Edit payment</button>}
+                              {!isPaid && <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>}
+                              {isPaid && <button style={s.btnSm('orange')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: sub.paid_at ? new Date(sub.paid_at).toISOString().split('T')[0] : '', payment_amount: sub.payment_amount || netAmt.toString(), payment_method: sub.payment_method || 'Check', check_number: sub.check_number || '', payment_notes: sub.payment_notes || '' }) }}>Edit payment</button>}
                             </div>
                           )}
                         </div>
@@ -935,6 +1032,23 @@ export default function AdminPortal() {
                                   </div>
                                 )}
 
+                                {/* Portal access */}
+                                {d.email && (
+                                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Portal access:</span>
+                                    {inviteSentFor[d.id] ? (
+                                      <span style={{ fontSize: '12px', color: '#4ade80' }}>
+                                        ✓ {inviteSentFor[d.id] === 'reset' ? 'Password reset sent' : 'Invite sent'} to {d.email}
+                                      </span>
+                                    ) : (
+                                      <button
+                                        style={{ ...s.btnSm('blue'), opacity: invitingSubFor === d.id ? 0.6 : 1 }}
+                                        disabled={invitingSubFor === d.id}
+                                        onClick={() => inviteSub(d.id)}
+                                      >{invitingSubFor === d.id ? 'Sending...' : 'Invite to portal'}</button>
+                                    )}
+                                  </div>
+                                )}
                                 <button style={s.btnSm('red')} onClick={() => deleteDirEntry(d.id)}>Delete from directory</button>
                               </div>
                             )}

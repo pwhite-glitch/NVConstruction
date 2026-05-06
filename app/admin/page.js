@@ -178,21 +178,31 @@ export default function AdminPortal() {
   async function markPaid(subId) {
     setSavingPay(true)
     setPayMsg('')
-    const { error } = await supabase.from('billing_submissions').update({
-      paid_at: payForm.paid_at ? new Date(payForm.paid_at + 'T12:00:00').toISOString() : new Date().toISOString(),
-      payment_amount: payForm.payment_amount ? parseFloat(payForm.payment_amount) : null,
-      payment_method: payForm.payment_method,
-      check_number: payForm.check_number || null,
-      payment_notes: payForm.payment_notes || null,
-    }).eq('id', subId)
+    const res = await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: subId,
+        paid_at: payForm.paid_at ? new Date(payForm.paid_at + 'T12:00:00').toISOString() : new Date().toISOString(),
+        payment_amount: payForm.payment_amount ? parseFloat(payForm.payment_amount) : null,
+        payment_method: payForm.payment_method,
+        check_number: payForm.check_number || null,
+        payment_notes: payForm.payment_notes || null,
+      }),
+    })
+    const data = await res.json()
     setSavingPay(false)
-    if (error) { setPayMsg('Error saving payment: ' + error.message); return }
+    if (!data?.ok) { setPayMsg('Error saving payment: ' + (data?.error || 'Unknown error')); return }
     setPayingId(null)
     await loadBilling()
   }
 
   async function toggleReadyToPay(subId, current) {
-    await supabase.from('billing_submissions').update({ ready_to_pay: !current }).eq('id', subId)
+    await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: subId, ready_to_pay: !current }),
+    })
     await loadBilling()
   }
 
@@ -205,7 +215,11 @@ export default function AdminPortal() {
 
   async function toggleNvCutsCheck(subId, current) {
     setTogglingNvCheck(subId)
-    await supabase.from('billing_submissions').update({ nv_cuts_check: !current }).eq('id', subId)
+    await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: subId, nv_cuts_check: !current }),
+    })
     setTogglingNvCheck(null)
     await loadBilling()
   }
@@ -700,15 +714,6 @@ export default function AdminPortal() {
                             <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>${netAmt.toLocaleString()}</div></div>
                           </div>
                           {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
-
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                            <button style={s.btnSm(sub.nv_cuts_check ? 'orange' : 'gray')} disabled={togglingNvCheck === sub.id} onClick={() => toggleNvCutsCheck(sub.id, sub.nv_cuts_check)}>
-                              {togglingNvCheck === sub.id ? '...' : sub.nv_cuts_check ? 'NV Check: On' : 'NV Check: Off'}
-                            </button>
-                            <button style={s.btnSm(sub.ready_to_pay ? 'green' : 'gray')} onClick={() => toggleReadyToPay(sub.id, sub.ready_to_pay)}>
-                              {sub.ready_to_pay ? 'Ready to Pay: On' : 'Ready to Pay: Off'}
-                            </button>
-                          </div>
 
                           {payingId === sub.id ? (
                             <div style={{ ...s.formBox, marginTop: 0 }}>

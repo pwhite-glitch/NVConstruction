@@ -58,7 +58,7 @@ export async function POST(request) {
       for (const item of jobItems) {
         const spent = spentByItem[item.id] || 0
         const contracted = contractedByItem[item.id] || 0
-        const autoEac = Math.max(contracted, spent)
+        const autoEac = contracted > 0 ? Math.max(contracted, spent) : Math.max(spent, Number(item.budget_amount || 0))
         const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
         const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount || 0)
         totalEac += eac

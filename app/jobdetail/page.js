@@ -963,7 +963,13 @@ ${sovLines.length > 0 ? `
       status: 'active',
     })
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
-    else { setShowAddContract(false); setContractForm(emptyContract); await loadContracts() }
+    else {
+      if (contractForm.budget_item_id) {
+        await supabase.from('budget_items').update({ forecast_eac: null }).eq('id', contractForm.budget_item_id)
+        setBudgetItems(prev => prev.map(b => b.id === contractForm.budget_item_id ? { ...b, forecast_eac: null } : b))
+      }
+      setShowAddContract(false); setContractForm(emptyContract); await loadContracts()
+    }
     setAddingContract(false)
   }
 
@@ -2177,7 +2183,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const forecastRows = budgetItems.map(item => {
                 const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
                 const contracted = committedForItem(item.id)
-                const autoEac = Math.max(contracted, spent)
+                const autoEac = contracted > 0 ? Math.max(contracted, spent) : Math.max(spent, Number(item.budget_amount))
                 const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
                 const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                 return { item, spent, contracted, autoEac, eac, revenue, variance: Number(item.budget_amount) - eac, projProfit: revenue - eac }

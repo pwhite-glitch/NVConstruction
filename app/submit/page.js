@@ -159,8 +159,13 @@ export default function Submit() {
   }
 
   async function openPlan(storagePath) {
-    const { data } = await supabase.storage.from('bid-plans').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    const res = await fetch('/api/bid-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signed-url', path: storagePath }),
+    })
+    const { url } = await res.json()
+    if (url) window.open(url, '_blank')
   }
 
   async function openBidDoc(storagePath) {

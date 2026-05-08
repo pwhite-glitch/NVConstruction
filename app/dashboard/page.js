@@ -396,6 +396,12 @@ export default function Dashboard() {
     if (data.url) window.open(data.url, '_blank')
   }
 
+  async function deletePlan(plan, bidId) {
+    if (!window.confirm(`Delete "${plan.file_name}"? This cannot be undone.`)) return
+    await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', path: plan.storage_path }) })
+    await loadBidDetail(bidId)
+  }
+
   async function uninviteSub(invitationId, bidId) {
     await supabase.from('bid_invitations').delete().eq('id', invitationId)
     await loadBidDetail(bidId)
@@ -1700,7 +1706,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No plans uploaded yet.</p> : plans.map(plan => (
                               <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
                                 <span style={{ fontSize: '13px', color: '#ccc' }}>📄 {plan.file_name}</span>
-                                <button style={s.btnSm('gray')} onClick={() => openPlan(plan.storage_path)}>Open</button>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button style={s.btnSm('gray')} onClick={() => openPlan(plan.storage_path)}>Open</button>
+                                  <button style={s.btnSm('red')} onClick={() => deletePlan(plan, pkg.id)}>Delete</button>
+                                </div>
                               </div>
                             ))}
                           </div>

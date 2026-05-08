@@ -292,6 +292,14 @@ export default function AdminPortal() {
       setShowAddDir(false)
       setAddDirForm({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '', scope_description: '' })
       await reloadDirectory()
+      if (addDirForm.email) {
+        const newDir = (await supabase.from('sub_directory').select('id').eq('email', addDirForm.email).maybeSingle()).data
+        if (newDir?.id) {
+          fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: newDir.id }) })
+          setDirMsg('✓ Subcontractor added and invite emailed to ' + addDirForm.email)
+          setTimeout(() => setDirMsg(''), 5000)
+        }
+      }
     } else {
       setDirMsg('Error: ' + (data?.error || 'Unknown'))
     }
@@ -830,7 +838,7 @@ export default function AdminPortal() {
               })
               return (
                 <>
-                  {dirMsg && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
+                  {dirMsg && <div style={{ background: dirMsg.startsWith('✓') ? '#0a2a0a' : '#2a0a0a', border: `1px solid ${dirMsg.startsWith('✓') ? '#1a4a1a' : '#5a1a1a'}`, color: dirMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={s.filterRow} style={{ margin: 0, flexWrap: 'wrap', gap: '8px', display: 'flex', alignItems: 'center' }}>

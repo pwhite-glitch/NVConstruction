@@ -196,7 +196,7 @@ export default function JobDetail() {
   const [contractSovLines, setContractSovLines] = useState({})
   const [expandedSov, setExpandedSov] = useState(null)
   const [showAddSovLine, setShowAddSovLine] = useState(null)
-  const [sovLineForm, setSovLineForm] = useState({ description: '', scheduled_value: '' })
+  const [sovLineForm, setSovLineForm] = useState({ description: '', scheduled_value: '', budget_item_id: '' })
   const [addingSovLine, setAddingSovLine] = useState(false)
   const [editingSovLine, setEditingSovLine] = useState(null)
   const [editSovLineForm, setEditSovLineForm] = useState({})
@@ -817,7 +817,7 @@ ${sovLines.length > 0 ? `
 
   // ── Sub SOV ─────────────────────────────────────────────────
   async function loadContractSov(contractId) {
-    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*').eq('subcontract_id', contractId).order('sort_order').order('created_at')
+    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, budget_items(id, description, cost_code)').eq('subcontract_id', contractId).order('sort_order').order('created_at')
     if (!lines || lines.length === 0) { setContractSovLines(prev => ({ ...prev, [contractId]: [] })); return }
     const lineIds = lines.map(l => l.id)
     const { data: billedData } = await supabase.from('billing_sov_lines').select('sov_line_id, amount, billing_submissions(status)').in('sov_line_id', lineIds)
@@ -837,9 +837,10 @@ ${sovLines.length > 0 ? `
       subcontract_id: contractId,
       description: sovLineForm.description,
       scheduled_value: parseFloat(sovLineForm.scheduled_value),
+      budget_item_id: sovLineForm.budget_item_id || null,
       sort_order: (contractSovLines[contractId]?.length || 0) + 1,
     })
-    setSovLineForm({ description: '', scheduled_value: '' })
+    setSovLineForm({ description: '', scheduled_value: '', budget_item_id: '' })
     setShowAddSovLine(null)
     await loadContractSov(contractId)
     setAddingSovLine(false)
@@ -849,6 +850,7 @@ ${sovLines.length > 0 ? `
     await supabase.from('subcontract_sov_lines').update({
       description: editSovLineForm.description,
       scheduled_value: parseFloat(editSovLineForm.scheduled_value),
+      budget_item_id: editSovLineForm.budget_item_id || null,
     }).eq('id', lineId)
     setEditingSovLine(null)
     await loadContractSov(contractId)
@@ -2586,13 +2588,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <input type="number" step="0.01" style={s.input} value={sovLineForm.scheduled_value} onChange={e => setSovLineForm(f => ({ ...f, scheduled_value: e.target.value }))} placeholder="0.00" />
                                 </div>
                               </div>
+                              {budgetItems.length > 0 && (
+                                <div style={{ marginBottom: '8px' }}>
+                                  <label style={s.label}>Budget line item (optional)</label>
+                                  <select style={s.input} value={sovLineForm.budget_item_id} onChange={e => setSovLineForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                                    <option value="">— None —</option>
+                                    {budgetItems.map(item => (
+                                      <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                               <div style={{ display: 'flex', gap: '6px' }}>
                                 <button style={{ ...s.btnSmallOrange, opacity: (addingSovLine || !sovLineForm.description || !sovLineForm.scheduled_value) ? 0.6 : 1 }}
                                   disabled={addingSovLine || !sovLineForm.description || !sovLineForm.scheduled_value}
                                   onClick={() => addSovLine(c.id)}>
                                   {addingSovLine ? 'Adding...' : 'Add line'}
                                 </button>
-                                <button style={s.btnSmall} onClick={() => { setShowAddSovLine(null); setSovLineForm({ description: '', scheduled_value: '' }) }}>Cancel</button>
+                                <button style={s.btnSmall} onClick={() => { setShowAddSovLine(null); setSovLineForm({ description: '', scheduled_value: '', budget_item_id: '' }) }}>Cancel</button>
                               </div>
                             </div>
                           )}
@@ -2626,6 +2639,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           <>
                                             <td style={{ padding: '4px' }}>
                                               <input style={{ ...s.input, padding: '5px 8px', fontSize: '12px' }} value={editSovLineForm.description} onChange={e => setEditSovLineForm(f => ({ ...f, description: e.target.value }))} />
+                                              {budgetItems.length > 0 && (
+                                                <select style={{ ...s.input, padding: '5px 8px', fontSize: '12px', marginTop: '4px' }} value={editSovLineForm.budget_item_id || ''} onChange={e => setEditSovLineForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                                                  <option value="">— No budget item —</option>
+                                                  {budgetItems.map(item => (
+                                                    <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description}</option>
+                                                  ))}
+                                                </select>
+                                              )}
                                             </td>
                                             <td style={{ padding: '4px' }}>
                                               <input type="number" step="0.01" style={{ ...s.input, padding: '5px 8px', fontSize: '12px', width: '110px', textAlign: 'right' }} value={editSovLineForm.scheduled_value} onChange={e => setEditSovLineForm(f => ({ ...f, scheduled_value: e.target.value }))} />
@@ -2640,7 +2661,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           </>
                                         ) : (
                                           <>
-                                            <td style={{ padding: '8px', color: '#ccc' }}>{line.description}</td>
+                                            <td style={{ padding: '8px', color: '#ccc' }}>
+                                              {line.description}
+                                              {line.budget_items && (
+                                                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
+                                                  {line.budget_items.cost_code ? `${line.budget_items.cost_code} · ` : ''}{line.budget_items.description}
+                                                </div>
+                                              )}
+                                            </td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(line.scheduled_value).toLocaleString()}</td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: Number(line.billed_to_date) > 0 ? '#4ade80' : '#444', fontFamily: 'monospace' }}>${Number(line.billed_to_date || 0).toLocaleString()}</td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString()}</td>
@@ -2654,7 +2682,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             </td>
                                             <td style={{ padding: '4px', textAlign: 'right' }}>
                                               <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                <button style={s.btnSmall} onClick={() => { setEditingSovLine(line.id); setEditSovLineForm({ description: line.description, scheduled_value: String(line.scheduled_value) }) }}>Edit</button>
+                                                <button style={s.btnSmall} onClick={() => { setEditingSovLine(line.id); setEditSovLineForm({ description: line.description, scheduled_value: String(line.scheduled_value), budget_item_id: line.budget_item_id || '' }) }}>Edit</button>
                                                 <button style={s.btnSmallRed} onClick={() => deleteSovLine(line.id, c.id)}>Del</button>
                                               </div>
                                             </td>

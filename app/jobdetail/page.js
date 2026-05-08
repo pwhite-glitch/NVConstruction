@@ -74,7 +74,7 @@ const s = {
   billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
 }
 
-const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10' }
+const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10', budget_allocations: [] }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub', sov: [] }
 const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [] }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
@@ -257,10 +257,11 @@ export default function JobDetail() {
     const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
     if (!summary) { setContracts([]); return [] }
     // Fetch budget_item_id from the base table — the view may predate this column
-    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, vendor_name, retainage_pct').eq('job_id', id)
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
       budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
+      budget_allocations: raw?.find(r => r.id === c.id)?.budget_allocations ?? [],
       vendor_name: raw?.find(r => r.id === c.id)?.vendor_name ?? null,
       retainage_pct: raw?.find(r => r.id === c.id)?.retainage_pct ?? 10,
     }))
@@ -965,6 +966,8 @@ ${sovLines.length > 0 ? `
     const { data: { session } } = await supabase.auth.getSession()
     const dirEntry = subDirectory.find(d => d.id === contractForm.dir_id)
     const matchedSub = subs.find(s => s.sub_email?.toLowerCase() === dirEntry?.email?.toLowerCase() && s.sub_id)
+    const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
+    const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
     const { error } = await supabase.from('subcontracts').insert({
       job_id: id,
       sub_id: matchedSub?.sub_id || null,
@@ -972,28 +975,28 @@ ${sovLines.length > 0 ? `
       contract_value: parseFloat(contractForm.contract_value),
       description: contractForm.description || null,
       onedrive_url: contractForm.onedrive_url || null,
-      budget_item_id: contractForm.budget_item_id || null,
+      budget_item_id: singleBudgetId,
+      budget_allocations: validAllocs.length > 0 ? validAllocs : null,
       retainage_pct: parseFloat(contractForm.retainage_pct) || 0,
       created_by: session.user.id,
       status: 'active',
     })
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
     else {
-      if (contractForm.budget_item_id) {
-        await supabase.from('budget_items').update({ forecast_eac: null }).eq('id', contractForm.budget_item_id)
-        setBudgetItems(prev => prev.map(b => b.id === contractForm.budget_item_id ? { ...b, forecast_eac: null } : b))
-      }
       setShowAddContract(false); setContractForm(emptyContract); await loadContracts()
     }
     setAddingContract(false)
   }
 
   async function updateContract() {
+    const validAllocs = (editContractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
+    const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (editContractForm.budget_item_id || null)
     const { error } = await supabase.from('subcontracts').update({
       contract_value: parseFloat(editContractForm.contract_value),
       description: editContractForm.description || null,
       onedrive_url: editContractForm.onedrive_url || null,
-      budget_item_id: editContractForm.budget_item_id || null,
+      budget_item_id: singleBudgetId,
+      budget_allocations: validAllocs.length > 0 ? validAllocs : null,
       retainage_pct: parseFloat(editContractForm.retainage_pct) || 0,
     }).eq('id', editingContract)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
@@ -2440,17 +2443,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <label style={s.label}>Description / scope</label>
                     <input style={s.input} placeholder="Framing, electrical, plumbing..." value={contractForm.description} onChange={e => setContractForm(f => ({ ...f, description: e.target.value }))} />
                   </div>
-                  {budgetItems.length > 0 && (
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={s.label}>Budget line item</label>
-                      <select style={s.input} value={contractForm.budget_item_id} onChange={e => setContractForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                        <option value="">— Unassigned —</option>
-                        {budgetItems.map(item => (
-                          <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount).toLocaleString()})</option>
+                  {budgetItems.length > 0 && (() => {
+                    const allocs = contractForm.budget_allocations || []
+                    const totalAllocated = allocs.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                    const contractVal = parseFloat(contractForm.contract_value) || 0
+                    const remaining = contractVal - totalAllocated
+                    return (
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <label style={s.label}>Budget allocation</label>
+                          <button style={s.btnSmall} onClick={() => setContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
+                        </div>
+                        {allocs.length === 0 && (
+                          <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                        )}
+                        {allocs.map((alloc, idx) => (
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+                            <select style={{ ...s.input, padding: '8px 10px' }} value={alloc.budget_item_id} onChange={e => {
+                              const next = allocs.map((a, i) => i === idx ? { ...a, budget_item_id: e.target.value } : a)
+                              setContractForm(f => ({ ...f, budget_allocations: next }))
+                            }}>
+                              <option value="">Select budget item...</option>
+                              {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
+                            </select>
+                            <input type="number" step="0.01" placeholder="Amount" style={{ ...s.input, padding: '8px 10px', textAlign: 'right' }} value={alloc.amount} onChange={e => {
+                              const next = allocs.map((a, i) => i === idx ? { ...a, amount: e.target.value } : a)
+                              setContractForm(f => ({ ...f, budget_allocations: next }))
+                            }} />
+                            <button style={{ ...s.btnSmallRed, padding: '6px 8px' }} onClick={() => setContractForm(f => ({ ...f, budget_allocations: f.budget_allocations.filter((_, i) => i !== idx) }))}>✕</button>
+                          </div>
                         ))}
-                      </select>
-                    </div>
-                  )}
+                        {allocs.length > 0 && contractVal > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', marginTop: '4px' }}>
+                            <span style={{ color: '#888' }}>Allocated: <strong style={{ color: '#f1f1f1' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#f1f1f1' }}>${contractVal.toLocaleString()}</strong></span>
+                            <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
+                              {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={s.label}>OneDrive link (optional)</label>
                     <input style={s.input} placeholder="https://onedrive.live.com/..." value={contractForm.onedrive_url} onChange={e => setContractForm(f => ({ ...f, onedrive_url: e.target.value }))} />
@@ -2467,15 +2500,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {contracts.map(c => {
                 const subName = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown sub'
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
+                const allocations = (c.budget_allocations || []).filter(a => a.budget_item_id)
                 const isEditing = editingContract === c.id
 
                 return (
                   <div key={c.id} style={s.contractRow}>
                     <div style={s.contractRowHeader}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
                         {c.description && <span style={{ fontSize: '12px', color: '#555' }}>{c.description}</span>}
-                        {budgetLine && <span style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px' }}>{budgetLine.cost_code || budgetLine.description}</span>}
+                        {allocations.length > 0
+                          ? allocations.map((a, i) => {
+                              const item = budgetItems.find(b => b.id === a.budget_item_id)
+                              if (!item) return null
+                              return (
+                                <span key={i} style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description}
+                                  {a.amount ? <span style={{ color: '#888', marginLeft: '4px' }}>${Number(a.amount).toLocaleString()}</span> : null}
+                                </span>
+                              )
+                            })
+                          : budgetLine && <span style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px' }}>{budgetLine.cost_code || budgetLine.description}</span>
+                        }
                         <span style={s.contractBadge(c.status)}>{c.status}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -2511,7 +2557,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
                           </button>
                           <button style={{ ...s.btnSmall, background: '#1a3a1a', color: '#4ade80', border: '1px solid #1a3a1a' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
-                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', retainage_pct: String(c.retainage_pct ?? 10) }) }}>
+                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10) }) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
                           <button style={s.btnSmallRed} onClick={() => deleteContract(c.id)}>Delete</button>
@@ -2532,17 +2578,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <input style={s.input} value={editContractForm.description} onChange={e => setEditContractForm(f => ({ ...f, description: e.target.value }))} />
                           </div>
                         </div>
-                        {budgetItems.length > 0 && (
-                          <div style={{ marginBottom: '12px' }}>
-                            <label style={s.label}>Budget line item</label>
-                            <select style={s.input} value={editContractForm.budget_item_id} onChange={e => setEditContractForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                              <option value="">— Unassigned —</option>
-                              {budgetItems.map(item => (
-                                <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount).toLocaleString()})</option>
+                        {budgetItems.length > 0 && (() => {
+                          const allocs = editContractForm.budget_allocations || []
+                          const totalAllocated = allocs.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                          const contractVal = parseFloat(editContractForm.contract_value) || 0
+                          const remaining = contractVal - totalAllocated
+                          return (
+                            <div style={{ marginBottom: '12px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                <label style={s.label}>Budget allocation</label>
+                                <button style={s.btnSmall} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
+                              </div>
+                              {allocs.length === 0 && (
+                                <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                              )}
+                              {allocs.map((alloc, idx) => (
+                                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+                                  <select style={{ ...s.input, padding: '8px 10px' }} value={alloc.budget_item_id} onChange={e => {
+                                    const next = allocs.map((a, i) => i === idx ? { ...a, budget_item_id: e.target.value } : a)
+                                    setEditContractForm(f => ({ ...f, budget_allocations: next }))
+                                  }}>
+                                    <option value="">Select budget item...</option>
+                                    {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
+                                  </select>
+                                  <input type="number" step="0.01" placeholder="Amount" style={{ ...s.input, padding: '8px 10px', textAlign: 'right' }} value={alloc.amount} onChange={e => {
+                                    const next = allocs.map((a, i) => i === idx ? { ...a, amount: e.target.value } : a)
+                                    setEditContractForm(f => ({ ...f, budget_allocations: next }))
+                                  }} />
+                                  <button style={{ ...s.btnSmallRed, padding: '6px 8px' }} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: f.budget_allocations.filter((_, i) => i !== idx) }))}>✕</button>
+                                </div>
                               ))}
-                            </select>
-                          </div>
-                        )}
+                              {allocs.length > 0 && contractVal > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', marginTop: '4px' }}>
+                                  <span style={{ color: '#888' }}>Allocated: <strong style={{ color: '#f1f1f1' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#f1f1f1' }}>${contractVal.toLocaleString()}</strong></span>
+                                  <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
+                                    {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                         <div style={{ ...s.grid2, marginBottom: '12px' }}>
                           <div>
                             <label style={s.label}>Retainage %</label>

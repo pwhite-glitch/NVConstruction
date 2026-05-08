@@ -85,6 +85,7 @@ export default function Submit() {
   const [sovForm, setSovForm] = useState([])
   const [sovRetainageMap, setSovRetainageMap] = useState({})
   const [sovError, setSovError] = useState('')
+  const [noContract, setNoContract] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -236,9 +237,10 @@ export default function Submit() {
   }
 
   async function loadJobSov(jobId) {
-    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); return }
+    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); return }
     const { data: contracts } = await supabase.from('subcontracts').select('id, description, retainage_pct').eq('sub_id', user.id).eq('job_id', jobId)
-    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); return }
+    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); return }
+    setNoContract(false)
     const contractIds = contracts.map(c => c.id)
     const retMap = Object.fromEntries(contracts.map(c => [c.id, parseFloat(c.retainage_pct) || 0]))
     setSovRetainageMap(retMap)
@@ -273,6 +275,7 @@ export default function Submit() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (noContract) return
     if (sovForm.length > 0) {
       const overBilled = sovForm.filter(l => (l.pct_prev || 0) + (parseFloat(l.pct_this) || 0) > 100)
       if (overBilled.length > 0) {
@@ -499,24 +502,42 @@ export default function Submit() {
                     </div>
                   </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
-                  <div><label style={s.label}>Amount billed</label><input type="number" style={s.input} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" /></div>
-                  <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
-                  <div><label style={s.label}>Billing period</label><input type="month" style={s.input} value={form.billing_period} onChange={e => update('billing_period', e.target.value)} /></div>
-                </div>
-                <div style={{ marginBottom: '1rem' }}>
-                  <label style={s.label}>Work description</label>
-                  <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this billing period..." style={{ ...s.input, resize: 'vertical' }} />
-                </div>
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <label style={s.label}>Attach document (optional)</label>
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
-                  {billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {billingFile.name}</div>}
-                </div>
-                {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Submitting...' : 'Submit billing'}</button>
-                </div>
+                {form.job_id && noContract && (
+                  <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '14px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
+                    No subcontract on file for this project. Contact NV Construction to have your subcontract issued before submitting billing.
+                  </div>
+                )}
+                {!noContract && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
+                      <div>
+                        <label style={s.label}>Amount billed</label>
+                        {sovForm.length > 0 ? (
+                          <div style={{ ...s.input, color: '#e8590c', fontWeight: '700', cursor: 'default' }}>
+                            ${parseFloat(form.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        ) : (
+                          <input type="number" style={s.input} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" />
+                        )}
+                      </div>
+                      <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
+                      <div><label style={s.label}>Billing period</label><input type="month" style={s.input} value={form.billing_period} onChange={e => update('billing_period', e.target.value)} /></div>
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={s.label}>Work description</label>
+                      <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this billing period..." style={{ ...s.input, resize: 'vertical' }} />
+                    </div>
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <label style={s.label}>Attach document (optional)</label>
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
+                      {billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {billingFile.name}</div>}
+                    </div>
+                    {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Submitting...' : 'Submit billing'}</button>
+                    </div>
+                  </>
+                )}
               </form>
             </div>
           )

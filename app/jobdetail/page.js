@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { sendEmail, emailWrap } from '../../lib/email'
 
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
@@ -984,6 +985,31 @@ ${sovLines.length > 0 ? `
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
     else {
       setShowAddContract(false); setContractForm(emptyContract); await loadContracts()
+      if (dirEntry?.email) {
+        const firstName = dirEntry.contact_name?.split(' ')[0] || 'there'
+        const contractAmt = parseFloat(contractForm.contract_value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+        const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nvconstruction.vercel.app') + '/submit'
+        sendEmail(dirEntry.email, `Action required: Set up your Schedule of Values — ${job?.project_name || ''}`,
+          emailWrap(`
+            <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Hey ${firstName},</h2>
+            <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
+              Your subcontract for <strong style="color:#f1f1f1">${job?.project_name || 'the project'}</strong> has been issued
+              ${contractForm.description ? `(${contractForm.description})` : ''} for <strong style="color:#e8590c">${contractAmt}</strong>.
+            </p>
+            <p style="color:#aaa;margin:0 0 20px;font-size:14px;line-height:1.6">
+              Before you can submit billing, you need to create your <strong style="color:#f1f1f1">Schedule of Values</strong> — a breakdown of your contract into line items that you'll bill against each period.
+            </p>
+            <table cellpadding="0" cellspacing="0" style="margin:0 0 24px">
+              <tr>
+                <td style="background:#e8590c;border-radius:8px">
+                  <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Set Up My SOV</a>
+                </td>
+              </tr>
+            </table>
+            <p style="color:#555;font-size:12px;margin:0">Log in, select the project, and you'll be prompted to create your schedule before billing is available.</p>
+          `)
+        )
+      }
     }
     setAddingContract(false)
   }

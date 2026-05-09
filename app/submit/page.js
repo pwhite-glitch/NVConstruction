@@ -86,6 +86,8 @@ export default function Submit() {
   const [sovRetainageMap, setSovRetainageMap] = useState({})
   const [sovError, setSovError] = useState('')
   const [noContract, setNoContract] = useState(false)
+  const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
+  const [savingSov, setSavingSov] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -243,9 +245,10 @@ export default function Submit() {
 
   async function loadJobSov(jobId) {
     if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); return }
-    const { data: contracts } = await supabase.from('subcontracts').select('id, description, retainage_pct').eq('sub_id', user.id).eq('job_id', jobId)
-    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); return }
+    const { data: contracts } = await supabase.from('subcontracts').select('id, description, retainage_pct, contract_value').eq('sub_id', user.id).eq('job_id', jobId)
+    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
     setNoContract(false)
+    setSovDraftLines([{ description: '', amount: '' }])
     const contractIds = contracts.map(c => c.id)
     const retMap = Object.fromEntries(contracts.map(c => [c.id, parseFloat(c.retainage_pct) || 0]))
     setSovRetainageMap(retMap)
@@ -276,6 +279,24 @@ export default function Submit() {
       pct_this: '',
       amount_this: 0,
     })))
+  }
+
+  async function saveSovLines() {
+    const valid = sovDraftLines.filter(l => l.description.trim() && l.amount)
+    if (valid.length === 0) return
+    setSavingSov(true)
+    for (const contract of jobSovContracts) {
+      await supabase.from('subcontract_sov_lines').insert(
+        valid.map((l, idx) => ({
+          subcontract_id: contract.id,
+          description: l.description.trim(),
+          scheduled_value: parseFloat(l.amount),
+          sort_order: idx + 1,
+        }))
+      )
+    }
+    setSavingSov(false)
+    await loadJobSov(form.job_id)
   }
 
   async function handleSubmit(e) {
@@ -512,18 +533,82 @@ export default function Submit() {
                     No subcontract on file for this project. Contact NV Construction to have your subcontract issued before submitting billing.
                   </div>
                 )}
-                {!noContract && (
+
+                {/* ── SOV builder: contracts exist but no lines yet ── */}
+                {form.job_id && !noContract && jobSovContracts.length > 0 && sovForm.length === 0 && (() => {
+                  const contractMax = jobSovContracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
+                  const totalDraft = sovDraftLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
+                  const remaining = contractMax - totalDraft
+                  const isBalanced = Math.abs(remaining) < 1
+                  return (
+                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem', marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+                        <div>
+                          <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>Create your Schedule of Values</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#555', lineHeight: '1.6' }}>Break your contract into billing line items. Total must match your contract value.</p>
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '16px' }}>
+                          <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px', letterSpacing: '1px', textTransform: 'uppercase' }}>Contract value</div>
+                          <div style={{ fontSize: '22px', fontWeight: '800', color: '#e8590c' }}>${contractMax.toLocaleString()}</div>
+                        </div>
+                      </div>
+
+                      {sovDraftLines.map((line, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                          <input
+                            style={s.input}
+                            value={line.description}
+                            onChange={e => setSovDraftLines(lines => lines.map((l, i) => i === idx ? { ...l, description: e.target.value } : l))}
+                            placeholder={`Line item ${idx + 1} (e.g. Mobilization, Rough-in, Finishes...)`}
+                          />
+                          <input
+                            type="number" step="0.01" min="0"
+                            style={{ ...s.input, textAlign: 'right' }}
+                            value={line.amount}
+                            onChange={e => setSovDraftLines(lines => lines.map((l, i) => i === idx ? { ...l, amount: e.target.value } : l))}
+                            placeholder="0.00"
+                          />
+                          {sovDraftLines.length > 1 && (
+                            <button
+                              style={{ padding: '10px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
+                              onClick={() => setSovDraftLines(lines => lines.filter((_, i) => i !== idx))}
+                            >✕</button>
+                          )}
+                        </div>
+                      ))}
+
+                      <button
+                        style={{ fontSize: '12px', color: '#888', background: 'none', border: '1px dashed #2a2a2a', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer', marginBottom: '1rem', width: '100%' }}
+                        onClick={() => setSovDraftLines(lines => [...lines, { description: '', amount: '' }])}
+                      >+ Add line item</button>
+
+                      {contractMax > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', background: '#080808', border: `1px solid ${isBalanced ? '#1a4a1a' : remaining < 0 ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', marginBottom: '1rem' }}>
+                          <span style={{ color: '#888' }}>Total: <strong style={{ color: '#f1f1f1' }}>${totalDraft.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+                          <span style={{ fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#e8590c' }}>
+                            {isBalanced ? '✓ Matches contract' : remaining > 0 ? `$${remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} remaining` : `$${Math.abs(remaining).toLocaleString('en-US', { minimumFractionDigits: 2 })} over contract`}
+                          </span>
+                        </div>
+                      )}
+
+                      <button
+                        style={{ ...s.btn, opacity: (savingSov || !isBalanced || sovDraftLines.every(l => !l.description.trim() || !l.amount)) ? 0.5 : 1 }}
+                        disabled={savingSov || !isBalanced || sovDraftLines.every(l => !l.description.trim() || !l.amount)}
+                        onClick={saveSovLines}
+                      >{savingSov ? 'Saving...' : 'Submit Schedule of Values'}</button>
+                    </div>
+                  )
+                })()}
+
+                {/* ── Billing form: SOV exists ── */}
+                {!noContract && sovForm.length > 0 && (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
                       <div>
                         <label style={s.label}>Amount billed</label>
-                        {sovForm.length > 0 ? (
-                          <div style={{ ...s.input, color: '#e8590c', fontWeight: '700', cursor: 'default' }}>
-                            ${parseFloat(form.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                        ) : (
-                          <input type="number" style={s.input} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} required placeholder="0.00" min="0" step="0.01" />
-                        )}
+                        <div style={{ ...s.input, color: '#e8590c', fontWeight: '700', cursor: 'default' }}>
+                          ${parseFloat(form.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
                       </div>
                       <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
                       <div><label style={s.label}>Billing period</label><input type="month" style={s.input} value={form.billing_period} onChange={e => update('billing_period', e.target.value)} /></div>

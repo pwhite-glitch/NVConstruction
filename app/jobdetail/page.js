@@ -1564,17 +1564,17 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     await reloadSubs()
   }
 
-  async function notifySubToRegister(dirId) {
-    setNotifyingSubId(dirId)
-    const res = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId }) })
+  async function notifySubToRegister(email) {
+    setNotifyingSubId(email)
+    const res = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
     const json = await res.json()
-    setNotifySubResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : 'error' }))
+    setNotifySubResult(prev => ({ ...prev, [email]: res.ok ? 'sent' : (json.error || 'error') }))
     setNotifyingSubId(null)
   }
 
   async function notifyAllUnregistered() {
-    const unregistered = subs.filter(a => !a.sub_id).map(a => subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())).filter(Boolean)
-    for (const dir of unregistered) await notifySubToRegister(dir.id)
+    const unregistered = subs.filter(a => !a.sub_id && a.sub_email)
+    for (const a of unregistered) await notifySubToRegister(a.sub_email)
   }
 
   // ── Billing (PM-managed) ─────────────────────────────────────
@@ -2118,7 +2118,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Assigned subcontractors ({subs.length})</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {subs.some(a => !a.sub_id && subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())) && (
+                  {subs.some(a => !a.sub_id && a.sub_email) && (
                     <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Notify all unregistered</button>
                   )}
                   {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign sub</button>}
@@ -2192,13 +2192,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {!isRegistered && dirEntry && (
-                          notifySubResult[dirEntry.id] === 'sent'
+                        {!isRegistered && a.sub_email && (
+                          notifySubResult[a.sub_email] === 'sent'
                             ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
-                            : notifySubResult[dirEntry.id] === 'error'
-                              ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>Failed</span>
-                              : <button style={s.btnSmallOrange} disabled={notifyingSubId === dirEntry.id} onClick={() => notifySubToRegister(dirEntry.id)}>
-                                  {notifyingSubId === dirEntry.id ? 'Sending...' : 'Notify'}
+                            : notifySubResult[a.sub_email]
+                              ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{notifySubResult[a.sub_email]}</span>
+                              : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
+                                  {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
                                 </button>
                         )}
                         <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>

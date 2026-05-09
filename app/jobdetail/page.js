@@ -1809,7 +1809,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         </div>
       </header>
 
-      <main style={s.main}>
+      <main style={s.main} className="rx-main">
         <button style={s.backBtn} onClick={() => router.push('/dashboard')}>← Back to dashboard</button>
 
         {msg && <div style={s.successMsg}>{msg}</div>}
@@ -1823,7 +1823,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <span style={s.badge(job.archived ? 'archived' : job.status)}>{job.archived ? 'Archived' : job.status}</span>
         </div>
 
-        <div style={s.statRow}>
+        <div style={s.statRow} className="rx-stats">
           <div style={s.statCard}><div style={s.statLabel}>Total billed</div><div style={s.statValue()}>${totalBilled.toLocaleString()}</div></div>
           <div style={s.statCard}><div style={s.statLabel}>Contract value</div><div style={s.statValue()}>{job.contract_value ? '$' + parseFloat(job.contract_value).toLocaleString() : '—'}</div></div>
           <div style={s.statCard}><div style={s.statLabel}>% billed</div><div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : '—'}</div></div>
@@ -1865,12 +1865,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <form onSubmit={saveJob}>
               <div style={s.card}>
                 <p style={s.cardTitle}>Job info</p>
-                <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                   <div><label style={s.label}>Job number</label><input style={s.input} value={form.job_number || ''} onChange={e => update('job_number', e.target.value)} required /></div>
                   <div><label style={s.label}>Project name</label><input style={s.input} value={form.project_name || ''} onChange={e => update('project_name', e.target.value)} required /></div>
                   <div><label style={s.label}>Location</label><input style={s.input} value={form.location || ''} onChange={e => update('location', e.target.value)} /></div>
                 </div>
-                <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                   <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={form.contract_value || ''} onChange={e => update('contract_value', e.target.value)} /></div>
                   <div><label style={s.label}>Default markup %</label><input type="number" style={s.input} placeholder="0" value={form.markup_pct || ''} onChange={e => update('markup_pct', e.target.value)} /></div>
                   <div>
@@ -1925,7 +1925,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <p style={s.cardTitle}>Billing dates</p>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
-                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                     <div><label style={s.label}>Billing start date</label><input type="date" style={s.input} value={form.sub_billing_start || ''} onChange={e => update('sub_billing_start', e.target.value)} /></div>
                     <div><label style={s.label}>Frequency</label>
                       <select style={s.input} value={form.sub_billing_frequency || 'monthly'} onChange={e => { update('sub_billing_frequency', e.target.value); update('sub_billing_due', ''); update('sub_billing_anchor', '') }}>
@@ -1935,7 +1935,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </select>
                     </div>
                   </div>
-                  <div style={s.grid2}>
+                  <div style={s.grid2} className="rx-grid-2">
                     {(form.sub_billing_frequency || 'monthly') === 'monthly'
                       ? <div><label style={s.label}>Due day of month</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 25" value={form.sub_billing_due || ''} onChange={e => update('sub_billing_due', e.target.value)} /></div>
                       : <div><label style={s.label}>Due day of week</label>
@@ -1950,7 +1950,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
-                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                     <div><label style={s.label}>Billing start date</label><input type="date" style={s.input} value={form.owner_billing_start || ''} onChange={e => update('owner_billing_start', e.target.value)} /></div>
                     <div><label style={s.label}>Frequency</label>
                       <select style={s.input} value={form.owner_billing_frequency || 'monthly'} onChange={e => { update('owner_billing_frequency', e.target.value); update('owner_billing_due', ''); update('owner_billing_anchor', '') }}>
@@ -1960,7 +1960,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </select>
                     </div>
                   </div>
-                  <div style={s.grid2}>
+                  <div style={s.grid2} className="rx-grid-2">
                     {(form.owner_billing_frequency || 'monthly') === 'monthly'
                       ? <div><label style={s.label}>Due day of month</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 1" value={form.owner_billing_due || ''} onChange={e => update('owner_billing_due', e.target.value)} /></div>
                       : <div><label style={s.label}>Due day of week</label>
@@ -1977,11 +1977,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               <div style={s.card}>
                 <p style={s.cardTitle}>Owner info</p>
-                <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                   <div><label style={s.label}>Owner company</label><input style={s.input} value={form.owner_company || ''} onChange={e => update('owner_company', e.target.value)} /></div>
                   <div><label style={s.label}>Owner name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} /></div>
                 </div>
-                <div style={s.grid2}>
+                <div style={s.grid2} className="rx-grid-2">
                   <div><label style={s.label}>Owner email</label><input style={s.input} value={form.owner_email || ''} onChange={e => update('owner_email', e.target.value)} /></div>
                   <div><label style={s.label}>Owner phone</label><input style={s.input} value={form.owner_phone || ''} onChange={e => update('owner_phone', e.target.value)} /></div>
                 </div>
@@ -1989,12 +1989,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               <div style={s.card}>
                 <p style={s.cardTitle}>Architect & engineer</p>
-                <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                   <div><label style={s.label}>Architect name</label><input style={s.input} value={form.architect_name || ''} onChange={e => update('architect_name', e.target.value)} /></div>
                   <div><label style={s.label}>Architect company</label><input style={s.input} value={form.architect_company || ''} onChange={e => update('architect_company', e.target.value)} /></div>
                   <div><label style={s.label}>Architect email</label><input style={s.input} value={form.architect_email || ''} onChange={e => update('architect_email', e.target.value)} /></div>
                 </div>
-                <div style={s.grid3}>
+                <div style={s.grid3} className="rx-grid-3">
                   <div><label style={s.label}>Engineer name</label><input style={s.input} value={form.engineer_name || ''} onChange={e => update('engineer_name', e.target.value)} /></div>
                   <div><label style={s.label}>Engineer company</label><input style={s.input} value={form.engineer_company || ''} onChange={e => update('engineer_company', e.target.value)} /></div>
                   <div><label style={s.label}>Engineer email</label><input style={s.input} value={form.engineer_email || ''} onChange={e => update('engineer_email', e.target.value)} /></div>
@@ -2003,7 +2003,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               <div style={s.card}>
                 <p style={s.cardTitle}>Permits</p>
-                <div style={s.grid2}>
+                <div style={s.grid2} className="rx-grid-2">
                   <div><label style={s.label}>Permit number</label><input style={s.input} value={form.permit_number || ''} onChange={e => update('permit_number', e.target.value)} /></div>
                   <div><label style={s.label}>Permit date</label><input type="date" style={s.input} value={form.permit_date || ''} onChange={e => update('permit_date', e.target.value)} /></div>
                 </div>
@@ -2108,7 +2108,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── SUBS TAB ── */}
         {activeTab === 'subs' && (
           <>
-            <div style={s.statRow}>
+            <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}><div style={s.statLabel}>Assigned</div><div style={s.statValue()}>{subs.length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#4ade80')}>{registeredSubs.length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Not registered</div><div style={s.statValue(subs.length - registeredSubs.length > 0 ? '#e8590c' : undefined)}>{subs.length - registeredSubs.length}</div></div>
@@ -2214,7 +2214,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── BUDGET TAB ── */}
         {activeTab === 'budget' && (
           <>
-            <div style={s.statRow}>
+            <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}>
                 <div style={s.statLabel}>Internal budget</div>
                 <div style={s.statValue()}>${totalBudget.toLocaleString()}</div>
@@ -2285,7 +2285,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {budgetItems.length > 0 && (
-                <>
+                <div className="rx-scroll-x">
                   <div style={s.budgetTableHeader}>
                     <span>Description</span>
                     <span style={{ textAlign: 'right' }}>Internal</span>
@@ -2328,7 +2328,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     )
                   })}
-                </>
+                </div>
               )}
             </div>
 
@@ -2353,7 +2353,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.5rem' }}>Cost to Complete Forecast</p>
                   <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates as max(contracted, direct costs spent). Enter a value to override.</p>
-                  <div style={{ ...s.statRow, marginBottom: '1.25rem' }}>
+                  <div style={{ ...s.statRow, marginBottom: '1.25rem' }} className="rx-stats">
                     <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#4ade80' : '#ff6b6b')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Budget variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Direct costs spent</div><div style={s.statValue()}>${T.spent.toLocaleString()}</div></div>
@@ -2483,7 +2483,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── CONTRACTS TAB ── */}
         {activeTab === 'contracts' && (
           <>
-            <div style={s.statRow}>
+            <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}><div style={s.statLabel}>Subcontract value</div><div style={s.statValue()}>${totalContractValue.toLocaleString()}</div></div>
               <div style={s.statCard}>
                 <div style={s.statLabel}>Approved COs</div>
@@ -2549,7 +2549,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {showAddContract && (
                 <div style={s.inlineForm}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New subcontract</p>
-                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Subcontractor</label>
                       <select style={s.input} value={contractForm.dir_id} onChange={e => setContractForm(f => ({ ...f, dir_id: e.target.value }))}>
@@ -2562,7 +2562,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" style={s.input} placeholder="0.00" value={contractForm.contract_value} onChange={e => setContractForm(f => ({ ...f, contract_value: e.target.value }))} />
                     </div>
                   </div>
-                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Retainage %</label>
                       <input type="number" min="0" max="100" step="0.5" style={s.input} placeholder="10" value={contractForm.retainage_pct} onChange={e => setContractForm(f => ({ ...f, retainage_pct: e.target.value }))} />
@@ -2704,7 +2704,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {isEditing && (
                       <div style={s.contractRowExpanded}>
                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Edit subcontract</p>
-                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                           <div>
                             <label style={s.label}>Contract value ($)</label>
                             <input type="number" style={s.input} value={editContractForm.contract_value} onChange={e => setEditContractForm(f => ({ ...f, contract_value: e.target.value }))} />
@@ -2755,7 +2755,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
                           )
                         })()}
-                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                           <div>
                             <label style={s.label}>Retainage %</label>
                             <input type="number" min="0" max="100" step="0.5" style={s.input} value={editContractForm.retainage_pct} onChange={e => setEditContractForm(f => ({ ...f, retainage_pct: e.target.value }))} />
@@ -2932,7 +2932,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const approvedPrimeCOVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
               const pendingPrimeCOs = primeCOs.filter(co => co.status === 'pending').length
               return (
-                <div style={s.statRow}>
+                <div style={s.statRow} className="rx-stats">
                   <div style={s.statCard}><div style={s.statLabel}>Sub COs pending</div><div style={s.statValue(pendingCOs > 0 ? '#e8590c' : undefined)}>{pendingCOs}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Sub CO approved value</div><div style={s.statValue('#4ade80')}>{approvedCOValue >= 0 ? '+' : ''}${approvedCOValue.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Prime COs pending</div><div style={s.statValue(pendingPrimeCOs > 0 ? '#e8590c' : undefined)}>{pendingPrimeCOs}</div></div>
@@ -2954,7 +2954,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return (
                 <div style={s.inlineForm}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New prime contract change order</p>
-                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Description</label>
                       <input style={s.input} placeholder="Scope change, owner directive..." value={primeCOForm.description} onChange={e => setPrimeCOForm(f => ({ ...f, description: e.target.value }))} />
@@ -3084,7 +3084,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       })}
                     </select>
                   </div>
-                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Direction</label>
                       <select style={s.input} value={coForm.direction} onChange={e => setCoForm(f => ({ ...f, direction: e.target.value }))}>
@@ -3235,7 +3235,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── BILLING TAB ── */}
         {activeTab === 'billing' && (
           <>
-            <div style={s.statRow}>
+            <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}><div style={s.statLabel}>Total submissions</div><div style={s.statValue()}>{billingSubmissions.length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingBillingCount > 0 ? '#e8590c' : undefined)}>{pendingBillingCount}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#4ade80')}>${approvedBillingTotal.toLocaleString()}</div></div>
@@ -3282,7 +3282,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </select>
                   </div>
 
-                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Company name *</label>
                       <input style={s.input} value={createBillingForm.company_name} onChange={e => setCreateBillingForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing LLC" required />
@@ -3292,7 +3292,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input style={s.input} value={createBillingForm.contact_name} onChange={e => setCreateBillingForm(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" />
                     </div>
                   </div>
-                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                     <div>
                       <label style={s.label}>Contact info (phone / email)</label>
                       <input style={s.input} value={createBillingForm.contact_info} onChange={e => setCreateBillingForm(f => ({ ...f, contact_info: e.target.value }))} placeholder="555-0100" />
@@ -3321,7 +3321,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" min="0" max="100" style={s.input} value={createBillingForm.pct_complete} onChange={e => setCreateBillingForm(f => ({ ...f, pct_complete: e.target.value }))} placeholder="0" />
                     </div>
                   </div>
-                  <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                  <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Work description</label>
                       <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
@@ -3444,7 +3444,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {isEditing && (
                       <div style={s.billingEntryExpanded}>
                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Edit billing submission</p>
-                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                           <div>
                             <label style={s.label}>Company name</label>
                             <input style={s.input} value={editBillingForm.company_name} onChange={e => setEditBillingForm(f => ({ ...f, company_name: e.target.value }))} />
@@ -3477,7 +3477,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} />
                           </div>
                         </div>
-                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                           <div>
                             <label style={s.label}>Work description</label>
                             <textarea style={{ ...s.textarea, minHeight: '80px' }} value={editBillingForm.work_description} onChange={e => setEditBillingForm(f => ({ ...f, work_description: e.target.value }))} />
@@ -3769,7 +3769,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {showMilestoneForm && (
                   <div style={s.inlineForm}>
                     <form onSubmit={addMilestone}>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                         <div style={{ gridColumn: 'span 2' }}><label style={s.label}>Title *</label><input style={s.input} required value={milestoneForm.title} onChange={e => setMilestoneForm(f => ({ ...f, title: e.target.value }))} placeholder="Foundation pour, framing complete..." /></div>
                         <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={milestoneForm.due_date} onChange={e => setMilestoneForm(f => ({ ...f, due_date: e.target.value }))} /></div>
                       </div>
@@ -3786,11 +3786,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div key={m.id} style={{ padding: '14px 12px', borderBottom: '1px solid #1a1a1a' }}>
                     {editingMilestone === m.id ? (
                       <div style={s.inlineForm}>
-                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                           <div style={{ gridColumn: 'span 2' }}><label style={s.label}>Title</label><input style={s.input} value={editMilestoneForm.title} onChange={e => setEditMilestoneForm(f => ({ ...f, title: e.target.value }))} /></div>
                           <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={editMilestoneForm.due_date} onChange={e => setEditMilestoneForm(f => ({ ...f, due_date: e.target.value }))} /></div>
                         </div>
-                        <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                        <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                           <div><label style={s.label}>Notes</label><input style={s.input} value={editMilestoneForm.notes} onChange={e => setEditMilestoneForm(f => ({ ...f, notes: e.target.value }))} /></div>
                           <div>
                             <label style={s.label}>Status</label>
@@ -3840,7 +3840,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const approvedTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
               const pendingCount = directCosts.filter(c => c.status === 'pending').length
               return (
-                <div style={s.statRow}>
+                <div style={s.statRow} className="rx-stats">
                   <div style={s.statCard}><div style={s.statLabel}>Total submitted</div><div style={s.statValue()}>${totalCosts.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Approved</div><div style={s.statValue('#4ade80')}>${approvedTotal.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
@@ -3861,7 +3861,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Log direct cost</p>
                   <form onSubmit={submitDirectCostPM}>
-                    <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                    <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                       <div>
                         <label style={s.label}>Date *</label>
                         <input type="date" style={s.input} required value={dcForm.cost_date} onChange={e => setDcForm(f => ({ ...f, cost_date: e.target.value }))} />

@@ -1,3 +1,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Responsive utilities ─────────────────────────────────────────────── */
+
+/* Horizontal scroll wrapper for complex multi-col tables/grids */
+.rx-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 640px) {
+  /* Grid collapse */
+  .rx-grid-2    { grid-template-columns: 1fr !important; }
+  .rx-grid-3    { grid-template-columns: 1fr !important; }
+  .rx-stats     { grid-template-columns: 1fr 1fr !important; }
+  .rx-row       { grid-template-columns: 1fr !important; gap: 0.25rem !important; }
+
+  /* Spacing */
+  .rx-main      { padding-left: 0.75rem !important; padding-right: 0.75rem !important; padding-top: 1.25rem !important; }
+  .rx-card      { padding: 1rem !important; }
+  .rx-card-body { padding: 1rem !important; }
+
+  /* Multi-column form rows (crew log, equipment, etc.) */
+  .rx-form-row  { grid-template-columns: 1fr 1fr !important; }
+
+  /* Prevent iOS input zoom (font-size < 16px triggers auto-zoom) */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="month"],
+  input[type="tel"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

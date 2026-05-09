@@ -531,7 +531,7 @@ export default function AdminPortal() {
         </div>
       </header>
 
-      <main style={s.main}>
+      <main style={s.main} className="rx-main">
         <div style={s.card}>
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
@@ -541,7 +541,7 @@ export default function AdminPortal() {
             <button style={s.tab(activeTab === 'liens')} onClick={() => setActiveTab('liens')}>Lien Waivers</button>
           </div>
 
-          <div style={s.cardBody}>
+          <div style={s.cardBody} className="rx-card-body">
 
             {/* ── DIRECT COSTS ── */}
             {activeTab === 'costs' && (
@@ -574,7 +574,7 @@ export default function AdminPortal() {
                   <div style={s.formBox}>
                     <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>New direct cost</p>
                     <form onSubmit={addCost}>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                         <div>
                           <label style={s.label}>Job *</label>
                           <select style={s.input} value={costForm.job_id} onChange={e => { setCostForm(f => ({ ...f, job_id: e.target.value, budget_item_id: '' })); loadBudgetItemsForJob(e.target.value) }} required>
@@ -593,7 +593,7 @@ export default function AdminPortal() {
                           <input type="date" style={s.input} value={costForm.cost_date} onChange={e => setCostForm(f => ({ ...f, cost_date: e.target.value }))} required />
                         </div>
                       </div>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                         <div style={{ gridColumn: 'span 2' }}>
                           <label style={s.label}>Description *</label>
                           <input style={s.input} value={costForm.description} onChange={e => setCostForm(f => ({ ...f, description: e.target.value }))} required placeholder="e.g. Concrete delivery — footing pour" />
@@ -603,7 +603,7 @@ export default function AdminPortal() {
                           <input type="number" style={s.input} value={costForm.amount} onChange={e => setCostForm(f => ({ ...f, amount: e.target.value }))} required placeholder="0.00" />
                         </div>
                       </div>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div>
                           <label style={s.label}>Budget line item</label>
                           <select style={s.input} value={costForm.budget_item_id} onChange={e => setCostForm(f => ({ ...f, budget_item_id: e.target.value }))} disabled={!costForm.job_id}>
@@ -732,7 +732,7 @@ export default function AdminPortal() {
                           {payingId === sub.id ? (
                             <div style={{ ...s.formBox, marginTop: 0 }}>
                               <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
-                              <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                              <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
                                 <div>
                                   <label style={s.label}>Payment date</label>
                                   <input type="date" style={{ ...s.input, colorScheme: 'dark' }} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} />
@@ -748,7 +748,7 @@ export default function AdminPortal() {
                                   </select>
                                 </div>
                               </div>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div>
                                   <label style={s.label}>Check / reference #</label>
                                   <input style={s.input} placeholder="Optional" value={payForm.check_number} onChange={e => setPayForm(f => ({ ...f, check_number: e.target.value }))} />
@@ -898,16 +898,16 @@ export default function AdminPortal() {
                     <div style={s.formBox}>
                       <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Add subcontractor</p>
                       <form onSubmit={addDirEntry}>
-                        <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                           <div><label style={s.label}>Company name *</label><input style={s.input} required value={addDirForm.company_name} onChange={e => setAddDirForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing LLC" /></div>
                           <div><label style={s.label}>Contact name</label><input style={s.input} value={addDirForm.contact_name} onChange={e => setAddDirForm(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
                         </div>
-                        <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                        <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
                           <div><label style={s.label}>Email</label><input type="email" style={s.input} value={addDirForm.email} onChange={e => setAddDirForm(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
                           <div><label style={s.label}>Phone</label><input style={s.input} value={addDirForm.phone} onChange={e => setAddDirForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                           <div><label style={s.label}>Address</label><input style={s.input} value={addDirForm.address} onChange={e => setAddDirForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St" /></div>
                         </div>
-                        <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                        <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
                           <div><label style={s.label}>Trade</label><select style={s.input} value={addDirForm.trade} onChange={e => setAddDirForm(f => ({ ...f, trade: e.target.value }))}><option value="">— Select —</option>{TRADES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
                           <div><label style={s.label}>License #</label><input style={s.input} value={addDirForm.license_number} onChange={e => setAddDirForm(f => ({ ...f, license_number: e.target.value }))} placeholder="TX-12345" /></div>
                           <div><label style={s.label}>COI expiration</label><input type="date" style={s.input} value={addDirForm.coi_expiration} onChange={e => setAddDirForm(f => ({ ...f, coi_expiration: e.target.value }))} /></div>
@@ -960,7 +960,7 @@ export default function AdminPortal() {
                                 {/* Info / Edit */}
                                 {editingDirId !== d.id ? (
                                   <div style={{ marginBottom: '1.25rem' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '10px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '10px' }} className="rx-grid-3">
                                       <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Email</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.email || '—'}</div></div>
                                       <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Phone</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.phone || '—'}</div></div>
                                       <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>License</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.license_number || '—'}</div></div>
@@ -982,7 +982,7 @@ export default function AdminPortal() {
                                 ) : (
                                   <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase' }}>Editing {d.company_name}</p>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }} className="rx-grid-2">
                                       <div><label style={s.label}>Company name</label><input style={s.input} value={editDirForm.company_name} onChange={e => setEditDirForm(f => ({ ...f, company_name: e.target.value }))} /></div>
                                       <div><label style={s.label}>Contact name</label><input style={s.input} value={editDirForm.contact_name} onChange={e => setEditDirForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
                                       <div><label style={s.label}>Email</label><input type="email" style={s.input} value={editDirForm.email} onChange={e => setEditDirForm(f => ({ ...f, email: e.target.value }))} /></div>

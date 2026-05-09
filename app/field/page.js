@@ -323,7 +323,7 @@ export default function Field() {
         </div>
       </header>
 
-      <main style={s.main}>
+      <main style={s.main} className="rx-main">
         {assignedJobs.length === 0 ? (
           <div style={s.empty}>You have not been assigned to any jobs yet.<br />Contact NV Construction to get started.</div>
         ) : (
@@ -372,7 +372,7 @@ export default function Field() {
                       <form onSubmit={submitDailyReport}>
 
                         {/* Header */}
-                        <div style={{ ...s.grid3, marginBottom: '1rem' }}>
+                        <div style={{ ...s.grid3, marginBottom: '1rem' }} className="rx-grid-3">
                           <div><label style={s.label}>Date *</label><input type="date" style={s.input} value={dailyForm.report_date} onChange={e => setDailyForm(f => ({ ...f, report_date: e.target.value }))} required /></div>
                           <div>
                             <label style={s.label}>Weather</label>
@@ -401,7 +401,7 @@ export default function Field() {
                             <button type="button" onClick={() => setCrewLog(l => [...l, { name: '', company: '', trade: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
                           </div>
                           {crewLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
                               <input style={s.input} placeholder="Name" value={row.name} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                               <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                               <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
@@ -419,7 +419,7 @@ export default function Field() {
                           </div>
                           {subActivityLog.map((row, i) => (
                             <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                 <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
@@ -437,7 +437,7 @@ export default function Field() {
                             <button type="button" onClick={() => setEquipmentLog(l => [...l, { name: '', quantity: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
                           </div>
                           {equipmentLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
                               <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                               <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                               <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
@@ -453,7 +453,7 @@ export default function Field() {
                             <button type="button" onClick={() => setMaterialsLog(l => [...l, { description: '', quantity: '', supplier: '' }])} style={s.btnSm('orange')}>+ Add</button>
                           </div>
                           {materialsLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
                               <input style={s.input} placeholder="Material description" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
                               <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                               <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
@@ -469,7 +469,7 @@ export default function Field() {
                             <button type="button" onClick={() => setVisitorsLog(l => [...l, { name: '', company: '', purpose: '' }])} style={s.btnSm('orange')}>+ Add</button>
                           </div>
                           {visitorsLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 3fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 3fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
                               <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                               <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                               <input style={s.input} placeholder="Purpose / notes" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
@@ -649,11 +649,11 @@ export default function Field() {
                       <div style={s.card}>
                         <h2 style={s.cardTitle}>Log delivery</h2>
                         <form onSubmit={submitDelivery}>
-                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                             <div><label style={s.label}>Material *</label><input style={s.input} required value={deliveryForm.material} onChange={e => setDeliveryForm(f => ({ ...f, material: e.target.value }))} placeholder="Lumber, rebar, concrete..." /></div>
                             <div><label style={s.label}>Vendor</label><input style={s.input} value={deliveryForm.vendor} onChange={e => setDeliveryForm(f => ({ ...f, vendor: e.target.value }))} placeholder="ABC Supply" /></div>
                           </div>
-                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                             <div><label style={s.label}>Expected date</label><input type="date" style={s.input} value={deliveryForm.expected_date} onChange={e => setDeliveryForm(f => ({ ...f, expected_date: e.target.value }))} /></div>
                             <div><label style={s.label}>Quantity</label><input style={s.input} value={deliveryForm.quantity} onChange={e => setDeliveryForm(f => ({ ...f, quantity: e.target.value }))} placeholder="100 sheets, 5 tons..." /></div>
                           </div>
@@ -732,7 +732,7 @@ export default function Field() {
                       <div style={s.card}>
                         <h2 style={s.cardTitle}>Log direct cost</h2>
                         <form onSubmit={submitDirectCost}>
-                          <div style={{ ...s.grid3, marginBottom: '1rem' }}>
+                          <div style={{ ...s.grid3, marginBottom: '1rem' }} className="rx-grid-3">
                             <div>
                               <label style={s.label}>Date *</label>
                               <input type="date" style={s.input} required value={dcForm.cost_date} onChange={e => setDcForm(f => ({ ...f, cost_date: e.target.value }))} />
@@ -752,7 +752,7 @@ export default function Field() {
                             <label style={s.label}>Description *</label>
                             <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber for framing, concrete delivery..." />
                           </div>
-                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                             <div>
                               <label style={s.label}>Notes</label>
                               <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />

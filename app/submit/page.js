@@ -390,7 +390,7 @@ export default function Submit() {
         </div>
       </header>
 
-      <main style={s.main}>
+      <main style={s.main} className="rx-main">
         {success && <div style={s.success}>Billing submitted successfully. Peyton will be notified.</div>}
 
         <div style={s.tabRow}>
@@ -615,7 +615,7 @@ export default function Submit() {
                 {/* ── Billing form: SOV exists ── */}
                 {!noContract && sovForm.length > 0 && (
                   <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }} className="rx-grid-3">
                       <div>
                         <label style={s.label}>Amount billed</label>
                         <div style={{ ...s.input, color: '#e8590c', fontWeight: '700', cursor: 'default' }}>
@@ -649,7 +649,7 @@ export default function Submit() {
         {activeTab === 'contracts' && (
           <>
             {myContracts.length > 0 && (
-              <div style={s.statRow}>
+              <div style={s.statRow} className="rx-stats">
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Contract value</div>
                   <div style={s.statValue()}>${totalContractValue.toLocaleString()}</div>
@@ -851,7 +851,7 @@ export default function Submit() {
                         ) : (
                           <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem' }}>
                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Submit your bid</div>
-                            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                            <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                               <div>
                                 <label style={s.label}>Bid amount ($) *</label>
                                 <input type="number" step="0.01" style={s.input} value={bidSubmitForm.amount} onChange={e => setBidSubmitForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
@@ -891,7 +891,7 @@ export default function Submit() {
               <p style={{ color: '#555', fontSize: '14px' }}>No directory record found for your account. Contact NV Construction to get set up.</p>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }} className="rx-grid-2">
                   <div>
                     <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>W-9</p>
                     {dirEntry.w9_url

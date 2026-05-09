@@ -126,11 +126,11 @@ export default function Apply() {
 
           <form onSubmit={handleSubmit}>
             <div style={s.sectionTitle}>Company info</div>
-            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+            <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
               <div><label style={s.label}>Company name<span style={s.required}>*</span></label><input style={s.input} value={form.company_name} onChange={e => update('company_name', e.target.value)} required placeholder="ABC Concrete Co." /></div>
               <div><label style={s.label}>Contact name<span style={s.required}>*</span></label><input style={s.input} value={form.contact_name} onChange={e => update('contact_name', e.target.value)} required placeholder="John Smith" /></div>
             </div>
-            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+            <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
               <div><label style={s.label}>Email<span style={s.required}>*</span></label><input type="email" style={s.input} value={form.email} onChange={e => update('email', e.target.value)} required placeholder="you@company.com" /></div>
               <div><label style={s.label}>Phone</label><input style={s.input} value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="(555) 555-5555" /></div>
             </div>
@@ -150,7 +150,7 @@ export default function Apply() {
             </div>
 
             <div style={s.sectionTitle}>Documents & compliance</div>
-            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+            <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
               <div>
                 <label style={s.label}>W-9</label>
                 <div style={s.uploadBox} onClick={() => document.getElementById('w9-upload').click()}>
@@ -166,7 +166,7 @@ export default function Apply() {
                 </div>
               </div>
             </div>
-            <div style={{ ...s.grid2, marginBottom: '1.5rem' }}>
+            <div style={{ ...s.grid2, marginBottom: '1.5rem' }} className="rx-grid-2">
               <div><label style={s.label}>COI expiration date</label><input type="date" style={s.input} value={form.coi_expiration} onChange={e => update('coi_expiration', e.target.value)} /></div>
               <div><label style={s.label}>License number</label><input style={s.input} value={form.license_number} onChange={e => update('license_number', e.target.value)} placeholder="TX-12345" /></div>
             </div>

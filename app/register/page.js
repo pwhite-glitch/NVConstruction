@@ -72,7 +72,7 @@ export default function Register() {
         </div>
         {error && <div style={s.err}>{error}</div>}
         <form onSubmit={handleRegister}>
-          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
             <div><label style={s.label}>Your name</label><input style={s.input} value={form.full_name} onChange={e => update('full_name', e.target.value)} required placeholder="John Smith" /></div>
             <div><label style={s.label}>Company</label><input style={s.input} value={form.company_name} onChange={e => update('company_name', e.target.value)} required placeholder="ABC Concrete" /></div>
           </div>

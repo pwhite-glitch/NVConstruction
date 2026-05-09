@@ -1180,8 +1180,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
         </div>
       </header>
 
-      <main style={s.main}>
-        <div style={s.statsGrid}>
+      <main style={s.main} className="rx-main">
+        <div style={s.statsGrid} className="rx-stats">
           <div style={s.statCard}>
             <div style={s.statLabel}>Pending billing</div>
             <div style={s.statValue('#e8590c')}>{pending.length}</div>
@@ -1215,7 +1215,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             )}
           </div>
 
-          <div style={s.cardBody}>
+          <div style={s.cardBody} className="rx-card-body">
 
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (
@@ -1234,7 +1234,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 </div>
                 {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : filtered.map(sub => (
                   <div key={sub.id} style={s.rowBorder}>
-                    <div style={s.row} onClick={() => setExpanded(expanded === sub.id ? null : sub.id)}>
+                    <div style={s.row} className="rx-row" onClick={() => setExpanded(expanded === sub.id ? null : sub.id)}>
                       <div><p style={s.company}>{sub.company_name}</p><p style={s.meta}>{new Date(sub.submitted_at).toLocaleDateString()} · {sub.contact_name}</p></div>
                       <div style={{ display: 'flex', alignItems: 'center', color: '#888', fontSize: '14px' }}>#{sub.jobs?.job_number}</div>
                       <div style={{ display: 'flex', alignItems: 'center', fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${sub.amount_billed?.toLocaleString()}</div>
@@ -1245,11 +1245,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         {editingBilling === sub.id ? (
                           <>
                             <p style={{ ...s.detailLabel, marginBottom: '1rem', fontSize: '12px' }}>Edit billing submission</p>
-                            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                            <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                               <div><label style={s.label}>Company name</label><input style={s.input} value={editBillingForm.company_name} onChange={e => setEditBillingForm(f => ({ ...f, company_name: e.target.value }))} /></div>
                               <div><label style={s.label}>Contact name</label><input style={s.input} value={editBillingForm.contact_name} onChange={e => setEditBillingForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
                             </div>
-                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                               <div><label style={s.label}>Contact info</label><input style={s.input} value={editBillingForm.contact_info} onChange={e => setEditBillingForm(f => ({ ...f, contact_info: e.target.value }))} /></div>
                               <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" style={s.input} value={editBillingForm.amount_billed} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} /></div>
                               <div><label style={s.label}>% complete</label><input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} /></div>
@@ -1273,7 +1273,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           </>
                         ) : (
                           <>
-                            <div style={s.detailGrid}>
+                            <div style={s.detailGrid} className="rx-grid-2">
                               <div><div style={s.detailLabel}>Contact</div><div style={s.detailValue}>{sub.contact_name} · {sub.contact_info}</div></div>
                               <div><div style={s.detailLabel}>% complete</div><div style={s.detailValue}>{sub.pct_complete ?? '—'}%</div></div>
                             </div>
@@ -1340,16 +1340,16 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Add subcontractor to directory</p>
                     <form onSubmit={addSubManually}>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Company name *</label><input style={s.input} value={newSubManual.company_name} onChange={e => setNewSubManual(f => ({ ...f, company_name: e.target.value }))} required placeholder="ABC Framing LLC" /></div>
                         <div><label style={s.label}>Contact name</label><input style={s.input} value={newSubManual.contact_name} onChange={e => setNewSubManual(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
                       </div>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                         <div><label style={s.label}>Email</label><input type="email" style={s.input} value={newSubManual.email} onChange={e => setNewSubManual(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
                         <div><label style={s.label}>Phone</label><input style={s.input} value={newSubManual.phone} onChange={e => setNewSubManual(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                         <div><label style={s.label}>Address</label><input style={s.input} value={newSubManual.address} onChange={e => setNewSubManual(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, TX" /></div>
                       </div>
-                      <div style={{ ...s.grid3, marginBottom: '1.25rem' }}>
+                      <div style={{ ...s.grid3, marginBottom: '1.25rem' }} className="rx-grid-3">
                         <div>
                           <label style={s.label}>Trade</label>
                           <select style={s.input} value={newSubManual.trade} onChange={e => setNewSubManual(f => ({ ...f, trade: e.target.value }))}>
@@ -1374,7 +1374,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Invite subcontractor to a job</p>
                     <form onSubmit={inviteSub}>
-                      <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
+                      <div style={{ ...s.grid2, marginBottom: '1.25rem' }} className="rx-grid-2">
                         <div><label style={s.label}>Sub's email address</label><input type="email" style={s.input} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required placeholder="sub@company.com" /></div>
                         <div>
                           <label style={s.label}>Job</label>
@@ -1751,7 +1751,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <div style={{ ...s.formBox, marginBottom: '1.25rem' }}>
                     <p style={s.formTitle}>New job</p>
                     <form onSubmit={addJob}>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /></div>
                         <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
                       </div>
@@ -1760,7 +1760,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                         <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
-                        <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                           <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.sub_billing_start} onChange={e => setNewJob(j => ({ ...j, sub_billing_start: e.target.value }))} /></div>
                           <div><label style={s.label}>Frequency</label>
                             <select style={s.input} value={newJob.sub_billing_frequency} onChange={e => setNewJob(j => ({ ...j, sub_billing_frequency: e.target.value, sub_billing_due: '', sub_billing_anchor: '' }))}>
@@ -1770,7 +1770,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             </select>
                           </div>
                         </div>
-                        <div style={s.grid2}>
+                        <div style={s.grid2} className="rx-grid-2">
                           {newJob.sub_billing_frequency === 'monthly'
                             ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
                             : <div><label style={s.label}>Due day of week</label>
@@ -1785,7 +1785,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                         <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
-                        <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                           <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.owner_billing_start} onChange={e => setNewJob(j => ({ ...j, owner_billing_start: e.target.value }))} /></div>
                           <div><label style={s.label}>Frequency</label>
                             <select style={s.input} value={newJob.owner_billing_frequency} onChange={e => setNewJob(j => ({ ...j, owner_billing_frequency: e.target.value, owner_billing_due: '', owner_billing_anchor: '' }))}>
@@ -1795,7 +1795,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             </select>
                           </div>
                         </div>
-                        <div style={s.grid2}>
+                        <div style={s.grid2} className="rx-grid-2">
                           {newJob.owner_billing_frequency === 'monthly'
                             ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.owner_billing_due} onChange={e => setNewJob(j => ({ ...j, owner_billing_due: e.target.value }))} placeholder="e.g. 1" /></div>
                             : <div><label style={s.label}>Due day of week</label>
@@ -1843,7 +1843,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Create bid package</p>
                     <form onSubmit={createBidPackage}>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Package title *</label><input style={s.input} value={bidForm.title} onChange={e => setBidForm(f => ({ ...f, title: e.target.value }))} required placeholder="Unit 4 Kitchen Remodel" /></div>
                         <div><label style={s.label}>Bid due date</label><input type="date" style={s.input} value={bidForm.due_date} onChange={e => setBidForm(f => ({ ...f, due_date: e.target.value }))} /></div>
                       </div>
@@ -2041,7 +2041,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             {showManualBidFor === pkg.id && (
                               <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
                                 <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Enter bid received by email/phone</p>
-                                <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                                <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                                   <div>
                                     <label style={s.label}>Company name *</label>
                                     <input style={s.input} placeholder="ABC Concrete Co." value={manualBidForm.company_name} onChange={e => setManualBidForm(f => ({ ...f, company_name: e.target.value }))} />
@@ -2171,11 +2171,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     {teamInviteMsg && (
                       <p style={{ fontSize: '13px', color: teamInviteMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem', marginTop: 0 }}>{teamInviteMsg.text}</p>
                     )}
-                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                       <div><label style={s.label}>Email *</label><input style={s.input} type="email" value={teamInviteForm.email} onChange={e => setTeamInviteForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@email.com" /></div>
                       <div><label style={s.label}>Full name</label><input style={s.input} value={teamInviteForm.full_name} onChange={e => setTeamInviteForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Smith" /></div>
                     </div>
-                    <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
+                    <div style={{ ...s.grid2, marginBottom: '1.25rem' }} className="rx-grid-2">
                       <div>
                         <label style={s.label}>Role *</label>
                         <select style={s.input} value={teamInviteForm.role} onChange={e => setTeamInviteForm(f => ({ ...f, role: e.target.value }))}>
@@ -2217,7 +2217,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           {editingTeamId === member.id ? (
                             <>
                               <p style={{ ...s.detailLabel, marginBottom: '1rem', fontSize: '12px' }}>Edit team member</p>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div><label style={s.label}>Full name</label><input style={s.input} value={editTeamForm.full_name} onChange={e => setEditTeamForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Smith" /></div>
                                 <div><label style={s.label}>Phone</label><input style={s.input} value={editTeamForm.phone} onChange={e => setEditTeamForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                               </div>
@@ -2355,15 +2355,15 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 {showNewEstimate && (
                   <div style={s.formBox}>
                     <p style={s.formTitle}>New estimate</p>
-                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                       <div><label style={s.label}>Project name *</label><input style={s.input} value={estimateForm.project_name} onChange={e => setEstimateForm(f => ({ ...f, project_name: e.target.value }))} placeholder="Project name" /></div>
                       <div><label style={s.label}>Address</label><input style={s.input} value={estimateForm.address} onChange={e => setEstimateForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, ST" /></div>
                     </div>
-                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                       <div><label style={s.label}>Owner / Contact name</label><input style={s.input} value={estimateForm.owner_name} onChange={e => setEstimateForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="John Smith" /></div>
                       <div><label style={s.label}>Company</label><input style={s.input} value={estimateForm.owner_company} onChange={e => setEstimateForm(f => ({ ...f, owner_company: e.target.value }))} placeholder="ABC Properties" /></div>
                     </div>
-                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                       <div><label style={s.label}>Email</label><input type="email" style={s.input} value={estimateForm.owner_email} onChange={e => setEstimateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@example.com" /></div>
                       <div><label style={s.label}>Phone</label><input style={s.input} value={estimateForm.owner_phone} onChange={e => setEstimateForm(f => ({ ...f, owner_phone: e.target.value }))} placeholder="555-0100" /></div>
                     </div>
@@ -2430,19 +2430,19 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           {isEditingEst ? (
                             <>
                               <p style={{ ...s.detailLabel, marginBottom: '1rem', fontSize: '12px' }}>Edit estimate</p>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div><label style={s.label}>Project name</label><input style={s.input} value={editEstimateForm.project_name} onChange={e => setEditEstimateForm(f => ({ ...f, project_name: e.target.value }))} /></div>
                                 <div><label style={s.label}>Address</label><input style={s.input} value={editEstimateForm.address} onChange={e => setEditEstimateForm(f => ({ ...f, address: e.target.value }))} /></div>
                               </div>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div><label style={s.label}>Owner name</label><input style={s.input} value={editEstimateForm.owner_name} onChange={e => setEditEstimateForm(f => ({ ...f, owner_name: e.target.value }))} /></div>
                                 <div><label style={s.label}>Company</label><input style={s.input} value={editEstimateForm.owner_company} onChange={e => setEditEstimateForm(f => ({ ...f, owner_company: e.target.value }))} /></div>
                               </div>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div><label style={s.label}>Email</label><input style={s.input} value={editEstimateForm.owner_email} onChange={e => setEditEstimateForm(f => ({ ...f, owner_email: e.target.value }))} /></div>
                                 <div><label style={s.label}>Phone</label><input style={s.input} value={editEstimateForm.owner_phone} onChange={e => setEditEstimateForm(f => ({ ...f, owner_phone: e.target.value }))} /></div>
                               </div>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div>
                                   <label style={s.label}>Status</label>
                                   <select style={s.input} value={editEstimateForm.status} onChange={e => setEditEstimateForm(f => ({ ...f, status: e.target.value }))}>
@@ -2575,7 +2575,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               {convertingEst === est.id && (
                                 <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '1rem' }}>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', margin: '0 0 0.75rem', letterSpacing: '2px', textTransform: 'uppercase' }}>Convert to Active Job</p>
-                                  <div style={{ ...s.grid2, marginBottom: '0.75rem' }}>
+                                  <div style={{ ...s.grid2, marginBottom: '0.75rem' }} className="rx-grid-2">
                                     <div>
                                       <label style={s.label}>Job number *</label>
                                       <input style={s.input} value={convertJobForm.job_number} onChange={e => setConvertJobForm(f => ({ ...f, job_number: e.target.value }))} placeholder="7469" />
@@ -2729,11 +2729,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   {showAddBd && (
                     <div style={{ ...s.formBox, marginBottom: '1.25rem' }}>
                       <p style={s.formTitle}>New Opportunity</p>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Project Name *</label><input style={s.input} value={addBdForm.project_name} onChange={e => setAddBdForm(f => ({ ...f, project_name: e.target.value }))} /></div>
                         <div><label style={s.label}>Client / GC</label><input style={s.input} value={addBdForm.client_name} onChange={e => setAddBdForm(f => ({ ...f, client_name: e.target.value }))} /></div>
                       </div>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                         <div>
                           <label style={s.label}>Stage</label>
                           <select style={s.input} value={addBdForm.stage} onChange={e => setAddBdForm(f => ({ ...f, stage: e.target.value }))}>
@@ -2746,7 +2746,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         <div><label style={s.label}>Bid Amount</label><input style={s.input} type="number" placeholder="0" value={addBdForm.bid_amount} onChange={e => setAddBdForm(f => ({ ...f, bid_amount: e.target.value }))} onFocus={e => e.target.select()} /></div>
                         <div><label style={s.label}>Bid Date</label><input style={s.input} type="date" value={addBdForm.bid_date} onChange={e => setAddBdForm(f => ({ ...f, bid_date: e.target.value }))} /></div>
                       </div>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Contract Value (if won)</label><input style={s.input} type="number" placeholder="0" value={addBdForm.contract_value} onChange={e => setAddBdForm(f => ({ ...f, contract_value: e.target.value }))} onFocus={e => e.target.select()} /></div>
                         <div><label style={s.label}>Trade Type</label><input style={s.input} placeholder="e.g. Commercial, Industrial" value={addBdForm.trade_type} onChange={e => setAddBdForm(f => ({ ...f, trade_type: e.target.value }))} /></div>
                       </div>
@@ -2830,7 +2830,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             {/* Bid package row — read only */}
                             {item._type === 'bid' && (
                               <>
-                                <div style={s.detailGrid}>
+                                <div style={s.detailGrid} className="rx-grid-2">
                                   <div><p style={s.detailLabel}>Linked Job</p><p style={s.detailValue}>{item.jobs?.project_name || '—'}</p></div>
                                   <div><p style={s.detailLabel}>Status</p><p style={s.detailValue}>{item.status}</p></div>
                                   <div><p style={s.detailLabel}>Due Date</p><p style={s.detailValue}>{item.due_date ? new Date(item.due_date + 'T12:00:00').toLocaleDateString() : '—'}</p></div>
@@ -2846,11 +2846,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               isEditing ? (
                                 <>
                                   <p style={{ ...s.detailLabel, fontSize: '12px', marginBottom: '1rem' }}>Edit Opportunity</p>
-                                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                     <div><label style={s.label}>Project Name</label><input style={s.input} value={editBdForm.project_name} onChange={e => setEditBdForm(f => ({ ...f, project_name: e.target.value }))} /></div>
                                     <div><label style={s.label}>Client / GC</label><input style={s.input} value={editBdForm.client_name || ''} onChange={e => setEditBdForm(f => ({ ...f, client_name: e.target.value }))} /></div>
                                   </div>
-                                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                                  <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                                     <div>
                                       <label style={s.label}>Stage</label>
                                       <select style={s.input} value={editBdForm.stage} onChange={e => setEditBdForm(f => ({ ...f, stage: e.target.value }))}>
@@ -2863,7 +2863,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                     <div><label style={s.label}>Bid Amount</label><input style={s.input} type="number" value={editBdForm.bid_amount || ''} onChange={e => setEditBdForm(f => ({ ...f, bid_amount: e.target.value }))} onFocus={e => e.target.select()} /></div>
                                     <div><label style={s.label}>Bid Date</label><input style={s.input} type="date" value={editBdForm.bid_date || ''} onChange={e => setEditBdForm(f => ({ ...f, bid_date: e.target.value }))} /></div>
                                   </div>
-                                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                     <div><label style={s.label}>Contract Value</label><input style={s.input} type="number" value={editBdForm.contract_value || ''} onChange={e => setEditBdForm(f => ({ ...f, contract_value: e.target.value }))} onFocus={e => e.target.select()} /></div>
                                     <div><label style={s.label}>Trade Type</label><input style={s.input} value={editBdForm.trade_type || ''} onChange={e => setEditBdForm(f => ({ ...f, trade_type: e.target.value }))} /></div>
                                   </div>
@@ -2875,7 +2875,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 </>
                               ) : (
                                 <>
-                                  <div style={s.detailGrid}>
+                                  <div style={s.detailGrid} className="rx-grid-2">
                                     <div><p style={s.detailLabel}>Client / GC</p><p style={s.detailValue}>{item.client_name || '—'}</p></div>
                                     <div><p style={s.detailLabel}>Stage</p><p style={s.detailValue}><span style={stageBadge(item.stage)}>{stageCfg[item.stage]?.label || item.stage}</span></p></div>
                                     <div><p style={s.detailLabel}>Bid Amount</p><p style={s.detailValue}>{fmt(item.bid_amount)}</p></div>

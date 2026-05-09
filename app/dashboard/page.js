@@ -1626,7 +1626,54 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               for (let d = 1; d <= daysInMonth; d++) cells.push(d)
               while (cells.length % 7 !== 0) cells.push(null)
 
-              const activeJobsWithDates = jobs.filter(j => j.status === 'active' && (j.sub_billing_due || j.owner_billing_due))
+              // Build per-day maps for sub and owner billing events
+              const subByDay = {}
+              const ownerByDay = {}
+              const addDay = (map, day, job) => { if (!map[day]) map[day] = []; map[day].push(job) }
+
+              for (const j of jobs.filter(jj => jj.status === 'active')) {
+                // Sub billing — always monthly, uses sub_billing_due
+                if (j.sub_billing_due) {
+                  const d = j.sub_billing_due
+                  if (d >= 1 && d <= daysInMonth) {
+                    const cellDate = new Date(year, month, d)
+                    const start = j.sub_billing_start ? new Date(j.sub_billing_start) : null
+                    if (!start || start <= cellDate) addDay(subByDay, d, j)
+                  }
+                }
+
+                // Owner billing — respects billing_frequency + billing_due_day
+                const ownerStart = j.owner_billing_start ? new Date(j.owner_billing_start) : null
+                const freq = j.billing_frequency || 'monthly'
+                const dueDay = j.owner_billing_due || j.billing_due_day
+
+                if (freq === 'monthly') {
+                  if (dueDay && dueDay >= 1 && dueDay <= daysInMonth) {
+                    const cellDate = new Date(year, month, dueDay)
+                    if (!ownerStart || ownerStart <= cellDate) addDay(ownerByDay, dueDay, j)
+                  }
+                } else if (freq === 'weekly') {
+                  const dow = parseInt(j.billing_due_day)
+                  if (!isNaN(dow)) {
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const cellDate = new Date(year, month, d)
+                      if (cellDate.getDay() === dow && (!ownerStart || ownerStart <= cellDate)) addDay(ownerByDay, d, j)
+                    }
+                  }
+                } else if (freq === 'biweekly') {
+                  const dow = parseInt(j.billing_due_day)
+                  const anchor = j.billing_anchor_date ? new Date(j.billing_anchor_date) : null
+                  if (!isNaN(dow) && anchor) {
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const cellDate = new Date(year, month, d)
+                      const diffDays = Math.round((cellDate - anchor) / 86400000)
+                      if (cellDate.getDay() === dow && diffDays % 14 === 0 && (!ownerStart || ownerStart <= cellDate)) addDay(ownerByDay, d, j)
+                    }
+                  }
+                }
+              }
+
+              const hasAny = jobs.some(j => j.status === 'active' && (j.sub_billing_due || j.owner_billing_due || j.billing_due_day))
 
               return (
                 <div>
@@ -1644,9 +1691,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', paddingBottom: '8px', textTransform: 'uppercase' }}>{d}</div>
                     ))}
                     {cells.map((day, i) => {
-                      const cellDate = day ? new Date(year, month, day) : null
-                      const subJobs = day ? activeJobsWithDates.filter(j => j.sub_billing_due === day && (!j.sub_billing_start || new Date(j.sub_billing_start) <= cellDate)) : []
-                      const ownerJobs = day ? activeJobsWithDates.filter(j => j.owner_billing_due === day && (!j.owner_billing_start || new Date(j.owner_billing_start) <= cellDate)) : []
+                      const subJobs = day ? (subByDay[day] || []) : []
+                      const ownerJobs = day ? (ownerByDay[day] || []) : []
                       const isToday = day && new Date().getFullYear() === year && new Date().getMonth() === month && new Date().getDate() === day
                       return (
                         <div key={i} style={{ minHeight: '80px', background: day ? '#0f0f0f' : 'transparent', border: day ? `1px solid ${isToday ? '#e8590c' : '#1e1e1e'}` : 'none', borderRadius: '8px', padding: '6px' }}>
@@ -1665,9 +1711,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       )
                     })}
                   </div>
-                  {activeJobsWithDates.length === 0 && (
-                    <div style={s.emptyMsg}>No active jobs with billing dates set. Add billing due dates when creating a job.</div>
-                  )}
+                  {!hasAny && <div style={s.emptyMsg}>No active jobs with billing dates set. Add billing due dates when creating or editing a job.</div>}
                 </div>
               )
             })()}

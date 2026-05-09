@@ -89,13 +89,6 @@ export default function Field() {
   const [docCategory, setDocCategory] = useState('plans')
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
-  const [lookaheadTasks, setLookaheadTasks] = useState([])
-  const [lookaheadForm, setLookaheadForm] = useState({ task_name: '', start_date: '', end_date: '', trade: '', notes: '' })
-  const [showLookaheadForm, setShowLookaheadForm] = useState(false)
-  const [submittingLookahead, setSubmittingLookahead] = useState(false)
-  const [editingLookahead, setEditingLookahead] = useState(null)
-  const [editLookaheadForm, setEditLookaheadForm] = useState({})
-
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -121,7 +114,6 @@ export default function Field() {
     else if (activeTab === 'subs') loadSubContacts()
     else if (activeTab === 'costs') loadDirectCosts()
     else if (activeTab === 'docs') loadJobDocs()
-    else if (activeTab === 'lookahead') loadLookahead()
   }, [selectedJobId, activeTab])
 
   async function loadDailyReports() {
@@ -156,34 +148,6 @@ export default function Field() {
   async function loadJobDocs() {
     const { data } = await supabase.from('job_documents').select('*').eq('job_id', selectedJobId).order('uploaded_at', { ascending: false })
     setJobDocs(data || [])
-  }
-
-  async function loadLookahead() {
-    const { data } = await supabase.from('lookahead_tasks').select('*').eq('job_id', selectedJobId).order('start_date')
-    setLookaheadTasks(data || [])
-  }
-
-  async function submitLookahead(e) {
-    e.preventDefault()
-    if (!lookaheadForm.task_name || !lookaheadForm.start_date || !lookaheadForm.end_date) return
-    setSubmittingLookahead(true)
-    await supabase.from('lookahead_tasks').insert({ job_id: selectedJobId, created_by: user.id, ...lookaheadForm })
-    setLookaheadForm({ task_name: '', start_date: '', end_date: '', trade: '', notes: '' })
-    setShowLookaheadForm(false)
-    setSubmittingLookahead(false)
-    await loadLookahead()
-  }
-
-  async function saveLookaheadEdit(id) {
-    await supabase.from('lookahead_tasks').update(editLookaheadForm).eq('id', id)
-    setEditingLookahead(null)
-    await loadLookahead()
-  }
-
-  async function deleteLookaheadTask(id) {
-    if (!window.confirm('Delete this task?')) return
-    await supabase.from('lookahead_tasks').delete().eq('id', id)
-    await loadLookahead()
   }
 
   async function uploadJobDoc(file) {
@@ -397,7 +361,6 @@ export default function Field() {
                   <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>
                     Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
                   </button>
-                  <button style={s.tab(activeTab === 'lookahead')} onClick={() => setActiveTab('lookahead')}>Lookahead</button>
                 </div>
 
                 {/* ── DAILY REPORTS ── */}
@@ -932,134 +895,6 @@ export default function Field() {
                     )}
                   </>
                 )}
-
-                {/* ── LOOKAHEAD ── */}
-                {activeTab === 'lookahead' && (() => {
-                  const today = new Date(); today.setHours(0,0,0,0)
-                  const days = Array.from({ length: 28 }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d })
-                  const dayLabels = ['Su','Mo','Tu','We','Th','Fr','Sa']
-                  const TRADE_COLORS = ['#1a3a5a','#1a4a1a','#2a1a4a','#4a2200','#2a1a00','#1a3a3a','#3a1a1a','#2a2a00']
-                  const tradeColorMap = {}
-                  let colorIdx = 0
-                  const getTradeColor = (trade) => {
-                    const key = (trade || 'General').toLowerCase()
-                    if (!tradeColorMap[key]) { tradeColorMap[key] = TRADE_COLORS[colorIdx % TRADE_COLORS.length]; colorIdx++ }
-                    return tradeColorMap[key]
-                  }
-                  const visibleTasks = lookaheadTasks.filter(t => {
-                    const end = new Date(t.end_date + 'T00:00:00')
-                    const start = new Date(t.start_date + 'T00:00:00')
-                    return end >= today && start <= days[27]
-                  })
-                  return (
-                    <>
-                      <div style={s.card}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                          <h2 style={{ ...s.cardTitle, marginBottom: 0 }}>2–4 Week Lookahead</h2>
-                          <button style={s.btnSm('orange')} onClick={() => setShowLookaheadForm(v => !v)}>{showLookaheadForm ? 'Cancel' : '+ Add task'}</button>
-                        </div>
-
-                        {showLookaheadForm && (
-                          <form onSubmit={submitLookahead} style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-                            <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                              <div style={{ gridColumn: '1/-1' }}><label style={s.label}>Task name</label><input style={s.input} value={lookaheadForm.task_name} onChange={e => setLookaheadForm(f => ({ ...f, task_name: e.target.value }))} required placeholder="Pour foundation slab" /></div>
-                            </div>
-                            <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                              <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={lookaheadForm.start_date} onChange={e => setLookaheadForm(f => ({ ...f, start_date: e.target.value }))} required /></div>
-                              <div><label style={s.label}>End date</label><input type="date" style={s.input} value={lookaheadForm.end_date} onChange={e => setLookaheadForm(f => ({ ...f, end_date: e.target.value }))} required /></div>
-                            </div>
-                            <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                              <div><label style={s.label}>Trade / Sub</label><input style={s.input} value={lookaheadForm.trade} onChange={e => setLookaheadForm(f => ({ ...f, trade: e.target.value }))} placeholder="Concrete" /></div>
-                              <div><label style={s.label}>Notes</label><input style={s.input} value={lookaheadForm.notes} onChange={e => setLookaheadForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" /></div>
-                            </div>
-                            <button type="submit" style={s.btn} disabled={submittingLookahead}>{submittingLookahead ? 'Saving...' : 'Add task'}</button>
-                          </form>
-                        )}
-
-                        {/* Gantt-style 28-day view */}
-                        {visibleTasks.length > 0 ? (
-                          <div style={{ overflowX: 'auto' }}>
-                            {/* Week headers */}
-                            <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(28, 36px)`, marginBottom: '4px' }}>
-                              <div />
-                              {days.map((d, i) => {
-                                const isWeekStart = d.getDay() === 1 || i === 0
-                                const isSun = d.getDay() === 0
-                                const isToday = d.toDateString() === today.toDateString()
-                                return (
-                                  <div key={i} style={{ textAlign: 'center', fontSize: '10px', fontWeight: isWeekStart ? '700' : '400', color: isToday ? '#e8590c' : isSun ? '#333' : '#555', borderLeft: isWeekStart && i > 0 ? '1px solid #222' : 'none', paddingBottom: '4px' }}>
-                                    {isWeekStart ? <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1px' }}>{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} {d.getDate()}</div> : null}
-                                    <div>{dayLabels[d.getDay()]}</div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                            {/* Task rows */}
-                            {visibleTasks.map(t => {
-                              const taskStart = new Date(t.start_date + 'T00:00:00')
-                              const taskEnd = new Date(t.end_date + 'T00:00:00')
-                              const color = getTradeColor(t.trade)
-                              return (
-                                <div key={t.id}>
-                                  {editingLookahead === t.id ? (
-                                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '10px', marginBottom: '4px' }}>
-                                      <div style={{ ...s.grid2, marginBottom: '8px', gap: '8px' }}>
-                                        <div style={{ gridColumn: '1/-1' }}><input style={{ ...s.input, fontSize: '13px' }} value={editLookaheadForm.task_name} onChange={e => setEditLookaheadForm(f => ({ ...f, task_name: e.target.value }))} /></div>
-                                        <div><input type="date" style={{ ...s.input, fontSize: '13px' }} value={editLookaheadForm.start_date} onChange={e => setEditLookaheadForm(f => ({ ...f, start_date: e.target.value }))} /></div>
-                                        <div><input type="date" style={{ ...s.input, fontSize: '13px' }} value={editLookaheadForm.end_date} onChange={e => setEditLookaheadForm(f => ({ ...f, end_date: e.target.value }))} /></div>
-                                        <div><input style={{ ...s.input, fontSize: '13px' }} value={editLookaheadForm.trade} onChange={e => setEditLookaheadForm(f => ({ ...f, trade: e.target.value }))} placeholder="Trade" /></div>
-                                        <div><input style={{ ...s.input, fontSize: '13px' }} value={editLookaheadForm.notes} onChange={e => setEditLookaheadForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes" /></div>
-                                      </div>
-                                      <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button style={s.btnSm('green')} onClick={() => saveLookaheadEdit(t.id)}>Save</button>
-                                        <button style={s.btnSm('gray')} onClick={() => setEditingLookahead(null)}>Cancel</button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div style={{ display: 'grid', gridTemplateColumns: `160px repeat(28, 36px)`, alignItems: 'center', marginBottom: '3px' }}>
-                                      <div style={{ fontSize: '12px', color: '#ccc', paddingRight: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', display: 'flex', gap: '6px', alignItems: 'center' }}
-                                        onClick={() => { setEditingLookahead(t.id); setEditLookaheadForm({ task_name: t.task_name, start_date: t.start_date, end_date: t.end_date, trade: t.trade || '', notes: t.notes || '' }) }}>
-                                        <span title={t.task_name}>{t.task_name}</span>
-                                        {t.trade && <span style={{ fontSize: '10px', color: '#555', flexShrink: 0 }}>· {t.trade}</span>}
-                                      </div>
-                                      {days.map((d, i) => {
-                                        const inRange = d >= taskStart && d <= taskEnd
-                                        const isFirst = d.toDateString() === taskStart.toDateString()
-                                        const isLast = d.toDateString() === taskEnd.toDateString()
-                                        const isSun = d.getDay() === 0
-                                        return (
-                                          <div key={i} style={{ height: '28px', background: inRange ? color : 'transparent', borderLeft: inRange && isFirst ? `3px solid ${color === '#1a3a5a' ? '#60a5fa' : '#fff'}` : 'none', borderRight: inRange && isLast ? `2px solid ${color}` : 'none', opacity: isSun ? 0.5 : 1, borderRadius: isFirst && isLast ? '4px' : isFirst ? '4px 0 0 4px' : isLast ? '0 4px 4px 0' : 0, borderTop: `1px solid #0a0a0a`, borderBottom: `1px solid #0a0a0a` }} />
-                                        )
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <p style={{ color: '#555', fontSize: '13px', textAlign: 'center', padding: '2rem 0' }}>No tasks in the next 28 days. Add tasks above to populate the lookahead.</p>
-                        )}
-                      </div>
-
-                      {/* All tasks list */}
-                      {lookaheadTasks.filter(t => new Date(t.end_date + 'T00:00:00') < today).length > 0 && (
-                        <div style={s.card}>
-                          <p style={{ ...s.cardTitle, fontSize: '13px', color: '#555' }}>Past tasks</p>
-                          {lookaheadTasks.filter(t => new Date(t.end_date + 'T00:00:00') < today).map(t => (
-                            <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1a1a1a' }}>
-                              <div>
-                                <span style={{ fontSize: '13px', color: '#666' }}>{t.task_name}</span>
-                                <span style={{ fontSize: '11px', color: '#444', marginLeft: '8px' }}>{new Date(t.start_date + 'T00:00:00').toLocaleDateString()} – {new Date(t.end_date + 'T00:00:00').toLocaleDateString()}</span>
-                              </div>
-                              <button style={s.btnSm('red')} onClick={() => deleteLookaheadTask(t.id)}>Delete</button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )
-                })()}
 
           </>
         )}

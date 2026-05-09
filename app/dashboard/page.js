@@ -95,7 +95,8 @@ export default function Dashboard() {
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', sub_billing_due: '', owner_billing_due: '' })
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
   const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
@@ -565,6 +566,9 @@ export default function Dashboard() {
       job_number: newJob.job_number,
       project_name: newJob.project_name,
       status: 'active',
+      start_date: newJob.start_date || null,
+      sub_billing_due: newJob.sub_billing_due ? parseInt(newJob.sub_billing_due) : null,
+      owner_billing_due: newJob.owner_billing_due ? parseInt(newJob.owner_billing_due) : null,
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     router.push(`/jobdetail?id=${data.id}`)
@@ -1181,6 +1185,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
         <div style={s.card}>
           <div style={s.tabs}>
             <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
+            <button style={s.tab(activeTab === 'calendar')} onClick={() => setActiveTab('calendar')}>Calendar</button>
             <button style={s.tab(activeTab === 'directory')} onClick={() => setActiveTab('directory')}>
               Sub directory{pendingApps > 0 ? ` (${pendingApps})` : ''}
             </button>
@@ -1608,11 +1613,67 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               </>
             )}
 
+            {/* ── CALENDAR ── */}
+            {activeTab === 'calendar' && (() => {
+              const { year, month } = calMonth
+              const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+              const firstDay = new Date(year, month, 1).getDay()
+              const daysInMonth = new Date(year, month + 1, 0).getDate()
+              const cells = []
+              for (let i = 0; i < firstDay; i++) cells.push(null)
+              for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+              while (cells.length % 7 !== 0) cells.push(null)
+
+              const activeJobsWithDates = jobs.filter(j => j.status === 'active' && (j.sub_billing_due || j.owner_billing_due))
+
+              return (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+                    <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹ Prev</button>
+                    <span style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>{monthNames[month]} {year}</span>
+                    <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>Next ›</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#1a3a5a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Sub billing due</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#1a4a1a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Owner billing due</span></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                    {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                      <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', paddingBottom: '8px', textTransform: 'uppercase' }}>{d}</div>
+                    ))}
+                    {cells.map((day, i) => {
+                      const subJobs = day ? activeJobsWithDates.filter(j => j.sub_billing_due === day) : []
+                      const ownerJobs = day ? activeJobsWithDates.filter(j => j.owner_billing_due === day) : []
+                      const isToday = day && new Date().getFullYear() === year && new Date().getMonth() === month && new Date().getDate() === day
+                      return (
+                        <div key={i} style={{ minHeight: '80px', background: day ? '#0f0f0f' : 'transparent', border: day ? `1px solid ${isToday ? '#e8590c' : '#1e1e1e'}` : 'none', borderRadius: '8px', padding: '6px' }}>
+                          {day && <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>}
+                          {subJobs.map(j => (
+                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#1a3a5a', border: '1px solid #2a5a8a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                              #{j.job_number} Sub
+                            </div>
+                          ))}
+                          {ownerJobs.map(j => (
+                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#1a4a1a', border: '1px solid #2a6a2a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#86efac', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                              #{j.job_number} Owner
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {activeJobsWithDates.length === 0 && (
+                    <div style={s.emptyMsg}>No active jobs with billing dates set. Add billing due dates when creating a job.</div>
+                  )}
+                </div>
+              )
+            })()}
+
             {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '' }); setJobMsg('') }}>
+                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', sub_billing_due: '', owner_billing_due: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
                   </button>
                 </div>
@@ -1624,6 +1685,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       <div style={{ ...s.grid2, marginBottom: '12px' }}>
                         <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /></div>
                         <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
+                      </div>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div><label style={s.label}>Start date</label><input style={s.input} type="date" value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
+                        <div><label style={s.label}>Sub billing due (day of month)</label><input style={s.input} type="number" min="1" max="28" value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
+                        <div><label style={s.label}>Owner billing due (day of month)</label><input style={s.input} type="number" min="1" max="28" value={newJob.owner_billing_due} onChange={e => setNewJob(j => ({ ...j, owner_billing_due: e.target.value }))} placeholder="e.g. 1" /></div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <button type="submit" style={s.btn}>Create & open job</button>

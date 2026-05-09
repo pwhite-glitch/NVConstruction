@@ -1,15 +1,8 @@
 import { Resend } from 'resend'
-import fs from 'fs'
-import path from 'path'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-function logoSrc() {
-  try {
-    const buf = fs.readFileSync(path.join(process.cwd(), 'public', 'logo.png'))
-    return `data:image/png;base64,${buf.toString('base64')}`
-  } catch { return '' }
-}
+const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
 export async function POST(request) {
   const { to_email, to_name, company_name, subject, message } = await request.json()

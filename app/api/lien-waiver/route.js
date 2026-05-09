@@ -1,14 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import fs from 'fs'
-import path from 'path'
 
-function logoSrc() {
-  try {
-    const buf = fs.readFileSync(path.join(process.cwd(), 'public', 'logo.png'))
-    return `data:image/png;base64,${buf.toString('base64')}`
-  } catch { return '' }
-}
+const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,

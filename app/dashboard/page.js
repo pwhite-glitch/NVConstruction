@@ -13,23 +13,29 @@ const TRADES = [
 ]
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a' },
-  header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
-  headerInner: { maxWidth: '1040px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
-  logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
-  logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
-  logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
-  logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
-  signOut: { padding: '7px 16px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' },
-  main: { maxWidth: '1040px', margin: '0 auto', padding: '2rem 1.5rem' },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' },
-  statCard: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.25rem 1.5rem' },
-  statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' },
-  statValue: (accent) => ({ fontSize: '32px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
-  card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', overflow: 'hidden', marginBottom: '1.5rem' },
-  tabs: { display: 'flex', borderBottom: '1px solid #222', overflowX: 'auto' },
-  tab: (active) => ({ padding: '14px 20px', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }),
-  cardBody: { padding: '1.5rem' },
+  page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex' },
+  sidebar: { width: '220px', flexShrink: 0, background: '#0d0d0d', borderRight: '1px solid #1a1a1a', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid #1a1a1a' },
+  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px' },
+  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#f1f1f1', letterSpacing: '0.5px', margin: '0 0 2px' },
+  sidebarRole: { fontSize: '10px', color: '#333', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
+  sidebarUser: { fontSize: '12px', color: '#3a3a3a', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', margin: '12px 0 0' },
+  sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
+  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(232,89,12,0.08)' : 'transparent', color: active ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: active ? '600' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 #e8590c' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
+  navBadge: { background: '#e8590c', color: 'white', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
+  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' },
+  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'transparent', border: '1px solid #222', borderRadius: '8px', color: '#444', cursor: 'pointer', fontSize: '12px' },
+  content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
+  ovGreeting: { fontSize: '22px', fontWeight: '700', color: '#f1f1f1', margin: '0 0 4px' },
+  ovDate: { fontSize: '13px', color: '#3a3a3a', margin: '0 0 1.75rem' },
+  ovGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' },
+  ovCard: { background: '#141414', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '1.25rem 1.5rem' },
+  ovLabel: { fontSize: '11px', fontWeight: '600', color: '#3a3a3a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', marginTop: 0 },
+  ovValue: (accent) => ({ fontSize: '36px', fontWeight: '800', color: accent || '#f1f1f1', margin: '0 0 4px', lineHeight: 1 }),
+  ovSub: { fontSize: '12px', color: '#3a3a3a', margin: 0 },
+  ovSectionTitle: { fontSize: '11px', fontWeight: '700', color: '#3a3a3a', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 1.25rem' },
+  sectionCard: { background: '#141414', border: '1px solid #1e1e1e', borderRadius: '14px', overflow: 'hidden' },
+  sectionPad: { padding: '1.5rem' },
   label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
   input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
@@ -79,6 +85,15 @@ const s = {
   errorInline: { fontSize: '12px', color: '#ff6b6b' },
 }
 
+const IconHome     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+const IconBriefcase= () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+const IconDollar   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+const IconUsers    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+const IconBuilding = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M3 9h6"/><path d="M3 15h6"/><path d="M15 9h3"/><path d="M15 15h3"/></svg>
+const IconCalc     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><circle cx="8" cy="11" r="1" fill="currentColor"/><circle cx="12" cy="11" r="1" fill="currentColor"/><circle cx="16" cy="11" r="1" fill="currentColor"/><circle cx="8" cy="15" r="1" fill="currentColor"/><circle cx="12" cy="15" r="1" fill="currentColor"/><circle cx="8" cy="19" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
+const IconTrend    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+
 export default function Dashboard() {
   const router = useRouter()
   const [profile, setProfile] = useState(null)
@@ -89,7 +104,7 @@ export default function Dashboard() {
   const [expanded, setExpanded] = useState(null)
   const [expandedDir, setExpandedDir] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('jobs')
+  const [activeTab, setActiveTab] = useState('overview')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterJob, setFilterJob] = useState('')
   const [filterTrade, setFilterTrade] = useState('')
@@ -1173,60 +1188,95 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
   const pendingApps = directory.filter(s => s.status === 'pending').length
   const activeJobs = jobs.filter(j => j.status === 'active')
 
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
+  const firstName = profile?.full_name?.split(' ')[0] || 'there'
+  const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  const pendingTotal = pending.reduce((sum, sub) => sum + (sub.amount_billed || 0), 0)
+
+  const navItems = [
+    { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
+    { tab: 'jobs',          label: 'Jobs',           icon: <IconBriefcase /> },
+    { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: pending.length || null },
+    { tab: 'directory',     label: 'Sub Directory',  icon: <IconUsers />,    badge: pendingApps || null },
+    ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
+    { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
+    ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
+    { tab: 'calendar',      label: 'Calendar',       icon: <IconCal /> },
+  ]
+
   return (
     <div style={s.page}>
-      <header style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logoRow}>
-            <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
-            <div>
-              <div style={s.logoName}>NV Construction</div>
-              <div style={s.logoSub}>PM Dashboard</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '13px', color: '#555' }}>{profile?.full_name}</span>
-            <button style={s.signOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
-          </div>
-        </div>
-      </header>
 
-      <main style={s.main} className="rx-main">
-        <div style={s.statsGrid} className="rx-stats">
-          <div style={s.statCard}>
-            <div style={s.statLabel}>Pending billing</div>
-            <div style={s.statValue('#e8590c')}>{pending.length}</div>
-          </div>
-          <div style={s.statCard}>
-            <div style={s.statLabel}>Billed this week</div>
-            <div style={s.statValue()}>${totalThisWeek.toLocaleString()}</div>
-          </div>
-          <div style={s.statCard}>
-            <div style={s.statLabel}>Pending applications</div>
-            <div style={s.statValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
-          </div>
+      {/* ── SIDEBAR ── */}
+      <nav style={s.sidebar} className="rx-sidebar">
+        <div style={s.sidebarTop}>
+          <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
+          <p style={s.sidebarBrand}>NV Construction</p>
+          <p style={s.sidebarRole}>PM Dashboard</p>
+          <p style={s.sidebarUser}>{profile?.full_name}</p>
         </div>
-
-        <div style={s.card}>
-          <div style={s.tabs}>
-            <button style={s.tab(activeTab === 'jobs')} onClick={() => setActiveTab('jobs')}>Jobs</button>
-            <button style={s.tab(activeTab === 'calendar')} onClick={() => setActiveTab('calendar')}>Calendar</button>
-            <button style={s.tab(activeTab === 'directory')} onClick={() => setActiveTab('directory')}>
-              Sub directory{pendingApps > 0 ? ` (${pendingApps})` : ''}
+        <div style={s.sidebarNav}>
+          {navItems.map(({ tab, label, icon, badge }) => (
+            <button key={tab} style={s.navItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
+              <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
+              {label}
+              {badge ? <span style={s.navBadge}>{badge}</span> : null}
             </button>
-            <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
-            {profile?.role === 'pm' && (
-              <button style={s.tab(activeTab === 'nv-directory')} onClick={() => setActiveTab('nv-directory')}>NV Directory</button>
-            )}
-            {(profile?.role === 'pm' || profile?.role === 'apm') && (
-              <button style={s.tab(activeTab === 'estimator')} onClick={() => setActiveTab('estimator')}>Estimator</button>
-            )}
-            {profile?.role === 'pm' && (
-              <button style={s.tab(activeTab === 'bd')} onClick={() => setActiveTab('bd')}>Business Dev</button>
-            )}
-          </div>
+          ))}
+        </div>
+        <div style={s.sidebarBottom}>
+          <button style={s.sidebarSignOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+        </div>
+      </nav>
 
-          <div style={s.cardBody} className="rx-card-body">
+      {/* ── BOTTOM NAV (mobile only) ── */}
+      <div className="rx-bottom-nav" style={{ display: 'none' }}>
+        {[
+          { tab: 'overview',  icon: <IconHome />,       label: 'Home' },
+          { tab: 'jobs',      icon: <IconBriefcase />,  label: 'Jobs' },
+          { tab: 'billing',   icon: <IconDollar />,     label: 'Billing' },
+          { tab: 'directory', icon: <IconUsers />,      label: 'Subs' },
+          { tab: 'estimator', icon: <IconCalc />,       label: 'Est.' },
+        ].map(({ tab, icon, label }) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: activeTab === tab ? '#e8590c' : '#444', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: activeTab === tab ? '700' : '400', padding: '8px 0' }}>
+            {icon}
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── MAIN CONTENT ── */}
+      <main style={s.content} className="rx-content">
+
+        {/* Overview section (stats shown above calendar) */}
+        {activeTab === 'overview' && (
+          <>
+            <p style={s.ovGreeting}>Good {greeting}, {firstName}</p>
+            <p style={s.ovDate}>{todayStr}</p>
+            <div style={s.ovGrid} className="rx-stats">
+              <div style={s.ovCard}>
+                <p style={s.ovLabel}>Active jobs</p>
+                <div style={s.ovValue('#60a5fa')}>{activeJobs.length}</div>
+              </div>
+              <div style={s.ovCard}>
+                <p style={s.ovLabel}>Pending billing</p>
+                <div style={s.ovValue(pending.length ? '#e8590c' : null)}>{pending.length}</div>
+                {pending.length > 0 && <p style={s.ovSub}>${pendingTotal.toLocaleString()} waiting</p>}
+              </div>
+              <div style={s.ovCard}>
+                <p style={s.ovLabel}>COIs expiring</p>
+                <div style={s.ovValue(expiringCOIs.length ? '#facc15' : null)}>{expiringCOIs.length}</div>
+                {expiringCOIs.length > 0 && <p style={s.ovSub}>in next 30 days</p>}
+              </div>
+              <div style={s.ovCard}>
+                <p style={s.ovLabel}>Pending applications</p>
+                <div style={s.ovValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
+              </div>
+            </div>
+            <p style={s.ovSectionTitle}>Billing Calendar</p>
+          </>
+        )}
 
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (
@@ -1654,7 +1704,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             )}
 
             {/* ── CALENDAR ── */}
-            {activeTab === 'calendar' && (() => {
+            {(activeTab === 'calendar' || activeTab === 'overview') && (() => {
               const { year, month } = calMonth
               const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
               const firstDay = new Date(year, month, 1).getDay()
@@ -2935,8 +2985,6 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               )
             })()}
 
-          </div>
-        </div>
       </main>
     </div>
   )

@@ -10,14 +10,39 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Bottom nav: hidden on desktop, shown on mobile */
+.rx-bottom-nav {
+  display: none;
+}
+
 @media (max-width: 640px) {
+  /* Sidebar: hide on mobile */
+  .rx-sidebar { display: none !important; }
+
+  /* Bottom nav: show on mobile */
+  .rx-bottom-nav {
+    display: flex !important;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: #0d0d0d;
+    border-top: 1px solid #1a1a1a;
+    z-index: 100;
+    height: 60px;
+  }
+
+  /* Content: no left margin, pad bottom for bottom nav */
+  .rx-content {
+    padding: 1rem 0.75rem 80px !important;
+    max-width: 100% !important;
+  }
+
   /* Grid collapse */
   .rx-grid-2    { grid-template-columns: 1fr !important; }
   .rx-grid-3    { grid-template-columns: 1fr !important; }
   .rx-stats     { grid-template-columns: 1fr 1fr !important; }
   .rx-row       { grid-template-columns: 1fr !important; gap: 0.25rem !important; }
 
-  /* Spacing */
+  /* Legacy spacing classes (other pages) */
   .rx-main      { padding-left: 0.75rem !important; padding-right: 0.75rem !important; padding-top: 1.25rem !important; }
   .rx-card      { padding: 1rem !important; }
   .rx-card-body { padding: 1rem !important; }

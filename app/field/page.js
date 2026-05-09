@@ -779,7 +779,7 @@ export default function Field() {
                               <span style={s.badge(c.status)}>{c.status}</span>
                             </div>
                             <div style={{ fontSize: '12px', color: '#555' }}>
-                              {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()} {c.notes && `· ${c.notes}`}
+                              {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()} {c.status !== 'rejected' && c.notes && `· ${c.notes}`}
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -789,6 +789,12 @@ export default function Field() {
                             )}
                           </div>
                         </div>
+                        {c.status === 'rejected' && c.notes && (
+                          <div style={{ background: '#1a0a0a', borderTop: '1px solid #3a1a1a', padding: '10px 16px' }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason</p>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{c.notes}</p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </>

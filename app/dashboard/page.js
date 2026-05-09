@@ -113,6 +113,7 @@ export default function Dashboard() {
   const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
   const [rejectingSubId, setRejectingSubId] = useState(null)
   const [rejectionReasonDraft, setRejectionReasonDraft] = useState('')
+  const [billingPage, setBillingPage] = useState(1)
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
   const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -1187,6 +1188,12 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
   )
   const pendingApps = directory.filter(s => s.status === 'pending').length
   const activeJobs = jobs.filter(j => j.status === 'active')
+  const billedByJob = submissions.reduce((map, sub) => {
+    if (sub.status === 'approved') map[sub.job_id] = (map[sub.job_id] || 0) + (sub.amount_billed || 0)
+    return map
+  }, {})
+  const PAGE_SIZE = 25
+  const pagedFiltered = filtered.slice(0, billingPage * PAGE_SIZE)
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
@@ -1282,18 +1289,18 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {activeTab === 'billing' && (
               <>
                 <div style={s.filterRow}>
-                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={s.filterSelect}>
+                  <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setBillingPage(1) }} style={s.filterSelect}>
                     <option value="">All statuses</option>
                     <option value="pending">Pending</option>
                     <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
                   </select>
-                  <select value={filterJob} onChange={e => setFilterJob(e.target.value)} style={s.filterSelect}>
+                  <select value={filterJob} onChange={e => { setFilterJob(e.target.value); setBillingPage(1) }} style={s.filterSelect}>
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.job_number}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
                 </div>
-                {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : filtered.map(sub => (
+                {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : pagedFiltered.map(sub => (
                   <div key={sub.id} style={s.rowBorder}>
                     <div style={s.row} className="rx-row" onClick={() => setExpanded(expanded === sub.id ? null : sub.id)}>
                       <div><p style={s.company}>{sub.company_name}</p><p style={s.meta}>{new Date(sub.submitted_at).toLocaleDateString()} · {sub.contact_name}</p></div>
@@ -1389,6 +1396,13 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     )}
                   </div>
                 ))}
+                {filtered.length > billingPage * PAGE_SIZE && (
+                  <div style={{ textAlign: 'center', paddingTop: '1.25rem' }}>
+                    <button style={s.btnGray} onClick={() => setBillingPage(p => p + 1)}>
+                      Show more ({filtered.length - billingPage * PAGE_SIZE} remaining)
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
@@ -1901,18 +1915,37 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   </div>
                 )}
 
-                {jobs.length === 0 ? <div style={s.emptyMsg}>No jobs yet.</div> : jobs.map(j => (
-                  <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
-                    <div>
-                      <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                      <p style={s.meta}>{j.location}{j.contract_value ? ' · $' + parseFloat(j.contract_value).toLocaleString() : ''}{j.start_date ? ' · ' + new Date(j.start_date).toLocaleDateString() : ''}</p>
+                {jobs.length === 0 ? <div style={s.emptyMsg}>No jobs yet.</div> : jobs.map(j => {
+                  const billed = billedByJob[j.id] || 0
+                  const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                  const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
+                  const over = pct > 100
+                  return (
+                    <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                          <p style={s.meta}>{j.location}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {contract > 0 && (
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
+                              <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
+                            </div>
+                          )}
+                          <span style={s.jobBadge(j.status)}>{j.status}</span>
+                          <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                        </div>
+                      </div>
+                      {contract > 0 && (
+                        <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '10px' }}>
+                          <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={s.jobBadge(j.status)}>{j.status}</span>
-                      <span style={{ color: '#555', fontSize: '18px' }}>›</span>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </>
             )}
 

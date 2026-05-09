@@ -364,7 +364,15 @@ export default function JobDetail() {
 
   async function loadDirectCosts() {
     const { data } = await supabase.from('direct_costs').select('*').eq('job_id', id).order('cost_date', { ascending: false })
-    setDirectCosts(data || [])
+    const costs = data || []
+    const userIds = [...new Set(costs.map(c => c.submitted_by).filter(Boolean))]
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase.from('profiles').select('id, email, full_name').in('id', userIds)
+      const pmap = {}
+      profiles?.forEach(p => { pmap[p.id] = p })
+      costs.forEach(c => { c._profile = pmap[c.submitted_by] || null })
+    }
+    setDirectCosts(costs)
   }
 
   async function openDcReceiptUrl(path) {
@@ -401,6 +409,19 @@ export default function JobDetail() {
   async function updateCostStatus(costId, status, notes) {
     setUpdatingCostId(costId)
     await supabase.from('direct_costs').update({ status, notes: notes || null }).eq('id', costId)
+    if (status === 'rejected') {
+      const cost = directCosts.find(c => c.id === costId)
+      const superEmail = cost?._profile?.email
+      if (superEmail) {
+        sendEmail(superEmail, `Cost entry rejected — #${job?.job_number} ${job?.project_name}`,
+          emailWrap(`
+            <h2 style="color:#ff6b6b;margin:0 0 1rem">Cost entry rejected</h2>
+            <p style="color:#aaa">Your direct cost entry <strong style="color:#f1f1f1">${cost.description}</strong> ($${Number(cost.amount).toLocaleString()}) on <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong> has been rejected.</p>
+            ${notes ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${notes}</p></div>` : '<p style="color:#888;font-size:13px;margin:1rem 0 0">Contact NV Construction if you have questions.</p>'}
+          `)
+        )
+      }
+    }
     setRejectingCostId(null)
     setCostRejectNote('')
     await loadDirectCosts()

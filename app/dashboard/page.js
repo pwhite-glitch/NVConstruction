@@ -945,7 +945,7 @@ tbody td.right { text-align: right; font-family: 'Courier New', monospace; font-
       <div class="co-name">NV Construction</div>
       <div class="co-tagline">General Contractor</div>
       <div class="co-contact">
-        office@nvim.co<br>
+        management@nvim.co<br>
         nvim.co
       </div>
     </div>

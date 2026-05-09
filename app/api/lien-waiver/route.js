@@ -47,7 +47,7 @@ export async function POST(request) {
 
   const { error: emailErr } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
-    reply_to: process.env.PM_EMAIL || 'office@nvim.co',
+    reply_to: process.env.PM_EMAIL || 'management@nvim.co',
     to: recipientEmail,
     subject: `Lien Waiver Required — #${sub.jobs?.job_number} ${sub.jobs?.project_name}`,
     html: `
@@ -131,7 +131,7 @@ export async function POST(request) {
               </td></tr>
             </table>
 
-            <p style="margin:0 0 8px;font-size:13px;color:#666;">Please return the signed waiver to <a href="mailto:${process.env.PM_EMAIL || 'office@nvim.co'}" style="color:#e8590c;">${process.env.PM_EMAIL || 'office@nvim.co'}</a> or deliver it to our office before payment will be processed.</p>
+            <p style="margin:0 0 8px;font-size:13px;color:#666;">Please return the signed waiver to <a href="mailto:${process.env.PM_EMAIL || 'management@nvim.co'}" style="color:#e8590c;">${process.env.PM_EMAIL || 'management@nvim.co'}</a> or deliver it to our office before payment will be processed.</p>
           </td>
         </tr>
         <tr>

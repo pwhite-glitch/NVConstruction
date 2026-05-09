@@ -44,7 +44,7 @@ export async function POST(request) {
 
     const { error } = await resend.emails.send({
       from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
-      reply_to: process.env.PM_EMAIL || 'office@nvim.co',
+      reply_to: process.env.PM_EMAIL || 'management@nvim.co',
       to: dir.email,
       subject,
       html: wrap(`

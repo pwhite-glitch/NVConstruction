@@ -539,7 +539,7 @@ export default function Submit() {
                   const contractMax = jobSovContracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
                   const totalDraft = sovDraftLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
                   const remaining = contractMax - totalDraft
-                  const isBalanced = Math.abs(remaining) < 1
+                  const isBalanced = Math.round(totalDraft * 100) === Math.round(contractMax * 100)
                   return (
                     <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem', marginBottom: '1rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>

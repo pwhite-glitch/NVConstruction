@@ -1510,7 +1510,17 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
   }
 
   function committedForItem(budgetItemId) {
-    return contracts.filter(c => c.budget_item_id === budgetItemId).reduce((a, c) => a + Number(c.adjusted_contract_value || c.contract_value || 0), 0)
+    return contracts.reduce((total, c) => {
+      const allocs = c.budget_allocations
+      if (allocs && allocs.length > 0) {
+        const match = allocs.find(a => a.budget_item_id === budgetItemId)
+        return total + (match ? Number(match.amount) : 0)
+      }
+      if (c.budget_item_id === budgetItemId) {
+        return total + Number(c.adjusted_contract_value || c.contract_value || 0)
+      }
+      return total
+    }, 0)
   }
 
   async function saveForecastEac(budgetItemId, value) {

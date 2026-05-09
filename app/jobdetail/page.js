@@ -1552,17 +1552,10 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     setAssignSubForm({ email: '', from_dir: '' })
     setAssigningSubLoading(false)
 
-    // Ensure they're in the directory then send invite
-    let { data: dirEntry } = await supabase.from('sub_directory').select('id').eq('email', normalEmail).maybeSingle()
-    if (!dirEntry) {
-      const { data: inserted } = await supabase.from('sub_directory').insert({ email: normalEmail, status: 'approved', applied_at: new Date().toISOString() }).select('id').single()
-      dirEntry = inserted
-    }
-    if (dirEntry?.id) {
-      const invRes = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id }) })
-      const invJson = await invRes.json()
-      if (!invRes.ok) setErrMsg('Assigned but invite failed: ' + invJson.error)
-    }
+    // Send invite — server side handles directory lookup/create with admin access
+    const invRes = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: normalEmail }) })
+    const invJson = await invRes.json()
+    if (!invRes.ok) setErrMsg('Assigned but invite failed: ' + invJson.error)
   }
 
   async function removeSubFromJob(assignmentId) {

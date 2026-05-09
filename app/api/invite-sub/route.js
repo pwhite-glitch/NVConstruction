@@ -18,14 +18,23 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
   try {
-    const { directory_id } = await request.json()
-    if (!directory_id) return Response.json({ error: 'directory_id required' }, { status: 400 })
+    const { directory_id, email: rawEmail } = await request.json()
+    if (!directory_id && !rawEmail) return Response.json({ error: 'directory_id or email required' }, { status: 400 })
 
-    const { data: dir } = await adminSupabase
-      .from('sub_directory')
-      .select('email, company_name, contact_name')
-      .eq('id', directory_id)
-      .single()
+    let dir = null
+    if (directory_id) {
+      const { data } = await adminSupabase.from('sub_directory').select('email, company_name, contact_name').eq('id', directory_id).single()
+      dir = data
+    } else {
+      const normalEmail = rawEmail.toLowerCase().trim()
+      const { data: existing } = await adminSupabase.from('sub_directory').select('email, company_name, contact_name').eq('email', normalEmail).maybeSingle()
+      if (existing) {
+        dir = existing
+      } else {
+        const { data: inserted } = await adminSupabase.from('sub_directory').insert({ email: normalEmail, status: 'approved', applied_at: new Date().toISOString() }).select('email, company_name, contact_name').single()
+        dir = inserted
+      }
+    }
 
     if (!dir?.email) return Response.json({ error: 'No email on file for this subcontractor' }, { status: 400 })
 

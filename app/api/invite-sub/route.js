@@ -29,7 +29,7 @@ export async function POST(request) {
 
     if (!dir?.email) return Response.json({ error: 'No email on file for this subcontractor' }, { status: 400 })
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
     const logo = logoSrc()
     const firstName = dir.contact_name?.split(' ')[0] || 'there'
 

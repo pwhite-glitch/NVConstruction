@@ -29,7 +29,7 @@ export async function POST(request) {
     return Response.json({ error: 'Email and role are required.' }, { status: 400 })
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
   const logo = logoSrc()
 
   let userId = null
@@ -153,7 +153,7 @@ export async function PATCH(request) {
   const { error } = await adminSupabase.auth.admin.updateUserById(user_id, { email })
   if (error) return Response.json({ error: error.message }, { status: 400 })
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
   const logo = logoSrc()
   const roleLabel = ROLE_LABELS[role] || role
   const firstName = full_name ? full_name.split(' ')[0] : 'there'

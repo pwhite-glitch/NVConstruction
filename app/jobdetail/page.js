@@ -988,7 +988,7 @@ ${sovLines.length > 0 ? `
       if (dirEntry?.email) {
         const firstName = dirEntry.contact_name?.split(' ')[0] || 'there'
         const contractAmt = parseFloat(contractForm.contract_value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-        const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nvconstruction.vercel.app') + '/submit'
+        const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
         sendEmail(dirEntry.email, `Action required: Set up your Schedule of Values — ${job?.project_name || ''}`,
           emailWrap(`
             <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Hey ${firstName},</h2>

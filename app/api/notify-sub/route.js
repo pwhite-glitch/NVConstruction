@@ -15,7 +15,7 @@ export async function POST(request) {
   const { to_email, to_name, company_name, subject, message } = await request.json()
   if (!to_email || !subject || !message) return Response.json({ error: 'Missing required fields' }, { status: 400 })
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
   const firstName = to_name?.split(' ')[0] || 'there'
   const logo = logoSrc()
 

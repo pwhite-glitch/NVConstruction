@@ -36,7 +36,7 @@ export async function POST(request) {
   }
   if (!recipientEmail) return Response.json({ error: 'No email on file for this sub' }, { status: 400 })
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvconstruction.vercel.app'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
   const logo = logoSrc()
   const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const period = sub.billing_period

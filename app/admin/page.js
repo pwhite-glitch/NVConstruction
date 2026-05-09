@@ -73,6 +73,8 @@ export default function AdminPortal() {
   const [filterBillNvCheck, setFilterBillNvCheck] = useState(false)
   const [filterBillReadyToPay, setFilterBillReadyToPay] = useState(false)
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
+  const [editingCheckFor, setEditingCheckFor] = useState(null)
+  const [editCheckNum, setEditCheckNum] = useState('')
   const [togglingQb, setTogglingQb] = useState(null)
 
   // Sub directory state
@@ -221,6 +223,16 @@ export default function AdminPortal() {
       body: JSON.stringify({ id: subId, nv_cuts_check: !current }),
     })
     setTogglingNvCheck(null)
+    await loadBilling()
+  }
+
+  async function saveCheckNumber(subId) {
+    await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: subId, check_number: editCheckNum || null }),
+    })
+    setEditingCheckFor(null)
     await loadBilling()
   }
 
@@ -808,7 +820,29 @@ export default function AdminPortal() {
                                 <td style={{ ...s.td, textAlign: 'right', color: '#e8590c' }}>{retainageAmt > 0 ? `-$${retainageAmt.toLocaleString()}` : '—'}</td>
                                 <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#4ade80' }}>${paidAmt.toLocaleString()}</td>
                                 <td style={s.td}>{new Date(sub.paid_at).toLocaleDateString()}</td>
-                                <td style={s.td}>{sub.payment_method || '—'}{sub.check_number ? <><br /><span style={{ fontSize: '11px', color: '#555' }}>Check #{sub.check_number}</span></> : ''}</td>
+                                <td style={s.td}>
+                                  {sub.payment_method || '—'}
+                                  {editingCheckFor === sub.id ? (
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', alignItems: 'center' }}>
+                                      <input
+                                        style={{ ...s.input, padding: '4px 8px', fontSize: '12px', width: '100px' }}
+                                        value={editCheckNum}
+                                        onChange={e => setEditCheckNum(e.target.value)}
+                                        placeholder="Check #"
+                                        autoFocus
+                                      />
+                                      <button style={s.btnSm('green')} onClick={() => saveCheckNumber(sub.id)}>Save</button>
+                                      <button style={s.btnSm('gray')} onClick={() => setEditingCheckFor(null)}>✕</button>
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: sub.check_number ? '4px' : '0' }}>
+                                      {sub.check_number && <span style={{ fontSize: '11px', color: '#555' }}>Check #{sub.check_number}</span>}
+                                      <button style={{ ...s.btnSm('gray'), padding: '2px 8px', fontSize: '10px' }} onClick={() => { setEditingCheckFor(sub.id); setEditCheckNum(sub.check_number || '') }}>
+                                        {sub.check_number ? 'Edit #' : '+ Check #'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
                               </tr>
                             )
                           })}

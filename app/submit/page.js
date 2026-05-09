@@ -434,7 +434,7 @@ export default function Submit() {
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Ret %</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Prev %</th>
                             <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', width: '120px' }}>% This period</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount ($)</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -479,9 +479,21 @@ export default function Submit() {
                                   />
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                                  <div style={{ fontWeight: '600', color: '#f1f1f1' }}>
-                                    ${line.amount_this.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </div>
+                                  <input
+                                    type="number" min="0" max={line.scheduled_value} step="0.01"
+                                    value={line.amount_this || ''}
+                                    placeholder="0.00"
+                                    onChange={e => {
+                                      const amt = parseFloat(e.target.value) || 0
+                                      const pct = line.scheduled_value > 0 ? Math.round(amt / line.scheduled_value * 100 * 10000) / 10000 : 0
+                                      const next = sovForm.map((l, i) => i === idx ? { ...l, pct_this: pct.toString(), amount_this: amt } : l)
+                                      setSovForm(next)
+                                      setSovError('')
+                                      const total = next.reduce((a, l) => a + l.amount_this, 0)
+                                      update('amount_billed', total.toFixed(2))
+                                    }}
+                                    style={{ ...s.input, width: '100px', padding: '6px 10px', textAlign: 'right' }}
+                                  />
                                   {line.retainage_pct > 0 && line.amount_this > 0 && (
                                     <div style={{ fontSize: '11px', marginTop: '2px' }}>
                                       <span style={{ color: '#facc15' }}>−${lineRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>

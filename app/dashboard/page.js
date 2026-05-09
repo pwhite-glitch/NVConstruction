@@ -136,6 +136,10 @@ export default function Dashboard() {
   const [creatingBid, setCreatingBid] = useState(false)
   const [bidDetails, setBidDetails] = useState({})
   const [uploadingPlanFor, setUploadingPlanFor] = useState(null)
+  const [uploadingW9For, setUploadingW9For] = useState(null)
+  const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
+  const [requestingDoc, setRequestingDoc] = useState(null)
+  const [docRequestSent, setDocRequestSent] = useState({})
   const [showInviteFor, setShowInviteFor] = useState(null)
   const [selectedEmails, setSelectedEmails] = useState([])
   const [sendingInvites, setSendingInvites] = useState(false)
@@ -610,6 +614,42 @@ export default function Dashboard() {
     const res = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', file_path: filePath }) })
     const data = await res.json()
     if (data?.url) window.open(data.url, '_blank')
+  }
+
+  async function downloadDoc(filePath, fileName) {
+    const res = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'signed-url', file_path: filePath, download: true }) })
+    const data = await res.json()
+    if (data?.url) {
+      const a = document.createElement('a'); a.href = data.url; a.download = fileName || 'document'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    }
+  }
+
+  async function uploadSubDoc(dirId, type, file) {
+    if (type === 'w9') setUploadingW9For(dirId)
+    else setUploadingCoiFor(dirId)
+    const ext = file.name.split('.').pop()
+    const path = `${dirId}/${type}-${Date.now()}.${ext}`
+    const urlRes = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-url', path }) })
+    const { signedUrl, error: urlErr } = await urlRes.json()
+    if (urlErr) { alert('Upload error: ' + urlErr); setUploadingW9For(null); setUploadingCoiFor(null); return }
+    await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    const field = type === 'w9' ? 'w9_url' : 'coi_url'
+    await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, [field]: path }) })
+    if (type === 'w9') setUploadingW9For(null)
+    else setUploadingCoiFor(null)
+    const { data } = await supabase.from('sub_directory').select('*').order('company_name')
+    setDirectory(data || [])
+  }
+
+  async function sendDocRequest(dirId, type) {
+    const key = `${dirId}-${type}`
+    setRequestingDoc(key)
+    const res = await fetch('/api/doc-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, type }) })
+    const data = await res.json()
+    setRequestingDoc(null)
+    if (data?.ok) setDocRequestSent(prev => ({ ...prev, [key]: true }))
+    else alert('Failed to send: ' + (data?.error || 'Unknown error'))
   }
 
   async function openBillingDoc(path) {
@@ -1371,22 +1411,44 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       <div style={s.detail}>
 
                         {/* ── Document status ── */}
-                        <div style={{ display: 'flex', gap: '10px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: sub.w9_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.w9_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#4ade80' : '#ff6b6b' }}>{sub.w9_url ? '✓' : '✗'} W-9</span>
-                            {sub.w9_url && <button onClick={() => getDocUrl(sub.w9_url)} style={{ ...s.btnSm('gray'), padding: '3px 10px', fontSize: '11px' }}>View</button>}
+                        <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                          <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Documents</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.w9_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.w9_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#4ade80' : '#ff6b6b' }}>{sub.w9_url ? '✓' : '✗'} W-9</span>
+                            </div>
+                            {sub.w9_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(sub.w9_url)}>View</button>}
+                            {sub.w9_url && <button style={s.btnSm('gray')} onClick={() => downloadDoc(sub.w9_url, `W9-${sub.company_name}.pdf`)}>Download</button>}
+                            <label style={{ ...s.btnSm('blue'), cursor: 'pointer', opacity: uploadingW9For === sub.id ? 0.6 : 1 }}>
+                              {uploadingW9For === sub.id ? 'Uploading...' : sub.w9_url ? 'Replace W-9' : 'Upload W-9'}
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingW9For === sub.id}
+                                onChange={e => { if (e.target.files?.[0]) uploadSubDoc(sub.id, 'w9', e.target.files[0]); e.target.value = '' }} />
+                            </label>
+                            {!sub.w9_url && sub.email && (
+                              <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === `${sub.id}-w9` ? 0.6 : 1 }} disabled={!!requestingDoc} onClick={() => sendDocRequest(sub.id, 'w9')}>
+                                {docRequestSent[`${sub.id}-w9`] ? '✓ Sent' : requestingDoc === `${sub.id}-w9` ? '...' : 'Email Reminder'}
+                              </button>
+                            )}
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: sub.coi_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#4ade80' : '#ff6b6b' }}>{sub.coi_url ? '✓' : '✗'} COI</span>
-                            {sub.coi_url && <button onClick={() => getDocUrl(sub.coi_url)} style={{ ...s.btnSm('gray'), padding: '3px 10px', fontSize: '11px' }}>View</button>}
-                          </div>
-                          {sub.coi_expiration && (
-                            <div style={{ display: 'flex', alignItems: 'center', padding: '8px 14px', background: new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#2a1200' : '#0f0f0f', border: `1px solid ${new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: new Date(sub.coi_expiration) < thirtyDaysFromNow ? '#e8590c' : '#888' }}>
-                                COI exp: {new Date(sub.coi_expiration).toLocaleDateString()}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.coi_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#4ade80' : '#ff6b6b' }}>
+                                {sub.coi_url ? '✓' : '✗'} COI{sub.coi_expiration ? ` · ${new Date(sub.coi_expiration).toLocaleDateString()}` : ''}
                               </span>
                             </div>
-                          )}
+                            {sub.coi_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(sub.coi_url)}>View</button>}
+                            {sub.coi_url && <button style={s.btnSm('gray')} onClick={() => downloadDoc(sub.coi_url, `COI-${sub.company_name}.pdf`)}>Download</button>}
+                            <label style={{ ...s.btnSm('blue'), cursor: 'pointer', opacity: uploadingCoiFor === sub.id ? 0.6 : 1 }}>
+                              {uploadingCoiFor === sub.id ? 'Uploading...' : sub.coi_url ? 'Replace COI' : 'Upload COI'}
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingCoiFor === sub.id}
+                                onChange={e => { if (e.target.files?.[0]) uploadSubDoc(sub.id, 'coi', e.target.files[0]); e.target.value = '' }} />
+                            </label>
+                            {(!sub.coi_url || new Date(sub.coi_expiration) < new Date()) && sub.email && (
+                              <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === `${sub.id}-coi` ? 0.6 : 1 }} disabled={!!requestingDoc} onClick={() => sendDocRequest(sub.id, 'coi')}>
+                                {docRequestSent[`${sub.id}-coi`] ? '✓ Sent' : requestingDoc === `${sub.id}-coi` ? '...' : 'Email Reminder'}
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* ── View / Edit toggle ── */}

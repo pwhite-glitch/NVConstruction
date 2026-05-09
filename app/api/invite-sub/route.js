@@ -31,7 +31,7 @@ export async function POST(request) {
       dir = existing || { email: normalEmail, company_name: null, contact_name: null }
     }
 
-    if (!dir?.email) return Response.json({ error: 'No email on file for this subcontractor' }, { status: 400 })
+    if (!dir?.email) return Response.json({ error: `No email — received directory_id=${directory_id} email=${rawEmail} dir=${JSON.stringify(dir)}` }, { status: 400 })
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
     const logo = logoSrc()

@@ -146,6 +146,8 @@ export default function JobDetail() {
   const [showAssignSub, setShowAssignSub] = useState(false)
   const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
   const [assigningSubLoading, setAssigningSubLoading] = useState(false)
+  const [notifyingSubId, setNotifyingSubId] = useState(null)
+  const [notifySubResult, setNotifySubResult] = useState({}) // { [dirId]: 'sent' | 'error' }
 
   // Field tab state
   const [fieldDailyReports, setFieldDailyReports] = useState([])
@@ -1555,6 +1557,19 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     await reloadSubs()
   }
 
+  async function notifySubToRegister(dirId) {
+    setNotifyingSubId(dirId)
+    const res = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId }) })
+    const json = await res.json()
+    setNotifySubResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : 'error' }))
+    setNotifyingSubId(null)
+  }
+
+  async function notifyAllUnregistered() {
+    const unregistered = subs.filter(a => !a.sub_id).map(a => subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())).filter(Boolean)
+    for (const dir of unregistered) await notifySubToRegister(dir.id)
+  }
+
   // ── Billing (PM-managed) ─────────────────────────────────────
   async function createBilling() {
     if (!createBillingForm.amount_billed || !createBillingForm.company_name) return
@@ -2093,9 +2108,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
 
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Assigned subcontractors ({subs.length})</p>
-                {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign sub</button>}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {subs.some(a => !a.sub_id && subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())) && (
+                    <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Notify all unregistered</button>
+                  )}
+                  {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign sub</button>}
+                </div>
               </div>
 
               {showAssignSub && (
@@ -2164,7 +2184,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {address && <span>{address}</span>}
                         </div>
                       </div>
-                      <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {!isRegistered && dirEntry && (
+                          notifySubResult[dirEntry.id] === 'sent'
+                            ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
+                            : notifySubResult[dirEntry.id] === 'error'
+                              ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>Failed</span>
+                              : <button style={s.btnSmallOrange} disabled={notifyingSubId === dirEntry.id} onClick={() => notifySubToRegister(dirEntry.id)}>
+                                  {notifyingSubId === dirEntry.id ? 'Sending...' : 'Notify'}
+                                </button>
+                        )}
+                        <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
+                      </div>
                     </div>
                   </div>
                 )

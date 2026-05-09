@@ -21,19 +21,14 @@ export async function POST(request) {
     const { directory_id, email: rawEmail } = await request.json()
     if (!directory_id && !rawEmail) return Response.json({ error: 'directory_id or email required' }, { status: 400 })
 
-    let dir = null
+    let dir = { email: null, company_name: null, contact_name: null }
     if (directory_id) {
       const { data } = await adminSupabase.from('sub_directory').select('email, company_name, contact_name').eq('id', directory_id).single()
-      dir = data
+      if (data) dir = data
     } else {
       const normalEmail = rawEmail.toLowerCase().trim()
       const { data: existing } = await adminSupabase.from('sub_directory').select('email, company_name, contact_name').eq('email', normalEmail).maybeSingle()
-      if (existing) {
-        dir = existing
-      } else {
-        const { data: inserted } = await adminSupabase.from('sub_directory').insert({ email: normalEmail, status: 'approved', applied_at: new Date().toISOString() }).select('email, company_name, contact_name').single()
-        dir = inserted
-      }
+      dir = existing || { email: normalEmail, company_name: null, contact_name: null }
     }
 
     if (!dir?.email) return Response.json({ error: 'No email on file for this subcontractor' }, { status: 400 })

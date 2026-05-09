@@ -1559,7 +1559,9 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       dirEntry = inserted
     }
     if (dirEntry?.id) {
-      fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id }) })
+      const invRes = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id }) })
+      const invJson = await invRes.json()
+      if (!invRes.ok) setErrMsg('Assigned but invite failed: ' + invJson.error)
     }
   }
 

@@ -1657,6 +1657,10 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       billing_due_day: form.billing_due_day !== undefined && form.billing_due_day !== '' ? parseInt(form.billing_due_day) : null,
       billing_anchor_date: form.billing_frequency === 'biweekly' && form.billing_due_day !== '' && form.billing_due_day !== undefined && !form.billing_anchor_date ? (() => { const d = new Date(); const diff = (parseInt(form.billing_due_day) - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff); return d.toISOString().split('T')[0] })() : (form.billing_anchor_date || null),
       start_date: form.start_date || null, status: form.status,
+      sub_billing_start: form.sub_billing_start || null,
+      sub_billing_due: form.sub_billing_due ? parseInt(form.sub_billing_due) : null,
+      owner_billing_start: form.owner_billing_start || null,
+      owner_billing_due: form.owner_billing_due ? parseInt(form.owner_billing_due) : null,
       owner_company: form.owner_company, owner_name: form.owner_name, owner_email: form.owner_email, owner_phone: form.owner_phone,
       architect_name: form.architect_name, architect_company: form.architect_company, architect_email: form.architect_email,
       engineer_name: form.engineer_name, engineer_company: form.engineer_company, engineer_email: form.engineer_email,
@@ -1889,6 +1893,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 </div>
                 <div><label style={s.label}>Scope notes</label><textarea style={s.textarea} value={form.scope_notes || ''} onChange={e => update('scope_notes', e.target.value)} placeholder="Project description, scope of work, special requirements..." /></div>
+              </div>
+
+              <div style={s.card}>
+                <p style={s.cardTitle}>Billing dates</p>
+                <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
+                  <div style={s.grid2}>
+                    <div><label style={s.label}>Billing start date</label><input type="date" style={s.input} value={form.sub_billing_start || ''} onChange={e => update('sub_billing_start', e.target.value)} /></div>
+                    <div><label style={s.label}>Due day of month</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 25" value={form.sub_billing_due || ''} onChange={e => update('sub_billing_due', e.target.value)} /></div>
+                  </div>
+                </div>
+                <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
+                  <div style={s.grid2}>
+                    <div><label style={s.label}>Billing start date</label><input type="date" style={s.input} value={form.owner_billing_start || ''} onChange={e => update('owner_billing_start', e.target.value)} /></div>
+                    <div><label style={s.label}>Due day of month</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 1" value={form.owner_billing_due || ''} onChange={e => update('owner_billing_due', e.target.value)} /></div>
+                  </div>
+                </div>
               </div>
 
               <div style={s.card}>

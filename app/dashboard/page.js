@@ -95,7 +95,9 @@ export default function Dashboard() {
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
+  const [rejectingSubId, setRejectingSubId] = useState(null)
+  const [rejectionReasonDraft, setRejectionReasonDraft] = useState('')
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
   const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -226,6 +228,7 @@ export default function Dashboard() {
         setAssignedJobIds(jobIds)
       }
       await loadAll(jobIds)
+      loadTeamData()
       setLoading(false)
     }
     load()
@@ -278,8 +281,12 @@ export default function Dashboard() {
     setDirectory(dir || [])
   }
 
-  async function updateStatus(sub, status) {
-    await supabase.from('billing_submissions').update({ status, reviewed_at: new Date().toISOString() }).eq('id', sub.id)
+  async function updateStatus(sub, status, rejectionReason = '') {
+    await supabase.from('billing_submissions').update({
+      status,
+      reviewed_at: new Date().toISOString(),
+      ...(status === 'rejected' ? { rejection_reason: rejectionReason || null } : {}),
+    }).eq('id', sub.id)
     if (sub.sub_email) {
       const approved = status === 'approved'
       const color = approved ? '#4ade80' : '#ff6b6b'
@@ -287,10 +294,13 @@ export default function Dashboard() {
         emailWrap(`
           <h2 style="color:${color};margin:0 0 1rem">Billing ${status}</h2>
           <p style="color:#aaa">Your billing submission of <strong style="color:#f1f1f1">$${sub.amount_billed?.toLocaleString()}</strong> for <strong style="color:#f1f1f1">#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</strong> has been <strong style="color:${color}">${status}</strong>.</p>
-          ${!approved ? `<p style="color:#888;font-size:13px">Contact NV Construction if you have questions.</p>` : ''}
+          ${!approved && rejectionReason ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${rejectionReason}</p></div>` : ''}
+          ${!approved && !rejectionReason ? `<p style="color:#888;font-size:13px">Contact NV Construction if you have questions.</p>` : ''}
         `)
       )
     }
+    setRejectingSubId(null)
+    setRejectionReasonDraft('')
     await loadAll()
     setExpanded(null)
   }
@@ -583,6 +593,7 @@ export default function Dashboard() {
       owner_billing_frequency: newJob.owner_billing_frequency || 'monthly',
       owner_billing_due: newJob.owner_billing_due ? parseInt(newJob.owner_billing_due) : null,
       owner_billing_anchor: newJob.owner_billing_anchor || null,
+      pm_email: newJob.pm_email || null,
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     router.push(`/jobdetail?id=${data.id}`)
@@ -1290,7 +1301,22 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               {sub.status === 'pending' && (
                                 <>
                                   <button onClick={() => updateStatus(sub, 'approved')} style={s.btnSm('green')}>Approve</button>
-                                  <button onClick={() => updateStatus(sub, 'rejected')} style={s.btnSm('red')}>Reject</button>
+                                  {rejectingSubId === sub.id ? (
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', width: '100%', marginTop: '8px' }}>
+                                      <input
+                                        style={{ ...s.input, flex: 1, minWidth: '180px' }}
+                                        placeholder="Rejection reason (optional)"
+                                        value={rejectionReasonDraft}
+                                        onChange={e => setRejectionReasonDraft(e.target.value)}
+                                        autoFocus
+                                        onKeyDown={e => { if (e.key === 'Enter') updateStatus(sub, 'rejected', rejectionReasonDraft); if (e.key === 'Escape') { setRejectingSubId(null); setRejectionReasonDraft('') } }}
+                                      />
+                                      <button onClick={() => updateStatus(sub, 'rejected', rejectionReasonDraft)} style={s.btnSm('red')}>Confirm reject</button>
+                                      <button onClick={() => { setRejectingSubId(null); setRejectionReasonDraft('') }} style={s.btnSm('gray')}>Cancel</button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => { setRejectingSubId(sub.id); setRejectionReasonDraft('') }} style={s.btnSm('red')}>Reject</button>
+                                  )}
                                 </>
                               )}
                               <button onClick={() => {
@@ -1755,8 +1781,17 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /></div>
                         <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
                       </div>
-                      <div style={{ marginBottom: '12px' }}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Job start date</label><input style={s.input} type="date" value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
+                        <div>
+                          <label style={s.label}>PM contact (for sub emails)</label>
+                          <select style={s.input} value={newJob.pm_email} onChange={e => setNewJob(j => ({ ...j, pm_email: e.target.value }))}>
+                            <option value="">— Select PM —</option>
+                            {teamMembers.filter(m => m.role === 'pm' || m.role === 'apm').map(m => (
+                              <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                         <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>

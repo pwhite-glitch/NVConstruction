@@ -98,7 +98,7 @@ export default function Submit() {
       if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
       if (prof?.role === 'super') { router.push('/field'); return }
       setProfile(prof)
-      const { data: assignments } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status)').eq('sub_id', session.user.id)
+      const { data: assignments } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id)
       setJobs((assignments || []).map(a => a.jobs).filter(j => j && j.status === 'active'))
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
@@ -349,7 +349,7 @@ export default function Submit() {
         await supabase.from('billing_sov_lines').insert(sovInserts)
       }
       fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: newSub.id }) }).catch(() => {})
-      sendEmail(PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
+      sendEmail(selectedJob?.pm_email || PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
         emailWrap(`
           <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
           <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
@@ -750,26 +750,34 @@ export default function Submit() {
             <div style={s.card}>
               <h2 style={s.cardTitle}>Billing history</h2>
               {submissions.map(s2 => (
-                <div key={s2.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #1e1e1e' }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
-                      {new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete
-                      {s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</div>
-                      {s2.retainage_held > 0 && (
-                        <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                          <span style={{ color: '#facc15' }}>Ret: ${Number(s2.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          <span style={{ color: '#4ade80', marginLeft: '6px' }}>Net: ${(Number(s2.amount_billed) - Number(s2.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      )}
+                <div key={s2.id} style={{ padding: '14px 0', borderBottom: '1px solid #1e1e1e' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
+                        {new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete
+                        {s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                      </p>
                     </div>
-                    <span style={s.badge(s2.status)}>{s2.status}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</div>
+                        {s2.retainage_held > 0 && (
+                          <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                            <span style={{ color: '#facc15' }}>Ret: ${Number(s2.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#4ade80', marginLeft: '6px' }}>Net: ${(Number(s2.amount_billed) - Number(s2.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                      </div>
+                      <span style={s.badge(s2.status)}>{s2.status}</span>
+                    </div>
                   </div>
+                  {s2.status === 'rejected' && s2.rejection_reason && (
+                    <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px' }}>
+                      <p style={{ margin: 0, fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '4px' }}>Rejection reason</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{s2.rejection_reason}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

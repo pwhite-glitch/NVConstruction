@@ -511,9 +511,10 @@ export default function Dashboard() {
   }
 
   async function deleteDirEntry(id) {
-    if (!window.confirm('Are you sure you want to permanently delete this subcontractor?')) return
-    const { error } = await supabase.from('sub_directory').delete().eq('id', id)
-    if (error) { alert('Delete error: ' + error.message); return }
+    if (!window.confirm('Are you sure you want to permanently delete this subcontractor? This will also revoke their portal access.')) return
+    const res = await fetch('/api/delete-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: id }) })
+    const json = await res.json()
+    if (!res.ok) { alert('Delete error: ' + json.error); return }
     setDirectory(prev => prev.filter(s => s.id !== id))
     setExpandedDir(null)
   }

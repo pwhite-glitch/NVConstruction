@@ -95,7 +95,7 @@ export default function Dashboard() {
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', sub_billing_start: '', sub_billing_due: '', owner_billing_start: '', owner_billing_due: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
   const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -568,9 +568,13 @@ export default function Dashboard() {
       status: 'active',
       start_date: newJob.start_date || null,
       sub_billing_start: newJob.sub_billing_start || null,
+      sub_billing_frequency: newJob.sub_billing_frequency || 'monthly',
       sub_billing_due: newJob.sub_billing_due ? parseInt(newJob.sub_billing_due) : null,
+      sub_billing_anchor: newJob.sub_billing_anchor || null,
       owner_billing_start: newJob.owner_billing_start || null,
+      owner_billing_frequency: newJob.owner_billing_frequency || 'monthly',
       owner_billing_due: newJob.owner_billing_due ? parseInt(newJob.owner_billing_due) : null,
+      owner_billing_anchor: newJob.owner_billing_anchor || null,
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     router.push(`/jobdetail?id=${data.id}`)
@@ -1631,49 +1635,41 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               const ownerByDay = {}
               const addDay = (map, day, job) => { if (!map[day]) map[day] = []; map[day].push(job) }
 
-              for (const j of jobs.filter(jj => jj.status === 'active')) {
-                // Sub billing — always monthly, uses sub_billing_due
-                if (j.sub_billing_due) {
-                  const d = j.sub_billing_due
-                  if (d >= 1 && d <= daysInMonth) {
-                    const cellDate = new Date(year, month, d)
-                    const start = j.sub_billing_start ? new Date(j.sub_billing_start) : null
-                    if (!start || start <= cellDate) addDay(subByDay, d, j)
-                  }
-                }
-
-                // Owner billing — respects billing_frequency + billing_due_day
-                const ownerStart = j.owner_billing_start ? new Date(j.owner_billing_start) : null
-                const freq = j.billing_frequency || 'monthly'
-                const dueDay = j.owner_billing_due || j.billing_due_day
-
-                if (freq === 'monthly') {
-                  if (dueDay && dueDay >= 1 && dueDay <= daysInMonth) {
-                    const cellDate = new Date(year, month, dueDay)
-                    if (!ownerStart || ownerStart <= cellDate) addDay(ownerByDay, dueDay, j)
-                  }
-                } else if (freq === 'weekly') {
-                  const dow = parseInt(j.billing_due_day)
-                  if (!isNaN(dow)) {
-                    for (let d = 1; d <= daysInMonth; d++) {
+              const computeEvents = (jobs, getFreq, getDue, getAnchor, getStart, map) => {
+                for (const j of jobs) {
+                  const freq = getFreq(j) || 'monthly'
+                  const due = getDue(j)
+                  const start = getStart(j) ? new Date(getStart(j)) : null
+                  if (due === null || due === undefined || due === '') continue
+                  if (freq === 'monthly') {
+                    const d = parseInt(due)
+                    if (d >= 1 && d <= daysInMonth) {
                       const cellDate = new Date(year, month, d)
-                      if (cellDate.getDay() === dow && (!ownerStart || ownerStart <= cellDate)) addDay(ownerByDay, d, j)
+                      if (!start || start <= cellDate) addDay(map, d, j)
                     }
-                  }
-                } else if (freq === 'biweekly') {
-                  const dow = parseInt(j.billing_due_day)
-                  const anchor = j.billing_anchor_date ? new Date(j.billing_anchor_date) : null
-                  if (!isNaN(dow) && anchor) {
-                    for (let d = 1; d <= daysInMonth; d++) {
+                  } else if (freq === 'weekly') {
+                    const dow = parseInt(due)
+                    if (!isNaN(dow)) for (let d = 1; d <= daysInMonth; d++) {
                       const cellDate = new Date(year, month, d)
-                      const diffDays = Math.round((cellDate - anchor) / 86400000)
-                      if (cellDate.getDay() === dow && diffDays % 14 === 0 && (!ownerStart || ownerStart <= cellDate)) addDay(ownerByDay, d, j)
+                      if (cellDate.getDay() === dow && (!start || start <= cellDate)) addDay(map, d, j)
+                    }
+                  } else if (freq === 'biweekly') {
+                    const dow = parseInt(due)
+                    const anchor = getAnchor(j) ? new Date(getAnchor(j)) : null
+                    if (!isNaN(dow) && anchor) for (let d = 1; d <= daysInMonth; d++) {
+                      const cellDate = new Date(year, month, d)
+                      const diff = Math.round((cellDate - anchor) / 86400000)
+                      if (cellDate.getDay() === dow && diff % 14 === 0 && (!start || start <= cellDate)) addDay(map, d, j)
                     }
                   }
                 }
               }
 
-              const hasAny = jobs.some(j => j.status === 'active' && (j.sub_billing_due || j.owner_billing_due || j.billing_due_day))
+              const activeJobs = jobs.filter(j => j.status === 'active')
+              computeEvents(activeJobs, j => j.sub_billing_frequency, j => j.sub_billing_due, j => j.sub_billing_anchor, j => j.sub_billing_start, subByDay)
+              computeEvents(activeJobs, j => j.owner_billing_frequency, j => j.owner_billing_due, j => j.owner_billing_anchor, j => j.owner_billing_start, ownerByDay)
+
+              const hasAny = activeJobs.some(j => j.sub_billing_due || j.owner_billing_due)
 
               return (
                 <div>
@@ -1720,7 +1716,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {activeTab === 'jobs' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', sub_billing_start: '', sub_billing_due: '', owner_billing_start: '', owner_billing_due: '' }); setJobMsg('') }}>
+                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
                   </button>
                 </div>
@@ -1738,16 +1734,52 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                         <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
-                        <div style={{ ...s.grid2 }}>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }}>
                           <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.sub_billing_start} onChange={e => setNewJob(j => ({ ...j, sub_billing_start: e.target.value }))} /></div>
-                          <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
+                          <div><label style={s.label}>Frequency</label>
+                            <select style={s.input} value={newJob.sub_billing_frequency} onChange={e => setNewJob(j => ({ ...j, sub_billing_frequency: e.target.value, sub_billing_due: '', sub_billing_anchor: '' }))}>
+                              <option value="monthly">Monthly</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="biweekly">Bi-weekly</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div style={s.grid2}>
+                          {newJob.sub_billing_frequency === 'monthly'
+                            ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
+                            : <div><label style={s.label}>Due day of week</label>
+                                <select style={s.input} value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))}>
+                                  <option value="">Select...</option>
+                                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                </select>
+                              </div>
+                          }
+                          {newJob.sub_billing_frequency === 'biweekly' && <div><label style={s.label}>Anchor date</label><input style={s.input} type="date" value={newJob.sub_billing_anchor} onChange={e => setNewJob(j => ({ ...j, sub_billing_anchor: e.target.value }))} /></div>}
                         </div>
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                         <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
-                        <div style={{ ...s.grid2 }}>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }}>
                           <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.owner_billing_start} onChange={e => setNewJob(j => ({ ...j, owner_billing_start: e.target.value }))} /></div>
-                          <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.owner_billing_due} onChange={e => setNewJob(j => ({ ...j, owner_billing_due: e.target.value }))} placeholder="e.g. 1" /></div>
+                          <div><label style={s.label}>Frequency</label>
+                            <select style={s.input} value={newJob.owner_billing_frequency} onChange={e => setNewJob(j => ({ ...j, owner_billing_frequency: e.target.value, owner_billing_due: '', owner_billing_anchor: '' }))}>
+                              <option value="monthly">Monthly</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="biweekly">Bi-weekly</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div style={s.grid2}>
+                          {newJob.owner_billing_frequency === 'monthly'
+                            ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.owner_billing_due} onChange={e => setNewJob(j => ({ ...j, owner_billing_due: e.target.value }))} placeholder="e.g. 1" /></div>
+                            : <div><label style={s.label}>Due day of week</label>
+                                <select style={s.input} value={newJob.owner_billing_due} onChange={e => setNewJob(j => ({ ...j, owner_billing_due: e.target.value }))}>
+                                  <option value="">Select...</option>
+                                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                </select>
+                              </div>
+                          }
+                          {newJob.owner_billing_frequency === 'biweekly' && <div><label style={s.label}>Anchor date</label><input style={s.input} type="date" value={newJob.owner_billing_anchor} onChange={e => setNewJob(j => ({ ...j, owner_billing_anchor: e.target.value }))} /></div>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

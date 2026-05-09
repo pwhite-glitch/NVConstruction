@@ -1533,22 +1533,34 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
   // ── Subs ────────────────────────────────────────────────────
   async function assignSubToJob() {
-    const email = assignSubForm.from_dir
+    const normalEmail = (assignSubForm.from_dir
       ? subDirectory.find(d => d.id === assignSubForm.from_dir)?.email
       : assignSubForm.email.trim()
-    if (!email) return
+    )?.toLowerCase()
+    if (!normalEmail) return
     setAssigningSubLoading(true)
-    const { error } = await supabase.from('job_assignments').insert({ job_id: id, sub_email: email.toLowerCase() })
+    const { error } = await supabase.from('job_assignments').insert({ job_id: id, sub_email: normalEmail })
     if (error) {
       setErrMsg(error.code === '23505' ? 'This sub is already assigned to this job.' : error.message)
       setTimeout(() => setErrMsg(''), 4000)
-    } else {
-      await supabase.rpc('sync_job_assignments')
-      await reloadSubs()
-      setShowAssignSub(false)
-      setAssignSubForm({ email: '', from_dir: '' })
+      setAssigningSubLoading(false)
+      return
     }
+    await supabase.rpc('sync_job_assignments')
+    await reloadSubs()
+    setShowAssignSub(false)
+    setAssignSubForm({ email: '', from_dir: '' })
     setAssigningSubLoading(false)
+
+    // Ensure they're in the directory then send invite
+    let { data: dirEntry } = await supabase.from('sub_directory').select('id').eq('email', normalEmail).maybeSingle()
+    if (!dirEntry) {
+      const { data: inserted } = await supabase.from('sub_directory').insert({ email: normalEmail, status: 'approved', applied_at: new Date().toISOString() }).select('id').single()
+      dirEntry = inserted
+    }
+    if (dirEntry?.id) {
+      fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id }) })
+    }
   }
 
   async function removeSubFromJob(assignmentId) {

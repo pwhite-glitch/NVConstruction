@@ -136,6 +136,8 @@ export default function Dashboard() {
   const [bidForm, setBidForm] = useState({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '' })
   const [creatingBid, setCreatingBid] = useState(false)
   const [bidDetails, setBidDetails] = useState({})
+  const [editingBidId, setEditingBidId] = useState(null)
+  const [editBidDueDate, setEditBidDueDate] = useState('')
   const [uploadingPlanFor, setUploadingPlanFor] = useState(null)
   const [uploadingW9For, setUploadingW9For] = useState(null)
   const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
@@ -488,6 +490,12 @@ export default function Dashboard() {
     await supabase.from('bid_packages').delete().eq('id', bidId)
     setExpandedBid(null)
     await loadBidPackages()
+  }
+
+  async function saveBidDueDate(bidId) {
+    await supabase.from('bid_packages').update({ due_date: editBidDueDate || null }).eq('id', bidId)
+    setBidPackages(prev => prev.map(p => p.id === bidId ? { ...p, due_date: editBidDueDate || null } : p))
+    setEditingBidId(null)
   }
 
   async function saveBillingEdit() {
@@ -1669,7 +1677,18 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               computeEvents(activeJobs, j => j.sub_billing_frequency, j => j.sub_billing_due, j => j.sub_billing_anchor, j => j.sub_billing_start, subByDay)
               computeEvents(activeJobs, j => j.owner_billing_frequency, j => j.owner_billing_due, j => j.owner_billing_anchor, j => j.owner_billing_start, ownerByDay)
 
-              const hasAny = activeJobs.some(j => j.sub_billing_due || j.owner_billing_due)
+              // Bid due dates
+              const bidByDay = {}
+              for (const pkg of bidPackages.filter(p => p.due_date && p.status === 'open')) {
+                const d = new Date(pkg.due_date + 'T00:00:00')
+                if (d.getFullYear() === year && d.getMonth() === month) {
+                  const day = d.getDate()
+                  if (!bidByDay[day]) bidByDay[day] = []
+                  bidByDay[day].push(pkg)
+                }
+              }
+
+              const hasAny = activeJobs.some(j => j.sub_billing_due || j.owner_billing_due) || Object.keys(bidByDay).length > 0
 
               return (
                 <div>
@@ -1678,9 +1697,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     <span style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>{monthNames[month]} {year}</span>
                     <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>Next ›</button>
                   </div>
-                  <div style={{ display: 'flex', gap: '16px', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '16px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#1a3a5a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Sub billing due</span></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#1a4a1a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Owner billing due</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#2a1a4a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Bid deadline</span></div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
                     {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
@@ -1689,6 +1709,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     {cells.map((day, i) => {
                       const subJobs = day ? (subByDay[day] || []) : []
                       const ownerJobs = day ? (ownerByDay[day] || []) : []
+                      const bidsDue = day ? (bidByDay[day] || []) : []
                       const isToday = day && new Date().getFullYear() === year && new Date().getMonth() === month && new Date().getDate() === day
                       return (
                         <div key={i} style={{ minHeight: '80px', background: day ? '#0f0f0f' : 'transparent', border: day ? `1px solid ${isToday ? '#e8590c' : '#1e1e1e'}` : 'none', borderRadius: '8px', padding: '6px' }}>
@@ -1701,6 +1722,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           {ownerJobs.map(j => (
                             <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#1a4a1a', border: '1px solid #2a6a2a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#86efac', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
                               #{j.job_number} Owner
+                            </div>
+                          ))}
+                          {bidsDue.map(p => (
+                            <div key={p.id} onClick={() => { setActiveTab('estimator'); setEstimatorInnerTab('bids') }} style={{ background: '#2a1a4a', border: '1px solid #4a2a7a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#c084fc', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                              {p.title}
                             </div>
                           ))}
                         </div>
@@ -1886,9 +1912,17 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           )}
 
                           {profile?.role === 'pm' && (
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
                             {pkg.status === 'open' && <button style={s.btnSm('gray')} onClick={() => setBidStatus(pkg.id, 'closed')}>Close bidding</button>}
                             {pkg.status === 'closed' && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
+                            {editingBidId === pkg.id
+                              ? <>
+                                  <input type="date" style={{ ...s.input, width: 'auto', padding: '6px 10px', fontSize: '13px' }} value={editBidDueDate} onChange={e => setEditBidDueDate(e.target.value)} />
+                                  <button style={s.btnSm('green')} onClick={() => saveBidDueDate(pkg.id)}>Save</button>
+                                  <button style={s.btnSm('gray')} onClick={() => setEditingBidId(null)}>Cancel</button>
+                                </>
+                              : <button style={s.btnSm('gray')} onClick={() => { setEditingBidId(pkg.id); setEditBidDueDate(pkg.due_date || '') }}>Edit due date</button>
+                            }
                             <button style={s.btnSm('red')} onClick={() => deleteBidPackage(pkg.id)}>Delete package</button>
                           </div>
                           )}

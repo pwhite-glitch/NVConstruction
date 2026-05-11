@@ -11,7 +11,7 @@ export async function GET() {
   const results = []
   for (const bucket of BUCKETS) {
     const { data, error } = await adminSupabase.storage.updateBucket(bucket, {
-      fileSizeLimit: 524288000, // 500MB
+      fileSizeLimit: 52428800, // 50MB
     })
     results.push({ bucket, ok: !error, error: error?.message })
   }

@@ -10,11 +10,15 @@ const BUCKETS = ['job-documents', 'documents', 'billing-docs', 'bid-docs', 'rece
 export async function GET() {
   const results = []
   for (const bucket of BUCKETS) {
-    const { data, error } = await adminSupabase.storage.updateBucket(bucket, {
-      fileSizeLimit: 52428800, // 50MB
+    const { data: info, error: infoErr } = await adminSupabase.storage.getBucket(bucket)
+    results.push({
+      bucket,
+      exists: !infoErr,
+      public: info?.public,
+      fileSizeLimit: info?.file_size_limit,
+      allowedMimeTypes: info?.allowed_mime_types,
+      infoError: infoErr?.message,
     })
-    results.push({ bucket, ok: !error, error: error?.message })
   }
-
   return Response.json({ results })
 }

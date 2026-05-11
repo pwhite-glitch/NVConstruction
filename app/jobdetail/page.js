@@ -942,16 +942,34 @@ ${sovLines.length > 0 ? `
   async function uploadJobDoc(file) {
     setUploadingDoc(true)
     const path = `${id}/${docCategory}/${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('job-documents').upload(path, file)
-    if (error) { alert('Upload error: ' + error.message); setUploadingDoc(false); return }
+    const res = await fetch('/api/job-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upload-url', path }),
+    })
+    const { signedUrl, error: urlErr } = await res.json()
+    if (urlErr || !signedUrl) { alert('Upload error: ' + (urlErr || 'Could not get upload URL')); setUploadingDoc(false); return }
+    const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    if (!up.ok) {
+      let msg = 'Upload failed'
+      try { const b = await up.json(); if (b.message) msg = b.message } catch {}
+      alert('Upload error: ' + msg)
+      setUploadingDoc(false)
+      return
+    }
     await supabase.from('job_documents').insert({ job_id: id, file_name: file.name, storage_path: path, category: docCategory, uploaded_by: (await supabase.auth.getUser()).data.user?.id })
     await loadJobDocs()
     setUploadingDoc(false)
   }
 
   async function openJobDoc(storagePath) {
-    const { data } = await supabase.storage.from('job-documents').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    const res = await fetch('/api/job-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signed-url', path: storagePath }),
+    })
+    const { url } = await res.json()
+    if (url) window.open(url, '_blank')
   }
 
   async function deleteJobDoc(docId, storagePath) {

@@ -709,11 +709,11 @@ export default function Dashboard() {
   }
 
   async function loadTeamData() {
-    const [{ data: members }, { data: assigns }] = await Promise.all([
-      supabase.from('profiles').select('*').in('role', ['pm', 'apm', 'super', 'admin']).order('full_name'),
+    const [teamRes, { data: assigns }] = await Promise.all([
+      fetch('/api/team-members').then(r => r.json()),
       supabase.from('pm_job_assignments').select('*, jobs(id, job_number, project_name)').order('assigned_at'),
     ])
-    setTeamMembers(members || [])
+    setTeamMembers(teamRes.members || [])
     setPmJobAssigns(assigns || [])
   }
 

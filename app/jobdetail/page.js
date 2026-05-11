@@ -259,8 +259,9 @@ export default function JobDetail() {
       setSubs(subList || [])
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
       setBilling(bills || [])
-      const { data: team } = await supabase.from('profiles').select('id, full_name, email, role').in('role', ['pm', 'apm']).order('full_name')
-      setTeamMembers(team || [])
+      const teamRes = await fetch('/api/team-members')
+      const teamJson = await teamRes.json()
+      setTeamMembers(teamJson.members || [])
       setLoading(false)
     }
     load()

@@ -7,12 +7,7 @@ const adminSupabase = createClient(
 
 const BUCKETS = ['job-documents', 'documents', 'billing-docs', 'bid-docs', 'receipts', 'schedule-files']
 
-export async function GET(request) {
-  const auth = request.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+export async function GET() {
   const results = []
   for (const bucket of BUCKETS) {
     const { data, error } = await adminSupabase.storage.updateBucket(bucket, {

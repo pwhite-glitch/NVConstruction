@@ -18,6 +18,8 @@ async function mail(to, subject, html) {
   })
 }
 
+const PM_EMAIL = process.env.PM_EMAIL || 'pwhite@nvim.co'
+
 export async function POST(request) {
   try {
     const body = await request.json()
@@ -35,16 +37,19 @@ export async function POST(request) {
         ...(job?.created_by ? [job.created_by] : []),
       ])]
 
-      if (userIds.length === 0) return Response.json({ ok: true })
+      const { data: pmProfiles } = userIds.length > 0
+        ? await adminSupabase.from('profiles').select('email, full_name').in('id', userIds)
+        : { data: [] }
 
-      const { data: pmProfiles } = await adminSupabase
-        .from('profiles').select('email, full_name').in('id', userIds)
+      const recipients = [...new Set([
+        ...((pmProfiles || []).map(p => p.email).filter(Boolean)),
+        PM_EMAIL,
+      ])]
 
       const jobLabel = job ? `#${job.job_number} — ${job.project_name}` : 'a job'
 
-      for (const pm of (pmProfiles || [])) {
-        if (!pm.email) continue
-        await mail(pm.email, `New RFI: ${body.title} — ${jobLabel}`, wrap(`
+      for (const email of recipients) {
+        await mail(email, `New RFI: ${body.title} — ${jobLabel}`, wrap(`
           <h2 style="color:#f1f1f1;margin:0 0 1rem">New RFI Submitted</h2>
           <p style="color:#aaa"><strong style="color:#f1f1f1">${body.super_name}</strong> submitted an RFI on <strong style="color:#f1f1f1">${jobLabel}</strong>.</p>
           <div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0">
@@ -52,7 +57,7 @@ export async function POST(request) {
             <p style="color:#f1f1f1;font-weight:700;margin:0 0 ${body.description ? '12px' : '0'}">${body.title}</p>
             ${body.description ? `<p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Description</p><p style="color:#aaa;font-size:13px;line-height:1.6;margin:0">${body.description}</p>` : ''}
           </div>
-          <a href="${siteUrl}/jobdetail?id=${body.job_id}" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">View RFI &amp; Respond</a>
+          <a href="${siteUrl}/jobdetail?id=${body.job_id}&tab=field" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">View RFI &amp; Respond</a>
         `))
       }
       return Response.json({ ok: true })

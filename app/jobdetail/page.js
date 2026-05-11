@@ -219,6 +219,12 @@ export default function JobDetail() {
   const [docCategory, setDocCategory] = useState('plans')
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
+  // Contacts tab state
+  const [jobContacts, setJobContacts] = useState([])
+  const [contactForm, setContactForm] = useState({ name: '', company: '', role: '', phone: '', email: '', notes: '' })
+  const [addingContact, setAddingContact] = useState(false)
+  const [savingContact, setSavingContact] = useState(false)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -837,6 +843,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
+    if (activeTab === 'contacts') { loadJobContacts() }
   }, [activeTab, id])
 
 
@@ -977,6 +984,28 @@ ${sovLines.length > 0 ? `
     await supabase.storage.from('job-documents').remove([storagePath])
     await supabase.from('job_documents').delete().eq('id', docId)
     await loadJobDocs()
+  }
+
+  async function loadJobContacts() {
+    const { data } = await supabase.from('job_contacts').select('*').eq('job_id', id).order('created_at', { ascending: true })
+    setJobContacts(data || [])
+  }
+
+  async function saveContact() {
+    if (!contactForm.name.trim()) return
+    setSavingContact(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('job_contacts').insert({ ...contactForm, job_id: id, created_by: user?.id })
+    setContactForm({ name: '', company: '', role: '', phone: '', email: '', notes: '' })
+    setAddingContact(false)
+    setSavingContact(false)
+    await loadJobContacts()
+  }
+
+  async function deleteContact(contactId) {
+    if (!window.confirm('Delete this contact?')) return
+    await supabase.from('job_contacts').delete().eq('id', contactId)
+    await loadJobContacts()
   }
 
   function parseProjectXml(xmlText) {
@@ -1895,6 +1924,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
           <button style={s.tab(activeTab === 'documents')} onClick={() => setActiveTab('documents')}>
             Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'contacts')} onClick={() => setActiveTab('contacts')}>
+            Contacts{jobContacts.length > 0 ? ` (${jobContacts.length})` : ''}
           </button>
         </div>
 
@@ -4625,6 +4657,110 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             {jobDocs.length === 0 && (
               <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
                 <p style={{ color: '#555', margin: 0 }}>No documents uploaded yet. Select a category and upload to get started.</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── CONTACTS TAB ── */}
+        {activeTab === 'contacts' && (
+          <>
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: addingContact ? '1.5rem' : 0 }}>
+                <p style={{ ...s.cardTitle, marginBottom: 0 }}>Project Contacts</p>
+                {!addingContact && (
+                  <button style={s.btnSmallOrange} onClick={() => setAddingContact(true)}>+ Add Contact</button>
+                )}
+              </div>
+              {addingContact && (
+                <div style={{ borderTop: '1px solid #1e1e1e', paddingTop: '1.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
+                    <div>
+                      <label style={s.label}>Name *</label>
+                      <input style={s.input} value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="Jane Smith" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Company / Organization</label>
+                      <input style={s.input} value={contactForm.company} onChange={e => setContactForm(f => ({ ...f, company: e.target.value }))} placeholder="City of San Diego" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Role</label>
+                      <select style={s.input} value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))}>
+                        <option value="">Select role...</option>
+                        <option value="City Inspector">City Inspector</option>
+                        <option value="Structural Engineer">Structural Engineer</option>
+                        <option value="Architect">Architect</option>
+                        <option value="Geotechnical Engineer">Geotechnical Engineer</option>
+                        <option value="Owner / Owner Rep">Owner / Owner Rep</option>
+                        <option value="Utility Contact">Utility Contact</option>
+                        <option value="Civil Engineer">Civil Engineer</option>
+                        <option value="MEP Engineer">MEP Engineer</option>
+                        <option value="Lender / Bank">Lender / Bank</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={s.label}>Phone</label>
+                      <input style={s.input} value={contactForm.phone} onChange={e => setContactForm(f => ({ ...f, phone: e.target.value }))} placeholder="(619) 555-0100" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Email</label>
+                      <input style={s.input} type="email" value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@city.gov" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Notes</label>
+                      <input style={s.input} value={contactForm.notes} onChange={e => setContactForm(f => ({ ...f, notes: e.target.value }))} placeholder="Inspection hours, permit #, etc." />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button style={{ ...s.btn, opacity: savingContact ? 0.6 : 1 }} disabled={savingContact || !contactForm.name.trim()} onClick={saveContact}>
+                      {savingContact ? 'Saving...' : 'Save Contact'}
+                    </button>
+                    <button style={s.btnGray} onClick={() => { setAddingContact(false); setContactForm({ name: '', company: '', role: '', phone: '', email: '', notes: '' }) }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {jobContacts.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }} className="rx-grid-2">
+                {jobContacts.map(c => (
+                  <div key={c.id} style={s.card}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div>
+                        <p style={{ margin: '0 0 2px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{c.name}</p>
+                        {c.company && <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>{c.company}</p>}
+                      </div>
+                      {c.role && (
+                        <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', whiteSpace: 'nowrap' }}>
+                          {c.role}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: c.notes ? '12px' : 0 }}>
+                      {c.phone && (
+                        <div>
+                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Phone</p>
+                          <a href={`tel:${c.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.phone}</a>
+                        </div>
+                      )}
+                      {c.email && (
+                        <div>
+                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Email</p>
+                          <a href={`mailto:${c.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.email}</a>
+                        </div>
+                      )}
+                    </div>
+                    {c.notes && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#666', lineHeight: '1.5' }}>{c.notes}</p>}
+                    <button style={{ ...s.btnSmallRed, marginTop: '12px' }} onClick={() => deleteContact(c.id)}>Remove</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {jobContacts.length === 0 && !addingContact && (
+              <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
+                <p style={{ color: '#555', margin: 0 }}>No contacts yet. Add city inspectors, engineers, owner reps, and other project contacts.</p>
               </div>
             )}
           </>

@@ -76,6 +76,7 @@ export default function Field() {
   const [completingMilestone, setCompletingMilestone] = useState(null)
 
   const [subContacts, setSubContacts] = useState([])
+  const [jobContacts, setJobContacts] = useState([])
 
   const [directCosts, setDirectCosts] = useState([])
   const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
@@ -111,7 +112,7 @@ export default function Field() {
     else if (activeTab === 'rfi') loadRfis()
     else if (activeTab === 'deliveries') loadDeliveries()
     else if (activeTab === 'schedule') loadMilestones()
-    else if (activeTab === 'subs') loadSubContacts()
+    else if (activeTab === 'subs') { loadSubContacts(); loadJobContacts() }
     else if (activeTab === 'costs') loadDirectCosts()
     else if (activeTab === 'docs') loadJobDocs()
   }, [selectedJobId, activeTab])
@@ -138,6 +139,11 @@ export default function Field() {
     if (emails.length === 0) { setSubContacts([]); return }
     const { data } = await supabase.from('sub_directory').select('*').in('email', emails)
     setSubContacts(data || [])
+  }
+
+  async function loadJobContacts() {
+    const { data } = await supabase.from('job_contacts').select('*').eq('job_id', selectedJobId).order('created_at', { ascending: true })
+    setJobContacts(data || [])
   }
 
   async function loadDirectCosts() {
@@ -356,7 +362,7 @@ export default function Field() {
                   </button>
                   <button style={s.tab(activeTab === 'deliveries')} onClick={() => setActiveTab('deliveries')}>Deliveries</button>
                   <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
-                  <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>Sub Contacts</button>
+                  <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>Contacts</button>
                   <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
                   <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>
                     Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
@@ -800,31 +806,76 @@ export default function Field() {
                   </>
                 )}
 
-                {/* ── SUB CONTACTS ── */}
+                {/* ── CONTACTS ── */}
                 {activeTab === 'subs' && (
-                  subContacts.length === 0 ? (
-                    <div style={s.empty}>No subcontractors assigned to this job yet.</div>
-                  ) : subContacts.map(sub => (
-                    <div key={sub.id} style={s.card}>
-                      <p style={{ margin: '0 0 3px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</p>
-                      {sub.contact_name && <p style={{ margin: '0 0 3px', fontSize: '13px', color: '#888' }}>{sub.contact_name}</p>}
-                      {sub.trade && <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{sub.trade}</p>}
-                      <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
-                        {sub.phone && (
-                          <div>
-                            <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
-                            <a href={`tel:${sub.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{sub.phone}</a>
+                  <>
+                    {jobContacts.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', paddingLeft: '2px' }}>Project Contacts</div>
+                        {jobContacts.map(c => (
+                          <div key={c.id} style={s.card}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                              <div>
+                                <p style={{ margin: '0 0 2px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{c.name}</p>
+                                {c.company && <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>{c.company}</p>}
+                              </div>
+                              {c.role && (
+                                <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', whiteSpace: 'nowrap' }}>
+                                  {c.role}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                              {c.phone && (
+                                <div>
+                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
+                                  <a href={`tel:${c.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.phone}</a>
+                                </div>
+                              )}
+                              {c.email && (
+                                <div>
+                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
+                                  <a href={`mailto:${c.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.email}</a>
+                                </div>
+                              )}
+                            </div>
+                            {c.notes && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#666', lineHeight: '1.5' }}>{c.notes}</p>}
                           </div>
-                        )}
-                        {sub.email && (
-                          <div>
-                            <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
-                            <a href={`mailto:${sub.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{sub.email}</a>
+                        ))}
+                      </>
+                    )}
+
+                    {subContacts.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: `${jobContacts.length > 0 ? '20px' : '0'} 0 10px`, paddingLeft: '2px' }}>Subcontractors</div>
+                        {subContacts.map(sub => (
+                          <div key={sub.id} style={s.card}>
+                            <p style={{ margin: '0 0 3px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</p>
+                            {sub.contact_name && <p style={{ margin: '0 0 3px', fontSize: '13px', color: '#888' }}>{sub.contact_name}</p>}
+                            {sub.trade && <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{sub.trade}</p>}
+                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                              {sub.phone && (
+                                <div>
+                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
+                                  <a href={`tel:${sub.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{sub.phone}</a>
+                                </div>
+                              )}
+                              {sub.email && (
+                                <div>
+                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
+                                  <a href={`mailto:${sub.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{sub.email}</a>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
+                        ))}
+                      </>
+                    )}
+
+                    {jobContacts.length === 0 && subContacts.length === 0 && (
+                      <div style={s.empty}>No contacts on this job yet. PMs can add inspectors, engineers, and other contacts from the job detail page.</div>
+                    )}
+                  </>
                 )}
               </>
             )}

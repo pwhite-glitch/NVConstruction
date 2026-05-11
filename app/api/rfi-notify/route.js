@@ -25,10 +25,10 @@ export async function GET(request) {
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ error: 'Pass ?job_id=xxx' }, { status: 400 })
 
-  const { data: job } = await adminSupabase
+  const { data: job, error: jobErr } = await adminSupabase
     .from('jobs').select('project_name, job_number, pm_email').eq('id', job_id).single()
 
-  if (!job?.pm_email) return Response.json({ job, error: 'No pm_email on this job' })
+  if (jobErr || !job?.pm_email) return Response.json({ job, jobError: jobErr?.message, error: 'No pm_email on this job' })
 
   const { data: emailData, error: emailErr } = await mail(
     job.pm_email,

@@ -9,7 +9,7 @@ export async function GET() {
   // Fetch all profiles to see what roles exist
   const { data: allProfiles, error: allErr } = await adminSupabase
     .from('profiles')
-    .select('id, full_name, email, role, phone')
+    .select('id, full_name, role, phone')
     .order('full_name')
 
   // Fetch all auth users

@@ -5,8 +5,6 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-let bucketConfigured = false
-
 export async function POST(request) {
   try {
     const body = await request.json()
@@ -14,11 +12,6 @@ export async function POST(request) {
 
     if (action === 'upload-url') {
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
-      // Remove file size limit once per server lifetime
-      if (!bucketConfigured) {
-        await adminSupabase.storage.updateBucket('job-documents', { fileSizeLimit: null }).catch(() => {})
-        bucketConfigured = true
-      }
       const { data, error } = await adminSupabase.storage
         .from('job-documents')
         .createSignedUploadUrl(filePath)

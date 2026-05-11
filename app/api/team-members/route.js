@@ -6,30 +6,16 @@ const adminSupabase = createClient(
 )
 
 export async function GET() {
-  // Fetch all profiles to see what roles exist
-  const { data: allProfiles, error: allErr } = await adminSupabase
+  const { data: profiles, error } = await adminSupabase
     .from('profiles')
     .select('id, full_name, role, phone')
+    .in('role', ['pm', 'apm', 'super', 'admin'])
     .order('full_name')
+  if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  // Fetch all auth users
-  const { data: authData, error: authErr } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
-  const authUsers = authData?.users || []
-  const emailMap = Object.fromEntries(authUsers.map(u => [u.id, u.email]))
+  const { data: authData } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
+  const emailMap = Object.fromEntries((authData?.users || []).map(u => [u.id, u.email]))
 
-  // Merge emails into profiles
-  const merged = (allProfiles || []).map(p => ({ ...p, email: p.email || emailMap[p.id] || null }))
-
-  const members = merged.filter(p => ['pm', 'apm', 'super', 'admin'].includes(p.role))
-
-  return Response.json({
-    members,
-    debug: {
-      totalProfiles: allProfiles?.length,
-      allProfilesError: allErr?.message,
-      totalAuthUsers: authUsers.length,
-      authError: authErr?.message,
-      rolesFound: [...new Set((allProfiles || []).map(p => p.role))],
-    }
-  })
+  const members = (profiles || []).map(p => ({ ...p, email: emailMap[p.id] || null }))
+  return Response.json({ members })
 }

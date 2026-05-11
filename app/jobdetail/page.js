@@ -219,6 +219,8 @@ export default function JobDetail() {
   const [docCategory, setDocCategory] = useState('plans')
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
+  const [teamMembers, setTeamMembers] = useState([])
+
   // Contacts tab state
   const [jobContacts, setJobContacts] = useState([])
   const [contactForm, setContactForm] = useState({ name: '', company: '', role: '', phone: '', email: '', notes: '' })
@@ -257,6 +259,8 @@ export default function JobDetail() {
       setSubs(subList || [])
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
       setBilling(bills || [])
+      const { data: team } = await supabase.from('profiles').select('id, full_name, email, role').in('role', ['pm', 'apm']).order('full_name')
+      setTeamMembers(team || [])
       setLoading(false)
     }
     load()
@@ -1989,7 +1993,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </select>
                   </div>
                 </div>
-                <div><label style={s.label}>Scope notes</label><textarea style={s.textarea} value={form.scope_notes || ''} onChange={e => update('scope_notes', e.target.value)} placeholder="Project description, scope of work, special requirements..." /></div>
+                <div style={{ marginBottom: '12px' }}><label style={s.label}>Scope notes</label><textarea style={s.textarea} value={form.scope_notes || ''} onChange={e => update('scope_notes', e.target.value)} placeholder="Project description, scope of work, special requirements..." /></div>
+                <div style={{ maxWidth: '360px' }}>
+                  <label style={s.label}>PM contact (for RFI &amp; billing emails)</label>
+                  <select style={s.input} value={form.pm_email || ''} onChange={e => update('pm_email', e.target.value)}>
+                    <option value="">— Select PM —</option>
+                    {teamMembers.map(m => (
+                      <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div style={s.card}>

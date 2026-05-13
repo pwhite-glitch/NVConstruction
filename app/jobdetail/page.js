@@ -186,9 +186,10 @@ export default function JobDetail() {
   const [activeAia, setActiveAia] = useState(null)
   const [aiaLines, setAiaLines] = useState([])
   const [showNewAia, setShowNewAia] = useState(false)
-  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_to: '', retainage_pct: '10', markup_pct: '0' })
+  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
+  const [periodDirectCosts, setPeriodDirectCosts] = useState([])
   const [periodBilling, setPeriodBilling] = useState([])
   const [appliedBillings, setAppliedBillings] = useState(new Set())
   const [manualMapBillingId, setManualMapBillingId] = useState(null)
@@ -488,15 +489,20 @@ export default function JobDetail() {
   }
 
   async function openAiaApp(app) {
-    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); return }
+    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); setPeriodDirectCosts([]); return }
     setAiaLoading(true)
     setActiveAia(app)
     setAppliedBillings(new Set())
     const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
-    const [{ data: lines }, { data: bills }] = await Promise.all([
+    const periodFrom = app.period_from || (app.period_to ? app.period_to.slice(0, 7) + '-01' : null)
+    const periodTo = app.period_to || null
+    const [{ data: lines }, { data: bills }, { data: dcs }] = await Promise.all([
       supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
       monthPrefix
         ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
+        : Promise.resolve({ data: [] }),
+      periodFrom && periodTo
+        ? supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').gte('cost_date', periodFrom).lte('cost_date', periodTo)
         : Promise.resolve({ data: [] }),
     ])
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
@@ -509,6 +515,7 @@ export default function JobDetail() {
       pct_this: String(lineMap[b.id]?.pct_this_period ?? 0),
     })))
     setPeriodBilling(bills || [])
+    setPeriodDirectCosts(dcs || [])
     setAiaLoading(false)
   }
 
@@ -618,11 +625,19 @@ export default function JobDetail() {
       const { data: pl } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
       prevLines = pl || []
     }
-    const [year, month] = newAiaForm.period_to.split('-').map(Number)
-    const periodTo = new Date(year, month, 0).toISOString().split('T')[0]
+    let periodTo, periodFrom
+    if (newAiaForm.period_from) {
+      periodTo = newAiaForm.period_to
+      periodFrom = newAiaForm.period_from
+    } else {
+      const [year, month] = newAiaForm.period_to.split('-').map(Number)
+      periodTo = new Date(year, month, 0).toISOString().split('T')[0]
+      periodFrom = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
+    }
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
       job_id: id,
       app_number: parseInt(newAiaForm.app_number) || (aiaApplications.length + 1),
+      period_from: periodFrom,
       period_to: periodTo,
       retainage_pct: isNaN(parseFloat(newAiaForm.retainage_pct)) ? 10 : parseFloat(newAiaForm.retainage_pct),
       markup_pct: parseFloat(newAiaForm.markup_pct) || 0,
@@ -681,6 +696,17 @@ export default function JobDetail() {
       await supabase.from('aia_applications').update({ payment_received: true, payment_received_at: new Date().toISOString() }).eq('id', appId)
     }
     await loadAiaApplications()
+  }
+
+  async function drawDirectCost(costId, appId) {
+    const now = new Date().toISOString()
+    await supabase.from('direct_costs').update({ drawn_application_id: appId, drawn_at: now }).eq('id', costId)
+    setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: appId, drawn_at: now } : c))
+  }
+
+  async function undrawDirectCost(costId) {
+    await supabase.from('direct_costs').update({ drawn_application_id: null, drawn_at: null }).eq('id', costId)
+    setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: null, drawn_at: null } : c))
   }
 
   function generateAIAFromApp() {
@@ -854,7 +880,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
-    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems() }
+    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
@@ -4009,14 +4035,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {directCosts.map(c => {
                 const isRejecting = rejectingCostId === c.id
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
+                const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
                 return (
-                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
+                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#3a1a5a' : c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
                     <div style={s.billingEntryHeader}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{c.description}</span>
                           <span style={s.coBadge('pending')}>{c.category}</span>
                           <span style={s.coBadge(c.status)}>{c.status}</span>
+                          {drawnApp && (
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a' }}>
+                              Drawn — App #{drawnApp.app_number}
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
@@ -4117,31 +4149,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )}
               </div>
 
-              {showNewAia && (
+              {showNewAia && (() => {
+                const isBiweekly = (form.owner_billing_frequency || form.billing_frequency || 'monthly') === 'biweekly'
+                const canCreate = !savingAia && newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from) && budgetItems.length > 0
+                return (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                     <div>
                       <label style={s.label}>App #</label>
                       <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
                     </div>
-                    <div>
-                      <label style={s.label}>Billing period</label>
-                      <select style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))}>
-                        <option value="">Select month...</option>
-                        {(() => {
-                          const opts = []
-                          const now = new Date()
-                          for (let i = 24; i >= -6; i--) {
-                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-                            const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                            const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                            opts.push(<option key={val} value={val}>{label}</option>)
-                          }
-                          return opts
-                        })()}
-                      </select>
-                    </div>
+                    {isBiweekly ? (
+                      <>
+                        <div>
+                          <label style={s.label}>Period from</label>
+                          <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Period to</label>
+                          <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <label style={s.label}>Billing period</label>
+                        <select style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))}>
+                          <option value="">Select month...</option>
+                          {(() => {
+                            const opts = []
+                            const now = new Date()
+                            for (let i = 24; i >= -6; i--) {
+                              const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                              const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                              const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                              opts.push(<option key={val} value={val}>{label}</option>)
+                            }
+                            return opts
+                          })()}
+                        </select>
+                      </div>
+                    )}
                     <div>
                       <label style={s.label}>Retainage %</label>
                       <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
@@ -4160,15 +4208,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <p style={{ fontSize: '12px', color: '#e8590c', margin: '0 0 12px' }}>Add budget line items in the Budget tab first — they become the G703 schedule of values.</p>
                   )}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{ ...s.btn, opacity: (savingAia || !newAiaForm.period_to || budgetItems.length === 0) ? 0.6 : 1 }}
-                      disabled={savingAia || !newAiaForm.period_to || budgetItems.length === 0}
+                    <button style={{ ...s.btn, opacity: canCreate ? 1 : 0.6 }}
+                      disabled={!canCreate}
                       onClick={createAiaApplication}>
                       {savingAia ? 'Creating...' : 'Create application'}
                     </button>
                     <button style={s.btnGray} onClick={() => setShowNewAia(false)}>Cancel</button>
                   </div>
                 </div>
-              )}
+                )
+              })()}
 
               {aiaApplications.length === 0 && !showNewAia && (
                 <p style={{ color: '#444', fontSize: '14px' }}>No AIA applications yet. Create your first application above to get started.</p>
@@ -4176,7 +4225,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {aiaApplications.map(app => {
                 const isActive = activeAia?.id === app.id
-                const periodLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
+                const periodLabel = app.period_from && app.period_from !== (app.period_to ? app.period_to.slice(0, 7) + '-01' : '')
+                  ? `${new Date(app.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
                 return (
                   <div key={app.id} style={{ ...s.billingEntryRow, border: `1px solid ${isActive ? '#4a2200' : '#1e1e1e'}` }}>
                     <div style={{ ...s.billingEntryHeader, cursor: 'pointer' }} onClick={() => openAiaApp(app)}>
@@ -4301,6 +4352,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           </div>
                                         </div>
                                       )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+
+                            {periodDirectCosts.length > 0 && (
+                              <div style={{ background: '#100a1a', border: '1px solid #3a1a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#c084fc', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                  Direct costs this period — ${periodDirectCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({periodDirectCosts.length} item{periodDirectCosts.length !== 1 ? 's' : ''})
+                                </p>
+                                {periodDirectCosts.map((c, i) => {
+                                  const drawn = !!c.drawn_application_id
+                                  const drawnApp = drawn ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
+                                  return (
+                                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < periodDirectCosts.length - 1 ? '1px solid #2a1a3a' : 'none' }}>
+                                      <div>
+                                        <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
+                                        <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{c.category}</span>
+                                        {drawn && (
+                                          <span style={{ fontSize: '11px', color: '#c084fc', marginLeft: '8px', fontWeight: '700' }}>
+                                            Drawn — App #{drawnApp?.app_number || '?'}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                                        {drawn ? (
+                                          <button
+                                            style={{ padding: '4px 10px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                            onClick={() => undrawDirectCost(c.id)}>
+                                            Undo draw
+                                          </button>
+                                        ) : (
+                                          <button
+                                            style={{ padding: '4px 10px', background: '#0a0a2a', color: '#a78bfa', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                            onClick={() => drawDirectCost(c.id, activeAia.id)}>
+                                            Draw
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   )
                                 })}

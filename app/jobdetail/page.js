@@ -673,6 +673,16 @@ export default function JobDetail() {
     await loadAiaApplications()
   }
 
+  async function markPaymentReceived(appId, current) {
+    if (current) {
+      if (!window.confirm('Mark this payment as not received?')) return
+      await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null }).eq('id', appId)
+    } else {
+      await supabase.from('aia_applications').update({ payment_received: true, payment_received_at: new Date().toISOString() }).eq('id', appId)
+    }
+    await loadAiaApplications()
+  }
+
   function generateAIAFromApp() {
     if (!activeAia) return
     const app = activeAia
@@ -4175,9 +4185,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>App #{app.app_number}</span>
                           <span style={{ fontSize: '13px', color: '#888' }}>{periodLabel}</span>
                           <span style={s.coBadge(app.status === 'certified' ? 'approved' : app.status === 'submitted' ? 'pending' : 'pending')}>{app.status}</span>
+                          {app.payment_received && (
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>
+                              Payment Received
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          style={app.payment_received ? s.btnSmallGreen : s.btnSmall}
+                          onClick={e => { e.stopPropagation(); markPaymentReceived(app.id, app.payment_received) }}>
+                          {app.payment_received ? '✓ Payment Received' : 'Mark Payment Received'}
+                        </button>
                         {isActive && (
                           <button style={s.btnSmallRed} onClick={e => { e.stopPropagation(); deleteAiaApplication(app.id) }}>Delete</button>
                         )}

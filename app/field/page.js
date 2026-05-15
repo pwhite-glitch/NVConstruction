@@ -746,7 +746,7 @@ export default function Field() {
                             <div>
                               <label style={s.label}>Category *</label>
                               <select style={s.input} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
-                                {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                                {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
                               </select>
                             </div>
                             <div>

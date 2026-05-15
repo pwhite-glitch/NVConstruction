@@ -423,7 +423,6 @@ export default function JobDetail() {
 
   async function updateCostStatus(costId, status, notes) {
     setUpdatingCostId(costId)
-    await supabase.from('direct_costs').update({ status, notes: notes || null }).eq('id', costId)
     if (status === 'rejected') {
       const cost = directCosts.find(c => c.id === costId)
       const superEmail = cost?._profile?.email
@@ -436,6 +435,9 @@ export default function JobDetail() {
           `)
         )
       }
+      await supabase.from('direct_costs').delete().eq('id', costId)
+    } else {
+      await supabase.from('direct_costs').update({ status, notes: notes || null }).eq('id', costId)
     }
     setRejectingCostId(null)
     setCostRejectNote('')
@@ -4350,7 +4352,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div>
                         <label style={s.label}>Category *</label>
                         <select style={s.input} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
-                          {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                          {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div>

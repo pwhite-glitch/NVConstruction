@@ -221,6 +221,7 @@ export default function JobDetail() {
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
   const [teamMembers, setTeamMembers] = useState([])
+  const [generatingReport, setGeneratingReport] = useState(false)
 
   // Contacts tab state
   const [jobContacts, setJobContacts] = useState([])
@@ -1793,6 +1794,263 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     await loadBillingForJob()
   }
 
+  // ── Completion Report ────────────────────────────────────────
+  async function generateCompletionReport(markComplete = false) {
+    setGeneratingReport(true)
+    try {
+      const [
+        { data: billings },
+        { data: dcs },
+        { data: aiaApps },
+        { data: budgets },
+        { data: primeCOData },
+      ] = await Promise.all([
+        supabase.from('billing_submissions').select('*').eq('job_id', id).eq('status', 'approved').order('company_name'),
+        supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').order('cost_date'),
+        supabase.from('aia_applications').select('*').eq('job_id', id).order('app_number'),
+        supabase.from('budget_items').select('*').eq('job_id', id).order('cost_code'),
+        supabase.from('prime_change_orders').select('*').eq('job_id', id).eq('status', 'approved'),
+      ])
+
+      if (markComplete) {
+        await supabase.from('jobs').update({ status: 'complete' }).eq('id', id)
+        setJob(j => ({ ...j, status: 'complete' }))
+        setForm(f => ({ ...f, status: 'complete' }))
+      }
+
+      const fmt = n => '$' + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
+      const genDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+
+      const origContract = Number(job.contract_value || 0)
+      const approvedCOsTotal = (primeCOData || []).reduce((a, co) => a + Number(co.amount || 0), 0)
+      const contractSumToDate = origContract + approvedCOsTotal
+
+      const totalBilledAIA = (aiaApps || []).reduce((a, app) => {
+        // Use last app's completed value — we'll calc from lines if needed; use billed from apps status
+        return a
+      }, 0)
+      const receivedApps = (aiaApps || []).filter(a => a.payment_received)
+      // Sum received via AIA: calculate from the apps that were payment_received
+      // We'll compute received total from billing submissions as a proxy, plus direct costs
+      const subCostsTotal = (billings || []).reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+      const dcTotal = (dcs || []).reduce((a, c) => a + Number(c.amount || 0), 0)
+      const totalCosts = subCostsTotal + dcTotal
+
+      // Group subs
+      const subMap = {}
+      ;(billings || []).forEach(b => {
+        if (!subMap[b.company_name]) subMap[b.company_name] = 0
+        subMap[b.company_name] += Number(b.amount_billed || 0)
+      })
+
+      // Group direct costs by category
+      const dcByCategory = {}
+      ;(dcs || []).forEach(c => {
+        if (!dcByCategory[c.category]) dcByCategory[c.category] = 0
+        dcByCategory[c.category] += Number(c.amount || 0)
+      })
+
+      // Budget vs actual per line
+      const dcByBudgetItem = {}
+      ;(dcs || []).forEach(c => {
+        if (c.budget_item_id) {
+          if (!dcByBudgetItem[c.budget_item_id]) dcByBudgetItem[c.budget_item_id] = 0
+          dcByBudgetItem[c.budget_item_id] += Number(c.amount || 0)
+        }
+      })
+      // Sub costs by budget item — from AIA lines of the latest app
+      const subByBudgetItem = {}
+      if (aiaApps && aiaApps.length > 0) {
+        const lastApp = aiaApps[aiaApps.length - 1]
+        const { data: lastLines } = await supabase.from('aia_application_lines').select('*').eq('application_id', lastApp.id)
+        ;(lastLines || []).forEach(l => {
+          const bAmt = Number(budgets?.find(b => b.id === l.budget_item_id)?.owner_amount ?? budgets?.find(b => b.id === l.budget_item_id)?.budget_amount ?? 0)
+          const prevAmt = bAmt * (parseFloat(l.pct_prev) || 0) / 100
+          const thisAmt = bAmt * (parseFloat(l.pct_this_period) || 0) / 100
+          subByBudgetItem[l.budget_item_id] = prevAmt + thisAmt
+        })
+      }
+
+      // Revenue received: contract sum × % billed via last AIA app (or just use contractSumToDate if all received)
+      const allReceived = receivedApps.length > 0 && receivedApps.length === (aiaApps || []).length
+      const lastApp = aiaApps && aiaApps.length > 0 ? aiaApps[aiaApps.length - 1] : null
+      const revenueReceived = receivedApps.reduce((a, app) => {
+        // rough: pro-rate by app_number; better is to sum AIA lines
+        return a
+      }, 0) || contractSumToDate // fallback to contract if we can't calc
+      // Use total payment received from AIA apps that are marked received — value from contractSumToDate as best estimate
+      const receivedCount = receivedApps.length
+      const totalApps = (aiaApps || []).length
+      const grossProfit = contractSumToDate - totalCosts
+      const grossMargin = contractSumToDate > 0 ? (grossProfit / contractSumToDate * 100) : 0
+
+      const pmMember = teamMembers.find(m => m.email === job.pm_email)
+      const pmName = pmMember?.full_name || job.pm_email || '—'
+
+      const w = window.open('', '_blank')
+      w.document.write(`<!DOCTYPE html><html><head>
+<meta charset="UTF-8">
+<title>Job Completion Report — #${job.job_number}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: #fff; padding: 32px 40px; max-width: 900px; margin: 0 auto; }
+.print-btn { padding: 8px 20px; background: #111; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; margin-bottom: 24px; margin-right: 8px; }
+@media print { .print-btn { display: none; } }
+.logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.logo-box { width: 48px; height: 48px; background: #1b2a4a; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.logo-nv { color: #e8560c; font-size: 20px; font-weight: 900; font-family: Arial Black, sans-serif; line-height: 1; }
+.logo-sub { color: #fff; font-size: 5px; letter-spacing: 1.5px; margin-top: 2px; }
+.logo-text { font-size: 18px; font-weight: 800; color: #111; }
+.logo-sub2 { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; }
+h1 { font-size: 22px; font-weight: 800; color: #111; margin-bottom: 4px; }
+.meta { font-size: 12px; color: #777; margin-bottom: 6px; }
+.badges { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.badge { padding: 3px 10px; border-radius: 99px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; border: 1px solid #ddd; color: #555; }
+.badge-green { background: #f0fff4; color: #1a7a3a; border-color: #b2f0c8; }
+.badge-orange { background: #fff8f0; color: #c45200; border-color: #ffd0a0; }
+.section { margin-bottom: 28px; }
+.section-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #888; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 14px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 24px; font-size: 12px; }
+.kv .k { color: #555; }
+.kv .v { text-align: right; font-family: monospace; font-weight: 600; }
+.kv .total-row .k, .kv .total-row .v { font-weight: 800; font-size: 14px; color: #111; border-top: 1px solid #ccc; padding-top: 6px; margin-top: 4px; }
+.kv .highlight .v { color: #1a7a3a; font-size: 15px; }
+.kv .loss .v { color: #cc0000; font-size: 15px; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+.stat-box { border: 1px solid #e0e0e0; border-radius: 6px; padding: 14px 16px; }
+.stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 6px; }
+.stat-value { font-size: 20px; font-weight: 800; }
+.stat-value.green { color: #1a7a3a; }
+.stat-value.red { color: #cc0000; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th { padding: 7px 10px; border-bottom: 2px solid #111; font-size: 9.5px; text-transform: uppercase; letter-spacing: 1px; color: #555; text-align: left; }
+td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+td.r { text-align: right; font-family: monospace; }
+td.muted { color: #999; }
+tr.subtotal td { font-weight: 700; border-top: 1px solid #ccc; border-bottom: none; }
+tr.subtotal td.red { color: #cc0000; }
+tr.subtotal td.green { color: #1a7a3a; }
+.foot { margin-top: 40px; font-size: 10px; color: #bbb; border-top: 1px solid #eee; padding-top: 12px; text-align: center; }
+</style></head><body>
+<button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+<button class="print-btn" style="background:#555" onclick="window.close()">Close</button>
+
+<div class="logo-row">
+  <div class="logo-box"><div class="logo-nv">NV</div><div class="logo-sub">CONSTRUCTION</div></div>
+  <div><div class="logo-text">NV Construction</div><div class="logo-sub2">Job Completion Report</div></div>
+</div>
+
+<h1>#${job.job_number} — ${job.project_name}</h1>
+<p class="meta">${[job.location, job.owner_company ? 'Owner: ' + job.owner_company : '', 'PM: ' + pmName].filter(Boolean).join(' &nbsp;·&nbsp; ')}</p>
+<div class="badges">
+  <span class="badge badge-green">Completed</span>
+  <span class="badge">Generated ${genDate}</span>
+  ${job.start_date ? `<span class="badge">Started ${new Date(job.start_date + 'T12:00:00').toLocaleDateString()}</span>` : ''}
+</div>
+
+<div class="summary-grid">
+  <div class="stat-box"><div class="stat-label">Contract Sum to Date</div><div class="stat-value">${fmt(contractSumToDate)}</div></div>
+  <div class="stat-box"><div class="stat-label">Total Project Costs</div><div class="stat-value">${fmt(totalCosts)}</div></div>
+  <div class="stat-box"><div class="stat-label">Gross Profit</div><div class="stat-value ${grossProfit >= 0 ? 'green' : 'red'}">${fmtSigned(grossProfit)}</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Revenue</div>
+  <div class="kv">
+    <span class="k">Original contract value</span><span class="v">${fmt(origContract)}</span>
+    ${(primeCOData || []).length > 0 ? `<span class="k">Approved change orders (${(primeCOData || []).length})</span><span class="v">${approvedCOsTotal >= 0 ? '+' : ''}${fmtSigned(approvedCOsTotal)}</span>` : ''}
+    <span class="k" style="font-weight:700;color:#111">Contract sum to date</span><span class="v" style="font-weight:700;color:#111;border-top:1px solid #ccc;padding-top:4px;margin-top:2px">${fmt(contractSumToDate)}</span>
+    ${totalApps > 0 ? `<span class="k">AIA applications submitted</span><span class="v">${totalApps}</span>` : ''}
+    ${receivedCount > 0 ? `<span class="k">Payments received</span><span class="v">${receivedCount} of ${totalApps}</span>` : ''}
+  </div>
+</div>
+
+${Object.keys(subMap).length > 0 ? `
+<div class="section">
+  <div class="section-title">Subcontractor Costs — ${fmt(subCostsTotal)} approved</div>
+  <table>
+    <thead><tr><th>Company</th><th class="r">Amount Billed</th></tr></thead>
+    <tbody>
+      ${Object.entries(subMap).sort((a, b) => b[1] - a[1]).map(([name, amt]) => `<tr><td>${name}</td><td class="r">${fmt(amt)}</td></tr>`).join('')}
+      <tr class="subtotal"><td>Total subcontractor costs</td><td class="r">${fmt(subCostsTotal)}</td></tr>
+    </tbody>
+  </table>
+</div>` : ''}
+
+${Object.keys(dcByCategory).length > 0 ? `
+<div class="section">
+  <div class="section-title">Direct Costs — ${fmt(dcTotal)} approved</div>
+  <table>
+    <thead><tr><th>Category</th><th class="r">Amount</th></tr></thead>
+    <tbody>
+      ${Object.entries(dcByCategory).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => `<tr><td>${cat}</td><td class="r">${fmt(amt)}</td></tr>`).join('')}
+      <tr class="subtotal"><td>Total direct costs</td><td class="r">${fmt(dcTotal)}</td></tr>
+    </tbody>
+  </table>
+</div>` : ''}
+
+<div class="section">
+  <div class="section-title">Performance Summary</div>
+  <div class="kv">
+    <span class="k">Contract sum to date (revenue)</span><span class="v">${fmt(contractSumToDate)}</span>
+    <span class="k">Subcontractor costs</span><span class="v">(${fmt(subCostsTotal)})</span>
+    <span class="k">Direct costs</span><span class="v">(${fmt(dcTotal)})</span>
+    <span class="k total-row ${grossProfit >= 0 ? 'highlight' : 'loss'}">Gross profit</span><span class="v total-row ${grossProfit >= 0 ? 'highlight' : 'loss'}">${fmtSigned(grossProfit)}</span>
+    <span class="k">Gross margin</span><span class="v">${grossMargin.toFixed(1)}%</span>
+  </div>
+</div>
+
+${(budgets || []).length > 0 ? `
+<div class="section">
+  <div class="section-title">Budget vs Actual by Line Item</div>
+  <table>
+    <thead><tr>
+      <th>Code</th><th>Description</th>
+      <th class="r">Owner Budget</th>
+      <th class="r">Sub Cost (AIA)</th>
+      <th class="r">Direct Costs</th>
+      <th class="r">Total Actual</th>
+      <th class="r">Variance</th>
+    </tr></thead>
+    <tbody>
+      ${(budgets || []).map(b => {
+        const ownerAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
+        const subAmt = subByBudgetItem[b.id] || 0
+        const dcAmt = dcByBudgetItem[b.id] || 0
+        const actual = subAmt + dcAmt
+        const variance = ownerAmt - actual
+        const over = variance < 0
+        return `<tr>
+          <td style="font-family:monospace;font-size:10px;color:#888">${b.cost_code || '—'}</td>
+          <td>${b.description}</td>
+          <td class="r">${ownerAmt > 0 ? fmt(ownerAmt) : '<span style="color:#ccc">—</span>'}</td>
+          <td class="r">${subAmt > 0 ? fmt(subAmt) : '<span style="color:#ccc">—</span>'}</td>
+          <td class="r">${dcAmt > 0 ? fmt(dcAmt) : '<span style="color:#ccc">—</span>'}</td>
+          <td class="r">${actual > 0 ? fmt(actual) : '<span style="color:#ccc">—</span>'}</td>
+          <td class="r ${over ? 'red' : ''}" style="${over ? 'color:#cc0000' : 'color:#1a7a3a'}">${ownerAmt > 0 || actual > 0 ? (over ? '-' : '+') + fmt(Math.abs(variance)) : '—'}</td>
+        </tr>`
+      }).join('')}
+      <tr class="subtotal">
+        <td></td><td>Totals</td>
+        <td class="r">${fmt((budgets || []).reduce((a, b) => a + Number(b.owner_amount ?? b.budget_amount ?? 0), 0))}</td>
+        <td class="r">${fmt(Object.values(subByBudgetItem).reduce((a, v) => a + v, 0))}</td>
+        <td class="r">${fmt(Object.values(dcByBudgetItem).reduce((a, v) => a + v, 0))}</td>
+        <td class="r">${fmt(totalCosts)}</td>
+        <td class="r ${grossProfit >= 0 ? 'green' : 'red'}">${grossProfit >= 0 ? '+' : '-'}${fmt(Math.abs(grossProfit))}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>` : ''}
+
+<div class="foot">NV Construction &nbsp;·&nbsp; Job #${job.job_number} — ${job.project_name} &nbsp;·&nbsp; Generated ${genDate}</div>
+</body></html>`)
+      w.document.close()
+    } finally {
+      setGeneratingReport(false)
+    }
+  }
+
   // ── Job ─────────────────────────────────────────────────────
   async function saveJob(e) {
     e.preventDefault()
@@ -1948,7 +2206,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
             <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
           </div>
-          <span style={s.badge(job.archived ? 'archived' : job.status)}>{job.archived ? 'Archived' : job.status}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {job.status !== 'complete' && !job.archived && (
+              <button
+                style={{ padding: '9px 18px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
+                disabled={generatingReport}
+                onClick={async () => {
+                  if (!window.confirm('Mark this job as complete and generate the financial performance report?')) return
+                  await generateCompletionReport(true)
+                }}>
+                {generatingReport ? 'Generating...' : '✓ Complete Job & Report'}
+              </button>
+            )}
+            {job.status === 'complete' && (
+              <button
+                style={{ padding: '9px 18px', background: '#1a1a2a', color: '#a78bfa', border: '1px solid #3a1a5a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
+                disabled={generatingReport}
+                onClick={() => generateCompletionReport(false)}>
+                {generatingReport ? 'Generating...' : 'Generate Report'}
+              </button>
+            )}
+            <span style={s.badge(job.archived ? 'archived' : job.status)}>{job.archived ? 'Archived' : job.status}</span>
+          </div>
         </div>
 
         <div style={s.statRow} className="rx-stats">

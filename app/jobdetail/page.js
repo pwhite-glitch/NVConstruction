@@ -1502,8 +1502,12 @@ p{margin-bottom:9px;line-height:1.55}
       const co = primeCOs.find(c => c.id === coId)
       for (const sovItem of co?.sov || []) {
         if (!sovItem.budget_item_id || !sovItem.amount) continue
-        const { data: item } = await supabase.from('budget_items').select('budget_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) await supabase.from('budget_items').update({ budget_amount: Number(item.budget_amount) + Number(sovItem.amount) }).eq('id', sovItem.budget_item_id)
+        const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
+        if (item) {
+          const updates = { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) }
+          if (item.owner_amount != null) updates.owner_amount = Number(item.owner_amount) + Number(sovItem.amount)
+          await supabase.from('budget_items').update(updates).eq('id', sovItem.budget_item_id)
+        }
       }
       await loadBudgetItems()
     }
@@ -1521,8 +1525,12 @@ p{margin-bottom:9px;line-height:1.55}
       setForm(f => ({ ...f, contract_value: newVal }))
       for (const sovItem of co.sov || []) {
         if (!sovItem.budget_item_id || !sovItem.amount) continue
-        const { data: item } = await supabase.from('budget_items').select('budget_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) await supabase.from('budget_items').update({ budget_amount: Number(item.budget_amount) - Number(sovItem.amount) }).eq('id', sovItem.budget_item_id)
+        const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
+        if (item) {
+          const updates = { budget_amount: Number(item.budget_amount) - Number(sovItem.amount) }
+          if (item.owner_amount != null) updates.owner_amount = Number(item.owner_amount) - Number(sovItem.amount)
+          await supabase.from('budget_items').update(updates).eq('id', sovItem.budget_item_id)
+        }
       }
       await loadBudgetItems()
     }
@@ -3380,18 +3388,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Prime Contract Change Orders ({primeCOs.length})</p>
-                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems() }}>+ Add Prime CO</button>}
+                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems(); setPrimeCOForm({ ...emptyPrimeCO, sov: [{ ...emptySOVRow }] }) }}>+ Add Prime CO</button>}
               </div>
 
               {showAddPrimeCO && (() => {
-                const primeSovTotal = primeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
-                const primeHasSOV = primeCOForm.sov.length > 0
+                const sovTotal = primeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                const totalAmt = sovTotal || parseFloat(primeCOForm.amount) || 0
+                const allLinesAssigned = primeCOForm.sov.length > 0 && primeCOForm.sov.every(r => r.budget_item_id && r.amount)
                 return (
-                <div style={s.inlineForm}>
+                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New prime contract change order</p>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
-                      <label style={s.label}>Description</label>
+                      <label style={s.label}>Description *</label>
                       <input style={s.input} placeholder="Scope change, owner directive..." value={primeCOForm.description} onChange={e => setPrimeCOForm(f => ({ ...f, description: e.target.value }))} />
                     </div>
                     <div>
@@ -3399,39 +3408,56 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input style={s.input} placeholder="Additional notes..." value={primeCOForm.notes} onChange={e => setPrimeCOForm(f => ({ ...f, notes: e.target.value }))} />
                     </div>
                   </div>
-                  {!primeHasSOV && (
-                    <div style={{ marginBottom: '12px', maxWidth: '220px' }}>
-                      <label style={s.label}>Amount ($)</label>
-                      <input type="number" style={s.input} placeholder="0.00" value={primeCOForm.amount} onChange={e => setPrimeCOForm(f => ({ ...f, amount: e.target.value }))} />
+
+                  <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <div>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Budget line assignment</p>
+                        <p style={{ fontSize: '11px', color: '#555', margin: '3px 0 0' }}>When approved, each line's budget and SOV owner amount update automatically.</p>
+                      </div>
+                      <button type="button" style={s.btnSmall} onClick={() => setPrimeCOForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] }))}>+ Add line</button>
                     </div>
-                  )}
-                  {/* SOV Section */}
-                  <div style={{ marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Schedule of Values</p>
-                      <button type="button" style={s.btnSmall} onClick={() => setPrimeCOForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] }))}>+ Add Line</button>
-                    </div>
-                    {primeCOForm.sov.length === 0 && <p style={{ fontSize: '12px', color: '#444', marginBottom: '8px' }}>No SOV lines — CO will use the amount above. Add lines to break down cost by budget item.</p>}
                     {primeCOForm.sov.map((row, i) => (
                       <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
-                        <input style={s.input} placeholder="Description" value={row.description} onChange={e => setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
-                        <select style={s.input} value={row.budget_item_id} onChange={e => setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value } : r) }))}>
-                          <option value="">— Budget line —</option>
+                        <select style={{ ...s.input, borderColor: row.budget_item_id ? '#1a4a1a' : '#4a2200' }}
+                          value={row.budget_item_id}
+                          onChange={e => {
+                            const bi = budgetItems.find(b => b.id === e.target.value)
+                            setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value, description: r.description || bi?.description || '' } : r) }))
+                          }}>
+                          <option value="">— Select budget line * —</option>
                           {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
                         </select>
-                        <input type="number" style={s.input} placeholder="$0.00" value={row.amount} onChange={e => setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r) }))} />
-                        <button type="button" style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px', padding: '0' }} onClick={() => setPrimeCOForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>×</button>
+                        <input style={s.input} placeholder="Description (optional)" value={row.description} onChange={e => setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
+                        <input type="number" style={{ ...s.input, borderColor: row.amount ? '#1a4a1a' : '#4a2200' }} placeholder="Amount *" value={row.amount}
+                          onChange={e => {
+                            const newSov = primeCOForm.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r)
+                            const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                            setPrimeCOForm(f => ({ ...f, sov: newSov, amount: String(newTotal || '') }))
+                          }} />
+                        <button type="button" style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onClick={() => {
+                          const newSov = primeCOForm.sov.filter((_, j) => j !== i)
+                          const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                          setPrimeCOForm(f => ({ ...f, sov: newSov, amount: String(newTotal || '') }))
+                        }}>×</button>
                       </div>
                     ))}
-                    {primeHasSOV && (
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid #1a1a1a' }}>
-                        <span style={{ fontSize: '12px', color: '#555' }}>SOV Total:</span>
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>${primeSovTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #1a3a1a' }}>
+                      <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
+                        {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
+                      </span>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>
+                        Total: ${totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
                   </div>
+
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{ ...s.btn, opacity: addingPrimeCO ? 0.6 : 1 }} disabled={addingPrimeCO} onClick={addPrimeCO}>{addingPrimeCO ? 'Saving...' : 'Save Prime CO'}</button>
+                    <button style={{ ...s.btn, opacity: (addingPrimeCO || !primeCOForm.description || !totalAmt) ? 0.6 : 1 }}
+                      disabled={addingPrimeCO || !primeCOForm.description || !totalAmt}
+                      onClick={addPrimeCO}>
+                      {addingPrimeCO ? 'Saving...' : 'Save Prime CO'}
+                    </button>
                     <button style={s.btnGray} onClick={() => { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO) }}>Cancel</button>
                   </div>
                 </div>

@@ -700,7 +700,9 @@ export default function JobDetail() {
 
   async function deleteAiaApplication(appId) {
     if (!window.confirm('Delete this AIA application?')) return
-    await supabase.from('aia_applications').delete().eq('id', appId)
+    await supabase.from('aia_application_lines').delete().eq('application_id', appId)
+    const { error } = await supabase.from('aia_applications').delete().eq('id', appId)
+    if (error) { alert('Delete failed: ' + error.message); return }
     if (activeAia?.id === appId) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]) }
     await loadAiaApplications()
   }

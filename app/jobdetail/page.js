@@ -699,9 +699,27 @@ export default function JobDetail() {
   }
 
   async function drawDirectCost(costId, appId) {
+    const cost = periodDirectCosts.find(c => c.id === costId)
+    if (!cost?.budget_item_id) {
+      alert('Assign a budget line to this cost in the Direct Costs tab before drawing.')
+      return
+    }
     const now = new Date().toISOString()
     await supabase.from('direct_costs').update({ drawn_application_id: appId, drawn_at: now }).eq('id', costId)
     setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: appId, drawn_at: now } : c))
+    const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
+    const addAmt = Math.round(Number(cost.amount) * markupMultiplier * 100) / 100
+    setAiaLines(lines => {
+      const updated = lines.map(line => {
+        if (line.budget_item_id !== cost.budget_item_id) return line
+        const budgetAmt = Number(line.budget_amount || 0)
+        if (budgetAmt === 0) return line
+        const addedPct = addAmt / budgetAmt * 100
+        const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
+        return { ...line, pct_this: String(newPct) }
+      })
+      return recalcPinnedLines(updated, pinnedLineIds)
+    })
   }
 
   async function undrawDirectCost(costId) {

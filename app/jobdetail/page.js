@@ -261,6 +261,8 @@ export default function JobDetail() {
       setSubs(subList || [])
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
       setBilling(bills || [])
+      const { data: initialCOs } = await supabase.from('prime_change_orders').select('*').eq('job_id', id).order('created_at', { ascending: false })
+      setPrimeCOs(initialCOs || [])
       const teamRes = await fetch('/api/team-members')
       const teamJson = await teamRes.json()
       setTeamMembers(teamJson.members || [])
@@ -2234,7 +2236,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         <div style={s.statRow} className="rx-stats">
           <div style={s.statCard}><div style={s.statLabel}>Total billed</div><div style={s.statValue()}>${totalBilled.toLocaleString()}</div></div>
-          <div style={s.statCard}><div style={s.statLabel}>Contract value</div><div style={s.statValue()}>{job.contract_value ? '$' + parseFloat(job.contract_value).toLocaleString() : '—'}</div></div>
+          <div style={s.statCard}>
+            <div style={s.statLabel}>Contract sum to date</div>
+            <div style={s.statValue()}>
+              {job.contract_value
+                ? '$' + (parseFloat(job.contract_value) + primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)).toLocaleString()
+                : '—'}
+            </div>
+            {primeCOs.filter(co => co.status === 'approved').length > 0 && (
+              <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
+                ${parseFloat(job.contract_value || 0).toLocaleString()} + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
           <div style={s.statCard}><div style={s.statLabel}>% billed</div><div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : '—'}</div></div>
         </div>
 

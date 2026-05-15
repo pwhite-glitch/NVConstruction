@@ -511,14 +511,19 @@ export default function JobDetail() {
         : Promise.resolve({ data: [] }),
     ])
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
-    setAiaLines(budgetItems.map(b => ({
-      budget_item_id: b.id,
-      cost_code: b.cost_code,
-      description: b.description,
-      budget_amount: b.owner_amount ?? b.budget_amount,
-      pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
-      pct_this: String(lineMap[b.id]?.pct_this_period ?? 0),
-    })))
+    setAiaLines(budgetItems.map(b => {
+      const bAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
+      const pctThis = parseFloat(lineMap[b.id]?.pct_this_period ?? 0)
+      return {
+        budget_item_id: b.id,
+        cost_code: b.cost_code,
+        description: b.description,
+        budget_amount: bAmt,
+        pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
+        pct_this: String(pctThis),
+        dollar_this: bAmt * pctThis / 100,
+      }
+    }))
     setPeriodBilling(bills || [])
     setPeriodDirectCosts(dcs || [])
     setAiaLoading(false)
@@ -567,10 +572,10 @@ export default function JobDetail() {
         const addAmt = Math.round(rawAmt * markupMultiplier * 100) / 100
         const budgetAmt = Number(line.budget_amount || 0)
         if (budgetAmt === 0) return line
-        // No rounding on the percentage — store full precision so dollar round-trip is exact
-        const addedPct = addAmt / budgetAmt * 100
-        const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
-        return { ...line, pct_this: String(newPct) }
+        const prevDollar = Number(line.dollar_this) || 0
+        const newDollar = Math.min(budgetAmt, prevDollar + addAmt)
+        const newPct = newDollar / budgetAmt * 100
+        return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
       })
       return recalcPinnedLines(updated, pinnedLineIds)
     })
@@ -586,14 +591,17 @@ export default function JobDetail() {
     if (totalSched === 0) return lines
     const totalDone = unpinnedLines.reduce((a, l) => {
       const sched = Number(l.budget_amount || 0)
-      return a + sched * ((parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this) || 0)) / 100
+      const thisDollar = l.dollar_this !== undefined ? Number(l.dollar_this) : sched * (parseFloat(l.pct_this) || 0) / 100
+      return a + sched * (parseFloat(l.pct_prev) || 0) / 100 + thisDollar
     }, 0)
     const overallPct = totalDone / totalSched * 100
     return lines.map(l => {
       if (!pinnedIds.has(l.budget_item_id)) return l
+      const sched = Number(l.budget_amount || 0)
       const prevPct = parseFloat(l.pct_prev) || 0
       const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
-      return { ...l, pct_this: String(newThisPct) }
+      const newDollar = sched * newThisPct / 100
+      return { ...l, pct_this: String(newThisPct), dollar_this: newDollar }
     })
   }
 
@@ -678,8 +686,12 @@ export default function JobDetail() {
       updated_at: new Date().toISOString(),
     }).eq('id', activeAia.id)
     for (const line of aiaLines) {
+      const scheduled = Number(line.budget_amount || 0)
+      const pctToSave = scheduled > 0 && line.dollar_this !== undefined
+        ? Number(line.dollar_this) / scheduled * 100
+        : parseFloat(line.pct_this) || 0
       await supabase.from('aia_application_lines').update({
-        pct_this_period: parseFloat(line.pct_this) || 0,
+        pct_this_period: pctToSave,
       }).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
     }
     await loadAiaApplications()
@@ -719,9 +731,10 @@ export default function JobDetail() {
         if (line.budget_item_id !== cost.budget_item_id) return line
         const budgetAmt = Number(line.budget_amount || 0)
         if (budgetAmt === 0) return line
-        const addedPct = addAmt / budgetAmt * 100
-        const newPct = Math.min(100, (parseFloat(line.pct_this) || 0) + addedPct)
-        return { ...line, pct_this: String(newPct) }
+        const prevDollar = Number(line.dollar_this) || 0
+        const newDollar = Math.min(budgetAmt, prevDollar + addAmt)
+        const newPct = newDollar / budgetAmt * 100
+        return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
       })
       return recalcPinnedLines(updated, pinnedLineIds)
     })
@@ -747,7 +760,9 @@ export default function JobDetail() {
     const sovLines = aiaLines.map((line, idx) => {
       const scheduled = Number(line.budget_amount || 0)
       const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
-      const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
+      const thisAmt = line.dollar_this !== undefined
+        ? Math.min(scheduled, Math.max(0, Number(line.dollar_this)))
+        : scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
       const totalAmt = prevAmt + thisAmt
       const totalPct = scheduled > 0 ? Math.min(100, totalAmt / scheduled * 100) : 0
       const balance = scheduled - totalAmt
@@ -4780,7 +4795,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       {aiaLines.map((line, i) => {
                                         const scheduled = Number(line.budget_amount || 0)
                                         const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
-                                        const thisAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
+                                        const thisAmt = line.dollar_this !== undefined
+                                          ? Math.min(scheduled, Math.max(0, Number(line.dollar_this)))
+                                          : scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
                                         const total = prevAmt + thisAmt
                                         const balance = scheduled - total
                                         const isPinnedRow = pinnedLineIds.has(line.budget_item_id)
@@ -4798,32 +4815,39 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <td style={{ padding: '6px 8px' }}>
                                               {(() => {
                                                 const isPinned = pinnedLineIds.has(line.budget_item_id)
-                                                const dollarVal = scheduled > 0 ? Math.round(scheduled * (parseFloat(line.pct_this) || 0) / 100 * 100) / 100 : 0
+                                                const dollarVal = line.dollar_this !== undefined ? Number(line.dollar_this) : (scheduled > 0 ? scheduled * (parseFloat(line.pct_this) || 0) / 100 : 0)
+                                                const pctDisplay = scheduled > 0 && dollarVal ? Number((dollarVal / scheduled * 100).toFixed(6)) : (parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(6)) : '')
                                                 return (
                                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', overflow: 'hidden', opacity: isPinned ? 0.5 : 1 }}>
                                                       <span style={{ padding: '0 6px', fontSize: '11px', color: '#555', borderRight: '1px solid #2a2a2a' }}>$</span>
-                                                      <input type="number" min="0" step="1"
-                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#f1f1f1', fontSize: '12px', padding: '6px 6px', width: '80px', textAlign: 'right' }}
+                                                      <input type="number" min="0" step="0.01"
+                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#f1f1f1', fontSize: '12px', padding: '6px 6px', width: '90px', textAlign: 'right' }}
                                                         value={dollarVal || ''}
                                                         readOnly={isPinned}
                                                         placeholder="0"
                                                         onChange={e => {
                                                           if (scheduled === 0) return
-                                                          const pct = Math.min(100, (parseFloat(e.target.value) || 0) / scheduled * 100)
+                                                          const newDollar = Math.min(scheduled, Math.max(0, parseFloat(e.target.value) || 0))
+                                                          const newPct = newDollar / scheduled * 100
                                                           setAiaLines(v => {
-                                                            const updated = v.map((l, idx) => idx === i ? { ...l, pct_this: String(pct) } : l)
+                                                            const updated = v.map((l, idx) => idx === i ? { ...l, dollar_this: newDollar, pct_this: String(newPct) } : l)
                                                             return recalcPinnedLines(updated, pinnedLineIds)
                                                           })
                                                         }} />
                                                       <span style={{ padding: '0 6px', fontSize: '11px', color: '#333', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a' }}>%</span>
                                                       <input type="number" min="0" max="100" step="0.1"
                                                         style={{ background: 'transparent', border: 'none', outline: 'none', color: '#aaa', fontSize: '12px', padding: '6px 6px', width: '54px', textAlign: 'center' }}
-                                                        value={parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(6)) : ''}
+                                                        value={pctDisplay}
                                                         readOnly={isPinned}
                                                         placeholder="0"
                                                         onChange={e => setAiaLines(v => {
-                                                          const updated = v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l)
+                                                          const updated = v.map((l, idx) => {
+                                                            if (idx !== i) return l
+                                                            const pct = parseFloat(e.target.value) || 0
+                                                            const sched = Number(l.budget_amount || 0)
+                                                            return { ...l, pct_this: e.target.value, dollar_this: sched * pct / 100 }
+                                                          })
                                                           return recalcPinnedLines(updated, pinnedLineIds)
                                                         })} />
                                                     </div>
@@ -4860,7 +4884,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01
                                   const totalCompleted = aiaLines.reduce((a, line) => {
                                     const sv = Number(line.budget_amount || 0)
-                                    return a + sv * (Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) + Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
+                                    const prevAmt = sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                                    const thisAmt = line.dollar_this !== undefined
+                                      ? Math.min(sv, Math.max(0, Number(line.dollar_this)))
+                                      : sv * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
+                                    return a + prevAmt + thisAmt
                                   }, 0)
                                   const totalRetainage = totalCompleted * retPct
                                   const totalPrevCompleted = aiaLines.reduce((a, line) => {

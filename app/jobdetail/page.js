@@ -762,7 +762,9 @@ export default function JobDetail() {
     const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
 
     if (Math.abs(totalScheduled - contractSumToDate) > 0.01) {
-      window.alert(`Cannot generate AIA — SOV total (${fmt(totalScheduled)}) doesn't match contract sum to date (${fmt(contractSumToDate)}).\n\nUpdate the budget item values in the Budget tab so the G703 balances correctly.`)
+      const diff = contractSumToDate - totalScheduled
+      const coMsg = approvedCOsVal !== 0 ? `\n\nOriginal contract: ${fmt(origContract)}\nApproved change orders: ${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}\nContract sum to date: ${fmt(contractSumToDate)}` : ''
+      window.alert(`Cannot generate AIA — SOV total doesn't match contract sum to date.\n\nSOV total: ${fmt(totalScheduled)}\nContract sum to date: ${fmt(contractSumToDate)}\nDifference: ${diff > 0 ? '+' : ''}${fmtSigned(diff)}${coMsg}\n\nGo to the Budget tab and ${diff > 0 ? `add ${fmt(Math.abs(diff))} to one or more owner amounts` : `reduce owner amounts by ${fmt(Math.abs(diff))}`} so the totals match.`)
       return
     }
 
@@ -4809,16 +4811,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const currentDue = earnedLessRet - prevCerts
                                   return (
                                     <>
-                                      {sovMismatch && (
+                                      {sovMismatch && (() => {
+                                        const diff = contractSumToDate - totalSov
+                                        const approvedCOsHere = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+                                        return (
                                         <div style={{ background: '#2a1200', border: '1px solid #e8590c', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-                                          <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
-                                            SOV total (${totalSov.toLocaleString()}) doesn't match contract sum to date (${contractSumToDate.toLocaleString()})
+                                          <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
+                                            SOV total doesn't match contract sum to date — G703 won't balance
                                           </p>
+                                          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 16px', fontSize: '12px', marginBottom: '8px' }}>
+                                            <span style={{ color: '#888' }}>Original contract</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${Number(job.contract_value || 0).toLocaleString()}</span>
+                                            {approvedCOsHere !== 0 && <><span style={{ color: '#888' }}>Approved COs</span><span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsHere >= 0 ? '+' : '-'}${Math.abs(approvedCOsHere).toLocaleString()}</span></>}
+                                            <span style={{ color: '#aaa', fontWeight: '700' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
+                                            <span style={{ color: '#888' }}>SOV total (G703)</span><span style={{ color: '#ff6b6b', fontFamily: 'monospace', textAlign: 'right' }}>${totalSov.toLocaleString()}</span>
+                                            <span style={{ color: '#e8590c', fontWeight: '700' }}>Difference to fix</span><span style={{ color: '#e8590c', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>{diff > 0 ? '+' : '-'}${Math.abs(diff).toLocaleString()}</span>
+                                          </div>
                                           <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>
-                                            Update the owner amounts on your budget items in the Budget tab so the G703 totals balance before generating.
+                                            {diff > 0
+                                              ? `Add $${Math.abs(diff).toLocaleString()} to one or more owner amounts in the Budget tab.`
+                                              : `Reduce owner amounts by $${Math.abs(diff).toLocaleString()} in the Budget tab.`}
                                           </p>
                                         </div>
-                                      )}
+                                        )
+                                      })()}
                                       <div style={{ background: '#0f0f0f', border: `1px solid ${sovMismatch ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
                                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary</p>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>

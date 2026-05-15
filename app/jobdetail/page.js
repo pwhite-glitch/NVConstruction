@@ -4771,7 +4771,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
                                         <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
                                         <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
-                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% This Period</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>This Period</th>
                                         <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total</th>
                                         <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
                                       </tr>
@@ -4795,30 +4795,49 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <td style={{ padding: '10px', textAlign: 'center', color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>
                                               {parseFloat(line.pct_prev) || 0}%
                                             </td>
-                                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                            <td style={{ padding: '6px 8px' }}>
                                               {(() => {
                                                 const isPinned = pinnedLineIds.has(line.budget_item_id)
+                                                const dollarVal = scheduled > 0 ? Math.round(scheduled * (parseFloat(line.pct_this) || 0) / 100 * 100) / 100 : 0
                                                 return (
-                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-                                                    <input type="number" min="0" max="100" step="1"
-                                                      style={{ ...s.input, textAlign: 'center', padding: '6px 8px', width: '70px', opacity: isPinned ? 0.5 : 1 }}
-                                                      value={line.pct_this}
-                                                      readOnly={isPinned}
-                                                      onChange={e => setAiaLines(v => {
-                                                        const updated = v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l)
-                                                        return recalcPinnedLines(updated, pinnedLineIds)
-                                                      })} />
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', overflow: 'hidden', opacity: isPinned ? 0.5 : 1 }}>
+                                                      <span style={{ padding: '0 6px', fontSize: '11px', color: '#555', borderRight: '1px solid #2a2a2a' }}>$</span>
+                                                      <input type="number" min="0" step="1"
+                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#f1f1f1', fontSize: '12px', padding: '6px 6px', width: '80px', textAlign: 'right' }}
+                                                        value={dollarVal || ''}
+                                                        readOnly={isPinned}
+                                                        placeholder="0"
+                                                        onChange={e => {
+                                                          if (scheduled === 0) return
+                                                          const pct = Math.min(100, (parseFloat(e.target.value) || 0) / scheduled * 100)
+                                                          setAiaLines(v => {
+                                                            const updated = v.map((l, idx) => idx === i ? { ...l, pct_this: String(pct) } : l)
+                                                            return recalcPinnedLines(updated, pinnedLineIds)
+                                                          })
+                                                        }} />
+                                                      <span style={{ padding: '0 6px', fontSize: '11px', color: '#333', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a' }}>%</span>
+                                                      <input type="number" min="0" max="100" step="0.1"
+                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#aaa', fontSize: '12px', padding: '6px 6px', width: '54px', textAlign: 'center' }}
+                                                        value={parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(2)) : ''}
+                                                        readOnly={isPinned}
+                                                        placeholder="0"
+                                                        onChange={e => setAiaLines(v => {
+                                                          const updated = v.map((l, idx) => idx === i ? { ...l, pct_this: e.target.value } : l)
+                                                          return recalcPinnedLines(updated, pinnedLineIds)
+                                                        })} />
+                                                    </div>
                                                     {!isPinned && (
                                                       <button
                                                         title="One-time: set to weighted average % of all other lines"
                                                         onClick={() => autoCalcProRataLine(i)}
-                                                        style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                                        style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
                                                       >≈%</button>
                                                     )}
                                                     <button
                                                       title={isPinned ? 'Pinned — auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
                                                       onClick={() => togglePinLine(line.budget_item_id)}
-                                                      style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer' }}
+                                                      style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}
                                                     >📌</button>
                                                   </div>
                                                 )

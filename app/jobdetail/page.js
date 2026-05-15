@@ -593,7 +593,7 @@ export default function JobDetail() {
       if (!pinnedIds.has(l.budget_item_id)) return l
       const prevPct = parseFloat(l.pct_prev) || 0
       const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
-      return { ...l, pct_this: String(Math.round(newThisPct * 10) / 10) }
+      return { ...l, pct_this: String(newThisPct) }
     })
   }
 
@@ -4819,7 +4819,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                       <span style={{ padding: '0 6px', fontSize: '11px', color: '#333', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a' }}>%</span>
                                                       <input type="number" min="0" max="100" step="0.1"
                                                         style={{ background: 'transparent', border: 'none', outline: 'none', color: '#aaa', fontSize: '12px', padding: '6px 6px', width: '54px', textAlign: 'center' }}
-                                                        value={parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(2)) : ''}
+                                                        value={parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(6)) : ''}
                                                         readOnly={isPinned}
                                                         placeholder="0"
                                                         onChange={e => setAiaLines(v => {
@@ -4900,10 +4900,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
                                           <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
                                           <span style={{ color: '#555' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#ff6b6b' : '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
-                                          <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                                          <span style={{ color: '#555' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
-                                          <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
-                                          <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                          <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span style={{ color: '#555' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                                          <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                                          <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                       </div>
                                     </>

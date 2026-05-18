@@ -46,7 +46,11 @@ export default function Register() {
     if (data.user) {
       const normalEmail = form.email.toLowerCase().trim()
       const { data: existing } = await supabase.from('sub_directory').select('id').eq('email', normalEmail).maybeSingle()
-      await supabase.from('profiles').update({ company_name: form.company_name, phone: form.phone }).eq('id', data.user.id)
+      // Try to match company_name to existing companies table for multi-user company support
+      const { data: matchedCompany } = await supabase.from('companies').select('id').eq('name', form.company_name).maybeSingle()
+      const profileUpdate = { company_name: form.company_name, phone: form.phone }
+      if (matchedCompany) profileUpdate.company_id = matchedCompany.id
+      await supabase.from('profiles').update(profileUpdate).eq('id', data.user.id)
       if (!existing) {
         await supabase.from('sub_directory').insert({
           company_name: form.company_name,

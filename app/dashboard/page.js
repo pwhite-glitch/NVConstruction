@@ -148,9 +148,9 @@ export default function Dashboard() {
   const [subEditMsg, setSubEditMsg] = useState(null)
   const [companiesData, setCompaniesData] = useState([])
   const [subProfiles, setSubProfiles] = useState([])
-  const [teamInviteForm, setTeamInviteForm] = useState({})
-  const [teamInviteLoading, setTeamInviteLoading] = useState(null)
-  const [teamInviteResult, setTeamInviteResult] = useState({})
+  const [subTeamInviteForm, setSubTeamInviteForm] = useState({})
+  const [subTeamInviteLoading, setSubTeamInviteLoading] = useState(null)
+  const [subTeamInviteResult, setSubTeamInviteResult] = useState({})
 
   // Bid invites state
   const [bidPackages, setBidPackages] = useState([])
@@ -648,10 +648,10 @@ export default function Dashboard() {
     }
   }
 
-  async function inviteTeamMember(dirId, companyName) {
-    const email = (teamInviteForm[dirId] || '').trim().toLowerCase()
+  async function inviteSubTeamMember(dirId, companyName) {
+    const email = (subTeamInviteForm[dirId] || '').trim().toLowerCase()
     if (!email) return
-    setTeamInviteLoading(dirId)
+    setSubTeamInviteLoading(dirId)
     let company = companiesData.find(c => c.name === companyName)
     if (!company) {
       const { data: newCo } = await supabase.from('companies').insert({ name: companyName }).select().single()
@@ -663,9 +663,9 @@ export default function Dashboard() {
       body: JSON.stringify({ email, company_id: company?.id }),
     })
     const json = await res.json()
-    setTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
-    setTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
-    setTeamInviteLoading(null)
+    setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
+    setSubTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
+    setSubTeamInviteLoading(null)
     const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor')
     setSubProfiles(profs || [])
   }
@@ -1732,8 +1732,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         {(() => {
                           const company = companiesData.find(c => c.name === sub.company_name)
                           const members = company ? subProfiles.filter(p => p.company_id === company.id) : []
-                          const isInviting = teamInviteLoading === sub.id
-                          const invResult = teamInviteResult[sub.id]
+                          const isInviting = subTeamInviteLoading === sub.id
+                          const invResult = subTeamInviteResult[sub.id]
                           return (
                             <div style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', margin: '1rem 0' }}>
                               <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
@@ -1748,11 +1748,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px' }}>
                                 <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
                                   placeholder="Invite additional team member by email…"
-                                  value={teamInviteForm[sub.id] || ''}
-                                  onChange={e => setTeamInviteForm(prev => ({ ...prev, [sub.id]: e.target.value }))} />
+                                  value={subTeamInviteForm[sub.id] || ''}
+                                  onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: e.target.value }))} />
                                 <button style={{ ...s.btnSm('orange'), opacity: isInviting ? 0.6 : 1 }}
-                                  disabled={isInviting || !teamInviteForm[sub.id]}
-                                  onClick={() => inviteTeamMember(sub.id, sub.company_name)}>
+                                  disabled={isInviting || !subTeamInviteForm[sub.id]}
+                                  onClick={() => inviteSubTeamMember(sub.id, sub.company_name)}>
                                   {isInviting ? '…' : 'Invite'}
                                 </button>
                                 {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}

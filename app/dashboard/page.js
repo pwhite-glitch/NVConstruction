@@ -146,6 +146,11 @@ export default function Dashboard() {
   const [editSubForm, setEditSubForm] = useState({})
   const [savingSubEdit, setSavingSubEdit] = useState(false)
   const [subEditMsg, setSubEditMsg] = useState(null)
+  const [companiesData, setCompaniesData] = useState([])
+  const [subProfiles, setSubProfiles] = useState([])
+  const [teamInviteForm, setTeamInviteForm] = useState({})
+  const [teamInviteLoading, setTeamInviteLoading] = useState(null)
+  const [teamInviteResult, setTeamInviteResult] = useState({})
 
   // Bid invites state
   const [bidPackages, setBidPackages] = useState([])
@@ -283,8 +288,12 @@ export default function Dashboard() {
       asgnQ = asgnQ.in('job_id', ids)
     } else if (ids !== null && ids.length === 0) {
       setSubmissions([]); setJobs([]); setAssignments([])
-      const { data: dir } = await supabase.from('sub_directory').select('*').order('applied_at', { ascending: false })
-      setDirectory(dir || [])
+      const [{ data: dir }, { data: cos }, { data: sprofs }] = await Promise.all([
+        supabase.from('sub_directory').select('*').order('applied_at', { ascending: false }),
+        supabase.from('companies').select('*'),
+        supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor'),
+      ])
+      setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(sprofs || [])
       return
     }
     const { data: subs } = await billingQ
@@ -293,8 +302,12 @@ export default function Dashboard() {
     setJobs(jobList || [])
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
-    const { data: dir } = await supabase.from('sub_directory').select('*').order('applied_at', { ascending: false })
-    setDirectory(dir || [])
+    const [{ data: dir }, { data: cos }, { data: sprofs }] = await Promise.all([
+      supabase.from('sub_directory').select('*').order('applied_at', { ascending: false }),
+      supabase.from('companies').select('*'),
+      supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor'),
+    ])
+    setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(sprofs || [])
   }
 
   async function updateStatus(sub, status, rejectionReason = '') {
@@ -633,6 +646,28 @@ export default function Dashboard() {
     } else {
       setInviteMsg('Error syncing: ' + error.message)
     }
+  }
+
+  async function inviteTeamMember(dirId, companyName) {
+    const email = (teamInviteForm[dirId] || '').trim().toLowerCase()
+    if (!email) return
+    setTeamInviteLoading(dirId)
+    let company = companiesData.find(c => c.name === companyName)
+    if (!company) {
+      const { data: newCo } = await supabase.from('companies').insert({ name: companyName }).select().single()
+      if (newCo) { company = newCo; setCompaniesData(prev => [...prev, newCo]) }
+    }
+    const res = await fetch('/api/invite-sub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, company_id: company?.id }),
+    })
+    const json = await res.json()
+    setTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
+    setTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
+    setTeamInviteLoading(null)
+    const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor')
+    setSubProfiles(profs || [])
   }
 
   async function assignToJob(sub) {
@@ -1692,6 +1727,40 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             )}
                           </div>
                         )}
+
+                        {/* Team members */}
+                        {(() => {
+                          const company = companiesData.find(c => c.name === sub.company_name)
+                          const members = company ? subProfiles.filter(p => p.company_id === company.id) : []
+                          const isInviting = teamInviteLoading === sub.id
+                          const invResult = teamInviteResult[sub.id]
+                          return (
+                            <div style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', margin: '1rem 0' }}>
+                              <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
+                              {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No registered users yet.</p>}
+                              {members.map(m => (
+                                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                  <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{m.full_name || 'Unnamed'}</span>
+                                  {m.phone && <span style={{ fontSize: '12px', color: '#555' }}>{m.phone}</span>}
+                                  <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', marginLeft: 'auto' }}>Registered</span>
+                                </div>
+                              ))}
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px' }}>
+                                <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
+                                  placeholder="Invite additional team member by email…"
+                                  value={teamInviteForm[sub.id] || ''}
+                                  onChange={e => setTeamInviteForm(prev => ({ ...prev, [sub.id]: e.target.value }))} />
+                                <button style={{ ...s.btnSm('orange'), opacity: isInviting ? 0.6 : 1 }}
+                                  disabled={isInviting || !teamInviteForm[sub.id]}
+                                  onClick={() => inviteTeamMember(sub.id, sub.company_name)}>
+                                  {isInviting ? '…' : 'Invite'}
+                                </button>
+                                {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}
+                                {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         <div style={{ marginTop: '1rem' }}>
                           {sub.status === 'pending' && (

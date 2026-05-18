@@ -233,6 +233,17 @@ export default function Dashboard() {
   const [bdLoaded, setBdLoaded] = useState(false)
   const [bdProfits, setBdProfits] = useState({})
 
+  // Employees state (PM-only)
+  const [employees, setEmployees] = useState([])
+  const [empLoaded, setEmpLoaded] = useState(false)
+  const [showAddEmp, setShowAddEmp] = useState(false)
+  const [empForm, setEmpForm] = useState({ name: '', title: '', type: 'w2', weekly_salary: '', weekly_truck: '', weekly_healthcare: '', weekly_taxes: '' })
+  const [savingEmp, setSavingEmp] = useState(false)
+  const [empMsg, setEmpMsg] = useState(null)
+  const [editingEmpId, setEditingEmpId] = useState(null)
+  const [editEmpForm, setEditEmpForm] = useState({})
+  const [savingEmpEdit, setSavingEmpEdit] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -274,6 +285,7 @@ export default function Dashboard() {
     if (activeTab === 'estimator') { loadEstimates(); loadBidPackages(assignedJobIds) }
     if (activeTab === 'nv-directory') loadTeamData()
     if (activeTab === 'bd' && !bdLoaded) loadBD()
+    if (activeTab === 'employees' && !empLoaded) loadEmployees()
   }, [activeTab])
 
 
@@ -1118,6 +1130,64 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     setBdLoaded(true)
   }
 
+  async function loadEmployees() {
+    const res = await fetch('/api/employees')
+    const data = await res.json()
+    setEmployees(data.employees || [])
+    setEmpLoaded(true)
+  }
+
+  async function saveEmployee() {
+    if (!empForm.name.trim() || !empForm.weekly_salary) return
+    setSavingEmp(true)
+    const payload = {
+      name: empForm.name.trim(),
+      title: empForm.title.trim() || null,
+      type: empForm.type,
+      weekly_salary: parseFloat(empForm.weekly_salary) || 0,
+      weekly_truck: empForm.weekly_truck ? parseFloat(empForm.weekly_truck) : null,
+      weekly_healthcare: empForm.weekly_healthcare ? parseFloat(empForm.weekly_healthcare) : null,
+      weekly_taxes: empForm.weekly_taxes ? parseFloat(empForm.weekly_taxes) : null,
+    }
+    const res = await fetch('/api/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const data = await res.json()
+    if (data.error) { setEmpMsg({ text: data.error, ok: false }); setSavingEmp(false); return }
+    setEmployees(prev => [...prev, data.employee].sort((a, b) => a.name.localeCompare(b.name)))
+    setEmpForm({ name: '', title: '', type: 'w2', weekly_salary: '', weekly_truck: '', weekly_healthcare: '', weekly_taxes: '' })
+    setShowAddEmp(false)
+    setEmpMsg({ text: 'Employee added', ok: true })
+    setSavingEmp(false)
+    setTimeout(() => setEmpMsg(null), 3000)
+  }
+
+  async function updateEmployee() {
+    if (!editingEmpId) return
+    setSavingEmpEdit(true)
+    const payload = {
+      id: editingEmpId,
+      name: editEmpForm.name,
+      title: editEmpForm.title || null,
+      type: editEmpForm.type,
+      weekly_salary: parseFloat(editEmpForm.weekly_salary) || 0,
+      weekly_truck: editEmpForm.weekly_truck ? parseFloat(editEmpForm.weekly_truck) : null,
+      weekly_healthcare: editEmpForm.weekly_healthcare ? parseFloat(editEmpForm.weekly_healthcare) : null,
+      weekly_taxes: editEmpForm.weekly_taxes ? parseFloat(editEmpForm.weekly_taxes) : null,
+    }
+    const res = await fetch('/api/employees', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const data = await res.json()
+    if (data.error) { setEmpMsg({ text: data.error, ok: false }); setSavingEmpEdit(false); return }
+    setEmployees(prev => prev.map(e => e.id === editingEmpId ? data.employee : e))
+    setEditingEmpId(null)
+    setSavingEmpEdit(false)
+  }
+
+  async function archiveEmployee(id, active) {
+    const res = await fetch('/api/employees', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, active: !active }) })
+    const data = await res.json()
+    if (data.error) return
+    setEmployees(prev => prev.map(e => e.id === id ? data.employee : e))
+  }
+
   async function saveBdOpportunity() {
     if (!addBdForm.project_name.trim()) return
     setSavingBd(true)
@@ -1242,6 +1312,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: pending.length || null },
     { tab: 'directory',     label: 'Sub Directory',  icon: <IconUsers />,    badge: pendingApps || null },
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
+    ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
     ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
     { tab: 'calendar',      label: 'Calendar',       icon: <IconCal /> },
@@ -3092,6 +3163,167 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                     )
                   })}
+                </>
+              )
+            })()}
+
+            {/* ── EMPLOYEES ── */}
+            {activeTab === 'employees' && profile?.role === 'pm' && (() => {
+              const fmtW = (n) => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
+              const weeklyTotal = (e) =>
+                Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
+              const activeEmps = employees.filter(e => e.active)
+              const inactiveEmps = employees.filter(e => !e.active)
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <div>
+                      <h2 style={s.sectionTitle}>Employees</h2>
+                      <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>Track true labor cost per person. Costs roll into job P&L when allocated to a job.</p>
+                    </div>
+                    <button style={s.btnSm('orange')} onClick={() => setShowAddEmp(v => !v)}>{showAddEmp ? 'Cancel' : '+ Add Employee'}</button>
+                  </div>
+
+                  {empMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: empMsg.ok ? '#0a2a0a' : '#2a0a0a', color: empMsg.ok ? '#4ade80' : '#ff6b6b', border: `1px solid ${empMsg.ok ? '#1a4a1a' : '#5a1a1a'}` }}>{empMsg.text}</div>}
+
+                  {showAddEmp && (
+                    <div style={{ ...s.card, marginBottom: '1.5rem', border: '1px solid #2a1a00' }}>
+                      <p style={s.cardTitle}>New Employee</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                        <div><label style={s.label}>Full name *</label><input style={s.input} value={empForm.name} onChange={e => setEmpForm(f => ({ ...f, name: e.target.value }))} placeholder="John Smith" /></div>
+                        <div><label style={s.label}>Title</label><input style={s.input} value={empForm.title} onChange={e => setEmpForm(f => ({ ...f, title: e.target.value }))} placeholder="Superintendent" /></div>
+                        <div>
+                          <label style={s.label}>Type</label>
+                          <select style={s.input} value={empForm.type} onChange={e => setEmpForm(f => ({ ...f, type: e.target.value }))}>
+                            <option value="w2">W-2</option>
+                            <option value="1099">1099</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                        <div><label style={s.label}>Weekly salary *</label><input type="number" step="0.01" style={s.input} value={empForm.weekly_salary} onChange={e => setEmpForm(f => ({ ...f, weekly_salary: e.target.value }))} placeholder="2000.00" /></div>
+                        <div><label style={s.label}>Weekly truck</label><input type="number" step="0.01" style={s.input} value={empForm.weekly_truck} onChange={e => setEmpForm(f => ({ ...f, weekly_truck: e.target.value }))} placeholder="optional" /></div>
+                        <div><label style={s.label}>Weekly healthcare</label><input type="number" step="0.01" style={s.input} value={empForm.weekly_healthcare} onChange={e => setEmpForm(f => ({ ...f, weekly_healthcare: e.target.value }))} placeholder="optional" /></div>
+                        <div><label style={s.label}>Weekly taxes</label><input type="number" step="0.01" style={s.input} value={empForm.weekly_taxes} onChange={e => setEmpForm(f => ({ ...f, weekly_taxes: e.target.value }))} placeholder="optional" /></div>
+                      </div>
+                      {empForm.weekly_salary && (
+                        <div style={{ marginBottom: '12px', padding: '10px 14px', background: '#0f0f0f', borderRadius: '6px', fontSize: '12px', color: '#888' }}>
+                          Weekly total: <strong style={{ color: '#f1f1f1' }}>{fmtW(
+                            Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)
+                          )}</strong>
+                          &nbsp;·&nbsp; Annual: <strong style={{ color: '#f1f1f1' }}>{fmtW(
+                            (Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)) * 52
+                          )}</strong>
+                          &nbsp;·&nbsp; Daily rate: <strong style={{ color: '#e8590c' }}>{fmtW(
+                            (Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)) / 5
+                          )}</strong>
+                        </div>
+                      )}
+                      <button style={{ ...s.btnSm('orange'), opacity: savingEmp ? 0.6 : 1 }} onClick={saveEmployee} disabled={savingEmp}>{savingEmp ? 'Saving…' : 'Add Employee'}</button>
+                    </div>
+                  )}
+
+                  {activeEmps.length === 0 && !showAddEmp && (
+                    <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
+                      <p style={{ color: '#555', margin: 0 }}>No employees yet. Add your team to start tracking true labor cost.</p>
+                    </div>
+                  )}
+
+                  {activeEmps.length > 0 && (
+                    <div style={s.card}>
+                      <p style={s.cardTitle}>Active employees ({activeEmps.length})</p>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                              <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Name</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Title</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Type</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Salary/wk</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Truck/wk</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Health/wk</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Taxes/wk</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Total/wk</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Daily rate</th>
+                              <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Annual</th>
+                              <th style={{ padding: '8px 12px' }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeEmps.map(e => {
+                              const wk = weeklyTotal(e)
+                              const daily = wk / 5
+                              return editingEmpId === e.id ? (
+                                <tr key={e.id} style={{ borderBottom: '1px solid #1a1a1a', background: '#0f0f0f' }}>
+                                  <td colSpan={11} style={{ padding: '16px 12px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                                      <div><label style={s.label}>Name</label><input style={s.input} value={editEmpForm.name || ''} onChange={ev => setEditEmpForm(f => ({ ...f, name: ev.target.value }))} /></div>
+                                      <div><label style={s.label}>Title</label><input style={s.input} value={editEmpForm.title || ''} onChange={ev => setEditEmpForm(f => ({ ...f, title: ev.target.value }))} /></div>
+                                      <div><label style={s.label}>Type</label><select style={s.input} value={editEmpForm.type || 'w2'} onChange={ev => setEditEmpForm(f => ({ ...f, type: ev.target.value }))}><option value="w2">W-2</option><option value="1099">1099</option></select></div>
+                                      <div><label style={s.label}>Salary/wk</label><input type="number" step="0.01" style={s.input} value={editEmpForm.weekly_salary || ''} onChange={ev => setEditEmpForm(f => ({ ...f, weekly_salary: ev.target.value }))} /></div>
+                                      <div><label style={s.label}>Truck/wk</label><input type="number" step="0.01" style={s.input} value={editEmpForm.weekly_truck || ''} onChange={ev => setEditEmpForm(f => ({ ...f, weekly_truck: ev.target.value }))} /></div>
+                                      <div><label style={s.label}>Healthcare/wk</label><input type="number" step="0.01" style={s.input} value={editEmpForm.weekly_healthcare || ''} onChange={ev => setEditEmpForm(f => ({ ...f, weekly_healthcare: ev.target.value }))} /></div>
+                                      <div><label style={s.label}>Taxes/wk</label><input type="number" step="0.01" style={s.input} value={editEmpForm.weekly_taxes || ''} onChange={ev => setEditEmpForm(f => ({ ...f, weekly_taxes: ev.target.value }))} /></div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <button style={s.btnSm('orange')} onClick={updateEmployee} disabled={savingEmpEdit}>{savingEmpEdit ? 'Saving…' : 'Save'}</button>
+                                      <button style={s.btnSm('gray')} onClick={() => setEditingEmpId(null)}>Cancel</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : (
+                                <tr key={e.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                                  <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>
+                                    {e.name}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', color: '#888' }}>{e.title || '—'}</td>
+                                  <td style={{ padding: '10px 12px' }}>
+                                    <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#0a1e2a' : '#1a1a0a', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#1a3a5a' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{fmtW(e.weekly_salary)}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_truck ? '#f1f1f1' : '#333' }}>{e.weekly_truck ? fmtW(e.weekly_truck) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_healthcare ? '#f1f1f1' : '#333' }}>{e.weekly_healthcare ? fmtW(e.weekly_healthcare) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_taxes ? '#f1f1f1' : '#333' }}>{e.weekly_taxes ? fmtW(e.weekly_taxes) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1', fontWeight: '700' }}>{fmtW(wk)}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtW(daily)}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtW(wk * 52)}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                      <button style={s.btnSm('gray')} onClick={() => { setEditingEmpId(e.id); setEditEmpForm({ name: e.name, title: e.title || '', type: e.type, weekly_salary: e.weekly_salary, weekly_truck: e.weekly_truck || '', weekly_healthcare: e.weekly_healthcare || '', weekly_taxes: e.weekly_taxes || '' }) }}>Edit</button>
+                                      <button style={s.btnSm('gray')} onClick={() => archiveEmployee(e.id, e.active)}>Archive</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: '2px solid #222' }}>
+                              <td colSpan={7} style={{ padding: '10px 12px', color: '#555', fontSize: '12px' }}>Total ({activeEmps.length} employees)</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1', fontWeight: '700' }}>{fmtW(activeEmps.reduce((a, e) => a + weeklyTotal(e), 0))}</td>
+                              <td style={{ padding: '10px 12px' }}></td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888', fontWeight: '700' }}>{fmtW(activeEmps.reduce((a, e) => a + weeklyTotal(e) * 52, 0))}</td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {inactiveEmps.length > 0 && (
+                    <div style={{ ...s.card, marginTop: '1rem', opacity: 0.6 }}>
+                      <p style={{ ...s.cardTitle, color: '#555' }}>Archived ({inactiveEmps.length})</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {inactiveEmps.map(e => (
+                          <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: '#0f0f0f', borderRadius: '6px', border: '1px solid #1e1e1e', fontSize: '13px', color: '#555' }}>
+                            {e.name}
+                            <button style={{ ...s.btnSm('gray'), padding: '2px 8px', fontSize: '11px' }} onClick={() => archiveEmployee(e.id, e.active)}>Restore</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )
             })()}

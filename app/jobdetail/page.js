@@ -95,6 +95,17 @@ export default function JobDetail() {
   const [errMsg, setErrMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [activeTab, setActiveTab] = useState('details')
+  const [userRole, setUserRole] = useState(null)
+
+  // Labor / employee state
+  const [laborAllocations, setLaborAllocations] = useState([])
+  const [allEmployees, setAllEmployees] = useState([])
+  const [laborLoaded, setLaborLoaded] = useState(false)
+  const [showAddLabor, setShowAddLabor] = useState(false)
+  const [laborForm, setLaborForm] = useState({ employee_id: '', start_date: '', end_date: '', days_worked: '', budget_line: '', notes: '' })
+  const [savingLabor, setSavingLabor] = useState(false)
+  const [laborMsg, setLaborMsg] = useState(null)
+
 
   // Contracts state
   const [contracts, setContracts] = useState([])
@@ -253,6 +264,7 @@ export default function JobDetail() {
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
       if (prof?.role !== 'pm' && prof?.role !== 'apm') { router.push('/submit'); return }
+      setUserRole(prof.role)
       const { data: jobData } = await supabase.from('jobs').select('*').eq('id', id).single()
       if (!jobData) { router.push('/dashboard'); return }
       setJob(jobData)
@@ -927,6 +939,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }
+    if (activeTab === 'labor' && !laborLoaded) { loadLaborData() }
   }, [activeTab, id])
 
 
@@ -1089,6 +1102,47 @@ ${sovLines.length > 0 ? `
     if (!window.confirm('Delete this contact?')) return
     await supabase.from('job_contacts').delete().eq('id', contactId)
     await loadJobContacts()
+  }
+
+  async function loadLaborData() {
+    const [allocRes, empRes] = await Promise.all([
+      fetch(`/api/employee-allocations?job_id=${id}`).then(r => r.json()),
+      fetch('/api/employees').then(r => r.json()),
+    ])
+    setLaborAllocations(allocRes.allocations || [])
+    setAllEmployees(empRes.employees || [])
+    setLaborLoaded(true)
+  }
+
+  function allocCost(alloc) {
+    const e = alloc.employees
+    if (!e) return 0
+    const weekly = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
+    return (weekly / 5) * Number(alloc.days_worked || 0)
+  }
+
+  async function saveAllocation() {
+    if (!laborForm.employee_id || !laborForm.start_date || !laborForm.end_date || !laborForm.days_worked) return
+    setSavingLabor(true)
+    const res = await fetch('/api/employee-allocations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...laborForm, job_id: id, days_worked: parseFloat(laborForm.days_worked) }),
+    })
+    const data = await res.json()
+    if (data.error) { setLaborMsg({ text: data.error, ok: false }); setSavingLabor(false); return }
+    setLaborAllocations(prev => [data.allocation, ...prev])
+    setLaborForm({ employee_id: '', start_date: '', end_date: '', days_worked: '', budget_line: '', notes: '' })
+    setShowAddLabor(false)
+    setLaborMsg({ text: 'Allocation saved', ok: true })
+    setSavingLabor(false)
+    setTimeout(() => setLaborMsg(null), 3000)
+  }
+
+  async function deleteAllocation(allocId) {
+    if (!window.confirm('Remove this allocation?')) return
+    await fetch(`/api/employee-allocations?id=${allocId}`, { method: 'DELETE' })
+    setLaborAllocations(prev => prev.filter(a => a.id !== allocId))
   }
 
   function parseProjectXml(xmlText) {
@@ -1864,7 +1918,8 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       // We'll compute received total from billing submissions as a proxy, plus direct costs
       const subCostsTotal = (billings || []).reduce((a, b) => a + Number(b.amount_billed || 0), 0)
       const dcTotal = (dcs || []).reduce((a, c) => a + Number(c.amount || 0), 0)
-      const totalCosts = subCostsTotal + dcTotal
+      const laborTotal = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
+      const totalCosts = subCostsTotal + dcTotal + laborTotal
 
       // Group subs
       const subMap = {}
@@ -2025,6 +2080,7 @@ ${Object.keys(dcByCategory).length > 0 ? `
     <span class="k">Contract sum to date (revenue)</span><span class="v">${fmt(contractSumToDate)}</span>
     <span class="k">Subcontractor costs</span><span class="v">(${fmt(subCostsTotal)})</span>
     <span class="k">Direct costs</span><span class="v">(${fmt(dcTotal)})</span>
+    ${laborTotal > 0 ? `<span class="k">Labor costs</span><span class="v">(${fmt(laborTotal)})</span>` : ''}
     <span class="k total-row ${grossProfit >= 0 ? 'highlight' : 'loss'}">Gross profit</span><span class="v total-row ${grossProfit >= 0 ? 'highlight' : 'loss'}">${fmtSigned(grossProfit)}</span>
     <span class="k">Gross margin</span><span class="v">${grossMargin.toFixed(1)}%</span>
   </div>
@@ -2207,6 +2263,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const approvedCOValue = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
   const pendingBillingCount = billingSubmissions.filter(b => b.status === 'pending').length
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+  const totalLaborCostLive = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
@@ -2308,6 +2365,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <button style={s.tab(activeTab === 'contacts')} onClick={() => setActiveTab('contacts')}>
             Contacts{jobContacts.length > 0 ? ` (${jobContacts.length})` : ''}
           </button>
+          {userRole === 'pm' && (
+            <button style={s.tab(activeTab === 'labor')} onClick={() => setActiveTab('labor')}>
+              Labor{laborAllocations.length > 0 ? ` (${laborAllocations.length})` : ''}
+            </button>
+          )}
         </div>
 
         {/* ── DETAILS TAB ── */}
@@ -5313,6 +5375,142 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
           </>
         )}
+
+        {/* ── LABOR TAB ── */}
+        {activeTab === 'labor' && userRole === 'pm' && (() => {
+          const fmtD = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          const totalLaborCost = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
+          const totalDays = laborAllocations.reduce((a, al) => a + Number(al.days_worked || 0), 0)
+          const activeEmployees = allEmployees.filter(e => e.active)
+          return (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                  <h2 style={s.cardTitle}>Labor Allocations</h2>
+                  <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>Assign employees to this job for P&L tracking. Cost = daily rate × days worked.</p>
+                </div>
+                {activeEmployees.length > 0 && (
+                  <button style={s.btnSmallOrange} onClick={() => setShowAddLabor(v => !v)}>{showAddLabor ? 'Cancel' : '+ Add Allocation'}</button>
+                )}
+              </div>
+
+              {laborMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: laborMsg.ok ? '#0a2a0a' : '#2a0a0a', color: laborMsg.ok ? '#4ade80' : '#ff6b6b', border: `1px solid ${laborMsg.ok ? '#1a4a1a' : '#5a1a1a'}` }}>{laborMsg.text}</div>}
+
+              {activeEmployees.length === 0 && (
+                <div style={{ ...s.card, textAlign: 'center', padding: '3rem', marginBottom: '1rem' }}>
+                  <p style={{ color: '#555', margin: 0 }}>No employees on file. Add employees in the Employees tab of the dashboard first.</p>
+                </div>
+              )}
+
+              {showAddLabor && (
+                <div style={{ ...s.card, marginBottom: '1.5rem', border: '1px solid #2a1a00' }}>
+                  <p style={s.cardTitle}>New Allocation</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>Employee *</label>
+                      <select style={s.input} value={laborForm.employee_id} onChange={e => setLaborForm(f => ({ ...f, employee_id: e.target.value }))}>
+                        <option value="">Select employee…</option>
+                        {activeEmployees.map(e => {
+                          const wk = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
+                          return <option key={e.id} value={e.id}>{e.name}{e.title ? ` — ${e.title}` : ''} · ${(wk / 5).toFixed(2)}/day</option>
+                        })}
+                      </select>
+                    </div>
+                    <div><label style={s.label}>Start date *</label><input type="date" style={s.input} value={laborForm.start_date} onChange={e => setLaborForm(f => ({ ...f, start_date: e.target.value }))} /></div>
+                    <div><label style={s.label}>End date *</label><input type="date" style={s.input} value={laborForm.end_date} onChange={e => setLaborForm(f => ({ ...f, end_date: e.target.value }))} /></div>
+                    <div><label style={s.label}>Days worked *</label><input type="number" step="0.5" min="0" style={s.input} value={laborForm.days_worked} onChange={e => setLaborForm(f => ({ ...f, days_worked: e.target.value }))} placeholder="e.g. 10" /></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr', gap: '12px', marginBottom: '16px' }}>
+                    <div><label style={s.label}>Budget line</label><input style={s.input} value={laborForm.budget_line} onChange={e => setLaborForm(f => ({ ...f, budget_line: e.target.value }))} placeholder="e.g. General Conditions — Superintendent" /></div>
+                    <div><label style={s.label}>Notes</label><input style={s.input} value={laborForm.notes} onChange={e => setLaborForm(f => ({ ...f, notes: e.target.value }))} placeholder="optional" /></div>
+                  </div>
+                  {laborForm.employee_id && laborForm.days_worked && (() => {
+                    const emp = activeEmployees.find(e => e.id === laborForm.employee_id)
+                    if (!emp) return null
+                    const wk = Number(emp.weekly_salary || 0) + Number(emp.weekly_truck || 0) + Number(emp.weekly_healthcare || 0) + Number(emp.weekly_taxes || 0)
+                    const cost = (wk / 5) * parseFloat(laborForm.days_worked || 0)
+                    return <p style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>Cost: <strong style={{ color: '#e8590c' }}>{fmtD(cost)}</strong> ({laborForm.days_worked} days × {fmtD(wk / 5)}/day)</p>
+                  })()}
+                  <button style={{ ...s.btnSmallOrange, opacity: savingLabor ? 0.6 : 1 }} onClick={saveAllocation} disabled={savingLabor}>{savingLabor ? 'Saving…' : 'Save Allocation'}</button>
+                </div>
+              )}
+
+              {laborAllocations.length > 0 && (
+                <div style={s.card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <p style={{ ...s.cardTitle, margin: 0 }}>Allocations ({laborAllocations.length})</p>
+                    <div style={{ display: 'flex', gap: '1.5rem' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total days</div>
+                        <div style={{ fontSize: '20px', fontWeight: '800', color: '#f1f1f1' }}>{totalDays}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total labor cost</div>
+                        <div style={{ fontSize: '20px', fontWeight: '800', color: '#e8590c' }}>{fmtD(totalLaborCost)}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Employee</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Type</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Period</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Days</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Daily rate</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Cost</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget line</th>
+                          <th style={{ padding: '8px 12px' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laborAllocations.map(al => {
+                          const e = al.employees
+                          if (!e) return null
+                          const wk = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
+                          const daily = wk / 5
+                          const cost = daily * Number(al.days_worked || 0)
+                          return (
+                            <tr key={al.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                              <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{e.name}{e.title ? <span style={{ fontWeight: '400', color: '#666', marginLeft: '6px' }}>{e.title}</span> : null}</td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#0a1e2a' : '#1a1a0a', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#1a3a5a' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
+                              </td>
+                              <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px' }}>
+                                {new Date(al.start_date + 'T12:00:00').toLocaleDateString()} – {new Date(al.end_date + 'T12:00:00').toLocaleDateString()}
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{al.days_worked}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtD(daily)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtD(cost)}</td>
+                              <td style={{ padding: '10px 12px', color: '#666', fontSize: '12px' }}>{al.budget_line || '—'}</td>
+                              <td style={{ padding: '10px 12px' }}>
+                                <button style={s.btnSmallRed} onClick={() => deleteAllocation(al.id)}>Remove</button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop: '2px solid #222' }}>
+                          <td colSpan={5} style={{ padding: '10px 12px', color: '#555', fontSize: '12px' }}>Total</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '15px' }}>{fmtD(totalLaborCost)}</td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {laborAllocations.length === 0 && activeEmployees.length > 0 && !showAddLabor && (
+                <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
+                  <p style={{ color: '#555', margin: 0 }}>No labor allocated to this job yet.</p>
+                </div>
+              )}
+            </>
+          )
+        })()}
 
       </main>
     </div>

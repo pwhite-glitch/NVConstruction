@@ -66,7 +66,7 @@ export async function POST(request) {
     }
 
     if (userId) {
-      const profileData = { id: userId, full_name: dir.contact_name || null, role: 'subcontractor', company_name: dir.company_name || null }
+      const profileData = { id: userId, full_name: dir.contact_name || null, role: 'subcontractor', company_name: dir.company_name || null, invite_email: dir.email }
       if (company_id) profileData.company_id = company_id
       await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
     }

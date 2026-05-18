@@ -123,7 +123,7 @@ export default function AdminPortal() {
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('profiles').select('id, full_name').in('role', ['pm', 'apm', 'admin', 'super']),
         supabase.from('companies').select('*'),
-        supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor'),
+        supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor'),
       ])
       setJobs(jobList || [])
       setDirectory(dir || [])
@@ -424,7 +424,7 @@ export default function AdminPortal() {
     setTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
     setTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
     setTeamInviteLoading(null)
-    const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor')
+    const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor')
     setSubProfiles(profs || [])
   }
 
@@ -1125,14 +1125,23 @@ export default function AdminPortal() {
                                   return (
                                     <div style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
                                       <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
-                                      {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No registered users yet.</p>}
-                                      {members.map(m => (
-                                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid #1a1a1a' }}>
-                                          <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{m.full_name || 'Unnamed'}</span>
-                                          {m.phone && <span style={{ fontSize: '12px', color: '#555' }}>{m.phone}</span>}
-                                          <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', marginLeft: 'auto' }}>Registered</span>
-                                        </div>
-                                      ))}
+                                      {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No users yet — invite someone below.</p>}
+                                      {members.map(m => {
+                                        const isRegistered = !!m.full_name
+                                        return (
+                                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ fontSize: '13px', color: isRegistered ? '#f1f1f1' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
+                                              {isRegistered && m.phone && <div style={{ fontSize: '11px', color: '#555' }}>{m.phone}</div>}
+                                              {!isRegistered && m.invite_email && <div style={{ fontSize: '11px', color: '#555' }}>{m.invite_email}</div>}
+                                            </div>
+                                            {isRegistered
+                                              ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', flexShrink: 0 }}>Registered</span>
+                                              : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', flexShrink: 0 }}>Invite sent</span>
+                                            }
+                                          </div>
+                                        )
+                                      })}
                                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px' }}>
                                         <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
                                           placeholder="Invite additional team member by email…"

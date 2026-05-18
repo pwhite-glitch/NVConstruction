@@ -288,12 +288,12 @@ export default function Dashboard() {
       asgnQ = asgnQ.in('job_id', ids)
     } else if (ids !== null && ids.length === 0) {
       setSubmissions([]); setJobs([]); setAssignments([])
-      const [{ data: dir }, { data: cos }, { data: sprofs }] = await Promise.all([
+      const [{ data: dir }, { data: cos }, membersRes1] = await Promise.all([
         supabase.from('sub_directory').select('*').order('applied_at', { ascending: false }),
         supabase.from('companies').select('*'),
-        supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor'),
+        fetch('/api/company-members').then(r => r.json()),
       ])
-      setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(sprofs || [])
+      setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes1.members || [])
       return
     }
     const { data: subs } = await billingQ
@@ -302,12 +302,12 @@ export default function Dashboard() {
     setJobs(jobList || [])
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
-    const [{ data: dir }, { data: cos }, { data: sprofs }] = await Promise.all([
+    const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
       supabase.from('sub_directory').select('*').order('applied_at', { ascending: false }),
       supabase.from('companies').select('*'),
-      supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor'),
+      fetch('/api/company-members').then(r => r.json()),
     ])
-    setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(sprofs || [])
+    setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes2.members || [])
   }
 
   async function updateStatus(sub, status, rejectionReason = '') {
@@ -666,8 +666,8 @@ export default function Dashboard() {
     setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
     setSubTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
     setSubTeamInviteLoading(null)
-    const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor')
-    setSubProfiles(profs || [])
+    const { members } = await fetch('/api/company-members').then(r => r.json())
+    setSubProfiles(members || [])
   }
 
   async function assignToJob(sub) {

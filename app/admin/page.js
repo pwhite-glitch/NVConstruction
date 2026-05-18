@@ -118,17 +118,17 @@ export default function AdminPortal() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       if (!prof || prof.role !== 'admin') { router.push('/login'); return }
       setProfile(prof)
-      const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, { data: subProfs }] = await Promise.all([
+      const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, membersRes] = await Promise.all([
         supabase.from('jobs').select('id, job_number, project_name, payment_type').order('created_at', { ascending: false }),
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('profiles').select('id, full_name').in('role', ['pm', 'apm', 'admin', 'super']),
         supabase.from('companies').select('*'),
-        supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor'),
+        fetch('/api/company-members').then(r => r.json()),
       ])
       setJobs(jobList || [])
       setDirectory(dir || [])
       setCompaniesData(cos || [])
-      setSubProfiles(subProfs || [])
+      setSubProfiles(membersRes.members || [])
       const map = {}
       for (const t of team || []) map[t.id] = t.full_name || 'Unknown'
       setTeamMap(map)
@@ -424,8 +424,8 @@ export default function AdminPortal() {
     setTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
     setTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
     setTeamInviteLoading(null)
-    const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id, invite_email').eq('role', 'subcontractor')
-    setSubProfiles(profs || [])
+    const { members } = await fetch('/api/company-members').then(r => r.json())
+    setSubProfiles(members || [])
   }
 
   function printLienWaiver(sub) {

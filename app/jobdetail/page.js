@@ -143,16 +143,11 @@ export default function JobDetail() {
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
-  const [companies, setCompanies] = useState([])
-  const [companyMembers, setCompanyMembers] = useState([])
   const [showAssignSub, setShowAssignSub] = useState(false)
-  const [assignSubForm, setAssignSubForm] = useState({ company_id: '', new_company_name: '' })
+  const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
   const [assigningSubLoading, setAssigningSubLoading] = useState(false)
   const [notifyingSubId, setNotifyingSubId] = useState(null)
   const [notifySubResult, setNotifySubResult] = useState({})
-  const [invitePersonForm, setInvitePersonForm] = useState({})
-  const [invitePersonLoading, setInvitePersonLoading] = useState(null)
-  const [invitePersonResult, setInvitePersonResult] = useState({})
 
   // Field tab state
   const [fieldDailyReports, setFieldDailyReports] = useState([])
@@ -323,24 +318,13 @@ export default function JobDetail() {
   }
 
   async function reloadSubs() {
-    const { data } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone), companies(id, name)').eq('job_id', id)
+    const { data } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone)').eq('job_id', id)
     setSubs(data || [])
-    const companyIds = (data || []).map(a => a.company_id).filter(Boolean)
-    if (companyIds.length > 0) {
-      const { data: members } = await supabase.from('profiles').select('id, full_name, phone, company_id').in('company_id', companyIds)
-      setCompanyMembers(members || [])
-    } else {
-      setCompanyMembers([])
-    }
   }
 
   async function loadSubDirectory() {
-    const [{ data: dir }, { data: cos }] = await Promise.all([
-      supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name'),
-      supabase.from('companies').select('*').order('name'),
-    ])
-    setSubDirectory(dir || [])
-    setCompanies(cos || [])
+    const { data } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
+    setSubDirectory(data || [])
   }
 
   async function loadFieldData() {
@@ -1708,42 +1692,27 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
   // ── Subs ────────────────────────────────────────────────────
   async function assignSubToJob() {
+    const normalEmail = (assignSubForm.from_dir
+      ? subDirectory.find(d => d.id === assignSubForm.from_dir)?.email
+      : assignSubForm.email.trim()
+    )?.toLowerCase()
+    if (!normalEmail) return
     setAssigningSubLoading(true)
-    let companyId = assignSubForm.company_id
-    if (!companyId && assignSubForm.new_company_name.trim()) {
-      const { data: newCo, error: coErr } = await supabase.from('companies').insert({ name: assignSubForm.new_company_name.trim() }).select().single()
-      if (coErr) { setErrMsg(coErr.message); setAssigningSubLoading(false); return }
-      companyId = newCo.id
-      setCompanies(prev => [...prev, newCo])
-    }
-    if (!companyId) { setAssigningSubLoading(false); return }
-    const { error } = await supabase.from('job_assignments').insert({ job_id: id, company_id: companyId })
+    const { error } = await supabase.from('job_assignments').insert({ job_id: id, sub_email: normalEmail })
     if (error) {
-      setErrMsg(error.code === '23505' ? 'This company is already assigned to this job.' : error.message)
+      setErrMsg(error.code === '23505' ? 'This sub is already assigned to this job.' : error.message)
       setTimeout(() => setErrMsg(''), 4000)
       setAssigningSubLoading(false)
       return
     }
+    await supabase.rpc('sync_job_assignments')
     await reloadSubs()
     setShowAssignSub(false)
-    setAssignSubForm({ company_id: '', new_company_name: '' })
+    setAssignSubForm({ email: '', from_dir: '' })
     setAssigningSubLoading(false)
-  }
-
-  async function invitePersonToCompany(companyId) {
-    const email = (invitePersonForm[companyId] || '').trim().toLowerCase()
-    if (!email) return
-    setInvitePersonLoading(companyId)
-    const res = await fetch('/api/invite-sub', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, company_id: companyId }),
-    })
-    const json = await res.json()
-    setInvitePersonResult(prev => ({ ...prev, [companyId]: res.ok ? 'sent' : (json.error || 'error') }))
-    setInvitePersonForm(prev => ({ ...prev, [companyId]: '' }))
-    setInvitePersonLoading(null)
-    await reloadSubs()
+    const invRes = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: normalEmail }) })
+    const invJson = await invRes.json()
+    if (!invRes.ok) setErrMsg('Assigned but invite failed: ' + invJson.error)
   }
 
   async function removeSubFromJob(assignmentId) {
@@ -2600,129 +2569,104 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'subs' && (
           <>
             <div style={s.statRow} className="rx-stats">
-              <div style={s.statCard}><div style={s.statLabel}>Companies</div><div style={s.statValue()}>{subs.filter(a => a.company_id).length}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>People registered</div><div style={s.statValue('#4ade80')}>{companyMembers.length}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Legacy assignments</div><div style={s.statValue()}>{subs.filter(a => !a.company_id).length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Assigned</div><div style={s.statValue()}>{subs.length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#4ade80')}>{registeredSubs.length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Not registered</div><div style={s.statValue(subs.length - registeredSubs.length > 0 ? '#e8590c' : undefined)}>{subs.length - registeredSubs.length}</div></div>
             </div>
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned companies ({subs.filter(a => a.company_id).length})</p>
-                {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign company</button>}
+                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned subcontractors ({subs.length})</p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {subs.some(a => !a.sub_id && a.sub_email) && (
+                    <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Notify all unregistered</button>
+                  )}
+                  {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign sub</button>}
+                </div>
               </div>
 
               {showAssignSub && (
-                <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
-                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Assign company to job</p>
-                  {companies.filter(c => !subs.some(a => a.company_id === c.id)).length > 0 && (
+                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Assign subcontractor to job</p>
+
+                  {subDirectory.filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase())).length > 0 && (
                     <div style={{ marginBottom: '12px' }}>
-                      <label style={s.label}>Pick existing company</label>
-                      <select style={s.input} value={assignSubForm.company_id}
-                        onChange={e => setAssignSubForm({ company_id: e.target.value, new_company_name: '' })}>
-                        <option value="">— Select —</option>
-                        {companies.filter(c => !subs.some(a => a.company_id === c.id)).map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
+                      <label style={s.label}>Pick from approved directory</label>
+                      <select style={s.input} value={assignSubForm.from_dir}
+                        onChange={e => setAssignSubForm({ from_dir: e.target.value, email: '' })}>
+                        <option value="">— Select company —</option>
+                        {subDirectory
+                          .filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase()))
+                          .map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
                       </select>
                     </div>
                   )}
+
                   <div style={{ marginBottom: '1rem' }}>
-                    <label style={s.label}>{companies.length > 0 ? 'Or create new company' : 'Company name'}</label>
-                    <input style={s.input} placeholder="iSet Electrical"
-                      value={assignSubForm.new_company_name}
-                      onChange={e => setAssignSubForm({ company_id: '', new_company_name: e.target.value })} />
+                    <label style={s.label}>{subDirectory.length > 0 ? 'Or assign by email directly' : 'Email address'}</label>
+                    <input type="email" style={s.input} placeholder="sub@company.com"
+                      value={assignSubForm.email}
+                      onChange={e => setAssignSubForm({ email: e.target.value, from_dir: '' })} />
                   </div>
+
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: assigningSubLoading ? 0.6 : 1 }}
-                      disabled={assigningSubLoading || (!assignSubForm.company_id && !assignSubForm.new_company_name.trim())}
+                      disabled={assigningSubLoading || (!assignSubForm.from_dir && !assignSubForm.email)}
                       onClick={assignSubToJob}>
-                      {assigningSubLoading ? 'Assigning...' : 'Assign to job'}
+                      {assigningSubLoading ? 'Assigning...' : 'Assign & enable billing'}
                     </button>
-                    <button style={s.btnGray} onClick={() => { setShowAssignSub(false); setAssignSubForm({ company_id: '', new_company_name: '' }) }}>Cancel</button>
+                    <button style={s.btnGray} onClick={() => { setShowAssignSub(false); setAssignSubForm({ email: '', from_dir: '' }) }}>Cancel</button>
                   </div>
                 </div>
               )}
 
-              {subs.filter(a => a.company_id).length === 0 && !showAssignSub && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No companies assigned yet.</p>
+              {subs.length === 0 && !showAssignSub && (
+                <p style={{ color: '#444', fontSize: '14px' }}>No subcontractors assigned yet.</p>
               )}
 
-              {subs.filter(a => a.company_id).map(a => {
-                const members = companyMembers.filter(m => m.company_id === a.company_id)
-                const companyName = a.companies?.name || 'Unknown'
-                const isInviting = invitePersonLoading === a.company_id
-                const invResult = invitePersonResult[a.company_id]
-                const invEmail = invitePersonForm[a.company_id] || ''
+              {subs.map(a => {
+                const dirEntry = subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())
+                const companyName = a.profiles?.company_name || dirEntry?.company_name || a.sub_email || 'Unknown'
+                const contactName = a.profiles?.full_name || dirEntry?.contact_name
+                const phone = a.profiles?.phone || dirEntry?.phone
+                const address = dirEntry?.address
+                const isRegistered = !!a.sub_id
                 return (
                   <div key={a.id} style={{ ...s.contractRow, marginBottom: '8px' }}>
-                    <div style={{ padding: '14px 16px', background: '#0f0f0f' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{companyName}</span>
-                        <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
-                      </div>
-                      {members.length === 0 && (
-                        <p style={{ color: '#555', fontSize: '12px', margin: '0 0 10px' }}>No registered users yet — invite someone below.</p>
-                      )}
-                      {members.map(m => (
-                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid #1a1a1a' }}>
-                          <span style={{ color: '#f1f1f1', fontSize: '13px' }}>{m.full_name || 'Unnamed'}</span>
-                          {m.phone && <span style={{ color: '#555', fontSize: '12px' }}>{m.phone}</span>}
-                          <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', marginLeft: 'auto' }}>Registered</span>
+                    <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: '200px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{companyName}</span>
+                          <span style={{
+                            fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700',
+                            background: isRegistered ? '#0a2a0a' : '#1a1a1a',
+                            color: isRegistered ? '#4ade80' : '#555',
+                            border: `1px solid ${isRegistered ? '#1a4a1a' : '#2a2a2a'}`
+                          }}>{isRegistered ? 'Registered' : 'Not registered'}</span>
                         </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px' }}>
-                        <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
-                          placeholder="Invite person by email…"
-                          value={invEmail}
-                          onChange={e => setInvitePersonForm(prev => ({ ...prev, [a.company_id]: e.target.value }))} />
-                        <button style={{ ...s.btnSmallOrange, opacity: isInviting ? 0.6 : 1 }}
-                          disabled={isInviting || !invEmail}
-                          onClick={() => invitePersonToCompany(a.company_id)}>
-                          {isInviting ? '…' : 'Invite'}
-                        </button>
-                        {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>Sent</span>}
-                        {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
+                        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
+                          {contactName && <span>{contactName}</span>}
+                          {phone && <span>{phone}</span>}
+                          {a.sub_email && <span>{a.sub_email}</span>}
+                          {address && <span>{address}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {!isRegistered && a.sub_email && (
+                          notifySubResult[a.sub_email] === 'sent'
+                            ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
+                            : notifySubResult[a.sub_email]
+                              ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{notifySubResult[a.sub_email]}</span>
+                              : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
+                                  {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
+                                </button>
+                        )}
+                        <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
                       </div>
                     </div>
                   </div>
                 )
               })}
-
-              {subs.filter(a => !a.company_id).length > 0 && (
-                <>
-                  <p style={{ color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', marginTop: '1.5rem', marginBottom: '8px' }}>Legacy (email-based)</p>
-                  {subs.filter(a => !a.company_id).map(a => {
-                    const dirEntry = subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())
-                    const companyName = a.profiles?.company_name || dirEntry?.company_name || a.sub_email || 'Unknown'
-                    const isRegistered = !!a.sub_id
-                    return (
-                      <div key={a.id} style={{ ...s.contractRow, marginBottom: '8px', borderColor: '#1a1a1a' }}>
-                        <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#888' }}>{companyName}</span>
-                              <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#1a1a1a', color: isRegistered ? '#4ade80' : '#555', border: `1px solid ${isRegistered ? '#1a4a1a' : '#2a2a2a'}` }}>
-                                {isRegistered ? 'Registered' : 'Not registered'}
-                              </span>
-                            </div>
-                            {a.sub_email && <span style={{ fontSize: '12px', color: '#444' }}>{a.sub_email}</span>}
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            {!isRegistered && a.sub_email && (
-                              notifySubResult[a.sub_email] === 'sent'
-                                ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
-                                : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
-                                    {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
-                                  </button>
-                            )}
-                            <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </>
-              )}
             </div>
           </>
         )}

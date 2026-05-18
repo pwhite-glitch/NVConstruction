@@ -99,6 +99,11 @@ export default function AdminPortal() {
   const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
   const [invitingSubFor, setInvitingSubFor] = useState(null)
   const [inviteSentFor, setInviteSentFor] = useState({})
+  const [companiesData, setCompaniesData] = useState([])
+  const [subProfiles, setSubProfiles] = useState([])
+  const [teamInviteForm, setTeamInviteForm] = useState({})
+  const [teamInviteLoading, setTeamInviteLoading] = useState(null)
+  const [teamInviteResult, setTeamInviteResult] = useState({})
 
   // Lien waiver state
   const [filterLienJob, setFilterLienJob] = useState('')
@@ -113,13 +118,17 @@ export default function AdminPortal() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       if (!prof || prof.role !== 'admin') { router.push('/login'); return }
       setProfile(prof)
-      const [{ data: jobList }, { data: dir }, { data: team }] = await Promise.all([
+      const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, { data: subProfs }] = await Promise.all([
         supabase.from('jobs').select('id, job_number, project_name, payment_type').order('created_at', { ascending: false }),
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('profiles').select('id, full_name').in('role', ['pm', 'apm', 'admin', 'super']),
+        supabase.from('companies').select('*'),
+        supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor'),
       ])
       setJobs(jobList || [])
       setDirectory(dir || [])
+      setCompaniesData(cos || [])
+      setSubProfiles(subProfs || [])
       const map = {}
       for (const t of team || []) map[t.id] = t.full_name || 'Unknown'
       setTeamMap(map)
@@ -395,6 +404,28 @@ export default function AdminPortal() {
     } else {
       setDirMsg('Invite failed: ' + (data?.error || 'Unknown error'))
     }
+  }
+
+  async function inviteTeamMember(dirId, companyName) {
+    const email = (teamInviteForm[dirId] || '').trim().toLowerCase()
+    if (!email) return
+    setTeamInviteLoading(dirId)
+    let company = companiesData.find(c => c.name === companyName)
+    if (!company) {
+      const { data: newCo } = await supabase.from('companies').insert({ name: companyName }).select().single()
+      if (newCo) { company = newCo; setCompaniesData(prev => [...prev, newCo]) }
+    }
+    const res = await fetch('/api/invite-sub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, company_id: company?.id }),
+    })
+    const json = await res.json()
+    setTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
+    setTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
+    setTeamInviteLoading(null)
+    const { data: profs } = await supabase.from('profiles').select('id, full_name, phone, company_id').eq('role', 'subcontractor')
+    setSubProfiles(profs || [])
   }
 
   function printLienWaiver(sub) {
@@ -1085,6 +1116,39 @@ export default function AdminPortal() {
                                     )}
                                   </div>
                                 )}
+                                {/* Team members */}
+                                {(() => {
+                                  const company = companiesData.find(c => c.name === d.company_name)
+                                  const members = company ? subProfiles.filter(p => p.company_id === company.id) : []
+                                  const isInviting = teamInviteLoading === d.id
+                                  const invResult = teamInviteResult[d.id]
+                                  return (
+                                    <div style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                                      <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
+                                      {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No registered users yet.</p>}
+                                      {members.map(m => (
+                                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                          <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{m.full_name || 'Unnamed'}</span>
+                                          {m.phone && <span style={{ fontSize: '12px', color: '#555' }}>{m.phone}</span>}
+                                          <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', marginLeft: 'auto' }}>Registered</span>
+                                        </div>
+                                      ))}
+                                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px' }}>
+                                        <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
+                                          placeholder="Invite additional team member by email…"
+                                          value={teamInviteForm[d.id] || ''}
+                                          onChange={e => setTeamInviteForm(prev => ({ ...prev, [d.id]: e.target.value }))} />
+                                        <button style={{ ...s.btnSm('orange'), opacity: isInviting ? 0.6 : 1 }}
+                                          disabled={isInviting || !teamInviteForm[d.id]}
+                                          onClick={() => inviteTeamMember(d.id, d.company_name)}>
+                                          {isInviting ? '…' : 'Invite'}
+                                        </button>
+                                        {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}
+                                        {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
                                 <button style={s.btnSm('red')} onClick={() => deleteDirEntry(d.id)}>Delete from directory</button>
                               </div>
                             )}

@@ -98,15 +98,8 @@ export default function Submit() {
       if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
       if (prof?.role === 'super') { router.push('/field'); return }
       setProfile(prof)
-      let assignments = []
-      if (prof?.company_id) {
-        const { data } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('company_id', prof.company_id)
-        assignments = data || []
-      } else {
-        const { data } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id)
-        assignments = data || []
-      }
-      setJobs(assignments.map(a => a.jobs).filter(j => j && j.status === 'active'))
+      const { data: assignments } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id)
+      setJobs((assignments || []).map(a => a.jobs).filter(j => j && j.status === 'active'))
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
       await loadMyContracts(session.user.id)

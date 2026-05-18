@@ -102,7 +102,7 @@ export default function JobDetail() {
   const [allEmployees, setAllEmployees] = useState([])
   const [laborLoaded, setLaborLoaded] = useState(false)
   const [showAddLabor, setShowAddLabor] = useState(false)
-  const [laborForm, setLaborForm] = useState({ employee_id: '', start_date: '', end_date: '', days_worked: '', budget_line: '', notes: '' })
+  const [laborForm, setLaborForm] = useState({ employee_id: '', start_date: '', end_date: '', budget_line: '', notes: '' })
   const [savingLabor, setSavingLabor] = useState(false)
   const [laborMsg, setLaborMsg] = useState(null)
 
@@ -1114,25 +1114,43 @@ ${sovLines.length > 0 ? `
     setLaborLoaded(true)
   }
 
-  function allocCost(alloc) {
+  function allocWeeks(alloc) {
+    const ms = new Date(alloc.end_date) - new Date(alloc.start_date)
+    return Math.max(0, Math.round(ms / (7 * 24 * 60 * 60 * 1000) * 10) / 10)
+  }
+
+  function allocWeeklyRate(alloc) {
     const e = alloc.employees
     if (!e) return 0
-    const weekly = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
-    return (weekly / 5) * Number(alloc.days_worked || 0)
+    return Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
+  }
+
+  function allocCost(alloc) {
+    return allocWeeklyRate(alloc) * allocWeeks(alloc)
+  }
+
+  function allocDrawn(alloc) {
+    const today = new Date()
+    const start = new Date(alloc.start_date)
+    const end = new Date(alloc.end_date)
+    if (today <= start) return 0
+    const totalWeeks = allocWeeks(alloc)
+    const elapsedWeeks = Math.min((today - start) / (7 * 24 * 60 * 60 * 1000), totalWeeks)
+    return allocWeeklyRate(alloc) * elapsedWeeks
   }
 
   async function saveAllocation() {
-    if (!laborForm.employee_id || !laborForm.start_date || !laborForm.end_date || !laborForm.days_worked) return
+    if (!laborForm.employee_id || !laborForm.start_date || !laborForm.end_date) return
     setSavingLabor(true)
     const res = await fetch('/api/employee-allocations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...laborForm, job_id: id, days_worked: parseFloat(laborForm.days_worked) }),
+      body: JSON.stringify({ employee_id: laborForm.employee_id, job_id: id, start_date: laborForm.start_date, end_date: laborForm.end_date, budget_line: laborForm.budget_line || null, notes: laborForm.notes || null }),
     })
     const data = await res.json()
     if (data.error) { setLaborMsg({ text: data.error, ok: false }); setSavingLabor(false); return }
     setLaborAllocations(prev => [data.allocation, ...prev])
-    setLaborForm({ employee_id: '', start_date: '', end_date: '', days_worked: '', budget_line: '', notes: '' })
+    setLaborForm({ employee_id: '', start_date: '', end_date: '', budget_line: '', notes: '' })
     setShowAddLabor(false)
     setLaborMsg({ text: 'Allocation saved', ok: true })
     setSavingLabor(false)
@@ -5380,14 +5398,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'labor' && userRole === 'pm' && (() => {
           const fmtD = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           const totalLaborCost = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
-          const totalDays = laborAllocations.reduce((a, al) => a + Number(al.days_worked || 0), 0)
+          const totalDrawn = laborAllocations.reduce((a, al) => a + allocDrawn(al), 0)
           const activeEmployees = allEmployees.filter(e => e.active)
           return (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <div>
                   <h2 style={s.cardTitle}>Labor Allocations</h2>
-                  <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>Assign employees to this job for P&L tracking. Cost = daily rate × days worked.</p>
+                  <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>Assign employees to this job by date range. Cost accrues weekly based on their rate.</p>
                 </div>
                 {activeEmployees.length > 0 && (
                   <button style={s.btnSmallOrange} onClick={() => setShowAddLabor(v => !v)}>{showAddLabor ? 'Cancel' : '+ Add Allocation'}</button>
@@ -5405,31 +5423,32 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {showAddLabor && (
                 <div style={{ ...s.card, marginBottom: '1.5rem', border: '1px solid #2a1a00' }}>
                   <p style={s.cardTitle}>New Allocation</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div>
                       <label style={s.label}>Employee *</label>
                       <select style={s.input} value={laborForm.employee_id} onChange={e => setLaborForm(f => ({ ...f, employee_id: e.target.value }))}>
                         <option value="">Select employee…</option>
                         {activeEmployees.map(e => {
                           const wk = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
-                          return <option key={e.id} value={e.id}>{e.name}{e.title ? ` — ${e.title}` : ''} · ${(wk / 5).toFixed(2)}/day</option>
+                          return <option key={e.id} value={e.id}>{e.name}{e.title ? ` — ${e.title}` : ''} · {fmtD(wk)}/wk</option>
                         })}
                       </select>
                     </div>
                     <div><label style={s.label}>Start date *</label><input type="date" style={s.input} value={laborForm.start_date} onChange={e => setLaborForm(f => ({ ...f, start_date: e.target.value }))} /></div>
                     <div><label style={s.label}>End date *</label><input type="date" style={s.input} value={laborForm.end_date} onChange={e => setLaborForm(f => ({ ...f, end_date: e.target.value }))} /></div>
-                    <div><label style={s.label}>Days worked *</label><input type="number" step="0.5" min="0" style={s.input} value={laborForm.days_worked} onChange={e => setLaborForm(f => ({ ...f, days_worked: e.target.value }))} placeholder="e.g. 10" /></div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr', gap: '12px', marginBottom: '16px' }}>
                     <div><label style={s.label}>Budget line</label><input style={s.input} value={laborForm.budget_line} onChange={e => setLaborForm(f => ({ ...f, budget_line: e.target.value }))} placeholder="e.g. General Conditions — Superintendent" /></div>
                     <div><label style={s.label}>Notes</label><input style={s.input} value={laborForm.notes} onChange={e => setLaborForm(f => ({ ...f, notes: e.target.value }))} placeholder="optional" /></div>
                   </div>
-                  {laborForm.employee_id && laborForm.days_worked && (() => {
+                  {laborForm.employee_id && laborForm.start_date && laborForm.end_date && (() => {
                     const emp = activeEmployees.find(e => e.id === laborForm.employee_id)
                     if (!emp) return null
                     const wk = Number(emp.weekly_salary || 0) + Number(emp.weekly_truck || 0) + Number(emp.weekly_healthcare || 0) + Number(emp.weekly_taxes || 0)
-                    const cost = (wk / 5) * parseFloat(laborForm.days_worked || 0)
-                    return <p style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>Cost: <strong style={{ color: '#e8590c' }}>{fmtD(cost)}</strong> ({laborForm.days_worked} days × {fmtD(wk / 5)}/day)</p>
+                    const ms = new Date(laborForm.end_date) - new Date(laborForm.start_date)
+                    const weeks = Math.max(0, Math.round(ms / (7 * 24 * 60 * 60 * 1000) * 10) / 10)
+                    const total = wk * weeks
+                    return <p style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>{weeks} week{weeks !== 1 ? 's' : ''} × <strong style={{ color: '#f1f1f1' }}>{fmtD(wk)}/wk</strong> = <strong style={{ color: '#e8590c' }}>{fmtD(total)}</strong> total allocation</p>
                   })()}
                   <button style={{ ...s.btnSmallOrange, opacity: savingLabor ? 0.6 : 1 }} onClick={saveAllocation} disabled={savingLabor}>{savingLabor ? 'Saving…' : 'Save Allocation'}</button>
                 </div>
@@ -5441,11 +5460,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <p style={{ ...s.cardTitle, margin: 0 }}>Allocations ({laborAllocations.length})</p>
                     <div style={{ display: 'flex', gap: '1.5rem' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total days</div>
-                        <div style={{ fontSize: '20px', fontWeight: '800', color: '#f1f1f1' }}>{totalDays}</div>
+                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Drawn to date</div>
+                        <div style={{ fontSize: '20px', fontWeight: '800', color: '#4ade80' }}>{fmtD(totalDrawn)}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total labor cost</div>
+                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total allocated</div>
                         <div style={{ fontSize: '20px', fontWeight: '800', color: '#e8590c' }}>{fmtD(totalLaborCost)}</div>
                       </div>
                     </div>
@@ -5457,9 +5476,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Employee</th>
                           <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Type</th>
                           <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Period</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Days</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Daily rate</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Cost</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Weeks</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Weekly rate</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Drawn</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</th>
                           <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget line</th>
                           <th style={{ padding: '8px 12px' }}></th>
                         </tr>
@@ -5468,9 +5488,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {laborAllocations.map(al => {
                           const e = al.employees
                           if (!e) return null
-                          const wk = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
-                          const daily = wk / 5
-                          const cost = daily * Number(al.days_worked || 0)
+                          const wk = allocWeeklyRate(al)
+                          const weeks = allocWeeks(al)
+                          const total = allocCost(al)
+                          const drawn = allocDrawn(al)
+                          const remaining = total - drawn
+                          const pctDrawn = total > 0 ? (drawn / total * 100) : 0
                           return (
                             <tr key={al.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
                               <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{e.name}{e.title ? <span style={{ fontWeight: '400', color: '#666', marginLeft: '6px' }}>{e.title}</span> : null}</td>
@@ -5480,9 +5503,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px' }}>
                                 {new Date(al.start_date + 'T12:00:00').toLocaleDateString()} – {new Date(al.end_date + 'T12:00:00').toLocaleDateString()}
                               </td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{al.days_worked}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtD(daily)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtD(cost)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{weeks}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtD(wk)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                <div style={{ color: '#4ade80', fontWeight: '700' }}>{fmtD(drawn)}</div>
+                                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{pctDrawn.toFixed(0)}% · {fmtD(remaining)} left</div>
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtD(total)}</td>
                               <td style={{ padding: '10px 12px', color: '#666', fontSize: '12px' }}>{al.budget_line || '—'}</td>
                               <td style={{ padding: '10px 12px' }}>
                                 <button style={s.btnSmallRed} onClick={() => deleteAllocation(al.id)}>Remove</button>
@@ -5494,6 +5521,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <tfoot>
                         <tr style={{ borderTop: '2px solid #222' }}>
                           <td colSpan={5} style={{ padding: '10px 12px', color: '#555', fontSize: '12px' }}>Total</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '800' }}>{fmtD(totalDrawn)}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '15px' }}>{fmtD(totalLaborCost)}</td>
                           <td colSpan={2}></td>
                         </tr>

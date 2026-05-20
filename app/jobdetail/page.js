@@ -1192,11 +1192,17 @@ ${sovLines.length > 0 ? `
     const { data: { session } } = await supabase.auth.getSession()
     const dirEntry = subDirectory.find(d => d.id === contractForm.dir_id)
     const matchedSub = subs.find(s => s.sub_email?.toLowerCase() === dirEntry?.email?.toLowerCase() && s.sub_id)
+    let subUserId = matchedSub?.sub_id || null
+    if (!subUserId && dirEntry?.email) {
+      const r = await fetch(`/api/company-members?email=${encodeURIComponent(dirEntry.email.toLowerCase())}`)
+      const d = await r.json()
+      subUserId = d.members?.[0]?.id || null
+    }
     const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
     const { error } = await supabase.from('subcontracts').insert({
       job_id: id,
-      sub_id: matchedSub?.sub_id || null,
+      sub_id: subUserId,
       vendor_name: dirEntry?.company_name || '',
       contract_value: parseFloat(contractForm.contract_value),
       description: contractForm.description || null,

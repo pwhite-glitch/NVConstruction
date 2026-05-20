@@ -9,12 +9,15 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const company_id = searchParams.get('company_id')
 
+  const email = searchParams.get('email')
+
   let query = adminSupabase
     .from('profiles')
     .select('id, full_name, phone, company_id, invite_email')
     .eq('role', 'subcontractor')
 
   if (company_id) query = query.eq('company_id', company_id)
+  if (email) query = query.eq('invite_email', email.toLowerCase())
 
   const { data, error } = await query
   if (error) return Response.json({ error: error.message }, { status: 500 })

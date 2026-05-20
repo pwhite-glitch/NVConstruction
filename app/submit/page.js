@@ -98,6 +98,14 @@ export default function Submit() {
       if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
       if (prof?.role === 'super') { router.push('/field'); return }
       setProfile(prof)
+      // Link any unmatched contracts where vendor_name matches this sub's company
+      if (prof?.company_name) {
+        await fetch('/api/link-sub-contracts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: session.user.id, company_name: prof.company_name }),
+        })
+      }
       const { data: assignments } = await supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id)
       setJobs((assignments || []).map(a => a.jobs).filter(j => j && j.status === 'active'))
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })

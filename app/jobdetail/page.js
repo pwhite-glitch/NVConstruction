@@ -1216,6 +1216,14 @@ ${sovLines.length > 0 ? `
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
     else {
       setShowAddContract(false); setContractForm(emptyContract); await loadContracts()
+      // Auto-assign sub to job if not already assigned
+      if (dirEntry?.email) {
+        const alreadyAssigned = subs.some(s => s.sub_email?.toLowerCase() === dirEntry.email.toLowerCase())
+        if (!alreadyAssigned) {
+          await supabase.from('job_assignments').insert({ job_id: id, sub_email: dirEntry.email.toLowerCase(), sub_id: subUserId || null, invited_at: new Date().toISOString() })
+          await reloadSubs()
+        }
+      }
       if (dirEntry?.email) {
         const firstName = dirEntry.contact_name?.split(' ')[0] || 'there'
         const contractAmt = parseFloat(contractForm.contract_value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })

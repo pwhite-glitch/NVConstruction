@@ -541,6 +541,8 @@ export default function JobDetail() {
     setAiaLines(budgetItems.map(b => {
       const bAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
       const pctThis = parseFloat(lineMap[b.id]?.pct_this_period ?? 0)
+      const savedDollar = lineMap[b.id]?.dollar_this_period
+      const dollarThis = savedDollar != null ? Number(savedDollar) : bAmt * pctThis / 100
       return {
         budget_item_id: b.id,
         cost_code: b.cost_code,
@@ -548,7 +550,7 @@ export default function JobDetail() {
         budget_amount: bAmt,
         pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
         pct_this: String(pctThis),
-        dollar_this: bAmt * pctThis / 100,
+        dollar_this: dollarThis,
       }
     }))
     setPeriodBilling(bills || [])
@@ -694,6 +696,7 @@ export default function JobDetail() {
           budget_item_id: b.id,
           pct_prev: prevLine ? Math.min(100, parseFloat(prevLine.pct_prev || 0) + parseFloat(prevLine.pct_this_period || 0)) : 0,
           pct_this_period: 0,
+          dollar_this_period: 0,
         }
       })
       await supabase.from('aia_application_lines').insert(lineInserts)
@@ -716,11 +719,13 @@ export default function JobDetail() {
     }).eq('id', activeAia.id)
     for (const line of aiaLines) {
       const scheduled = Number(line.budget_amount || 0)
-      const pctToSave = scheduled > 0 && line.dollar_this !== undefined
-        ? Number(line.dollar_this) / scheduled * 100
+      const dollarToSave = line.dollar_this !== undefined ? Number(line.dollar_this) : null
+      const pctToSave = scheduled > 0 && dollarToSave != null
+        ? dollarToSave / scheduled * 100
         : parseFloat(line.pct_this) || 0
       await supabase.from('aia_application_lines').update({
         pct_this_period: pctToSave,
+        dollar_this_period: dollarToSave,
       }).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
     }
     await loadAiaApplications()

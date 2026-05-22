@@ -80,7 +80,7 @@ const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'p
 const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [] }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), auto_approve: true }
+const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: true }
 
 export default function JobDetail() {
   const router = useRouter()
@@ -148,6 +148,12 @@ export default function JobDetail() {
   const [creatingBilling, setCreatingBilling] = useState(false)
   const [createBillingError, setCreateBillingError] = useState('')
   const [editingBilling, setEditingBilling] = useState(null)
+
+  // Draw requests state
+  const [drawRequests, setDrawRequests] = useState([])
+  const [showCreateDraw, setShowCreateDraw] = useState(false)
+  const [drawForm, setDrawForm] = useState({ title: '', dc_ids: [] })
+  const [creatingDraw, setCreatingDraw] = useState(false)
   const [editBillingForm, setEditBillingForm] = useState({})
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
@@ -327,6 +333,12 @@ export default function JobDetail() {
   async function loadBillingForJob() {
     const { data } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
     setBillingSubmissions(data || [])
+  }
+
+  async function loadDrawRequests() {
+    const res = await fetch(`/api/draw-requests?job_id=${id}`)
+    const { draws } = await res.json()
+    setDrawRequests(draws || [])
   }
 
   async function reloadSubs() {
@@ -931,7 +943,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
-    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs() }
+    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
@@ -1840,6 +1852,7 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       pct_complete: createBillingForm.pct_complete ? parseFloat(createBillingForm.pct_complete) : null,
       work_description: createBillingForm.work_description || null,
       billing_period: createBillingForm.billing_period ? createBillingForm.billing_period + '-01' : null,
+      draw_request_id: createBillingForm.draw_request_id || null,
       status,
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
@@ -3813,6 +3826,108 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#4ade80')}>${approvedBillingTotal.toLocaleString()}</div></div>
             </div>
 
+            {/* ── DRAW REQUESTS ── */}
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Draw requests ({drawRequests.length})</p>
+                {!showCreateDraw && (
+                  <button style={s.btnSmallOrange} onClick={async () => { await loadDirectCosts(); setShowCreateDraw(true) }}>+ New draw</button>
+                )}
+              </div>
+
+              {showCreateDraw && (() => {
+                const undrawnApproved = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id)
+                return (
+                  <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
+                    <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create new draw request</p>
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={s.label}>Draw title (optional)</label>
+                      <input style={s.input} value={drawForm.title} onChange={e => setDrawForm(f => ({ ...f, title: e.target.value }))} placeholder={`Draw Request ${drawRequests.length + 1}`} />
+                    </div>
+                    {undrawnApproved.length > 0 && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Tag approved direct costs to this draw</label>
+                        <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                          {undrawnApproved.map(dc => (
+                            <label key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                              <input
+                                type="checkbox"
+                                checked={drawForm.dc_ids.includes(dc.id)}
+                                onChange={e => setDrawForm(f => ({ ...f, dc_ids: e.target.checked ? [...f.dc_ids, dc.id] : f.dc_ids.filter(x => x !== dc.id) }))}
+                                style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
+                              />
+                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{dc.description}</span>
+                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{dc.cost_date} · ${Number(dc.amount).toLocaleString()}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {drawForm.dc_ids.length > 0 && (
+                          <p style={{ fontSize: '12px', color: '#e8590c', margin: '6px 0 0' }}>{drawForm.dc_ids.length} cost{drawForm.dc_ids.length > 1 ? 's' : ''} will be tagged to this draw</p>
+                        )}
+                      </div>
+                    )}
+                    {undrawnApproved.length === 0 && (
+                      <p style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>No undrawn approved direct costs to tag.</p>
+                    )}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button style={{ ...s.btn, opacity: creatingDraw ? 0.5 : 1 }} disabled={creatingDraw} onClick={async () => {
+                        setCreatingDraw(true)
+                        await fetch('/api/draw-requests', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids }),
+                        })
+                        setDrawForm({ title: '', dc_ids: [] })
+                        setShowCreateDraw(false)
+                        await loadDrawRequests()
+                        await loadDirectCosts()
+                        setCreatingDraw(false)
+                      }}>
+                        {creatingDraw ? 'Creating...' : 'Create draw'}
+                      </button>
+                      <button style={s.btnGray} onClick={() => { setShowCreateDraw(false); setDrawForm({ title: '', dc_ids: [] }) }}>Cancel</button>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {drawRequests.length === 0 && !showCreateDraw && (
+                <p style={{ color: '#444', fontSize: '14px' }}>No draw requests yet. Create one to let subs bill against a specific draw.</p>
+              )}
+              {drawRequests.map(dr => (
+                <div key={dr.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '6px', background: dr.status === 'open' ? '#140a00' : '#0a0a0a' }}>
+                  <div>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{dr.title}</span>
+                    <span style={{ fontSize: '11px', color: dr.status === 'open' ? '#e8590c' : '#555', background: dr.status === 'open' ? '#2a1200' : '#1a1a1a', border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#2a2a2a'}`, borderRadius: '99px', padding: '2px 8px', marginLeft: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {dr.status}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
+                      {billingSubmissions.filter(b => b.draw_request_id === dr.id).length} submission{billingSubmissions.filter(b => b.draw_request_id === dr.id).length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {dr.status === 'open' ? (
+                      <button style={s.btnSmall} onClick={async () => {
+                        await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'closed' }) })
+                        await loadDrawRequests()
+                      }}>Close draw</button>
+                    ) : (
+                      <button style={s.btnSmall} onClick={async () => {
+                        await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'open' }) })
+                        await loadDrawRequests()
+                      }}>Reopen</button>
+                    )}
+                    <button style={s.btnSmallRed} onClick={async () => {
+                      if (!window.confirm('Delete this draw? Billing submissions linked to it will be unlinked.')) return
+                      await fetch(`/api/draw-requests?id=${dr.id}`, { method: 'DELETE' })
+                      await loadDrawRequests()
+                      await loadBillingForJob()
+                    }}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Billing submissions ({billingSubmissions.length})</p>
@@ -3925,8 +4040,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                       <div>
                         <label style={s.label}>Billing period</label>
-                        <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
-                        <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                        {drawRequests.length > 0 ? (
+                          <>
+                            <select style={s.input} value={createBillingForm.draw_request_id} onChange={e => setCreateBillingForm(f => ({ ...f, draw_request_id: e.target.value, billing_period: '' }))}>
+                              <option value="">— Select a draw —</option>
+                              {drawRequests.filter(d => d.status === 'open').map(d => (
+                                <option key={d.id} value={d.id}>{d.title}</option>
+                              ))}
+                              {drawRequests.filter(d => d.status !== 'open').length > 0 && (
+                                <optgroup label="Closed draws">
+                                  {drawRequests.filter(d => d.status !== 'open').map(d => (
+                                    <option key={d.id} value={d.id}>{d.title} (closed)</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                            <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Select which draw this billing is for</p>
+                          </>
+                        ) : (
+                          <>
+                            <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
+                            <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3973,7 +4109,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(b.submitted_at).toLocaleDateString()}
-                          {b.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                          {b.draw_request_id
+                            ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>{drawRequests.find(d => d.id === b.draw_request_id)?.title || 'Draw'}</span>
+                            : b.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
+                          }
                           {b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
                           {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
                         </div>

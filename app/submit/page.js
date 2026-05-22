@@ -61,7 +61,8 @@ export default function Submit() {
   const [myContracts, setMyContracts] = useState([])
   const [myCOs, setMyCOs] = useState({})
   const [expandedContract, setExpandedContract] = useState(null)
-  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7) })
+  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
+  const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [activeTab, setActiveTab] = useState('billing')
@@ -259,7 +260,11 @@ export default function Submit() {
   }
 
   async function loadJobSov(jobId) {
-    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); return }
+    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setJobDrawRequests([]); return }
+    const drRes = await fetch(`/api/draw-requests?job_id=${jobId}`)
+    const { draws } = await drRes.json()
+    const openDraws = (draws || []).filter(d => d.status === 'open')
+    setJobDrawRequests(openDraws)
     const { data: contracts } = await supabase.from('subcontracts').select('id, description, retainage_pct, contract_value').eq('sub_id', user.id).eq('job_id', jobId)
     if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
     setNoContract(false)
@@ -351,6 +356,7 @@ export default function Submit() {
       pct_complete: parseInt(form.pct_complete) || null,
       work_description: form.work_description,
       billing_period: form.billing_period ? form.billing_period + '-01' : null,
+      draw_request_id: form.draw_request_id || null,
       doc_url,
     }).select().single()
     if (!error) {
@@ -374,10 +380,11 @@ export default function Submit() {
         `)
       )
       setSuccess(true)
-      setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7) })
+      setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
       setSovForm([])
       setJobSovContracts([])
       setSovRetainageMap({})
+      setJobDrawRequests([])
       setBillingFile(null)
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
@@ -640,7 +647,17 @@ export default function Submit() {
                         </div>
                       </div>
                       <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
-                      <div><label style={s.label}>Billing period</label><input type="month" style={s.input} value={form.billing_period} onChange={e => update('billing_period', e.target.value)} /></div>
+                      <div>
+                        <label style={s.label}>Billing period</label>
+                        {jobDrawRequests.length > 0 ? (
+                          <select style={s.input} value={form.draw_request_id} onChange={e => update('draw_request_id', e.target.value)} required>
+                            <option value="">— Select a draw —</option>
+                            {jobDrawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                          </select>
+                        ) : (
+                          <input type="month" style={s.input} value={form.billing_period} onChange={e => update('billing_period', e.target.value)} />
+                        )}
+                      </div>
                     </div>
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={s.label}>Work description</label>
@@ -773,7 +790,10 @@ export default function Submit() {
                       <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
                       <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
                         {new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete
-                        {s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                        {s2.draw_request_id
+                          ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>Draw #{s2.draw_request_id.slice(-4)}</span>
+                          : s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
+                        }
                       </p>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>

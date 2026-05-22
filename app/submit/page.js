@@ -397,7 +397,17 @@ export default function Submit() {
   async function submitLienWaiver() {
     if (!signerName.trim()) return
     const canvas = canvasRef.current
-    const signature = canvas ? canvas.toDataURL('image/png') : null
+    let signature = null
+    if (canvas) {
+      const offscreen = document.createElement('canvas')
+      offscreen.width = canvas.width
+      offscreen.height = canvas.height
+      const ctx = offscreen.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, offscreen.width, offscreen.height)
+      ctx.drawImage(canvas, 0, 0)
+      signature = offscreen.toDataURL('image/png')
+    }
     setSavingWaiver(true)
     const res = await fetch('/api/lien-waiver-sign', {
       method: 'POST',
@@ -1102,7 +1112,9 @@ export default function Submit() {
         function getPos(e, canvas) {
           const r = canvas.getBoundingClientRect()
           const src = e.touches ? e.touches[0] : e
-          return { x: src.clientX - r.left, y: src.clientY - r.top }
+          const scaleX = canvas.width / r.width
+          const scaleY = canvas.height / r.height
+          return { x: (src.clientX - r.left) * scaleX, y: (src.clientY - r.top) * scaleY }
         }
 
         function startDraw(e) {
@@ -1119,8 +1131,8 @@ export default function Submit() {
           const canvas = canvasRef.current
           const ctx = canvas.getContext('2d')
           const pos = getPos(e, canvas)
-          ctx.strokeStyle = '#f1f1f1'
-          ctx.lineWidth = 2
+          ctx.strokeStyle = '#1a1a2e'
+          ctx.lineWidth = 2.5
           ctx.lineCap = 'round'
           ctx.lineJoin = 'round'
           ctx.beginPath()
@@ -1138,7 +1150,9 @@ export default function Submit() {
         function clearCanvas() {
           const canvas = canvasRef.current
           if (!canvas) return
-          canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+          const ctx = canvas.getContext('2d')
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
         }
 
         return (
@@ -1197,7 +1211,7 @@ export default function Submit() {
                     ref={canvasRef}
                     width={540}
                     height={120}
-                    style={{ width: '100%', height: '120px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
+                    style={{ width: '100%', height: '120px', background: '#ffffff', border: '1px solid #2a2a2a', borderRadius: '8px', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
                     onMouseDown={startDraw}
                     onMouseMove={draw}
                     onMouseUp={endDraw}

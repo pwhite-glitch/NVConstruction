@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
@@ -90,6 +90,15 @@ export default function Submit() {
   const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
   const [savingSov, setSavingSov] = useState(false)
 
+  // Lien waiver state
+  const [lienWaiverSub, setLienWaiverSub] = useState(null)
+  const [signerName, setSignerName] = useState('')
+  const [savingWaiver, setSavingWaiver] = useState(false)
+  const [waiverMsg, setWaiverMsg] = useState('')
+  const canvasRef = useRef(null)
+  const isDrawing = useRef(false)
+  const lastPos = useRef({ x: 0, y: 0 })
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -116,7 +125,7 @@ export default function Submit() {
       const allJobIds = new Set(assignedJobs.map(j => j.id))
       const mergedJobs = [...assignedJobs, ...contractedJobs.filter(j => !allJobIds.has(j.id))]
       setJobs(mergedJobs)
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
+      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
       await loadMyContracts(session.user.id)
       await loadBidInvitations(session.user.email)
@@ -317,6 +326,94 @@ export default function Submit() {
     }
     setSavingSov(false)
     await loadJobSov(form.job_id)
+  }
+
+  function printLienWaiver(sub) {
+    const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+    const period = sub.billing_period
+      ? new Date(sub.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    const owner = sub.jobs?.owner_company || sub.jobs?.owner_name || 'Project Owner'
+    const signedAt = sub.lien_waiver_signed_at ? new Date(sub.lien_waiver_signed_at).toLocaleDateString() : null
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Lien Waiver</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 700px; margin: 40px auto; padding: 0 24px; color: #000; }
+  h1 { font-size: 16px; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 4px; }
+  .sub { font-size: 11px; color: #555; font-style: italic; margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid #ccc; margin-bottom: 16px; }
+  .cell { padding: 10px 12px; border-bottom: 1px solid #ddd; }
+  .cell:nth-child(odd) { border-right: 1px solid #ddd; }
+  .cell label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #888; margin-bottom: 3px; }
+  .cell span { font-size: 13px; font-weight: 600; }
+  .body { font-size: 12px; line-height: 1.8; color: #333; margin-bottom: 24px; border: 1px solid #ccc; padding: 16px; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+  .sig-line { border-bottom: 1px solid #000; margin-top: 40px; }
+  .sig-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-top: 4px; }
+  .sig-img { max-width: 200px; max-height: 60px; margin-top: 4px; }
+  @media print { .no-print { display: none; } }
+</style></head><body>
+<button class="no-print" onclick="window.print()" style="margin-bottom:24px;padding:10px 20px;background:#000;color:#fff;border:none;cursor:pointer;font-size:13px;">Print / Save as PDF</button>
+<p style="text-align:center;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#888;margin-bottom:8px;">Conditional Waiver and Release on Progress Payment</p>
+<h1 style="text-align:center;">Lien Waiver</h1>
+<p class="sub" style="text-align:center;">Effective upon receipt of payment in good funds</p>
+<div class="grid">
+  <div class="cell"><label>Claimant (Subcontractor)</label><span>${sub.company_name || ''}</span></div>
+  <div class="cell"><label>Hiring Party</label><span>NV Construction</span></div>
+  <div class="cell"><label>Project</label><span>#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</span></div>
+  <div class="cell"><label>Owner</label><span>${owner}</span></div>
+  <div class="cell"><label>Conditional Payment Amount</label><span style="font-size:16px;font-weight:800;">${amt}</span></div>
+  <div class="cell"><label>Through Date</label><span>${period}</span></div>
+</div>
+<div class="body">
+  <strong>Conditional Waiver and Release.</strong> This document, when signed, conditionally waives and releases any mechanic's lien, stop payment notice, or payment bond right the Claimant has for labor, services, equipment, or material furnished through the Through Date on the Project. The rights are waived and released only to the extent of the Conditional Payment Amount actually received in good funds, and this waiver is conditioned on receipt of such payment. Claimant retains all rights for amounts not covered by this payment.
+</div>
+<div class="sig-grid">
+  <div>
+    <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Authorized Signature</p>
+    ${sub.lien_waiver_signature ? `<img src="${sub.lien_waiver_signature}" class="sig-img" />` : '<div class="sig-line"></div>'}
+    <div class="sig-label">Signature</div>
+  </div>
+  <div>
+    <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Printed Name &amp; Title</p>
+    ${sub.lien_waiver_signer_name ? `<p style="margin:4px 0;font-size:14px;font-weight:600;">${sub.lien_waiver_signer_name}</p>` : '<div class="sig-line"></div>'}
+    <div class="sig-label">Name / Title</div>
+  </div>
+  <div>
+    <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Date Signed</p>
+    <p style="margin:4px 0;font-size:13px;">${signedAt || '_________________'}</p>
+    <div class="sig-label">Date</div>
+  </div>
+  <div>
+    <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Company</p>
+    <p style="margin:4px 0;font-size:13px;">${sub.company_name || '_________________'}</p>
+    <div class="sig-label">Company Name</div>
+  </div>
+</div>
+</body></html>`)
+    w.document.close()
+  }
+
+  async function submitLienWaiver() {
+    if (!signerName.trim()) return
+    const canvas = canvasRef.current
+    const signature = canvas ? canvas.toDataURL('image/png') : null
+    setSavingWaiver(true)
+    const res = await fetch('/api/lien-waiver-sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submission_id: lienWaiverSub.id, signer_name: signerName.trim(), signature }),
+    })
+    const result = await res.json()
+    if (result.error) { setWaiverMsg('Error: ' + result.error) }
+    else {
+      setLienWaiverSub(null)
+      setSignerName('')
+      setWaiverMsg('')
+      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
+      setSubmissions(subs || [])
+    }
+    setSavingWaiver(false)
   }
 
   async function handleSubmit(e) {
@@ -785,7 +882,7 @@ export default function Submit() {
               <h2 style={s.cardTitle}>Billing history</h2>
               {submissions.map(s2 => (
                 <div key={s2.id} style={{ padding: '14px 0', borderBottom: '1px solid #1e1e1e' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
                       <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
                       <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
@@ -796,7 +893,7 @@ export default function Submit() {
                         }
                       </p>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</div>
                         {s2.retainage_held > 0 && (
@@ -807,6 +904,21 @@ export default function Submit() {
                         )}
                       </div>
                       <span style={s.badge(s2.status)}>{s2.status}</span>
+                      {s2.status === 'approved' && (
+                        <button
+                          onClick={() => printLienWaiver(s2)}
+                          style={{ padding: '5px 12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
+                        >🖨 Print Waiver</button>
+                      )}
+                      {s2.status === 'approved' && !s2.lien_waiver_signed_at && (
+                        <button
+                          onClick={() => { setLienWaiverSub(s2); setSignerName(profile?.full_name || '') }}
+                          style={{ padding: '5px 12px', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '6px', color: '#e8590c', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
+                        >✍ Sign Waiver</button>
+                      )}
+                      {s2.lien_waiver_signed_at && (
+                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '700' }}>✓ Signed {new Date(s2.lien_waiver_signed_at).toLocaleDateString()}</span>
+                      )}
                     </div>
                   </div>
                   {s2.status === 'rejected' && s2.rejection_reason && (
@@ -977,6 +1089,146 @@ export default function Submit() {
         )}
 
       </main>
+
+      {/* ── LIEN WAIVER SIGNATURE MODAL ── */}
+      {lienWaiverSub && (() => {
+        const sub = lienWaiverSub
+        const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+        const period = sub.billing_period
+          ? new Date(sub.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+          : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        const owner = sub.jobs?.owner_company || sub.jobs?.owner_name || 'Project Owner'
+
+        function getPos(e, canvas) {
+          const r = canvas.getBoundingClientRect()
+          const src = e.touches ? e.touches[0] : e
+          return { x: src.clientX - r.left, y: src.clientY - r.top }
+        }
+
+        function startDraw(e) {
+          e.preventDefault()
+          const canvas = canvasRef.current
+          if (!canvas) return
+          isDrawing.current = true
+          lastPos.current = getPos(e, canvas)
+        }
+
+        function draw(e) {
+          e.preventDefault()
+          if (!isDrawing.current) return
+          const canvas = canvasRef.current
+          const ctx = canvas.getContext('2d')
+          const pos = getPos(e, canvas)
+          ctx.strokeStyle = '#f1f1f1'
+          ctx.lineWidth = 2
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          ctx.beginPath()
+          ctx.moveTo(lastPos.current.x, lastPos.current.y)
+          ctx.lineTo(pos.x, pos.y)
+          ctx.stroke()
+          lastPos.current = pos
+        }
+
+        function endDraw(e) {
+          e.preventDefault()
+          isDrawing.current = false
+        }
+
+        function clearCanvas() {
+          const canvas = canvasRef.current
+          if (!canvas) return
+          canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+        }
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, overflowY: 'auto', padding: '20px' }}>
+            <div style={{ maxWidth: '600px', margin: '0 auto', background: '#141414', border: '1px solid #222', borderRadius: '16px', overflow: 'hidden' }}>
+              <div style={{ padding: '24px 28px', borderBottom: '1px solid #222' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <p style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>Sign Lien Waiver</p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Conditional Waiver and Release on Progress Payment</p>
+                  </div>
+                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg('') }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                </div>
+              </div>
+
+              <div style={{ padding: '20px 28px' }}>
+                {/* Waiver details */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0', border: '1px solid #222', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', fontSize: '13px' }}>
+                  {[
+                    ['Claimant', sub.company_name],
+                    ['Hiring Party', 'NV Construction'],
+                    ['Project', `#${sub.jobs?.job_number} — ${sub.jobs?.project_name}`],
+                    ['Owner', owner],
+                    ['Payment Amount', amt],
+                    ['Through Date', period],
+                  ].map(([label, val], i) => (
+                    <div key={label} style={{ padding: '10px 14px', borderBottom: i < 4 ? '1px solid #1e1e1e' : 'none', borderRight: i % 2 === 0 ? '1px solid #1e1e1e' : 'none' }}>
+                      <div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '3px' }}>{label}</div>
+                      <div style={{ color: label === 'Payment Amount' ? '#e8590c' : '#f1f1f1', fontWeight: label === 'Payment Amount' ? '800' : '600' }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <p style={{ fontSize: '11px', color: '#555', lineHeight: '1.7', marginBottom: '20px', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px' }}>
+                  By signing below, I conditionally waive and release any mechanic's lien, stop payment notice, or payment bond right for labor, services, equipment, or materials furnished through the above Through Date, conditioned upon receipt of the above payment amount in good funds.
+                </p>
+
+                {/* Signer name */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Your full name & title *</label>
+                  <input
+                    style={{ width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }}
+                    value={signerName}
+                    onChange={e => setSignerName(e.target.value)}
+                    placeholder="John Smith, Owner"
+                  />
+                </div>
+
+                {/* Signature pad */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: '600', color: '#666', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Draw your signature *</label>
+                    <button type="button" onClick={clearCanvas} style={{ fontSize: '11px', color: '#888', background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}>Clear</button>
+                  </div>
+                  <canvas
+                    ref={canvasRef}
+                    width={540}
+                    height={120}
+                    style={{ width: '100%', height: '120px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
+                    onMouseDown={startDraw}
+                    onMouseMove={draw}
+                    onMouseUp={endDraw}
+                    onMouseLeave={endDraw}
+                    onTouchStart={startDraw}
+                    onTouchMove={draw}
+                    onTouchEnd={endDraw}
+                  />
+                  <p style={{ fontSize: '11px', color: '#444', marginTop: '5px' }}>Use your mouse or finger to draw your signature above</p>
+                </div>
+
+                {waiverMsg && <p style={{ fontSize: '13px', color: '#ff6b6b', marginBottom: '12px' }}>{waiverMsg}</p>}
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', paddingTop: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => printLienWaiver(sub)}
+                    style={{ padding: '10px 20px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}
+                  >🖨 Print blank form</button>
+                  <button
+                    type="button"
+                    disabled={savingWaiver || !signerName.trim()}
+                    onClick={submitLienWaiver}
+                    style={{ padding: '10px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: savingWaiver || !signerName.trim() ? 'not-allowed' : 'pointer', opacity: savingWaiver || !signerName.trim() ? 0.5 : 1, letterSpacing: '1px', textTransform: 'uppercase' }}
+                  >{savingWaiver ? 'Submitting...' : 'Submit signed waiver'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

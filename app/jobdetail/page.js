@@ -4106,6 +4106,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={s.coBadge(b.status)}>{b.status}</span>
                           {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
                           {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
+                          {b.status === 'approved' && b.lien_waiver_signed_at
+                            ? <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER SIGNED</span>
+                            : b.status === 'approved' && b.lien_waiver_sent_at
+                              ? <span style={{ fontSize: '10px', color: '#facc15', background: '#2a2000', border: '1px solid #4a4a00', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER PENDING</span>
+                              : null
+                          }
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(b.submitted_at).toLocaleDateString()}
@@ -4149,6 +4155,34 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <option value="owner">Owner pays</option>
                               <option value="nv">NV cuts check</option>
                             </select>
+                          )}
+                          {b.lien_waiver_signed_at && (
+                            <button style={s.btnSmall} onClick={() => {
+                              const amt = parseFloat(b.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                              const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                              const w = window.open('', '_blank')
+                              w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Signed Lien Waiver</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:0 24px;color:#000}.grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #ccc;border-radius:4px;overflow:hidden;margin-bottom:16px;font-size:13px}.cell{padding:10px 12px;border-bottom:1px solid #ddd}.cell:nth-child(odd){border-right:1px solid #ddd}.cell label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;margin-bottom:3px}.body{font-size:12px;line-height:1.8;color:#333;margin-bottom:24px;border:1px solid #ccc;padding:16px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}.sig-img{max-width:200px;max-height:60px}.sig-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-top:4px}@media print{.no-print{display:none}}</style></head><body>
+<button class="no-print" onclick="window.print()" style="margin-bottom:24px;padding:10px 20px;background:#000;color:#fff;border:none;cursor:pointer;font-size:13px;">Print / Save as PDF</button>
+<p style="text-align:center;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#888;margin-bottom:8px;">Conditional Waiver and Release on Progress Payment</p>
+<h1 style="text-align:center;font-size:16px;text-transform:uppercase;letter-spacing:2px;">Signed Lien Waiver</h1>
+<p style="text-align:center;font-size:11px;color:#555;font-style:italic;margin-bottom:24px;">Effective upon receipt of payment in good funds</p>
+<div class="grid">
+<div class="cell"><label>Claimant</label><span>${b.company_name}</span></div>
+<div class="cell"><label>Hiring Party</label><span>NV Construction</span></div>
+<div class="cell"><label>Project</label><span>#${job?.job_number} — ${job?.project_name}</span></div>
+<div class="cell"><label>Owner</label><span>${job?.owner_company || job?.owner_name || 'Project Owner'}</span></div>
+<div class="cell"><label>Payment Amount</label><span style="font-size:16px;font-weight:800;">${amt}</span></div>
+<div class="cell"><label>Through Date</label><span>${period}</span></div>
+</div>
+<div class="body">This document conditionally waives and releases any mechanic's lien, stop payment notice, or payment bond right the Claimant has for labor, services, equipment, or materials furnished through the Through Date on the Project, conditioned on receipt of the Conditional Payment Amount in good funds.</div>
+<div class="sig-grid">
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Signature</p>${b.lien_waiver_signature ? `<img src="${b.lien_waiver_signature}" class="sig-img" />` : ''}<div class="sig-label">Electronic signature</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Printed Name</p><p style="margin:4px 0;font-size:14px;font-weight:600;">${b.lien_waiver_signer_name || ''}</p><div class="sig-label">Name</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Date Signed</p><p style="margin:4px 0;font-size:13px;">${new Date(b.lien_waiver_signed_at).toLocaleDateString()}</p><div class="sig-label">Date</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Company</p><p style="margin:4px 0;font-size:13px;">${b.company_name}</p><div class="sig-label">Company</div></div>
+</div></body></html>`)
+                              w.document.close()
+                            }}>View Waiver</button>
                           )}
                           <button style={s.btnSmallOrange} onClick={() => {
                             if (!isEditing) loadBillingSov(b.id)

@@ -363,7 +363,6 @@ export default function Submit() {
       if (sovInserts.length > 0) {
         await supabase.from('billing_sov_lines').insert(sovInserts)
       }
-      fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: newSub.id }) }).catch(() => {})
       sendEmail(selectedJob?.pm_email || PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
         emailWrap(`
           <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>

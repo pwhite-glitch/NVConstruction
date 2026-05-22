@@ -328,6 +328,9 @@ export default function Dashboard() {
       reviewed_at: new Date().toISOString(),
       ...(status === 'rejected' ? { rejection_reason: rejectionReason || null } : {}),
     }).eq('id', sub.id)
+    if (status === 'approved') {
+      fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id }) }).catch(() => {})
+    }
     if (sub.sub_email) {
       const approved = status === 'approved'
       const color = approved ? '#4ade80' : '#ff6b6b'

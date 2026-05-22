@@ -572,9 +572,11 @@ export default function JobDetail() {
       }
     }
 
-    // Fall back: contract's budget_item_id + total amount
-    if (Object.keys(byBudgetItem).length === 0 && billing.sub_id) {
-      const contract = contracts.find(c => c.sub_id === billing.sub_id)
+    // Fall back: match by sub_id first, then company_name
+    if (Object.keys(byBudgetItem).length === 0) {
+      const contract = billing.sub_id
+        ? contracts.find(c => c.sub_id === billing.sub_id)
+        : contracts.find(c => c.vendor_name?.toLowerCase() === billing.company_name?.toLowerCase())
       if (contract?.budget_item_id) {
         byBudgetItem[contract.budget_item_id] = Number(billing.amount_billed || 0)
       }
@@ -950,7 +952,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
-    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }

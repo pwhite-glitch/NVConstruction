@@ -1911,6 +1911,15 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     await loadBillingForJob()
   }
 
+  async function assignBillingToDraw(billingId, drawRequestId) {
+    await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: billingId, draw_request_id: drawRequestId || null }),
+    })
+    await loadBillingForJob()
+  }
+
   async function toggleNvCutsCheck(billingId, current) {
     setTogglingNvCheck(billingId)
     await supabase.from('billing_submissions').update({ nv_cuts_check: !current }).eq('id', billingId)
@@ -4230,6 +4239,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
                           {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
                         </div>
+                        {drawRequests.length > 0 && (
+                          <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', color: '#444' }}>Draw:</span>
+                            <select
+                              value={b.draw_request_id || ''}
+                              onChange={e => assignBillingToDraw(b.id, e.target.value)}
+                              style={{ fontSize: '11px', padding: '3px 8px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', color: b.draw_request_id ? '#e8590c' : '#555', outline: 'none', cursor: 'pointer' }}
+                            >
+                              <option value="">— Unassigned —</option>
+                              {drawRequests.map(d => (
+                                <option key={d.id} value={d.id}>{d.title}{d.status !== 'open' ? ' (closed)' : ''}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ textAlign: 'right' }}>

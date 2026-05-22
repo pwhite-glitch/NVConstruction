@@ -597,6 +597,7 @@ export default function Submit() {
                           />
                           {sovDraftLines.length > 1 && (
                             <button
+                              type="button"
                               style={{ padding: '10px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
                               onClick={() => setSovDraftLines(lines => lines.filter((_, i) => i !== idx))}
                             >✕</button>
@@ -605,6 +606,7 @@ export default function Submit() {
                       ))}
 
                       <button
+                        type="button"
                         style={{ fontSize: '12px', color: '#888', background: 'none', border: '1px dashed #2a2a2a', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer', marginBottom: '1rem', width: '100%' }}
                         onClick={() => setSovDraftLines(lines => [...lines, { description: '', amount: '' }])}
                       >+ Add line item</button>
@@ -619,6 +621,7 @@ export default function Submit() {
                       )}
 
                       <button
+                        type="button"
                         style={{ ...s.btn, opacity: (savingSov || !isBalanced || sovDraftLines.every(l => !l.description.trim() || !l.amount)) ? 0.5 : 1 }}
                         disabled={savingSov || !isBalanced || sovDraftLines.every(l => !l.description.trim() || !l.amount)}
                         onClick={saveSovLines}

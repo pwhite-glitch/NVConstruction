@@ -154,6 +154,9 @@ export default function JobDetail() {
   const [showCreateDraw, setShowCreateDraw] = useState(false)
   const [drawForm, setDrawForm] = useState({ title: '', dc_ids: [] })
   const [creatingDraw, setCreatingDraw] = useState(false)
+  const [expandedDrawId, setExpandedDrawId] = useState(null)
+  const [drawAddCostIds, setDrawAddCostIds] = useState([])
+  const [savingDrawCosts, setSavingDrawCosts] = useState(false)
   const [editBillingForm, setEditBillingForm] = useState({})
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
@@ -943,7 +946,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
-    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests() }
+    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
@@ -3894,38 +3897,143 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {drawRequests.length === 0 && !showCreateDraw && (
                 <p style={{ color: '#444', fontSize: '14px' }}>No draw requests yet. Create one to let subs bill against a specific draw.</p>
               )}
-              {drawRequests.map(dr => (
-                <div key={dr.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '6px', background: dr.status === 'open' ? '#140a00' : '#0a0a0a' }}>
-                  <div>
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{dr.title}</span>
-                    <span style={{ fontSize: '11px', color: dr.status === 'open' ? '#e8590c' : '#555', background: dr.status === 'open' ? '#2a1200' : '#1a1a1a', border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#2a2a2a'}`, borderRadius: '99px', padding: '2px 8px', marginLeft: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {dr.status}
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
-                      {billingSubmissions.filter(b => b.draw_request_id === dr.id).length} submission{billingSubmissions.filter(b => b.draw_request_id === dr.id).length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    {dr.status === 'open' ? (
-                      <button style={s.btnSmall} onClick={async () => {
-                        await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'closed' }) })
-                        await loadDrawRequests()
-                      }}>Close draw</button>
-                    ) : (
-                      <button style={s.btnSmall} onClick={async () => {
-                        await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'open' }) })
-                        await loadDrawRequests()
-                      }}>Reopen</button>
+              {drawRequests.map(dr => {
+                const isOpen = expandedDrawId === dr.id
+                const taggedCosts = directCosts.filter(c => c.draw_request_id === dr.id)
+                const undrawnCosts = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id)
+                const drawBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
+                const taggedTotal = taggedCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+                return (
+                  <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                    {/* Header row — click to expand */}
+                    <div
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: dr.status === 'open' ? '#140a00' : '#0a0a0a', cursor: 'pointer' }}
+                      onClick={() => { setExpandedDrawId(isOpen ? null : dr.id); setDrawAddCostIds([]) }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{dr.title}</span>
+                        <span style={{ fontSize: '11px', color: dr.status === 'open' ? '#e8590c' : '#555', background: dr.status === 'open' ? '#2a1200' : '#1a1a1a', border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#2a2a2a'}`, borderRadius: '99px', padding: '2px 8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          {dr.status}
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#555' }}>{taggedCosts.length} cost{taggedCosts.length !== 1 ? 's' : ''}</span>
+                        {taggedTotal > 0 && <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700' }}>${taggedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                        <span style={{ fontSize: '11px', color: '#555' }}>{drawBillings.length} billing{drawBillings.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                        {dr.status === 'open' ? (
+                          <button style={s.btnSmall} onClick={async () => {
+                            await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'closed' }) })
+                            await loadDrawRequests()
+                          }}>Close</button>
+                        ) : (
+                          <button style={s.btnSmall} onClick={async () => {
+                            await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'open' }) })
+                            await loadDrawRequests()
+                          }}>Reopen</button>
+                        )}
+                        <button style={s.btnSmallRed} onClick={async () => {
+                          if (!window.confirm('Delete this draw? Billing submissions linked to it will be unlinked.')) return
+                          await fetch(`/api/draw-requests?id=${dr.id}`, { method: 'DELETE' })
+                          await loadDrawRequests()
+                          await loadBillingForJob()
+                        }}>Delete</button>
+                        <span style={{ color: '#555', fontSize: '14px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
+                      </div>
+                    </div>
+
+                    {/* Expanded body */}
+                    {isOpen && (
+                      <div style={{ borderTop: `1px solid ${dr.status === 'open' ? '#2a1200' : '#1a1a1a'}`, padding: '1rem 1.25rem', background: '#080808' }}>
+
+                        {/* Tagged direct costs */}
+                        <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Direct costs drawn ({taggedCosts.length})</p>
+                        {taggedCosts.length === 0 ? (
+                          <p style={{ fontSize: '13px', color: '#444', marginBottom: '1rem' }}>No direct costs tagged to this draw yet.</p>
+                        ) : (
+                          <div style={{ marginBottom: '1rem' }}>
+                            {taggedCosts.map(dc => (
+                              <div key={dc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                                <div>
+                                  <span style={{ color: '#ccc' }}>{dc.description}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{dc.cost_date} · {dc.category}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(dc.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                  <button
+                                    style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
+                                    onClick={async () => {
+                                      await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_dc_ids: [dc.id] }) })
+                                      await loadDirectCosts()
+                                    }}
+                                  >Remove</button>
+                                </div>
+                              </div>
+                            ))}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 0', fontSize: '13px', fontWeight: '800', color: '#e8590c' }}>
+                              Total: ${taggedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Add undrawn costs */}
+                        {undrawnCosts.length > 0 && (
+                          <>
+                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Add direct costs to this draw</p>
+                            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                              {undrawnCosts.map(dc => (
+                                <label key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={drawAddCostIds.includes(dc.id)}
+                                    onChange={e => setDrawAddCostIds(ids => e.target.checked ? [...ids, dc.id] : ids.filter(x => x !== dc.id))}
+                                    style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }}
+                                  />
+                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{dc.description}</span>
+                                  <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{dc.cost_date}</span>
+                                  <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(dc.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <button
+                              style={{ ...s.btn, opacity: (savingDrawCosts || drawAddCostIds.length === 0) ? 0.4 : 1, marginBottom: '1rem' }}
+                              disabled={savingDrawCosts || drawAddCostIds.length === 0}
+                              onClick={async () => {
+                                setSavingDrawCosts(true)
+                                await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_dc_ids: drawAddCostIds }) })
+                                setDrawAddCostIds([])
+                                await loadDirectCosts()
+                                setSavingDrawCosts(false)
+                              }}
+                            >{savingDrawCosts ? 'Saving...' : `Draw ${drawAddCostIds.length > 0 ? drawAddCostIds.length + ' ' : ''}selected cost${drawAddCostIds.length !== 1 ? 's' : ''}`}</button>
+                          </>
+                        )}
+                        {undrawnCosts.length === 0 && (
+                          <p style={{ fontSize: '12px', color: '#444', marginBottom: '1rem' }}>No undrawn approved direct costs available.</p>
+                        )}
+
+                        {/* Billing submissions for this draw */}
+                        {drawBillings.length > 0 && (
+                          <>
+                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.25rem' }}>Billing submissions ({drawBillings.length})</p>
+                            {drawBillings.map(b => (
+                              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                                <div>
+                                  <span style={{ color: '#ccc', fontWeight: '600' }}>{b.company_name}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{new Date(b.submitted_at).toLocaleDateString()}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ color: '#f1f1f1', fontWeight: '700' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                                  <span style={s.coBadge(b.status)}>{b.status}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
                     )}
-                    <button style={s.btnSmallRed} onClick={async () => {
-                      if (!window.confirm('Delete this draw? Billing submissions linked to it will be unlinked.')) return
-                      await fetch(`/api/draw-requests?id=${dr.id}`, { method: 'DELETE' })
-                      await loadDrawRequests()
-                      await loadBillingForJob()
-                    }}>Delete</button>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             <div style={s.card}>

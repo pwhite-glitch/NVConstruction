@@ -47,18 +47,21 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { id, status, title } = await request.json()
+  const { id, status, title, add_dc_ids, remove_dc_ids } = await request.json()
   const updates = {}
-  if (status) updates.status = status
-  if (title) updates.title = title
-  const { data, error } = await adminSupabase
-    .from('draw_requests')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ draw: data })
+  if (status !== undefined) updates.status = status
+  if (title !== undefined) updates.title = title
+  if (Object.keys(updates).length > 0) {
+    const { error } = await adminSupabase.from('draw_requests').update(updates).eq('id', id)
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+  }
+  if (add_dc_ids && add_dc_ids.length > 0) {
+    await adminSupabase.from('direct_costs').update({ draw_request_id: id }).in('id', add_dc_ids)
+  }
+  if (remove_dc_ids && remove_dc_ids.length > 0) {
+    await adminSupabase.from('direct_costs').update({ draw_request_id: null }).in('id', remove_dc_ids)
+  }
+  return Response.json({ ok: true })
 }
 
 export async function DELETE(request) {

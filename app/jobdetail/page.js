@@ -1018,7 +1018,9 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }
     if (activeTab === 'labor' && !laborLoaded) { loadLaborData() }
-    if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadContracts() }
+    if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadPrelimNotices() }
+    if (activeTab === 'punch') { loadPunchItems(); loadContracts() }
+    if (activeTab === 'retainage') { loadRetainageReleases(); loadContracts(); loadBillingForJob() }
     if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
     if (activeTab === 'prelim') { loadPrelimNotices() }
     if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
@@ -2645,6 +2647,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'contacts', label: 'Contacts', badge: jobContacts.length || null },
                   { key: 'documents', label: 'Documents', badge: jobDocs.length || null },
                   { key: 'schedule', label: 'Schedule' },
+                  { key: 'closeout', label: 'Closeout' },
                 ],
               },
               {
@@ -2656,6 +2659,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : directCosts.length || null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
                   { key: 'prime', label: 'Prime Contract' },
                   { key: 'cashflow', label: 'Cash Flow' },
+                  { key: 'retainage', label: 'Retainage' },
+                  { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
                 ],
               },
               {
@@ -2663,8 +2668,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 items: [
                   { key: 'field', label: 'Field', badge: fieldRfis.filter(r => r.status === 'open').length > 0 ? `${fieldRfis.filter(r => r.status === 'open').length} RFI` : null, alert: fieldRfis.filter(r => r.status === 'open').length > 0 },
                   { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
-                  { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
-                  { key: 'closeout', label: 'Closeout', badge: punchItems.filter(p => p.status !== 'approved').length || null },
+                  { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
                 ],
               },
               {
@@ -6539,91 +6543,156 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           const totalRetainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
           const totalReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
           const retainageBalance = totalRetainageHeld - totalReleased
+          const activeNotices = prelimNotices.filter(n => n.status === 'active')
           const fmt = n => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+          const allClear = openItems.length === 0 && subComplete.length === 0 && retainageBalance <= 0 && activeNotices.length === 0
 
           return (
             <>
-              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(4, 1fr)' }} className="rx-stats">
-                <div style={s.statCard}><div style={s.statLabel}>Open items</div><div style={s.statValue(openItems.length ? '#e8590c' : '#4ade80')}>{openItems.length}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Awaiting approval</div><div style={s.statValue(subComplete.length ? '#facc15' : null)}>{subComplete.length}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Approved complete</div><div style={s.statValue('#4ade80')}>{approved.length}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Retainage balance</div><div style={s.statValue(retainageBalance > 0 ? '#facc15' : null)}>{fmt(retainageBalance)}</div></div>
-              </div>
-
-              {/* Punch list */}
-              <div style={s.card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ ...s.cardTitle, margin: 0 }}>Punch List ({punchItems.length})</p>
-                  <button style={s.btnSmallOrange} onClick={() => setShowAddPunch(v => !v)}>{showAddPunch ? 'Cancel' : '+ Add Item'}</button>
+              {allClear ? (
+                <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>✓</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#4ade80' }}>Project ready to close</div>
+                  <div style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, marginTop: '4px' }}>All punch items approved, retainage released, and no active lien notices.</div>
                 </div>
+              ) : (
+                <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '13px', color: '#e8590c' }}>
+                  <strong>Project not yet ready to close.</strong> Resolve the items below.
+                </div>
+              )}
 
-                {showAddPunch && (
-                  <div style={s.inlineForm}>
-                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                      <div><label style={s.label}>Title *</label><input style={s.input} value={punchForm.title} onChange={e => setPunchForm(f => ({ ...f, title: e.target.value }))} placeholder="What needs to be done" /></div>
-                      <div><label style={s.label}>Assign to sub</label>
-                        <select style={s.input} value={punchForm.assigned_sub_id} onChange={e => {
-                          const sub = subs.find(s => s.sub_id === e.target.value)
-                          setPunchForm(f => ({ ...f, assigned_sub_id: e.target.value, assigned_company: sub?.company_name || '' }))
-                        }}>
-                          <option value="">— Not assigned —</option>
-                          {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                      <div><label style={s.label}>Description</label><input style={s.input} value={punchForm.description} onChange={e => setPunchForm(f => ({ ...f, description: e.target.value }))} /></div>
-                      <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={punchForm.due_date} onChange={e => setPunchForm(f => ({ ...f, due_date: e.target.value }))} /></div>
-                    </div>
-                    <button style={{ ...s.btn, opacity: savingPunch || !punchForm.title ? 0.6 : 1 }} disabled={savingPunch || !punchForm.title} onClick={addPunchItem}>{savingPunch ? 'Adding...' : 'Add Item'}</button>
-                  </div>
-                )}
-
-                {punchItems.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No punch list items yet.</p> : punchItems.map(item => {
-                  const statusColor = { open: '#e8590c', sub_complete: '#facc15', approved: '#4ade80', rejected: '#ff6b6b' }
-                  const color = statusColor[item.status] || '#888'
-                  return (
-                    <div key={item.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{item.title}</span>
-                            <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', color, background: color + '22', border: `1px solid ${color}44` }}>{item.status.replace('_', ' ')}</span>
-                            {item.assigned_company && <span style={{ fontSize: '12px', color: '#555' }}>{item.assigned_company}</span>}
-                            {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#ff6b6b' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
-                          </div>
-                          {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{item.description}</p>}
-                          {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#888', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                          {item.status === 'sub_complete' && (
-                            <>
-                              <button style={s.btnSmallGreen} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'approved', punchNotes[item.id])}>Approve</button>
-                              <button style={s.btnSmallRed} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'rejected', punchNotes[item.id])}>Reject</button>
-                            </>
-                          )}
-                          {item.status === 'open' && (
-                            <button style={s.btnSmall} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'approved', '')}>Mark Done</button>
-                          )}
-                          {item.status === 'rejected' && (
-                            <button style={s.btnSmall} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'open', '')}>Reopen</button>
-                          )}
-                          <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/punch-list?id=${item.id}`, { method: 'DELETE' }); await loadPunchItems() }}>Del</button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(4, 1fr)' }} className="rx-stats">
+                <div style={s.statCard}>
+                  <div style={s.statLabel}>Open punch items</div>
+                  <div style={s.statValue(openItems.length ? '#e8590c' : '#4ade80')}>{openItems.length}</div>
+                  {subComplete.length > 0 && <div style={{ fontSize: '12px', color: '#facc15', marginTop: '4px' }}>{subComplete.length} awaiting approval</div>}
+                  {openItems.length === 0 && subComplete.length === 0 && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>All clear</div>}
+                </div>
+                <div style={s.statCard}>
+                  <div style={s.statLabel}>Retainage balance</div>
+                  <div style={s.statValue(retainageBalance > 0 ? '#facc15' : '#4ade80')}>{fmt(retainageBalance)}</div>
+                  <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{fmt(totalReleased)} released</div>
+                </div>
+                <div style={s.statCard}>
+                  <div style={s.statLabel}>Active lien notices</div>
+                  <div style={s.statValue(activeNotices.length ? '#ff6b6b' : '#4ade80')}>{activeNotices.length}</div>
+                  {activeNotices.length === 0 && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>Clear</div>}
+                </div>
+                <div style={s.statCard}>
+                  <div style={s.statLabel}>Punch approved</div>
+                  <div style={s.statValue('#4ade80')}>{approved.length} / {punchItems.length}</div>
+                </div>
               </div>
 
-              {/* Retainage releases */}
+              <div style={s.card}>
+                <p style={s.cardTitle}>Closeout checklist</p>
+                {[
+                  { label: 'All punch list items approved', done: openItems.length === 0 && subComplete.length === 0, action: 'punch', actionLabel: 'View Punch List' },
+                  { label: 'Retainage fully released', done: retainageBalance <= 0, action: 'retainage', actionLabel: 'View Retainage' },
+                  { label: 'No active lien notices', done: activeNotices.length === 0, action: 'prelim', actionLabel: 'View Lien Log' },
+                  { label: 'All sub billing approved', done: billingSubmissions.every(b => b.status !== 'pending'), action: 'billing', actionLabel: 'View Billing' },
+                ].map(item => (
+                  <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '16px' }}>{item.done ? '✓' : '○'}</span>
+                      <span style={{ fontSize: '14px', color: item.done ? '#4ade80' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}</span>
+                    </div>
+                    {!item.done && (
+                      <button style={s.btnSmall} onClick={() => setActiveTab(item.action)}>{item.actionLabel}</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )
+        })()}
+
+        {/* ── PUNCH LIST TAB ── */}
+        {activeTab === 'punch' && (
+          <div style={s.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <p style={{ ...s.cardTitle, margin: 0 }}>Punch List ({punchItems.length})</p>
+              <button style={s.btnSmallOrange} onClick={() => setShowAddPunch(v => !v)}>{showAddPunch ? 'Cancel' : '+ Add Item'}</button>
+            </div>
+
+            {showAddPunch && (
+              <div style={s.inlineForm}>
+                <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div><label style={s.label}>Title *</label><input style={s.input} value={punchForm.title} onChange={e => setPunchForm(f => ({ ...f, title: e.target.value }))} placeholder="What needs to be done" /></div>
+                  <div><label style={s.label}>Assign to sub</label>
+                    <select style={s.input} value={punchForm.assigned_sub_id} onChange={e => {
+                      const sub = subs.find(s => s.sub_id === e.target.value)
+                      setPunchForm(f => ({ ...f, assigned_sub_id: e.target.value, assigned_company: sub?.company_name || '' }))
+                    }}>
+                      <option value="">— Not assigned —</option>
+                      {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div><label style={s.label}>Description</label><input style={s.input} value={punchForm.description} onChange={e => setPunchForm(f => ({ ...f, description: e.target.value }))} /></div>
+                  <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={punchForm.due_date} onChange={e => setPunchForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                </div>
+                <button style={{ ...s.btn, opacity: savingPunch || !punchForm.title ? 0.6 : 1 }} disabled={savingPunch || !punchForm.title} onClick={addPunchItem}>{savingPunch ? 'Adding...' : 'Add Item'}</button>
+              </div>
+            )}
+
+            {punchItems.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No punch list items yet.</p> : punchItems.map(item => {
+              const statusColor = { open: '#e8590c', sub_complete: '#facc15', approved: '#4ade80', rejected: '#ff6b6b' }
+              const color = statusColor[item.status] || '#888'
+              return (
+                <div key={item.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{item.title}</span>
+                        <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', color, background: color + '22', border: `1px solid ${color}44` }}>{item.status.replace('_', ' ')}</span>
+                        {item.assigned_company && <span style={{ fontSize: '12px', color: '#555' }}>{item.assigned_company}</span>}
+                        {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#ff6b6b' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
+                      </div>
+                      {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{item.description}</p>}
+                      {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#888', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      {item.status === 'sub_complete' && (
+                        <>
+                          <button style={s.btnSmallGreen} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'approved', punchNotes[item.id])}>Approve</button>
+                          <button style={s.btnSmallRed} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'rejected', punchNotes[item.id])}>Reject</button>
+                        </>
+                      )}
+                      {item.status === 'open' && (
+                        <button style={s.btnSmall} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'approved', '')}>Mark Done</button>
+                      )}
+                      {item.status === 'rejected' && (
+                        <button style={s.btnSmall} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'open', '')}>Reopen</button>
+                      )}
+                      <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/punch-list?id=${item.id}`, { method: 'DELETE' }); await loadPunchItems() }}>Del</button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── RETAINAGE TAB ── */}
+        {activeTab === 'retainage' && (() => {
+          const totalRetainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
+          const totalReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
+          const retainageBalance = totalRetainageHeld - totalReleased
+          const fmt = n => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+          return (
+            <>
+              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(3, 1fr)' }} className="rx-stats">
+                <div style={s.statCard}><div style={s.statLabel}>Total held</div><div style={s.statValue('#facc15')}>{fmt(totalRetainageHeld)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Released</div><div style={s.statValue('#4ade80')}>{fmt(totalReleased)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Balance remaining</div><div style={s.statValue(retainageBalance > 0 ? '#facc15' : '#4ade80')}>{fmt(retainageBalance)}</div></div>
+              </div>
+
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <div>
-                    <p style={{ ...s.cardTitle, margin: '0 0 4px' }}>Retainage ({fmt(retainageBalance)} remaining)</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>{fmt(totalRetainageHeld)} held · {fmt(totalReleased)} released</p>
-                  </div>
-                  <button style={s.btnSmallOrange} onClick={() => setShowReleaseForm(v => !v)}>{showReleaseForm ? 'Cancel' : '+ Release'}</button>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Retainage Releases</p>
+                  <button style={s.btnSmallOrange} onClick={() => setShowReleaseForm(v => !v)}>{showReleaseForm ? 'Cancel' : '+ Record Release'}</button>
                 </div>
 
                 {showReleaseForm && (
@@ -6648,7 +6717,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 )}
 
-                {retainageReleases.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No retainage releases recorded.</p> : retainageReleases.map(r => (
+                {retainageReleases.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No retainage releases recorded yet.</p> : retainageReleases.map(r => (
                   <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
                     <div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{r.company_name}</div>

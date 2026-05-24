@@ -90,6 +90,12 @@ export default function Field() {
   const [docCategory, setDocCategory] = useState('plans')
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
+  const [punchItems, setPunchItems] = useState([])
+  const [punchForm, setPunchForm] = useState({ title: '', description: '', due_date: '' })
+  const [showPunchForm, setShowPunchForm] = useState(false)
+  const [submittingPunch, setSubmittingPunch] = useState(false)
+  const [updatingPunch, setUpdatingPunch] = useState(null)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -115,6 +121,7 @@ export default function Field() {
     else if (activeTab === 'subs') { loadSubContacts(); loadJobContacts() }
     else if (activeTab === 'costs') loadDirectCosts()
     else if (activeTab === 'docs') loadJobDocs()
+    else if (activeTab === 'punch') loadPunchItems()
   }, [selectedJobId, activeTab])
 
   async function loadDailyReports() {
@@ -154,6 +161,12 @@ export default function Field() {
   async function loadJobDocs() {
     const { data } = await supabase.from('job_documents').select('*').eq('job_id', selectedJobId).order('uploaded_at', { ascending: false })
     setJobDocs(data || [])
+  }
+
+  async function loadPunchItems() {
+    const res = await fetch(`/api/punch-list?job_id=${selectedJobId}`)
+    const { items } = await res.json()
+    setPunchItems(items || [])
   }
 
   async function uploadJobDoc(file) {
@@ -366,6 +379,9 @@ export default function Field() {
                   <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
                   <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>
                     Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
+                  </button>
+                  <button style={s.tab(activeTab === 'punch')} onClick={() => setActiveTab('punch')}>
+                    Punch List{punchItems.filter(p => p.status === 'open').length > 0 ? ` (${punchItems.filter(p => p.status === 'open').length})` : ''}
                   </button>
                 </div>
 
@@ -950,6 +966,120 @@ export default function Field() {
                         <p style={{ color: '#555', margin: 0 }}>No documents uploaded yet for this job.</p>
                       </div>
                     )}
+                  </>
+                )}
+
+                {/* ── PUNCH LIST ── */}
+                {activeTab === 'punch' && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
+                        {punchItems.length} item{punchItems.length !== 1 ? 's' : ''}{punchItems.filter(p => p.status === 'open').length > 0 ? ` · ${punchItems.filter(p => p.status === 'open').length} open` : ''}
+                      </p>
+                      <button style={s.btnSm('orange')} onClick={() => setShowPunchForm(v => !v)}>
+                        {showPunchForm ? 'Cancel' : '+ Add item'}
+                      </button>
+                    </div>
+
+                    {showPunchForm && (
+                      <div style={s.card}>
+                        <h2 style={s.cardTitle}>Add punch list item</h2>
+                        <form onSubmit={async e => {
+                          e.preventDefault()
+                          setSubmittingPunch(true)
+                          await fetch('/api/punch-list', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ job_id: selectedJobId, title: punchForm.title, description: punchForm.description || null, due_date: punchForm.due_date || null, created_by: user.id })
+                          })
+                          setPunchForm({ title: '', description: '', due_date: '' })
+                          setShowPunchForm(false)
+                          await loadPunchItems()
+                          setSubmittingPunch(false)
+                        }}>
+                          <div style={{ marginBottom: '1rem' }}>
+                            <label style={s.label}>Item *</label>
+                            <input style={s.input} required value={punchForm.title} onChange={e => setPunchForm(f => ({ ...f, title: e.target.value }))} placeholder="Fix cracked drywall in room 204..." />
+                          </div>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
+                            <div>
+                              <label style={s.label}>Description</label>
+                              <input style={s.input} value={punchForm.description} onChange={e => setPunchForm(f => ({ ...f, description: e.target.value }))} placeholder="Additional details..." />
+                            </div>
+                            <div>
+                              <label style={s.label}>Due date</label>
+                              <input type="date" style={s.input} value={punchForm.due_date} onChange={e => setPunchForm(f => ({ ...f, due_date: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button type="submit" disabled={submittingPunch} style={{ ...s.btn, opacity: submittingPunch ? 0.6 : 1 }}>
+                              {submittingPunch ? 'Adding...' : 'Add item'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
+                    {punchItems.length === 0 && !showPunchForm && (
+                      <div style={s.empty}>No punch list items yet.<br />Add items as you walk the site.</div>
+                    )}
+
+                    {punchItems.map(item => (
+                      <div key={item.id} style={{ ...s.row, border: `1px solid ${item.status === 'approved' ? '#1a4a1a' : item.status === 'sub_complete' ? '#1a2a3a' : item.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: item.status === 'approved' ? '#4ade80' : '#f1f1f1' }}>{item.title}</span>
+                              <span style={s.badge(item.status === 'sub_complete' ? 'partial' : item.status)}>
+                                {item.status === 'sub_complete' ? 'ready to inspect' : item.status}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>
+                              {item.assigned_company && `${item.assigned_company} · `}
+                              {item.due_date && `Due ${new Date(item.due_date + 'T12:00:00').toLocaleDateString()}`}
+                              {item.completed_at && ` · Completed ${new Date(item.completed_at).toLocaleDateString()}`}
+                            </div>
+                            {item.description && <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>{item.description}</div>}
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            {item.status === 'open' && (
+                              <button
+                                style={{ ...s.btnSm('green'), opacity: updatingPunch === item.id ? 0.6 : 1 }}
+                                disabled={updatingPunch === item.id}
+                                onClick={async () => {
+                                  setUpdatingPunch(item.id)
+                                  await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'sub_complete' }) })
+                                  await loadPunchItems()
+                                  setUpdatingPunch(null)
+                                }}
+                              >
+                                {updatingPunch === item.id ? '...' : 'Mark done'}
+                              </button>
+                            )}
+                            {item.status === 'sub_complete' && (
+                              <button
+                                style={{ ...s.btnSm(''), opacity: updatingPunch === item.id ? 0.6 : 1 }}
+                                disabled={updatingPunch === item.id}
+                                onClick={async () => {
+                                  setUpdatingPunch(item.id)
+                                  await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'open' }) })
+                                  await loadPunchItems()
+                                  setUpdatingPunch(null)
+                                }}
+                              >
+                                {updatingPunch === item.id ? '...' : 'Reopen'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {item.pm_notes && (
+                          <div style={{ background: '#0a1a2a', borderTop: '1px solid #1a3a5a', padding: '10px 16px' }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>PM Notes</p>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#aaa', lineHeight: '1.5' }}>{item.pm_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </>
                 )}
 

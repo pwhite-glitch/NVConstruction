@@ -90,6 +90,21 @@ export default function Submit() {
   const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
   const [savingSov, setSavingSov] = useState(false)
 
+  // RFI state
+  const [rfis, setRfis] = useState([])
+  const [rfiForm, setRfiForm] = useState({ job_id: '', question: '', title: '' })
+  const [submittingRfi, setSubmittingRfi] = useState(false)
+  const [expandedRfiId, setExpandedRfiId] = useState(null)
+
+  // Messages state
+  const [jobMessages, setJobMessages] = useState({}) // keyed by job_id
+  const [messageDraft, setMessageDraft] = useState({})
+  const [sendingMessageFor, setSendingMessageFor] = useState(null)
+  const [selectedMessageJob, setSelectedMessageJob] = useState('')
+
+  // Punch list (sub view)
+  const [myPunchItems, setMyPunchItems] = useState([])
+
   // Change order approval state
   const [respondingCO, setRespondingCO] = useState(null)
   const [coDisputeReason, setCoDisputeReason] = useState('')
@@ -135,6 +150,7 @@ export default function Submit() {
       setSubmissions(subs || [])
       await loadMyContracts(session.user.id)
       await loadBidInvitations(session.user.email)
+      await loadMyRfis(session.user.id)
       const { data: dir } = await supabase.from('sub_directory').select('*').eq('email', session.user.email).maybeSingle()
       if (dir) { setDirEntry(dir); setDocsCoiExpiry(dir.coi_expiration?.split('T')[0] || '') }
     }
@@ -144,6 +160,54 @@ export default function Submit() {
   async function loadBidInvitations(email) {
     const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*)').eq('sub_email', email).order('sent_at', { ascending: false })
     setBidInvitations(data || [])
+  }
+
+  async function loadMyRfis(userId) {
+    const { data } = await supabase.from('rfis').select('*, jobs(job_number, project_name)').eq('sub_id', userId).order('created_at', { ascending: false })
+    setRfis(data || [])
+  }
+
+  async function submitRfi() {
+    if (!rfiForm.job_id || !rfiForm.question || !rfiForm.title) return
+    setSubmittingRfi(true)
+    const { data: existing } = await supabase.from('rfis').select('number').eq('job_id', rfiForm.job_id).order('number', { ascending: false }).limit(1)
+    const nextNum = ((existing?.[0]?.number) || 0) + 1
+    await supabase.from('rfis').insert({ job_id: rfiForm.job_id, sub_id: user.id, title: rfiForm.title, question: rfiForm.question, status: 'open', number: nextNum })
+    setRfiForm({ job_id: rfiForm.job_id, question: '', title: '' })
+    setSubmittingRfi(false)
+    await loadMyRfis(user.id)
+  }
+
+  async function loadMessages(jobId) {
+    const res = await fetch(`/api/messages?job_id=${jobId}&sub_id=${user.id}`)
+    const { messages } = await res.json()
+    setJobMessages(prev => ({ ...prev, [jobId]: messages || [] }))
+  }
+
+  async function sendMessage(jobId) {
+    const msg = messageDraft[jobId]?.trim()
+    if (!msg) return
+    setSendingMessageFor(jobId)
+    await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, sub_id: user.id, sender_id: user.id, sender_name: profile?.company_name || profile?.full_name || 'Sub', sender_role: 'sub', message: msg }),
+    })
+    setMessageDraft(prev => ({ ...prev, [jobId]: '' }))
+    setSendingMessageFor(null)
+    await loadMessages(jobId)
+  }
+
+  async function loadMyPunchItems(userId) {
+    const jobIds = jobs.map(j => j.id)
+    if (jobIds.length === 0) { setMyPunchItems([]); return }
+    const results = []
+    for (const jid of jobIds) {
+      const res = await fetch(`/api/punch-list?job_id=${jid}&sub_id=${userId}`)
+      const { items } = await res.json()
+      results.push(...(items || []))
+    }
+    setMyPunchItems(results)
   }
 
   async function uploadDocFile(file, folder) {
@@ -563,6 +627,13 @@ export default function Submit() {
             Bid Invites{bidInvitations.length > 0 ? ` (${bidInvitations.length})` : ''}
           </button>
           <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>My Documents</button>
+          <button style={s.tab(activeTab === 'rfis')} onClick={() => setActiveTab('rfis')}>
+            RFIs{rfis.filter(r => r.status === 'answered').length > 0 ? ` (${rfis.filter(r => r.status === 'answered').length} answered)` : rfis.length > 0 ? ` (${rfis.length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'messages')} onClick={() => { setActiveTab('messages'); if (jobs.length > 0 && !selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) } }}>Messages</button>
+          <button style={s.tab(activeTab === 'punch')} onClick={() => { setActiveTab('punch'); if (user) loadMyPunchItems(user.id) }}>
+            Punch List{myPunchItems.filter(p => p.status === 'open').length > 0 ? ` (${myPunchItems.filter(p => p.status === 'open').length})` : ''}
+          </button>
         </div>
 
         {/* ── SUBMIT BILLING TAB ── */}
@@ -1173,6 +1244,205 @@ export default function Submit() {
                   </button>
                   {docsSaved && <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Saved — NV Construction can now view your documents.</span>}
                 </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── RFIs TAB ── */}
+        {activeTab === 'rfis' && (
+          <div style={s.card}>
+            <h2 style={s.cardTitle}>RFIs (Requests for Information)</h2>
+
+            {/* Submit new RFI */}
+            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>Submit new RFI</p>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={s.label}>Project</label>
+                <select style={s.input} value={rfiForm.job_id} onChange={e => setRfiForm(f => ({ ...f, job_id: e.target.value }))}>
+                  <option value="">Select a project...</option>
+                  {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={s.label}>Subject / title</label>
+                <input style={s.input} value={rfiForm.title} onChange={e => setRfiForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Clarify concrete spec at Grid A3" />
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={s.label}>Question</label>
+                <textarea style={{ ...s.input, resize: 'vertical' }} rows={3} value={rfiForm.question} onChange={e => setRfiForm(f => ({ ...f, question: e.target.value }))} placeholder="Describe your question in detail..." />
+              </div>
+              <button
+                style={{ ...s.btn, opacity: submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question ? 0.5 : 1 }}
+                disabled={submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question}
+                onClick={submitRfi}
+              >{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
+            </div>
+
+            {/* RFI list */}
+            {rfis.length === 0 ? (
+              <p style={{ color: '#555', fontSize: '14px' }}>No RFIs submitted yet.</p>
+            ) : rfis.map(rfi => {
+              const isExp = expandedRfiId === rfi.id
+              const statusColor = rfi.status === 'answered' ? '#4ade80' : rfi.status === 'closed' ? '#555' : '#e8590c'
+              const statusBg = rfi.status === 'answered' ? '#0a2a0a' : rfi.status === 'closed' ? '#1a1a1a' : '#2a1200'
+              const statusBorder = rfi.status === 'answered' ? '#1a4a1a' : rfi.status === 'closed' ? '#2a2a2a' : '#4a2200'
+              return (
+                <div key={rfi.id} style={s.contractRow}>
+                  <div style={s.contractRowHeader} onClick={() => setExpandedRfiId(isExp ? null : rfi.id)}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                        {rfi.number && <span style={{ fontSize: '11px', color: '#555', fontWeight: '700' }}>RFI #{rfi.number}</span>}
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{rfi.title || rfi.question?.slice(0, 60)}</span>
+                        <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>{rfi.status}</span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#555' }}>
+                        {rfi.jobs?.job_number ? `#${rfi.jobs.job_number} — ${rfi.jobs.project_name}` : ''}{rfi.created_at ? ` · ${new Date(rfi.created_at).toLocaleDateString()}` : ''}
+                      </div>
+                    </div>
+                    <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                  </div>
+                  {isExp && (
+                    <div style={s.contractRowExpanded}>
+                      <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Your question</p>
+                      <p style={{ margin: '0 0 1rem', fontSize: '14px', color: '#ccc', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.question}</p>
+                      {rfi.response ? (
+                        <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px' }}>
+                          <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '1px' }}>Response from NV Construction</p>
+                          <p style={{ margin: 0, fontSize: '14px', color: '#4ade80', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
+                          {rfi.responded_at && <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#1a4a1a' }}>{new Date(rfi.responded_at).toLocaleDateString()}</p>}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: '13px', color: '#555', fontStyle: 'italic' }}>Awaiting response from NV Construction.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ── MESSAGES TAB ── */}
+        {activeTab === 'messages' && (
+          <div style={s.card}>
+            <h2 style={s.cardTitle}>Messages</h2>
+
+            {jobs.length === 0 ? (
+              <p style={{ color: '#555', fontSize: '14px' }}>No active jobs to message about.</p>
+            ) : (
+              <>
+                {jobs.length > 1 && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <label style={s.label}>Project</label>
+                    <select style={s.input} value={selectedMessageJob} onChange={e => { setSelectedMessageJob(e.target.value); loadMessages(e.target.value) }}>
+                      <option value="">Select a project...</option>
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {selectedMessageJob && (() => {
+                  const thread = jobMessages[selectedMessageJob] || []
+                  const draft = messageDraft[selectedMessageJob] || ''
+                  return (
+                    <>
+                      {/* Message thread */}
+                      <div style={{ minHeight: '200px', maxHeight: '400px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {thread.length === 0 ? (
+                          <p style={{ color: '#555', fontSize: '14px', textAlign: 'center', marginTop: '3rem' }}>No messages yet. Send a message to NV Construction below.</p>
+                        ) : thread.map(msg => {
+                          const isMe = msg.sender_role === 'sub'
+                          return (
+                            <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                              <div style={{ maxWidth: '75%', background: isMe ? '#2a1200' : '#141414', border: `1px solid ${isMe ? '#4a2200' : '#222'}`, borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '10px 14px' }}>
+                                {!isMe && <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '0.5px' }}>NV Construction</p>}
+                                <p style={{ margin: 0, fontSize: '14px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</p>
+                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#555' }}>{new Date(msg.created_at).toLocaleString()}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Input */}
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                        <textarea
+                          rows={2}
+                          style={{ ...s.input, flex: 1, resize: 'none' }}
+                          placeholder="Type a message..."
+                          value={draft}
+                          onChange={e => setMessageDraft(prev => ({ ...prev, [selectedMessageJob]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(selectedMessageJob) } }}
+                        />
+                        <button
+                          style={{ ...s.btn, padding: '11px 20px', flexShrink: 0, opacity: sendingMessageFor === selectedMessageJob || !draft.trim() ? 0.5 : 1 }}
+                          disabled={sendingMessageFor === selectedMessageJob || !draft.trim()}
+                          onClick={() => sendMessage(selectedMessageJob)}
+                        >{sendingMessageFor === selectedMessageJob ? '...' : 'Send'}</button>
+                      </div>
+                    </>
+                  )
+                })()}
+
+                {!selectedMessageJob && (
+                  <p style={{ color: '#555', fontSize: '14px' }}>Select a project above to view messages.</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── PUNCH LIST TAB ── */}
+        {activeTab === 'punch' && (
+          <div style={s.card}>
+            <h2 style={s.cardTitle}>Punch List</h2>
+
+            {myPunchItems.length === 0 ? (
+              <p style={{ color: '#555', fontSize: '14px' }}>No punch list items assigned to you.</p>
+            ) : (
+              <>
+                {myPunchItems.filter(p => p.status === 'open').length > 0 && (
+                  <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
+                    {myPunchItems.filter(p => p.status === 'open').length} open item{myPunchItems.filter(p => p.status === 'open').length !== 1 ? 's' : ''} require your attention
+                  </div>
+                )}
+                {myPunchItems.map(item => {
+                  const statusColor = item.status === 'approved' ? '#4ade80' : item.status === 'sub_complete' ? '#60a5fa' : item.status === 'rejected' ? '#ff6b6b' : '#e8590c'
+                  const statusBg = item.status === 'approved' ? '#0a2a0a' : item.status === 'sub_complete' ? '#0a1a2a' : item.status === 'rejected' ? '#2a0a0a' : '#2a1200'
+                  const statusBorder = item.status === 'approved' ? '#1a4a1a' : item.status === 'sub_complete' ? '#1a3a5a' : item.status === 'rejected' ? '#5a1a1a' : '#4a2200'
+                  const statusLabel = item.status === 'sub_complete' ? 'Marked complete' : item.status
+                  return (
+                    <div key={item.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', marginBottom: '10px', background: '#0f0f0f' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: item.description ? '8px' : 0 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{item.title}</span>
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>{statusLabel}</span>
+                          </div>
+                          {item.due_date && (
+                            <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</p>
+                          )}
+                        </div>
+                        {item.status === 'open' && (
+                          <button
+                            style={{ padding: '7px 16px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', color: '#4ade80', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, letterSpacing: '0.5px' }}
+                            onClick={async () => {
+                              await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'sub_complete' }) })
+                              await loadMyPunchItems(user.id)
+                            }}
+                          >Mark Complete</button>
+                        )}
+                      </div>
+                      {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#888', lineHeight: '1.6' }}>{item.description}</p>}
+                      {item.notes && (
+                        <div style={{ marginTop: '8px', padding: '8px 12px', background: '#080808', border: '1px solid #1a1a1a', borderRadius: '6px' }}>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>{item.notes}</p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </>
             )}
           </div>

@@ -249,6 +249,46 @@ export default function JobDetail() {
   const [addingContact, setAddingContact] = useState(false)
   const [savingContact, setSavingContact] = useState(false)
 
+  // Punch list / closeout state
+  const [punchItems, setPunchItems] = useState([])
+  const [showAddPunch, setShowAddPunch] = useState(false)
+  const [punchForm, setPunchForm] = useState({ title: '', description: '', assigned_sub_id: '', assigned_company: '', due_date: '' })
+  const [savingPunch, setSavingPunch] = useState(false)
+  const [updatingPunchId, setUpdatingPunchId] = useState(null)
+  const [punchNotes, setPunchNotes] = useState({})
+
+  // Retainage release state
+  const [retainageReleases, setRetainageReleases] = useState([])
+  const [showReleaseForm, setShowReleaseForm] = useState(false)
+  const [releaseForm, setReleaseForm] = useState({ subcontract_id: '', company_name: '', amount: '', notes: '' })
+  const [savingRelease, setSavingRelease] = useState(false)
+
+  // Submittals state
+  const [submittals, setSubmittals] = useState([])
+  const [showAddSubmittal, setShowAddSubmittal] = useState(false)
+  const [submittalForm, setSubmittalForm] = useState({ title: '', type: 'shop_drawing', spec_section: '', submitted_by_sub_id: '', submitted_by_company: '', notes: '' })
+  const [savingSubmittal, setSavingSubmittal] = useState(false)
+  const [expandedSubmittalId, setExpandedSubmittalId] = useState(null)
+  const [submittalReviewNote, setSubmittalReviewNote] = useState({})
+
+  // Prelim notices state
+  const [prelimNotices, setPrelimNotices] = useState([])
+  const [showAddPrelim, setShowAddPrelim] = useState(false)
+  const [prelimForm, setPrelimForm] = useState({ from_company: '', amount_claimed: '', received_at: new Date().toISOString().split('T')[0], notes: '' })
+  const [savingPrelim, setSavingPrelim] = useState(false)
+
+  // Sub ratings state
+  const [subRatings, setSubRatings] = useState([])
+  const [ratingForms, setRatingForms] = useState({})
+  const [savingRatingFor, setSavingRatingFor] = useState(null)
+  const [showRatingFor, setShowRatingFor] = useState(null)
+
+  // Messages state
+  const [messageThreads, setMessageThreads] = useState({})
+  const [messageDraft, setMessageDraft] = useState({})
+  const [sendingMessageFor, setSendingMessageFor] = useState(null)
+  const [expandedMessageSubId, setExpandedMessageSubId] = useState(null)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -962,6 +1002,11 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }
     if (activeTab === 'labor' && !laborLoaded) { loadLaborData() }
+    if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadContracts() }
+    if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
+    if (activeTab === 'prelim') { loadPrelimNotices() }
+    if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests() }
+    if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
   }, [activeTab, id])
 
 
@@ -1124,6 +1169,153 @@ ${sovLines.length > 0 ? `
     if (!window.confirm('Delete this contact?')) return
     await supabase.from('job_contacts').delete().eq('id', contactId)
     await loadJobContacts()
+  }
+
+  async function loadPunchItems() {
+    const res = await fetch(`/api/punch-list?job_id=${id}`)
+    const { items } = await res.json()
+    setPunchItems(items || [])
+  }
+
+  async function loadRetainageReleases() {
+    const res = await fetch(`/api/retainage-release?job_id=${id}`)
+    const { releases } = await res.json()
+    setRetainageReleases(releases || [])
+  }
+
+  async function loadSubmittals() {
+    const res = await fetch(`/api/submittals?job_id=${id}`)
+    const { submittals: data } = await res.json()
+    setSubmittals(data || [])
+  }
+
+  async function loadPrelimNotices() {
+    const res = await fetch(`/api/prelim-notices?job_id=${id}`)
+    const { notices } = await res.json()
+    setPrelimNotices(notices || [])
+  }
+
+  async function loadSubRatings() {
+    const res = await fetch(`/api/sub-ratings?job_id=${id}`)
+    const { ratings } = await res.json()
+    setSubRatings(ratings || [])
+  }
+
+  async function loadMessages(subId) {
+    const res = await fetch(`/api/messages?job_id=${id}&sub_id=${subId}`)
+    const { messages } = await res.json()
+    setMessageThreads(prev => ({ ...prev, [subId]: messages || [] }))
+  }
+
+  async function sendMessage(subId, senderName) {
+    const msg = messageDraft[subId]?.trim()
+    if (!msg) return
+    setSendingMessageFor(subId)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: id, sub_id: subId, sender_id: session.user.id, sender_name: senderName || 'PM', sender_role: 'pm', message: msg }),
+    })
+    setMessageDraft(prev => ({ ...prev, [subId]: '' }))
+    setSendingMessageFor(null)
+    await loadMessages(subId)
+  }
+
+  async function addPunchItem() {
+    if (!punchForm.title.trim()) return
+    setSavingPunch(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/punch-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...punchForm, job_id: id, created_by: session.user.id, assigned_sub_id: punchForm.assigned_sub_id || null }),
+    })
+    setPunchForm({ title: '', description: '', assigned_sub_id: '', assigned_company: '', due_date: '' })
+    setShowAddPunch(false)
+    setSavingPunch(false)
+    await loadPunchItems()
+  }
+
+  async function updatePunchStatus(itemId, status, notes) {
+    setUpdatingPunchId(itemId)
+    await fetch('/api/punch-list', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId, status, pm_notes: notes }),
+    })
+    setUpdatingPunchId(null)
+    await loadPunchItems()
+  }
+
+  async function releaseRetainage() {
+    if (!releaseForm.company_name || !releaseForm.amount) return
+    setSavingRelease(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const contract = contracts.find(c => c.id === releaseForm.subcontract_id)
+    await fetch('/api/retainage-release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...releaseForm, job_id: id, released_by: session.user.id, sub_id: contract?.sub_id || null }),
+    })
+    setReleaseForm({ subcontract_id: '', company_name: '', amount: '', notes: '' })
+    setShowReleaseForm(false)
+    setSavingRelease(false)
+    await loadRetainageReleases()
+  }
+
+  async function addSubmittal() {
+    if (!submittalForm.title.trim()) return
+    setSavingSubmittal(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/submittals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...submittalForm, job_id: id, submitted_by_sub_id: submittalForm.submitted_by_sub_id || null }),
+    })
+    setSubmittalForm({ title: '', type: 'shop_drawing', spec_section: '', submitted_by_sub_id: '', submitted_by_company: '', notes: '' })
+    setShowAddSubmittal(false)
+    setSavingSubmittal(false)
+    await loadSubmittals()
+  }
+
+  async function reviewSubmittal(submittalId, status) {
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/submittals', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: submittalId, status, reviewer_id: session.user.id, notes: submittalReviewNote[submittalId] || undefined }),
+    })
+    await loadSubmittals()
+  }
+
+  async function addPrelimNotice() {
+    if (!prelimForm.from_company.trim()) return
+    setSavingPrelim(true)
+    await fetch('/api/prelim-notices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...prelimForm, job_id: id }),
+    })
+    setPrelimForm({ from_company: '', amount_claimed: '', received_at: new Date().toISOString().split('T')[0], notes: '' })
+    setShowAddPrelim(false)
+    setSavingPrelim(false)
+    await loadPrelimNotices()
+  }
+
+  async function saveSubRating(subId) {
+    const form = ratingForms[subId]
+    if (!form?.quality) return
+    setSavingRatingFor(subId)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/sub-ratings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sub_id: subId, job_id: id, rated_by: session.user.id, ...form }),
+    })
+    setSavingRatingFor(null)
+    setShowRatingFor(null)
+    await loadSubRatings()
   }
 
   async function loadLaborData() {
@@ -2459,6 +2651,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               Labor{laborAllocations.length > 0 ? ` (${laborAllocations.length})` : ''}
             </button>
           )}
+          <button style={s.tab(activeTab === 'submittals')} onClick={() => setActiveTab('submittals')}>
+            Submittals{submittals.length > 0 ? ` (${submittals.length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'prelim')} onClick={() => setActiveTab('prelim')}>
+            Lien Log{prelimNotices.filter(n => n.status === 'active').length > 0 ? ` (${prelimNotices.filter(n => n.status === 'active').length})` : ''}
+          </button>
+          <button style={s.tab(activeTab === 'cashflow')} onClick={() => setActiveTab('cashflow')}>Cash Flow</button>
+          <button style={s.tab(activeTab === 'closeout')} onClick={() => setActiveTab('closeout')}>
+            Closeout{punchItems.filter(p => p.status !== 'approved').length > 0 ? ` (${punchItems.filter(p => p.status !== 'approved').length})` : ''}
+          </button>
         </div>
 
         {/* ── DETAILS TAB ── */}
@@ -2782,18 +2984,34 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const phone = a.profiles?.phone || dirEntry?.phone
                 const address = dirEntry?.address
                 const isRegistered = !!a.sub_id
+                const existingRating = subRatings.find(r => r.sub_id === a.sub_id)
+                const rf = ratingForms[a.sub_id] || {}
+                const messages = messageThreads[a.sub_id] || []
+                const isShowingRating = showRatingFor === a.sub_id
+                const isShowingMessages = expandedMessageSubId === a.sub_id
+                const StarRow = ({ field, label }) => (
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={{ ...s.label, marginBottom: '4px' }}>{label}</label>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[1,2,3,4,5].map(n => (
+                        <button key={n} onClick={() => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, [field]: n } }))}
+                          style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#1a1a1a', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#2a2a2a'}`, borderRadius: '6px', color: '#f1f1f1', fontSize: '16px', cursor: 'pointer' }}>★</button>
+                      ))}
+                    </div>
+                  </div>
+                )
                 return (
                   <div key={a.id} style={{ ...s.contractRow, marginBottom: '8px' }}>
                     <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
                       <div style={{ flex: 1, minWidth: '200px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                           <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{companyName}</span>
-                          <span style={{
-                            fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700',
-                            background: isRegistered ? '#0a2a0a' : '#1a1a1a',
-                            color: isRegistered ? '#4ade80' : '#555',
-                            border: `1px solid ${isRegistered ? '#1a4a1a' : '#2a2a2a'}`
-                          }}>{isRegistered ? 'Registered' : 'Not registered'}</span>
+                          <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#1a1a1a', color: isRegistered ? '#4ade80' : '#555', border: `1px solid ${isRegistered ? '#1a4a1a' : '#2a2a2a'}` }}>{isRegistered ? 'Registered' : 'Not registered'}</span>
+                          {existingRating && (
+                            <span style={{ fontSize: '12px', color: '#e8590c' }}>
+                              {'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}
+                            </span>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
                           {contactName && <span>{contactName}</span>}
@@ -2802,7 +3020,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {address && <span>{address}</span>}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {isRegistered && (
+                          <button style={s.btnSmall} onClick={() => {
+                            if (isShowingMessages) { setExpandedMessageSubId(null) }
+                            else { setExpandedMessageSubId(a.sub_id); loadMessages(a.sub_id) }
+                          }}>💬 Messages{messages.length > 0 ? ` (${messages.length})` : ''}</button>
+                        )}
+                        {isRegistered && (
+                          <button style={s.btnSmall} onClick={() => {
+                            if (isShowingRating) { setShowRatingFor(null) }
+                            else { setShowRatingFor(a.sub_id); setRatingForms(prev => ({ ...prev, [a.sub_id]: existingRating ? { quality: existingRating.quality, timeliness: existingRating.timeliness, communication: existingRating.communication, notes: existingRating.notes || '' } : { quality: 0, timeliness: 0, communication: 0, notes: '' } })) }
+                          }}>{existingRating ? 'Edit Rating' : 'Rate Sub'}</button>
+                        )}
                         {!isRegistered && a.sub_email && (
                           notifySubResult[a.sub_email] === 'sent'
                             ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
@@ -2815,6 +3045,45 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
                       </div>
                     </div>
+
+                    {/* Rating form */}
+                    {isShowingRating && (
+                      <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Rate {companyName}</p>
+                        <StarRow field="quality" label="Quality of work" />
+                        <StarRow field="timeliness" label="Timeliness" />
+                        <StarRow field="communication" label="Communication" />
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={s.label}>Notes (optional)</label>
+                          <input style={s.input} value={rf.notes || ''} onChange={e => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, notes: e.target.value } }))} placeholder="Additional comments..." />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button style={{ ...s.btn, opacity: savingRatingFor === a.sub_id || !rf.quality ? 0.6 : 1 }} disabled={savingRatingFor === a.sub_id || !rf.quality} onClick={() => saveSubRating(a.sub_id)}>{savingRatingFor === a.sub_id ? 'Saving...' : 'Save Rating'}</button>
+                          <button style={s.btnGray} onClick={() => setShowRatingFor(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Message thread */}
+                    {isShowingMessages && (
+                      <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Messages — {companyName}</p>
+                        <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {messages.length === 0 ? <p style={{ color: '#444', fontSize: '13px' }}>No messages yet.</p> : messages.map(msg => (
+                            <div key={msg.id} style={{ display: 'flex', flexDirection: msg.sender_role === 'pm' ? 'row-reverse' : 'row', gap: '8px' }}>
+                              <div style={{ maxWidth: '70%', background: msg.sender_role === 'pm' ? '#1a2a0a' : '#1a1a2a', border: `1px solid ${msg.sender_role === 'pm' ? '#2a4a1a' : '#2a2a4a'}`, borderRadius: '10px', padding: '8px 12px' }}>
+                                <div style={{ fontSize: '11px', color: '#555', marginBottom: '3px' }}>{msg.sender_name} · {new Date(msg.created_at).toLocaleString()}</div>
+                                <div style={{ fontSize: '13px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input style={{ ...s.input, flex: 1 }} value={messageDraft[a.sub_id] || ''} onChange={e => setMessageDraft(prev => ({ ...prev, [a.sub_id]: e.target.value }))} placeholder="Type a message..." onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(a.sub_id, profile?.full_name)} />
+                          <button style={{ ...s.btn, padding: '11px 20px', opacity: sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim() ? 0.6 : 1 }} disabled={sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim()} onClick={() => sendMessage(a.sub_id, profile?.full_name)}>{sendingMessageFor === a.sub_id ? '...' : 'Send'}</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -5888,6 +6157,369 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <p style={{ color: '#555', margin: 0 }}>No labor allocated to this job yet.</p>
                 </div>
               )}
+            </>
+          )
+        })()}
+
+        {/* ── SUBMITTALS TAB ── */}
+        {activeTab === 'submittals' && (() => {
+          const statusColor = { submitted: '#60a5fa', under_review: '#facc15', approved: '#4ade80', rejected: '#ff6b6b', resubmit: '#e8590c' }
+          return (
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Submittal Log ({submittals.length})</p>
+                <button style={s.btnSmallOrange} onClick={() => setShowAddSubmittal(v => !v)}>{showAddSubmittal ? 'Cancel' : '+ Add Submittal'}</button>
+              </div>
+
+              {showAddSubmittal && (
+                <div style={s.inlineForm}>
+                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                    <div><label style={s.label}>Title *</label><input style={s.input} value={submittalForm.title} onChange={e => setSubmittalForm(f => ({ ...f, title: e.target.value }))} placeholder="Shop drawing title or description" /></div>
+                    <div><label style={s.label}>Type</label>
+                      <select style={s.input} value={submittalForm.type} onChange={e => setSubmittalForm(f => ({ ...f, type: e.target.value }))}>
+                        <option value="shop_drawing">Shop Drawing</option>
+                        <option value="product_data">Product Data</option>
+                        <option value="sample">Sample</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                    <div><label style={s.label}>Spec Section</label><input style={s.input} value={submittalForm.spec_section} onChange={e => setSubmittalForm(f => ({ ...f, spec_section: e.target.value }))} placeholder="e.g. 03 30 00" /></div>
+                    <div><label style={s.label}>Submitted by</label>
+                      <select style={s.input} value={submittalForm.submitted_by_sub_id} onChange={e => {
+                        const sub = subs.find(s => s.sub_id === e.target.value)
+                        setSubmittalForm(f => ({ ...f, submitted_by_sub_id: e.target.value, submitted_by_company: sub?.company_name || '' }))
+                      }}>
+                        <option value="">— Select sub (optional) —</option>
+                        {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '10px' }}><label style={s.label}>Notes</label><input style={s.input} value={submittalForm.notes} onChange={e => setSubmittalForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                  <button style={{ ...s.btn, opacity: savingSubmittal || !submittalForm.title ? 0.6 : 1 }} disabled={savingSubmittal || !submittalForm.title} onClick={addSubmittal}>{savingSubmittal ? 'Saving...' : 'Add Submittal'}</button>
+                </div>
+              )}
+
+              {submittals.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No submittals yet.</p> : submittals.map(sub => {
+                const isExp = expandedSubmittalId === sub.id
+                const color = statusColor[sub.status] || '#888'
+                return (
+                  <div key={sub.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#0f0f0f', cursor: 'pointer' }} onClick={() => setExpandedSubmittalId(isExp ? null : sub.id)}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+                          <span style={{ fontSize: '12px', color: '#555', fontFamily: 'monospace' }}>#{sub.number}</span>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{sub.title}</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: color, background: color + '22', border: `1px solid ${color}44`, borderRadius: '4px', padding: '1px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sub.status.replace('_', ' ')}</span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#555' }}>
+                          {sub.type.replace('_', ' ')} {sub.spec_section ? `· §${sub.spec_section}` : ''} {sub.submitted_by_company ? `· ${sub.submitted_by_company}` : ''} · {new Date(sub.submitted_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <span style={{ color: '#555' }}>{isExp ? '▲' : '▼'}</span>
+                    </div>
+                    {isExp && (
+                      <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                        {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{sub.notes}</p>}
+                        <div style={{ marginBottom: '10px' }}>
+                          <label style={s.label}>Review note</label>
+                          <input style={s.input} value={submittalReviewNote[sub.id] || ''} onChange={e => setSubmittalReviewNote(prev => ({ ...prev, [sub.id]: e.target.value }))} placeholder="Optional note to subcontractor..." />
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {['under_review', 'approved', 'rejected', 'resubmit'].map(st => (
+                            <button key={st} onClick={() => reviewSubmittal(sub.id, st)}
+                              style={{ padding: '7px 14px', background: sub.status === st ? statusColor[st] + '33' : '#1a1a1a', border: `1px solid ${sub.status === st ? statusColor[st] : '#2a2a2a'}`, borderRadius: '6px', color: sub.status === st ? statusColor[st] : '#888', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textTransform: 'capitalize' }}>
+                              {st.replace('_', ' ')}
+                            </button>
+                          ))}
+                          <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/submittals?id=${sub.id}`, { method: 'DELETE' }); await loadSubmittals() }}>Delete</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
+
+        {/* ── LIEN / PRELIM NOTICES TAB ── */}
+        {activeTab === 'prelim' && (
+          <div style={s.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <p style={{ ...s.cardTitle, margin: 0 }}>Preliminary Notices & Lien Log ({prelimNotices.length})</p>
+              <button style={s.btnSmallOrange} onClick={() => setShowAddPrelim(v => !v)}>{showAddPrelim ? 'Cancel' : '+ Add Notice'}</button>
+            </div>
+
+            {showAddPrelim && (
+              <div style={s.inlineForm}>
+                <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div><label style={s.label}>From company *</label><input style={s.input} value={prelimForm.from_company} onChange={e => setPrelimForm(f => ({ ...f, from_company: e.target.value }))} placeholder="Company name" /></div>
+                  <div><label style={s.label}>Amount claimed</label><input type="number" step="0.01" style={s.input} value={prelimForm.amount_claimed} onChange={e => setPrelimForm(f => ({ ...f, amount_claimed: e.target.value }))} placeholder="0.00" /></div>
+                </div>
+                <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div><label style={s.label}>Date received</label><input type="date" style={s.input} value={prelimForm.received_at} onChange={e => setPrelimForm(f => ({ ...f, received_at: e.target.value }))} /></div>
+                  <div><label style={s.label}>Notes</label><input style={s.input} value={prelimForm.notes} onChange={e => setPrelimForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                </div>
+                <button style={{ ...s.btn, opacity: savingPrelim || !prelimForm.from_company ? 0.6 : 1 }} disabled={savingPrelim || !prelimForm.from_company} onClick={addPrelimNotice}>{savingPrelim ? 'Saving...' : 'Add Notice'}</button>
+              </div>
+            )}
+
+            {prelimNotices.filter(n => n.status === 'active').length > 0 && (
+              <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b' }}>
+                ⚠ {prelimNotices.filter(n => n.status === 'active').length} active lien notice{prelimNotices.filter(n => n.status === 'active').length > 1 ? 's' : ''} on this job. Ensure waivers are obtained before final payment.
+              </div>
+            )}
+
+            {prelimNotices.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No preliminary notices recorded.</p> : prelimNotices.map(notice => (
+              <div key={notice.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #1a1a1a', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{notice.from_company}</span>
+                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase',
+                      color: notice.status === 'active' ? '#ff6b6b' : '#4ade80',
+                      background: notice.status === 'active' ? '#2a0a0a' : '#0a2a0a',
+                      border: `1px solid ${notice.status === 'active' ? '#5a1a1a' : '#1a4a1a'}` }}>{notice.status}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#555' }}>Received {new Date(notice.received_at + 'T00:00:00').toLocaleDateString()}{notice.notes ? ` · ${notice.notes}` : ''}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {notice.amount_claimed && <span style={{ fontSize: '15px', fontWeight: '700', color: '#ff6b6b' }}>${Number(notice.amount_claimed).toLocaleString()}</span>}
+                  {notice.status === 'active' && (
+                    <button style={s.btnSmallGreen} onClick={async () => { await fetch('/api/prelim-notices', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: notice.id, status: 'released' }) }); await loadPrelimNotices() }}>Mark Released</button>
+                  )}
+                  <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/prelim-notices?id=${notice.id}`, { method: 'DELETE' }); await loadPrelimNotices() }}>Del</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── CASH FLOW TAB ── */}
+        {activeTab === 'cashflow' && (() => {
+          const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+          // Group approved billing submissions by month (what NV owes subs)
+          const subPayByMonth = {}
+          billingSubmissions.filter(b => b.status === 'approved').forEach(b => {
+            const key = b.billing_period ? b.billing_period.slice(0, 7) : (b.submitted_at ? b.submitted_at.slice(0, 7) : 'unknown')
+            subPayByMonth[key] = (subPayByMonth[key] || 0) + Number(b.amount_billed || 0)
+          })
+          // Group direct costs approved by month
+          const dcByMonth = {}
+          directCosts.filter(c => c.status === 'approved').forEach(c => {
+            const key = (c.cost_date || c.created_at || '').slice(0, 7)
+            dcByMonth[key] = (dcByMonth[key] || 0) + Number(c.amount || 0)
+          })
+          // Draw requests (owner income to NV) — use billing for job total
+          const drawByMonth = {}
+          drawRequests.forEach(d => {
+            const key = (d.created_at || '').slice(0, 7)
+            drawByMonth[key] = (drawByMonth[key] || 0)
+          })
+          const allMonths = [...new Set([...Object.keys(subPayByMonth), ...Object.keys(dcByMonth)])].filter(k => k && k !== 'unknown').sort()
+          const totalSubPay = Object.values(subPayByMonth).reduce((a, v) => a + v, 0)
+          const totalDC = Object.values(dcByMonth).reduce((a, v) => a + v, 0)
+          const totalOut = totalSubPay + totalDC
+          const retainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
+          const retainageReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
+
+          return (
+            <>
+              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(4, 1fr)' }} className="rx-stats">
+                <div style={s.statCard}><div style={s.statLabel}>Sub billings paid</div><div style={s.statValue('#e8590c')}>{fmt(totalSubPay)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Direct costs paid</div><div style={s.statValue()}>{fmt(totalDC)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total out</div><div style={s.statValue('#ff6b6b')}>{fmt(totalOut)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#facc15')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
+              </div>
+
+              <div style={s.card}>
+                <p style={s.cardTitle}>Monthly cash out</p>
+                {allMonths.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No approved billing or direct costs yet.</p> : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                        {['Month', 'Sub billings', 'Direct costs', 'Total out'].map(h => (
+                          <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allMonths.map(m => {
+                        const sub = subPayByMonth[m] || 0
+                        const dc = dcByMonth[m] || 0
+                        const total = sub + dc
+                        return (
+                          <tr key={m} style={{ borderBottom: '1px solid #111' }}>
+                            <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: '#f1f1f1' }}>{fmt(total)}</td>
+                          </tr>
+                        )
+                      })}
+                      <tr style={{ borderTop: '2px solid #222' }}>
+                        <td style={{ padding: '10px 12px', color: '#555', fontWeight: '700' }}>Total</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', color: '#f1f1f1', fontSize: '15px' }}>{fmt(totalOut)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {drawRequests.length > 0 && (
+                <div style={s.card}>
+                  <p style={s.cardTitle}>Draw requests</p>
+                  {drawRequests.map(d => (
+                    <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #111' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', color: '#f1f1f1', fontWeight: '600' }}>{d.title}</div>
+                        <div style={{ fontSize: '12px', color: '#555' }}>Draw #{d.draw_number} · {new Date(d.created_at).toLocaleDateString()}</div>
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', textTransform: 'uppercase',
+                        color: d.status === 'open' ? '#e8590c' : '#4ade80',
+                        background: d.status === 'open' ? '#2a1200' : '#0a2a0a',
+                        border: `1px solid ${d.status === 'open' ? '#4a2200' : '#1a4a1a'}` }}>{d.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        })()}
+
+        {/* ── CLOSEOUT TAB ── */}
+        {activeTab === 'closeout' && (() => {
+          const openItems = punchItems.filter(p => p.status === 'open')
+          const subComplete = punchItems.filter(p => p.status === 'sub_complete')
+          const approved = punchItems.filter(p => p.status === 'approved')
+          const totalRetainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
+          const totalReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
+          const retainageBalance = totalRetainageHeld - totalReleased
+          const fmt = n => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+
+          return (
+            <>
+              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(4, 1fr)' }} className="rx-stats">
+                <div style={s.statCard}><div style={s.statLabel}>Open items</div><div style={s.statValue(openItems.length ? '#e8590c' : '#4ade80')}>{openItems.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Awaiting approval</div><div style={s.statValue(subComplete.length ? '#facc15' : null)}>{subComplete.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Approved complete</div><div style={s.statValue('#4ade80')}>{approved.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Retainage balance</div><div style={s.statValue(retainageBalance > 0 ? '#facc15' : null)}>{fmt(retainageBalance)}</div></div>
+              </div>
+
+              {/* Punch list */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Punch List ({punchItems.length})</p>
+                  <button style={s.btnSmallOrange} onClick={() => setShowAddPunch(v => !v)}>{showAddPunch ? 'Cancel' : '+ Add Item'}</button>
+                </div>
+
+                {showAddPunch && (
+                  <div style={s.inlineForm}>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Title *</label><input style={s.input} value={punchForm.title} onChange={e => setPunchForm(f => ({ ...f, title: e.target.value }))} placeholder="What needs to be done" /></div>
+                      <div><label style={s.label}>Assign to sub</label>
+                        <select style={s.input} value={punchForm.assigned_sub_id} onChange={e => {
+                          const sub = subs.find(s => s.sub_id === e.target.value)
+                          setPunchForm(f => ({ ...f, assigned_sub_id: e.target.value, assigned_company: sub?.company_name || '' }))
+                        }}>
+                          <option value="">— Not assigned —</option>
+                          {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Description</label><input style={s.input} value={punchForm.description} onChange={e => setPunchForm(f => ({ ...f, description: e.target.value }))} /></div>
+                      <div><label style={s.label}>Due date</label><input type="date" style={s.input} value={punchForm.due_date} onChange={e => setPunchForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                    </div>
+                    <button style={{ ...s.btn, opacity: savingPunch || !punchForm.title ? 0.6 : 1 }} disabled={savingPunch || !punchForm.title} onClick={addPunchItem}>{savingPunch ? 'Adding...' : 'Add Item'}</button>
+                  </div>
+                )}
+
+                {punchItems.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No punch list items yet.</p> : punchItems.map(item => {
+                  const statusColor = { open: '#e8590c', sub_complete: '#facc15', approved: '#4ade80', rejected: '#ff6b6b' }
+                  const color = statusColor[item.status] || '#888'
+                  return (
+                    <div key={item.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{item.title}</span>
+                            <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', color, background: color + '22', border: `1px solid ${color}44` }}>{item.status.replace('_', ' ')}</span>
+                            {item.assigned_company && <span style={{ fontSize: '12px', color: '#555' }}>{item.assigned_company}</span>}
+                            {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#ff6b6b' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
+                          </div>
+                          {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{item.description}</p>}
+                          {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#888', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          {item.status === 'sub_complete' && (
+                            <>
+                              <button style={s.btnSmallGreen} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'approved', punchNotes[item.id])}>Approve</button>
+                              <button style={s.btnSmallRed} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'rejected', punchNotes[item.id])}>Reject</button>
+                            </>
+                          )}
+                          {item.status === 'open' && (
+                            <button style={s.btnSmall} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'approved', '')}>Mark Done</button>
+                          )}
+                          {item.status === 'rejected' && (
+                            <button style={s.btnSmall} disabled={updatingPunchId === item.id} onClick={() => updatePunchStatus(item.id, 'open', '')}>Reopen</button>
+                          )}
+                          <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/punch-list?id=${item.id}`, { method: 'DELETE' }); await loadPunchItems() }}>Del</button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Retainage releases */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <div>
+                    <p style={{ ...s.cardTitle, margin: '0 0 4px' }}>Retainage ({fmt(retainageBalance)} remaining)</p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>{fmt(totalRetainageHeld)} held · {fmt(totalReleased)} released</p>
+                  </div>
+                  <button style={s.btnSmallOrange} onClick={() => setShowReleaseForm(v => !v)}>{showReleaseForm ? 'Cancel' : '+ Release'}</button>
+                </div>
+
+                {showReleaseForm && (
+                  <div style={s.inlineForm}>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Subcontract</label>
+                        <select style={s.input} value={releaseForm.subcontract_id} onChange={e => {
+                          const c = contracts.find(c => c.id === e.target.value)
+                          setReleaseForm(f => ({ ...f, subcontract_id: e.target.value, company_name: c?.vendor_name || '' }))
+                        }}>
+                          <option value="">— Select subcontract —</option>
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                        </select>
+                      </div>
+                      <div><label style={s.label}>Company (if no contract)</label><input style={s.input} value={releaseForm.company_name} onChange={e => setReleaseForm(f => ({ ...f, company_name: e.target.value }))} placeholder="Vendor name" /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Release amount *</label><input type="number" step="0.01" style={s.input} value={releaseForm.amount} onChange={e => setReleaseForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" /></div>
+                      <div><label style={s.label}>Notes</label><input style={s.input} value={releaseForm.notes} onChange={e => setReleaseForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                    </div>
+                    <button style={{ ...s.btn, opacity: savingRelease || !releaseForm.amount || !releaseForm.company_name ? 0.6 : 1 }} disabled={savingRelease || !releaseForm.amount || !releaseForm.company_name} onClick={releaseRetainage}>{savingRelease ? 'Releasing...' : 'Release Retainage'}</button>
+                  </div>
+                )}
+
+                {retainageReleases.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No retainage releases recorded.</p> : retainageReleases.map(r => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{r.company_name}</div>
+                      <div style={{ fontSize: '12px', color: '#555' }}>{new Date(r.released_at).toLocaleDateString()}{r.notes ? ` · ${r.notes}` : ''}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80' }}>{fmt(r.amount)}</span>
+                      <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/retainage-release?id=${r.id}`, { method: 'DELETE' }); await loadRetainageReleases() }}>Del</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </>
           )
         })()}

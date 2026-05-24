@@ -173,6 +173,7 @@ export default function Dashboard() {
   const [manualBidForm, setManualBidForm] = useState({ company_name: '', amount: '', notes: '' })
   const [manualBidFile, setManualBidFile] = useState(null)
   const [showBidCompare, setShowBidCompare] = useState(null)
+  const [dirRatings, setDirRatings] = useState({}) // keyed by sub_id
   const [submittingManualBid, setSubmittingManualBid] = useState(false)
 
   // Role / APM filtering
@@ -286,7 +287,22 @@ export default function Dashboard() {
     if (activeTab === 'nv-directory') loadTeamData()
     if (activeTab === 'bd' && !bdLoaded) loadBD()
     if (activeTab === 'employees' && !empLoaded) loadEmployees()
+    if (activeTab === 'directory') loadDirRatings()
   }, [activeTab])
+
+  async function loadDirRatings() {
+    const { data } = await supabase.from('sub_ratings').select('sub_id, quality, timeliness, communication, profiles!sub_ratings_sub_id_fkey(email, company_name), jobs(job_number, project_name)')
+    if (!data) return
+    // Key by email for easy lookup against sub_directory
+    const map = {}
+    data.forEach(r => {
+      const email = r.profiles?.email?.toLowerCase()
+      if (!email) return
+      if (!map[email]) map[email] = []
+      map[email].push(r)
+    })
+    setDirRatings(map)
+  }
 
 
   async function loadAll(jobIds = null) {
@@ -1622,20 +1638,31 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
                 {filteredDir.length === 0 ? <div style={s.emptyMsg}>No subcontractors found.</div> : filteredDir.map(sub => (
                   <div key={sub.id} style={s.rowBorder}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }} onClick={() => setExpandedDir(expandedDir === sub.id ? null : sub.id)}>
-                      <div>
-                        <p style={s.company}>{sub.company_name}</p>
-                        <p style={s.meta}>{sub.contact_name} · {sub.trade} · Applied {new Date(sub.applied_at).toLocaleDateString()}</p>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
-                          <span style={{ fontSize: '11px', color: new Date(sub.coi_expiration) < new Date() ? '#ff6b6b' : '#e8590c', fontWeight: '700', background: new Date(sub.coi_expiration) < new Date() ? '#2a0a0a' : '#2a1200', border: `1px solid ${new Date(sub.coi_expiration) < new Date() ? '#5a1a1a' : '#4a2200'}`, borderRadius: '4px', padding: '2px 8px' }}>
-                            {new Date(sub.coi_expiration) < new Date() ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
-                          </span>
-                        )}
-                        <span style={s.badge(sub.status)}>{sub.status}</span>
-                      </div>
-                    </div>
+                    {(() => {
+                      // Find ratings for this sub by matching sub_id via profile lookup
+                      const ratings = sub.email ? (dirRatings[sub.email.toLowerCase()] || []) : []
+                      const avgRating = ratings.length > 0 ? Math.round(ratings.reduce((a, r) => a + (r.quality + r.timeliness + r.communication) / 3, 0) / ratings.length) : 0
+                      return (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }} onClick={() => setExpandedDir(expandedDir === sub.id ? null : sub.id)}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+                              <p style={{ ...s.company, margin: 0 }}>{sub.company_name}</p>
+                              {avgRating > 0 && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(avgRating)}{'☆'.repeat(5 - avgRating)}</span>}
+                              {ratings.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{ratings.length} rating{ratings.length > 1 ? 's' : ''}</span>}
+                            </div>
+                            <p style={{ ...s.meta, margin: 0 }}>{sub.contact_name} · {sub.trade} · Applied {new Date(sub.applied_at).toLocaleDateString()}</p>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
+                              <span style={{ fontSize: '11px', color: new Date(sub.coi_expiration) < new Date() ? '#ff6b6b' : '#e8590c', fontWeight: '700', background: new Date(sub.coi_expiration) < new Date() ? '#2a0a0a' : '#2a1200', border: `1px solid ${new Date(sub.coi_expiration) < new Date() ? '#5a1a1a' : '#4a2200'}`, borderRadius: '4px', padding: '2px 8px' }}>
+                                {new Date(sub.coi_expiration) < new Date() ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
+                              </span>
+                            )}
+                            <span style={s.badge(sub.status)}>{sub.status}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     {expandedDir === sub.id && (
                       <div style={s.detail}>
 

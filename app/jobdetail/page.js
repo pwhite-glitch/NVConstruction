@@ -2458,6 +2458,7 @@ ${(budgets || []).length > 0 ? `
       engineer_name: form.engineer_name, engineer_company: form.engineer_company, engineer_email: form.engineer_email,
       permit_number: form.permit_number, permit_date: form.permit_date || null, scope_notes: form.scope_notes,
       pm_email: form.pm_email || null,
+      billing_type: form.billing_type || 'aia',
     }).eq('id', id)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000) }
     else { setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
@@ -2734,6 +2735,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <select style={s.input} value={form.payment_type || 'nv_pays'} onChange={e => update('payment_type', e.target.value)}>
                       <option value="nv_pays">NV Construction pays subs</option>
                       <option value="owner_pays_direct">Owner pays subs directly</option>
+                    </select>
+                  </div>
+                  <div><label style={s.label}>Prime billing type</label>
+                    <select style={s.input} value={form.billing_type || 'aia'} onChange={e => update('billing_type', e.target.value)}>
+                      <option value="aia">AIA Application for Payment (G702/G703)</option>
+                      <option value="draw_request">Draw Request</option>
                     </select>
                   </div>
                 </div>

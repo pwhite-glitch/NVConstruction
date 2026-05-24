@@ -796,12 +796,13 @@ export default function JobDetail() {
   async function savePaymentReceived() {
     if (!paymentForm.appId || !paymentForm.amount) return
     setSavingPayment(true)
-    await supabase.from('aia_applications').update({
+    const { error } = await supabase.from('aia_applications').update({
       payment_received: true,
       payment_received_at: paymentForm.received_at ? new Date(paymentForm.received_at + 'T12:00:00').toISOString() : new Date().toISOString(),
       amount_received: parseFloat(paymentForm.amount),
     }).eq('id', paymentForm.appId)
     setSavingPayment(false)
+    if (error) { alert('Save failed: ' + error.message + '\n\nYou may need to run this SQL in Supabase:\nALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;'); return }
     setPaymentForm({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
     await loadAiaApplications()
   }
@@ -6357,6 +6358,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
           // Cash IN: payments received from owner via AIA / draw request applications
           const cashInByMonth = {}
+          const receivedNoAmount = aiaApplications.filter(a => a.payment_received && !a.amount_received)
           aiaApplications.filter(a => a.payment_received && a.amount_received).forEach(a => {
             const key = (a.payment_received_at || a.period_to || '').slice(0, 7)
             if (key) cashInByMonth[key] = (cashInByMonth[key] || 0) + Number(a.amount_received)
@@ -6398,7 +6400,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#facc15')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
               </div>
 
-              {totalIn === 0 && (
+              {receivedNoAmount.length > 0 && (
+                <div style={{ background: '#2a1200', border: '1px solid #5a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c' }}>
+                  <strong>{receivedNoAmount.length} {receivedNoAmount.length === 1 ? 'application is' : 'applications are'} marked received but have no dollar amount.</strong>
+                  {' '}Go to the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab, click <strong style={{ color: '#f1f1f1' }}>Record Payment</strong> on each one, and enter the amount — or run this SQL migration first if amounts aren't saving:
+                  <code style={{ display: 'block', marginTop: '8px', padding: '8px 10px', background: '#1a0a00', borderRadius: '6px', fontSize: '12px', color: '#aaa', userSelect: 'all' }}>
+                    ALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;
+                  </code>
+                </div>
+              )}
+              {totalIn === 0 && receivedNoAmount.length === 0 && (
                 <div style={{ background: '#1a1200', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#888' }}>
                   No payments recorded from the owner yet. Use the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab to record payments received on each {job.billing_type === 'draw_request' ? 'draw request' : 'AIA application'}.
                 </div>

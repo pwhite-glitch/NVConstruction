@@ -291,6 +291,18 @@ export default function JobDetail() {
   const [sendingMessageFor, setSendingMessageFor] = useState(null)
   const [expandedMessageSubId, setExpandedMessageSubId] = useState(null)
 
+  // Warranty state
+  const [warrantySetting, setWarrantySetting] = useState(null)
+  const [warrantyOrders, setWarrantyOrders] = useState([])
+  const [warrantySettingForm, setWarrantySettingForm] = useState({ start_date: '', end_date: '', coverage_notes: '' })
+  const [editingWarrantySetting, setEditingWarrantySetting] = useState(false)
+  const [savingWarrantySetting, setSavingWarrantySetting] = useState(false)
+  const [warrantyOrderForm, setWarrantyOrderForm] = useState({ title: '', description: '', due_date: '', assigned_employee_id: '', assigned_employee_name: '', assigned_sub_id: '', assigned_company: '' })
+  const [showWarrantyOrderForm, setShowWarrantyOrderForm] = useState(false)
+  const [submittingWarrantyOrder, setSubmittingWarrantyOrder] = useState(false)
+  const [resolvingOrder, setResolvingOrder] = useState(null)
+  const [uploadingWarrantyPhoto, setUploadingWarrantyPhoto] = useState(false)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -1025,7 +1037,20 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'prelim') { loadPrelimNotices() }
     if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
+    if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
   }, [activeTab, id])
+
+  async function loadWarranty() {
+    const [settingsRes, ordersRes] = await Promise.all([
+      fetch(`/api/warranty-settings?job_id=${id}`),
+      fetch(`/api/warranty-orders?job_id=${id}`)
+    ])
+    const { setting } = await settingsRes.json()
+    const { orders } = await ordersRes.json()
+    setWarrantySetting(setting || null)
+    setWarrantyOrders(orders || [])
+    if (setting) setWarrantySettingForm({ start_date: setting.start_date || '', end_date: setting.end_date || '', coverage_notes: setting.coverage_notes || '' })
+  }
 
 
   // ── Sub SOV ─────────────────────────────────────────────────
@@ -2648,6 +2673,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'documents', label: 'Documents', badge: jobDocs.length || null },
                   { key: 'schedule', label: 'Schedule' },
                   { key: 'closeout', label: 'Closeout' },
+                  { key: 'warranty', label: 'Warranty', badge: warrantyOrders.filter(o => o.status !== 'resolved').length || null },
                 ],
               },
               {
@@ -6729,6 +6755,259 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   </div>
                 ))}
+              </div>
+            </>
+          )
+        })()}
+
+        {/* ── WARRANTY TAB ── */}
+        {activeTab === 'warranty' && (() => {
+          const openOrders = warrantyOrders.filter(o => o.status !== 'resolved')
+          const resolvedOrders = warrantyOrders.filter(o => o.status === 'resolved')
+          return (
+            <>
+              {/* Warranty Period */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Warranty Period</p>
+                  {!editingWarrantySetting && (
+                    <button style={s.btnSmallOrange} onClick={() => { setEditingWarrantySetting(true); if (warrantySetting) setWarrantySettingForm({ start_date: warrantySetting.start_date || '', end_date: warrantySetting.end_date || '', coverage_notes: warrantySetting.coverage_notes || '' }) }}>
+                      {warrantySetting ? 'Edit' : 'Set Period'}
+                    </button>
+                  )}
+                </div>
+                {editingWarrantySetting ? (
+                  <>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Start Date</label><input type="date" style={s.input} value={warrantySettingForm.start_date} onChange={e => setWarrantySettingForm(f => ({ ...f, start_date: e.target.value }))} /></div>
+                      <div><label style={s.label}>End Date</label><input type="date" style={s.input} value={warrantySettingForm.end_date} onChange={e => setWarrantySettingForm(f => ({ ...f, end_date: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={s.label}>Coverage Notes</label>
+                      <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={warrantySettingForm.coverage_notes} onChange={e => setWarrantySettingForm(f => ({ ...f, coverage_notes: e.target.value }))} placeholder="1-year workmanship, manufacturer warranties, exclusions..." />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button style={{ ...s.btnSmallOrange, opacity: savingWarrantySetting ? 0.6 : 1 }} disabled={savingWarrantySetting} onClick={async () => {
+                        setSavingWarrantySetting(true)
+                        const res = await fetch('/api/warranty-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...warrantySettingForm }) })
+                        const { setting } = await res.json()
+                        setWarrantySetting(setting)
+                        setEditingWarrantySetting(false)
+                        setSavingWarrantySetting(false)
+                      }}>{savingWarrantySetting ? 'Saving...' : 'Save'}</button>
+                      <button style={s.btnSmall} onClick={() => setEditingWarrantySetting(false)}>Cancel</button>
+                    </div>
+                  </>
+                ) : warrantySetting ? (
+                  <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                    {warrantySetting.start_date && (
+                      <div>
+                        <p style={{ ...s.label, margin: '0 0 4px' }}>Start</p>
+                        <p style={{ margin: 0, fontSize: '15px', color: '#f1f1f1', fontWeight: '600' }}>{new Date(warrantySetting.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                    )}
+                    {warrantySetting.end_date && (() => {
+                      const daysLeft = Math.ceil((new Date(warrantySetting.end_date + 'T12:00:00') - new Date()) / 86400000)
+                      return (
+                        <div>
+                          <p style={{ ...s.label, margin: '0 0 4px' }}>Expires</p>
+                          <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: daysLeft < 0 ? '#ff6b6b' : daysLeft < 30 ? '#facc15' : '#4ade80' }}>{new Date(warrantySetting.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '12px', color: daysLeft < 0 ? '#ff6b6b' : '#555' }}>{daysLeft < 0 ? 'Expired' : `${daysLeft} days remaining`}</p>
+                        </div>
+                      )
+                    })()}
+                    {warrantySetting.coverage_notes && (
+                      <div style={{ flex: 1 }}>
+                        <p style={{ ...s.label, margin: '0 0 4px' }}>Coverage</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#aaa', lineHeight: '1.6' }}>{warrantySetting.coverage_notes}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ color: '#555', fontSize: '13px', margin: 0 }}>No warranty period set. Click "Set Period" to configure.</p>
+                )}
+              </div>
+
+              {/* Work Orders */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Work Orders ({warrantyOrders.length})</p>
+                  <button style={s.btnSmallOrange} onClick={() => setShowWarrantyOrderForm(v => !v)}>{showWarrantyOrderForm ? 'Cancel' : '+ New Order'}</button>
+                </div>
+
+                {showWarrantyOrderForm && (
+                  <div style={s.inlineForm}>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Title *</label><input style={s.input} value={warrantyOrderForm.title} onChange={e => setWarrantyOrderForm(f => ({ ...f, title: e.target.value }))} placeholder="Leaking faucet in unit 3..." /></div>
+                      <div><label style={s.label}>Due Date</label><input type="date" style={s.input} value={warrantyOrderForm.due_date} onChange={e => setWarrantyOrderForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={s.label}>Description</label>
+                      <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={warrantyOrderForm.description} onChange={e => setWarrantyOrderForm(f => ({ ...f, description: e.target.value }))} placeholder="Details about the issue..." />
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div>
+                        <label style={s.label}>Assign to employee</label>
+                        <select style={s.input} value={warrantyOrderForm.assigned_employee_id} onChange={e => {
+                          const emp = allEmployees.find(em => em.id === e.target.value)
+                          setWarrantyOrderForm(f => ({ ...f, assigned_employee_id: e.target.value, assigned_employee_name: emp?.full_name || emp?.name || '' }))
+                        }}>
+                          <option value="">— None —</option>
+                          {allEmployees.filter(e => e.active).map(emp => <option key={emp.id} value={emp.id}>{emp.full_name || emp.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={s.label}>Assign to subcontractor</label>
+                        <select style={s.input} value={warrantyOrderForm.assigned_sub_id} onChange={e => {
+                          const sub = subs.find(s => s.sub_id === e.target.value)
+                          setWarrantyOrderForm(f => ({ ...f, assigned_sub_id: e.target.value, assigned_company: sub?.company_name || '' }))
+                        }}>
+                          <option value="">— None —</option>
+                          {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <button style={{ ...s.btnSmallOrange, opacity: submittingWarrantyOrder || !warrantyOrderForm.title ? 0.6 : 1 }} disabled={submittingWarrantyOrder || !warrantyOrderForm.title} onClick={async () => {
+                      setSubmittingWarrantyOrder(true)
+                      await fetch('/api/warranty-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...warrantyOrderForm }) })
+                      setWarrantyOrderForm({ title: '', description: '', due_date: '', assigned_employee_id: '', assigned_employee_name: '', assigned_sub_id: '', assigned_company: '' })
+                      setShowWarrantyOrderForm(false)
+                      await loadWarranty()
+                      setSubmittingWarrantyOrder(false)
+                    }}>{submittingWarrantyOrder ? 'Adding...' : 'Create Order'}</button>
+                  </div>
+                )}
+
+                {warrantyOrders.length === 0 && <p style={{ color: '#444', fontSize: '14px' }}>No warranty orders yet.</p>}
+
+                {openOrders.length > 0 && (
+                  <>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>Open ({openOrders.length})</p>
+                    {openOrders.map(order => (
+                      <div key={order.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{order.title}</span>
+                              <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: order.status === 'in_progress' ? '#1a1200' : '#1a1a1a', color: order.status === 'in_progress' ? '#facc15' : '#888', border: `1px solid ${order.status === 'in_progress' ? '#4a4400' : '#2a2a2a'}` }}>
+                                {order.status === 'in_progress' ? 'In Progress' : 'Open'}
+                              </span>
+                            </div>
+                            {(order.assigned_employee_name || order.assigned_company) && (
+                              <div style={{ fontSize: '12px', color: '#555', marginBottom: '2px' }}>
+                                {order.assigned_employee_name && `Employee: ${order.assigned_employee_name}`}
+                                {order.assigned_employee_name && order.assigned_company && ' · '}
+                                {order.assigned_company && `Sub: ${order.assigned_company}`}
+                              </div>
+                            )}
+                            {order.due_date && <div style={{ fontSize: '12px', color: new Date(order.due_date + 'T12:00:00') < new Date() ? '#ff6b6b' : '#555' }}>Due {new Date(order.due_date + 'T12:00:00').toLocaleDateString()}</div>}
+                            {order.description && <div style={{ fontSize: '12px', color: '#444', marginTop: '4px' }}>{order.description}</div>}
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                            {order.status === 'open' && (
+                              <button style={s.btnSmall} onClick={async () => { await fetch('/api/warranty-orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: order.id, status: 'in_progress' }) }); loadWarranty() }}>Start</button>
+                            )}
+                            <button style={s.btnSmallGreen} onClick={() => setResolvingOrder({ id: order.id, is_billable: false, billable_amount: '', resolution_notes: '', photos: [] })}>Resolve</button>
+                            <button style={s.btnSmallRed} onClick={async () => { if (!confirm('Delete this warranty order?')) return; await fetch(`/api/warranty-orders?id=${order.id}`, { method: 'DELETE' }); loadWarranty() }}>Del</button>
+                          </div>
+                        </div>
+
+                        {/* Inline resolution form */}
+                        {resolvingOrder?.id === order.id && (
+                          <div style={{ ...s.inlineForm, marginTop: '12px', border: '1px solid #1a4a1a' }}>
+                            <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 12px' }}>Resolve work order</p>
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={s.label}>Resolution notes</label>
+                              <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={resolvingOrder.resolution_notes} onChange={e => setResolvingOrder(r => ({ ...r, resolution_notes: e.target.value }))} placeholder="Describe what was done to resolve this..." />
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={s.label}>Completion photos * (at least one required)</label>
+                              {resolvingOrder.photos.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                                  {resolvingOrder.photos.map((p, i) => (
+                                    <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      📷 {p.name}
+                                      <button type="button" onClick={() => setResolvingOrder(r => ({ ...r, photos: r.photos.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: uploadingWarrantyPhoto ? '#111' : '#0a1a0a', color: uploadingWarrantyPhoto ? '#555' : '#4ade80', border: '1px solid #1a4a1a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: uploadingWarrantyPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                {uploadingWarrantyPhoto ? 'Uploading...' : '+ Add Photo'}
+                                <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingWarrantyPhoto} onChange={async e => {
+                                  const file = e.target.files?.[0]; if (!file) return
+                                  setUploadingWarrantyPhoto(true)
+                                  const path = `${id}/${order.id}/${Date.now()}-${file.name}`
+                                  const { error } = await supabase.storage.from('warranty-photos').upload(path, file)
+                                  if (!error) setResolvingOrder(r => ({ ...r, photos: [...r.photos, { path, name: file.name }] }))
+                                  else alert('Upload failed: ' + error.message)
+                                  setUploadingWarrantyPhoto(false)
+                                  e.target.value = ''
+                                }} />
+                              </label>
+                              {resolvingOrder.photos.length === 0 && <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#555' }}>Photos are required before marking resolved.</p>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '14px', flexWrap: 'wrap' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={resolvingOrder.is_billable} onChange={e => setResolvingOrder(r => ({ ...r, is_billable: e.target.checked }))} style={{ width: '16px', height: '16px' }} />
+                                <span style={{ fontSize: '13px', color: '#aaa', fontWeight: '600' }}>This item is billable to the owner</span>
+                              </label>
+                              {resolvingOrder.is_billable && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '12px', color: '#555' }}>Amount ($)</span>
+                                  <input type="number" step="0.01" min="0" style={{ ...s.input, width: '140px' }} value={resolvingOrder.billable_amount} onChange={e => setResolvingOrder(r => ({ ...r, billable_amount: e.target.value }))} placeholder="0.00" />
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                style={{ ...s.btnSmallGreen, opacity: resolvingOrder.photos.length === 0 ? 0.4 : 1 }}
+                                disabled={resolvingOrder.photos.length === 0}
+                                onClick={async () => {
+                                  await fetch('/api/warranty-orders', {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      id: resolvingOrder.id,
+                                      status: 'resolved',
+                                      photos: resolvingOrder.photos,
+                                      resolution_notes: resolvingOrder.resolution_notes || null,
+                                      is_billable: resolvingOrder.is_billable,
+                                      billable_amount: resolvingOrder.is_billable && resolvingOrder.billable_amount ? parseFloat(resolvingOrder.billable_amount) : null,
+                                    })
+                                  })
+                                  setResolvingOrder(null)
+                                  loadWarranty()
+                                }}
+                              >Mark Resolved &amp; Notify Owner</button>
+                              <button style={s.btnSmall} onClick={() => setResolvingOrder(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {resolvedOrders.length > 0 && (
+                  <>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: `${openOrders.length > 0 ? '1.5rem' : '0'} 0 8px` }}>Resolved ({resolvedOrders.length})</p>
+                    {resolvedOrders.map(order => (
+                      <div key={order.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a', opacity: 0.75 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#aaa', textDecoration: 'line-through' }}>{order.title}</span>
+                          <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>Resolved</span>
+                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#1a1200', color: '#facc15', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` · $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#444', marginTop: '3px' }}>
+                          {order.resolved_at && `Resolved ${new Date(order.resolved_at).toLocaleDateString()}`}
+                          {order.photos?.length > 0 && ` · ${order.photos.length} photo${order.photos.length !== 1 ? 's' : ''} on file`}
+                        </div>
+                        {order.resolution_notes && <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>{order.resolution_notes}</div>}
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </>
           )

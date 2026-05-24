@@ -1566,6 +1566,31 @@ p{margin-bottom:9px;line-height:1.55}
       status: 'pending',
       sov: validSOV.length > 0 ? validSOV : null,
     })
+    // Notify sub if this is a PM-to-sub CO
+    if (coForm.direction === 'pm_to_sub') {
+      const { data: subcontract } = await supabase.from('subcontracts').select('vendor_name, sub_id').eq('id', coForm.subcontract_id).single()
+      if (subcontract?.sub_id) {
+        const { data: subProfile } = await supabase.from('profiles').select('email').eq('id', subcontract.sub_id).single()
+        if (subProfile?.email) {
+          const amt = parseFloat(finalAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+          const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
+          sendEmail(subProfile.email, `Change order requires your approval — ${job?.project_name}`,
+            emailWrap(`
+              <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Change order for your review</h2>
+              <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
+                NV Construction has issued a change order on <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong> requiring your approval.
+              </p>
+              <p style="color:#aaa;margin:0 0 8px;font-size:14px"><strong style="color:#f1f1f1">Description:</strong> ${coForm.description}</p>
+              <p style="font-size:22px;font-weight:800;color:#e8590c;margin:12px 0">${amt}</p>
+              <table cellpadding="0" cellspacing="0" style="margin:20px 0 0">
+                <tr><td style="background:#e8590c;border-radius:8px">
+                  <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Review Change Order</a>
+                </td></tr>
+              </table>
+            `)).catch(() => {})
+        }
+      }
+    }
     setShowAddCO(false)
     setCoForm(emptyCO)
     await loadAllCOs()
@@ -2888,8 +2913,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const over = uncommitted < 0
                     const ownerAmt = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                     const markup = ownerAmt - Number(item.budget_amount)
+                    const rowAccent = over ? '#ff4444' : pct >= 80 ? '#e8590c' : pct >= 50 ? '#facc15' : committed > 0 ? '#4ade80' : 'transparent'
                     return (
-                      <div key={item.id} style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1 }}>
+                      <div key={item.id} style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1, borderLeft: `3px solid ${rowAccent}`, paddingLeft: '10px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                             {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace', flexShrink: 0 }}>{item.cost_code}</span>}

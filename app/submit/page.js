@@ -90,6 +90,12 @@ export default function Submit() {
   const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
   const [savingSov, setSavingSov] = useState(false)
 
+  // Change order approval state
+  const [respondingCO, setRespondingCO] = useState(null)
+  const [coDisputeReason, setCoDisputeReason] = useState('')
+  const [savingCOResponse, setSavingCOResponse] = useState(false)
+  const [coResponseMsg, setCoResponseMsg] = useState({})
+
   // Lien waiver state
   const [lienWaiverSub, setLienWaiverSub] = useState(null)
   const [signerName, setSignerName] = useState('')
@@ -266,6 +272,30 @@ export default function Submit() {
     if (expandedContract === id) { setExpandedContract(null); return }
     setExpandedContract(id)
     loadMyCOs(id)
+  }
+
+  async function respondCO(co, response) {
+    setSavingCOResponse(true)
+    const res = await fetch('/api/co-response', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        co_id: co.id,
+        response,
+        dispute_reason: response === 'disputed' ? coDisputeReason : undefined,
+        sub_user_id: user.id,
+      }),
+    })
+    const data = await res.json()
+    setSavingCOResponse(false)
+    if (data.ok) {
+      setCoResponseMsg(prev => ({ ...prev, [co.id]: response }))
+      setRespondingCO(null)
+      setCoDisputeReason('')
+      await loadMyCOs(co.subcontract_id)
+    } else {
+      alert(data.error || 'Failed to submit response')
+    }
   }
 
   async function loadJobSov(jobId) {
@@ -860,19 +890,60 @@ export default function Submit() {
                       {cos.length === 0 ? (
                         <p style={{ fontSize: '13px', color: '#444' }}>No change orders.</p>
                       ) : cos.map(co => (
-                        <div key={co.id} style={s.coRow}>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
-                            <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
-                              {co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'} · {new Date(co.created_at).toLocaleDateString()}
-                            </span>
+                        <div key={co.id}>
+                          <div style={s.coRow}>
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
+                              <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
+                                {co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'} · {new Date(co.created_at).toLocaleDateString()}
+                              </span>
+                              {co.dispute_reason && (
+                                <div style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px' }}>Dispute: {co.dispute_reason}</div>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                                {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
+                              </span>
+                              <span style={s.coBadge(co.status)}>{co.status}</span>
+                              {co.direction === 'pm_to_sub' && co.status === 'pending' && respondingCO !== co.id && (
+                                <>
+                                  <button
+                                    onClick={() => respondCO(co, 'approved')}
+                                    disabled={savingCOResponse}
+                                    style={{ padding: '4px 12px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '6px', color: '#4ade80', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                  >Approve</button>
+                                  <button
+                                    onClick={() => { setRespondingCO(co.id); setCoDisputeReason('') }}
+                                    style={{ padding: '4px 12px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', color: '#ff6b6b', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                  >Dispute</button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
-                              {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
-                            </span>
-                            <span style={s.coBadge(co.status)}>{co.status}</span>
-                          </div>
+                          {respondingCO === co.id && (
+                            <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '1rem', margin: '4px 0 8px' }}>
+                              <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#ff6b6b', fontWeight: '700' }}>Dispute reason</p>
+                              <textarea
+                                value={coDisputeReason}
+                                onChange={e => setCoDisputeReason(e.target.value)}
+                                placeholder="Describe why you are disputing this change order..."
+                                rows={3}
+                                style={{ ...s.input, resize: 'vertical', marginBottom: '10px' }}
+                              />
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                  onClick={() => respondCO(co, 'disputed')}
+                                  disabled={savingCOResponse || !coDisputeReason.trim()}
+                                  style={{ padding: '7px 16px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', color: '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: (!coDisputeReason.trim() || savingCOResponse) ? 0.5 : 1 }}
+                                >{savingCOResponse ? 'Submitting...' : 'Submit dispute'}</button>
+                                <button
+                                  onClick={() => setRespondingCO(null)}
+                                  style={{ padding: '7px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                                >Cancel</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -935,6 +1006,15 @@ export default function Submit() {
                     <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px' }}>
                       <p style={{ margin: 0, fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '4px' }}>Rejection reason</p>
                       <p style={{ margin: 0, fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{s2.rejection_reason}</p>
+                    </div>
+                  )}
+                  {s2.paid_at && (
+                    <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#4ade80', letterSpacing: '0.5px' }}>✓ Payment received</span>
+                      {s2.payment_amount && <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>${Number(s2.payment_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                      <span style={{ fontSize: '12px', color: '#4ade80', opacity: 0.7 }}>{new Date(s2.paid_at).toLocaleDateString()}</span>
+                      {s2.payment_method && <span style={{ fontSize: '11px', color: '#1a5a1a', background: '#0d2e0d', borderRadius: '4px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s2.payment_method}{s2.check_number ? ` #${s2.check_number}` : ''}</span>}
+                      {s2.payment_notes && <span style={{ fontSize: '12px', color: '#4ade80', opacity: 0.6 }}>{s2.payment_notes}</span>}
                     </div>
                   )}
                 </div>

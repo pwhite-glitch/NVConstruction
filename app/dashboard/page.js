@@ -1308,12 +1308,15 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
   const firstName = profile?.full_name?.split(' ')[0] || 'there'
   const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   const pendingTotal = pending.reduce((sum, sub) => sum + (sub.amount_billed || 0), 0)
+  const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
+  const billingBadge = (pending.length + unsignedWaivers.length) || null
+  const dirBadge = (pendingApps + expiringCOIs.length) || null
 
   const navItems = [
     { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
     { tab: 'jobs',          label: 'Jobs',           icon: <IconBriefcase /> },
-    { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: pending.length || null },
-    { tab: 'directory',     label: 'Sub Directory',  icon: <IconUsers />,    badge: pendingApps || null },
+    { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: billingBadge },
+    { tab: 'directory',     label: 'Sub Directory',  icon: <IconUsers />,    badge: dirBadge },
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
@@ -1384,6 +1387,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 <p style={s.ovLabel}>COIs expiring</p>
                 <div style={s.ovValue(expiringCOIs.length ? '#facc15' : null)}>{expiringCOIs.length}</div>
                 {expiringCOIs.length > 0 && <p style={s.ovSub}>in next 30 days</p>}
+              </div>
+              <div style={s.ovCard}>
+                <p style={s.ovLabel}>Unsigned waivers</p>
+                <div style={s.ovValue(unsignedWaivers.length ? '#facc15' : null)}>{unsignedWaivers.length}</div>
+                {unsignedWaivers.length > 0 && <p style={s.ovSub}>approved, not yet signed</p>}
               </div>
               <div style={s.ovCard}>
                 <p style={s.ovLabel}>Pending applications</p>
@@ -1621,7 +1629,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
-                          <span style={{ fontSize: '11px', color: '#e8590c', fontWeight: '700' }}>COI EXPIRING</span>
+                          <span style={{ fontSize: '11px', color: new Date(sub.coi_expiration) < new Date() ? '#ff6b6b' : '#e8590c', fontWeight: '700', background: new Date(sub.coi_expiration) < new Date() ? '#2a0a0a' : '#2a1200', border: `1px solid ${new Date(sub.coi_expiration) < new Date() ? '#5a1a1a' : '#4a2200'}`, borderRadius: '4px', padding: '2px 8px' }}>
+                            {new Date(sub.coi_expiration) < new Date() ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
+                          </span>
                         )}
                         <span style={s.badge(sub.status)}>{sub.status}</span>
                       </div>

@@ -96,6 +96,13 @@ export default function Field() {
   const [submittingPunch, setSubmittingPunch] = useState(false)
   const [updatingPunch, setUpdatingPunch] = useState(null)
 
+  // Photo gallery & lightbox
+  const [photoUrls, setPhotoUrls] = useState({})
+  const [lightbox, setLightbox] = useState(null)
+  const [standalonePhotos, setStandalonePhotos] = useState([])
+  const [captionDraft, setCaptionDraft] = useState('')
+  const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -122,6 +129,7 @@ export default function Field() {
     else if (activeTab === 'costs') loadDirectCosts()
     else if (activeTab === 'docs') loadJobDocs()
     else if (activeTab === 'punch') loadPunchItems()
+    else if (activeTab === 'photos') loadPhotoGallery()
   }, [selectedJobId, activeTab])
 
   async function loadDailyReports() {
@@ -167,6 +175,36 @@ export default function Field() {
     const res = await fetch(`/api/punch-list?job_id=${selectedJobId}`)
     const { items } = await res.json()
     setPunchItems(items || [])
+  }
+
+  async function fetchPhotoUrls(paths) {
+    const clean = [...new Set(paths.filter(Boolean))]
+    if (!clean.length) return
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(clean, 7200)
+    if (data) setPhotoUrls(prev => { const u = { ...prev }; data.forEach(d => { if (d.signedUrl) u[d.path] = d.signedUrl }); return u })
+  }
+
+  function openLightbox(photos, index = 0) {
+    setLightbox({ photos, index })
+    fetchPhotoUrls(photos.map(p => p.path).filter(Boolean))
+  }
+
+  async function loadPhotoGallery() {
+    const { data } = await supabase.from('job_photos').select('*').eq('job_id', selectedJobId).order('taken_at', { ascending: false })
+    setStandalonePhotos(data || [])
+    if (dailyReports.length === 0) await loadDailyReports()
+    if (data?.length) fetchPhotoUrls(data.map(p => p.storage_path))
+  }
+
+  async function uploadGalleryPhoto(file) {
+    setUploadingGalleryPhoto(true)
+    const path = `${selectedJobId}/gallery/${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
+    if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
+    await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: captionDraft || null, taken_at: new Date().toISOString() })
+    setCaptionDraft('')
+    await loadPhotoGallery()
+    setUploadingGalleryPhoto(false)
   }
 
   async function uploadJobDoc(file) {
@@ -322,8 +360,16 @@ export default function Field() {
     setCompletingMilestone(null)
   }
 
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = e => { if (e.key === 'Escape') setLightbox(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
+
   const selectedJob = assignedJobs.find(j => j.id === selectedJobId)
   const answeredRfis = rfis.filter(r => r.status === 'answered').length
+  const totalGalleryPhotos = standalonePhotos.length + dailyReports.reduce((a, r) => a + (r.photos?.length || 0), 0)
 
   if (!profile) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
@@ -379,6 +425,7 @@ export default function Field() {
                       { key: 'costs', label: 'Direct Costs', count: directCosts.length || null },
                       { key: 'docs', label: 'Documents', count: jobDocs.length || null },
                       { key: 'punch', label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
+                      { key: 'photos', label: 'Site Photos', count: totalGalleryPhotos || null },
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
@@ -396,7 +443,7 @@ export default function Field() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
                     <button style={{ padding: '8px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }} onClick={() => setActiveTab('')}>← Back</button>
                     <span style={{ fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>
-                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List' }[activeTab]}
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos' }[activeTab]}
                     </span>
                   </div>
                 )}
@@ -560,7 +607,7 @@ export default function Field() {
                         <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>Past reports ({dailyReports.length})</p>
                         {dailyReports.map(r => (
                           <div key={r.id} style={s.row}>
-                            <div style={s.rowHead} onClick={() => setExpandedReport(expandedReport === r.id ? null : r.id)}>
+                            <div style={s.rowHead} onClick={() => { const opening = expandedReport !== r.id; setExpandedReport(opening ? r.id : null); if (opening && r.photos?.length) fetchPhotoUrls(r.photos.map(p => p.path)) }}>
                               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                                 {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}{r.weather_temp ? ` · ${r.weather_temp}` : ''}</span>}
@@ -603,8 +650,15 @@ export default function Field() {
                                 {r.issues && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / Delays</p><p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.issues}</p></>)}
                                 {r.photos?.length > 0 && (<>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                    {r.photos.map((p, i) => <button key={i} type="button" onClick={() => openReportPhoto(p.path)} style={{ background: '#1a1a2a', border: '1px solid #2a2a3a', borderRadius: '6px', padding: '6px 12px', fontSize: '12px', color: '#60a5fa', cursor: 'pointer' }}>📷 {p.name || `Photo ${i + 1}`}</button>)}
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '1rem' }}>
+                                    {r.photos.map((p, i) => (
+                                      <button key={i} type="button" onClick={() => openLightbox(r.photos, i)} style={{ aspectRatio: '1', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', padding: 0 }}>
+                                        {photoUrls[p.path]
+                                          ? <img src={photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px', padding: '4px', textAlign: 'center' }}>{p.name || `#${i+1}`}</div>
+                                        }
+                                      </button>
+                                    ))}
                                   </div>
                                 </>)}
                               </div>
@@ -1099,9 +1153,111 @@ export default function Field() {
                   </>
                 )}
 
+                {/* ── SITE PHOTOS ── */}
+                {activeTab === 'photos' && (() => {
+                  const allPhotos = [
+                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, date: p.taken_at?.split('T')[0] })),
+                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: null, date: r.report_date, fromReport: true }))),
+                  ].sort((a, b) => new Date(b.date) - new Date(a.date))
+                  const byDate = allPhotos.reduce((acc, p) => { const d = p.date || 'Unknown'; (acc[d] = acc[d] || []).push(p); return acc }, {})
+                  const dates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a))
+
+                  return (
+                    <>
+                      {/* Upload strip */}
+                      <div style={s.card}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: '180px' }}>
+                            <label style={s.label}>Caption / tag</label>
+                            <input style={s.input} value={captionDraft} onChange={e => setCaptionDraft(e.target.value)} placeholder="Foundation pour, Framing, MEP rough-in..." />
+                          </div>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 20px', background: uploadingGalleryPhoto ? '#111' : '#e8590c', color: '#fff', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>
+                            {uploadingGalleryPhoto ? 'Uploading...' : '+ Add Photo'}
+                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={uploadingGalleryPhoto} multiple onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadGalleryPhoto(f); e.target.value = '' }} />
+                          </label>
+                        </div>
+                      </div>
+
+                      {allPhotos.length === 0 && (
+                        <div style={s.empty}>No photos yet.<br />Add photos directly or they'll appear here from daily reports.</div>
+                      )}
+
+                      {dates.map(date => (
+                        <div key={date} style={{ marginBottom: '1.5rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
+                            {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                            <span style={{ color: '#333', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                            {byDate[date].map((p, i) => {
+                              const allForDate = byDate[date]
+                              return (
+                                <button key={i} type="button" onClick={() => openLightbox(allPhotos, allPhotos.indexOf(p))} style={{ aspectRatio: '1', background: '#0f0f0f', border: 'none', overflow: 'hidden', cursor: 'pointer', padding: 0, borderRadius: '4px', position: 'relative' }}>
+                                  {photoUrls[p.path]
+                                    ? <img src={photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                    : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
+                                  }
+                                  {p.caption && (
+                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 6px 4px', fontSize: '9px', color: '#ddd', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {p.caption}
+                                    </div>
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )
+                })()}
+
           </>
         )}
       </main>
+
+      {/* ── LIGHTBOX ── */}
+      {lightbox && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
+          {/* Top bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
+            <div>
+              {lightbox.photos[lightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px', marginRight: '12px' }}>{lightbox.photos[lightbox.index].caption}</span>}
+              {lightbox.photos[lightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(lightbox.photos[lightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ color: '#555', fontSize: '12px' }}>{lightbox.index + 1} / {lightbox.photos.length}</span>
+              <button onClick={() => setLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+            </div>
+          </div>
+
+          {/* Main image */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '0 60px' }}>
+            {photoUrls[lightbox.photos[lightbox.index]?.path]
+              ? <img src={photoUrls[lightbox.photos[lightbox.index].path]} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', userSelect: 'none' }} alt="" />
+              : <div style={{ color: '#444', fontSize: '13px' }}>Loading...</div>
+            }
+            {lightbox.photos.length > 1 && <>
+              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>‹</button>
+              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>›</button>
+            </>}
+          </div>
+
+          {/* Thumbnail strip */}
+          {lightbox.photos.length > 1 && (
+            <div style={{ display: 'flex', gap: '4px', padding: '10px 14px', background: 'rgba(0,0,0,0.8)', overflowX: 'auto', flexShrink: 0 }}>
+              {lightbox.photos.map((p, i) => (
+                <button key={i} onClick={() => setLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === lightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#111' }}>
+                  {photoUrls[p.path]
+                    ? <img src={photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" />
+                    : <div style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
+                  }
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

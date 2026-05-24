@@ -44,7 +44,7 @@ export default function Field() {
   const [profile, setProfile] = useState(null)
   const [assignedJobs, setAssignedJobs] = useState([])
   const [selectedJobId, setSelectedJobId] = useState('')
-  const [activeTab, setActiveTab] = useState('daily')
+  const [activeTab, setActiveTab] = useState('')
 
   const [dailyReports, setDailyReports] = useState([])
   const [dailyForm, setDailyForm] = useState({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
@@ -368,22 +368,38 @@ export default function Field() {
 
             {selectedJobId && (
               <>
-                <div style={s.tabRow}>
-                  <button style={s.tab(activeTab === 'daily')} onClick={() => setActiveTab('daily')}>Daily Reports</button>
-                  <button style={s.tab(activeTab === 'rfi')} onClick={() => setActiveTab('rfi')}>
-                    RFIs{answeredRfis > 0 ? ` (${answeredRfis} new)` : ''}
-                  </button>
-                  <button style={s.tab(activeTab === 'deliveries')} onClick={() => setActiveTab('deliveries')}>Deliveries</button>
-                  <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
-                  <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>Contacts</button>
-                  <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
-                  <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>
-                    Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
-                  </button>
-                  <button style={s.tab(activeTab === 'punch')} onClick={() => setActiveTab('punch')}>
-                    Punch List{punchItems.filter(p => p.status === 'open').length > 0 ? ` (${punchItems.filter(p => p.status === 'open').length})` : ''}
-                  </button>
-                </div>
+                {!activeTab && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
+                    {[
+                      { key: 'daily', label: 'Daily Reports', count: dailyReports.length || null },
+                      { key: 'rfi', label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
+                      { key: 'deliveries', label: 'Deliveries', count: deliveries.length || null },
+                      { key: 'schedule', label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
+                      { key: 'subs', label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
+                      { key: 'costs', label: 'Direct Costs', count: directCosts.length || null },
+                      { key: 'docs', label: 'Documents', count: jobDocs.length || null },
+                      { key: 'punch', label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
+                    ].map(item => (
+                      <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
+                        {(item.count || item.alert) ? (
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#555', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
+                            {item.alert && item.alertLabel ? item.alertLabel : item.count}
+                          </span>
+                        ) : <span style={{ fontSize: '11px', color: '#333' }}>Tap to open</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {activeTab && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
+                    <button style={{ padding: '8px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }} onClick={() => setActiveTab('')}>← Back</button>
+                    <span style={{ fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List' }[activeTab]}
+                    </span>
+                  </div>
+                )}
 
                 {/* ── DAILY REPORTS ── */}
                 {activeTab === 'daily' && (

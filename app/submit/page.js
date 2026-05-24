@@ -65,7 +65,7 @@ export default function Submit() {
   const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
-  const [activeTab, setActiveTab] = useState('billing')
+  const [activeTab, setActiveTab] = useState('')
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   // Bid invitations state
@@ -615,26 +615,42 @@ export default function Submit() {
       <main style={s.main} className="rx-main">
         {success && <div style={s.success}>Billing submitted successfully. Peyton will be notified.</div>}
 
-        <div style={s.tabRow}>
-          <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Submit Billing</button>
-          <button style={s.tab(activeTab === 'contracts')} onClick={() => setActiveTab('contracts')}>
-            My Contracts{myContracts.length > 0 ? ` (${myContracts.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'history')} onClick={() => setActiveTab('history')}>
-            Billing History{submissions.length > 0 ? ` (${submissions.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'bids')} onClick={() => setActiveTab('bids')}>
-            Bid Invites{bidInvitations.length > 0 ? ` (${bidInvitations.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'docs')} onClick={() => setActiveTab('docs')}>My Documents</button>
-          <button style={s.tab(activeTab === 'rfis')} onClick={() => setActiveTab('rfis')}>
-            RFIs{rfis.filter(r => r.status === 'answered').length > 0 ? ` (${rfis.filter(r => r.status === 'answered').length} answered)` : rfis.length > 0 ? ` (${rfis.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'messages')} onClick={() => { setActiveTab('messages'); if (jobs.length > 0 && !selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) } }}>Messages</button>
-          <button style={s.tab(activeTab === 'punch')} onClick={() => { setActiveTab('punch'); if (user) loadMyPunchItems(user.id) }}>
-            Punch List{myPunchItems.filter(p => p.status === 'open').length > 0 ? ` (${myPunchItems.filter(p => p.status === 'open').length})` : ''}
-          </button>
-        </div>
+        {!activeTab && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
+            {[
+              { key: 'billing', label: 'Submit Billing', count: null },
+              { key: 'contracts', label: 'My Contracts', count: myContracts.length || null },
+              { key: 'history', label: 'Billing History', count: submissions.length || null },
+              { key: 'bids', label: 'Bid Invites', count: bidInvitations.length || null, alert: bidInvitations.filter(b => b.status === 'pending').length > 0, alertLabel: `${bidInvitations.filter(b => b.status === 'pending').length} pending` },
+              { key: 'docs', label: 'My Documents', count: null },
+              { key: 'rfis', label: 'RFIs', count: rfis.length || null, alert: rfis.filter(r => r.status === 'answered').length > 0, alertLabel: `${rfis.filter(r => r.status === 'answered').length} answered` },
+              { key: 'messages', label: 'Messages', count: null },
+              { key: 'punch', label: 'Punch List', count: myPunchItems.filter(p => p.status === 'open').length || null, alert: myPunchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${myPunchItems.filter(p => p.status === 'open').length} open` },
+            ].map(item => (
+              <button key={item.key} onClick={() => {
+                setActiveTab(item.key)
+                if (item.key === 'messages' && jobs.length > 0 && !selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) }
+                if (item.key === 'punch' && user) loadMyPunchItems(user.id)
+              }} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
+                {(item.count || item.alert) ? (
+                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#555', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
+                    {item.alert && item.alertLabel ? item.alertLabel : item.count}
+                  </span>
+                ) : <span style={{ fontSize: '11px', color: '#333' }}>Tap to open</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeTab && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
+            <button style={{ padding: '8px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }} onClick={() => setActiveTab('')}>← Back</button>
+            <span style={{ fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>
+              {{ billing: 'Submit Billing', contracts: 'My Contracts', history: 'Billing History', bids: 'Bid Invites', docs: 'My Documents', rfis: 'RFIs', messages: 'Messages', punch: 'Punch List' }[activeTab]}
+            </span>
+          </div>
+        )}
 
         {/* ── SUBMIT BILLING TAB ── */}
         {activeTab === 'billing' && (

@@ -7,12 +7,12 @@ import { sendEmail, emailWrap } from '../../lib/email'
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
   header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
-  headerInner: { maxWidth: '1040px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
+  headerInner: { maxWidth: '1320px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
   logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
   logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
   logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
   logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
-  main: { maxWidth: '1040px', margin: '0 auto', padding: '2rem 1.5rem' },
+  main: { maxWidth: '1320px', margin: '0 auto', padding: '2rem 1.5rem' },
   backBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#888', fontSize: '13px', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.5rem' },
   card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.75rem', marginBottom: '1.5rem' },
   cardTitle: { fontSize: '13px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1.25rem' },
@@ -2632,53 +2632,92 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <div style={s.statCard}><div style={s.statLabel}>% billed</div><div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : '—'}</div></div>
         </div>
 
-        <div style={s.tabRow}>
-          <button style={s.tab(activeTab === 'details')} onClick={() => setActiveTab('details')}>Details</button>
-          <button style={s.tab(activeTab === 'subs')} onClick={() => setActiveTab('subs')}>
-            Subs{subs.length > 0 ? ` (${subs.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'budget')} onClick={() => setActiveTab('budget')}>
-            Budget{budgetItems.length > 0 ? ` (${budgetItems.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'contracts')} onClick={() => setActiveTab('contracts')}>
-            Contracts{contracts.length > 0 ? ` (${contracts.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'changeorders')} onClick={() => setActiveTab('changeorders')}>
-            Change Orders{pendingCOs > 0 ? ` (${pendingCOs} pending)` : allCOs.length > 0 ? ` (${allCOs.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>
-            Billing{pendingBillingCount > 0 ? ` (${pendingBillingCount} pending)` : billingSubmissions.length > 0 ? ` (${billingSubmissions.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'field')} onClick={() => setActiveTab('field')}>
-            Field{fieldRfis.filter(r => r.status === 'open').length > 0 ? ` (${fieldRfis.filter(r => r.status === 'open').length} RFI)` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>
-            Direct Costs{directCosts.filter(c => c.status === 'pending').length > 0 ? ` (${directCosts.filter(c => c.status === 'pending').length} pending)` : directCosts.length > 0 ? ` (${directCosts.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'prime')} onClick={() => setActiveTab('prime')}>Prime Contract</button>
-          <button style={s.tab(activeTab === 'schedule')} onClick={() => setActiveTab('schedule')}>Schedule</button>
-          <button style={s.tab(activeTab === 'documents')} onClick={() => setActiveTab('documents')}>
-            Documents{jobDocs.length > 0 ? ` (${jobDocs.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'contacts')} onClick={() => setActiveTab('contacts')}>
-            Contacts{jobContacts.length > 0 ? ` (${jobContacts.length})` : ''}
-          </button>
-          {userRole === 'pm' && (
-            <button style={s.tab(activeTab === 'labor')} onClick={() => setActiveTab('labor')}>
-              Labor{laborAllocations.length > 0 ? ` (${laborAllocations.length})` : ''}
-            </button>
-          )}
-          <button style={s.tab(activeTab === 'submittals')} onClick={() => setActiveTab('submittals')}>
-            Submittals{submittals.length > 0 ? ` (${submittals.length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'prelim')} onClick={() => setActiveTab('prelim')}>
-            Lien Log{prelimNotices.filter(n => n.status === 'active').length > 0 ? ` (${prelimNotices.filter(n => n.status === 'active').length})` : ''}
-          </button>
-          <button style={s.tab(activeTab === 'cashflow')} onClick={() => setActiveTab('cashflow')}>Cash Flow</button>
-          <button style={s.tab(activeTab === 'closeout')} onClick={() => setActiveTab('closeout')}>
-            Closeout{punchItems.filter(p => p.status !== 'approved').length > 0 ? ` (${punchItems.filter(p => p.status !== 'approved').length})` : ''}
-          </button>
-        </div>
+        {/* ── SIDEBAR + CONTENT LAYOUT ── */}
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+
+          {/* Left sidebar nav */}
+          <aside style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
+            {[
+              {
+                group: 'Project',
+                items: [
+                  { key: 'details', label: 'Details' },
+                  { key: 'contacts', label: 'Contacts', badge: jobContacts.length || null },
+                  { key: 'documents', label: 'Documents', badge: jobDocs.length || null },
+                  { key: 'schedule', label: 'Schedule' },
+                ],
+              },
+              {
+                group: 'Financials',
+                items: [
+                  { key: 'budget', label: 'Budget', badge: budgetItems.length || null },
+                  { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : allCOs.length || null, alert: pendingCOs > 0 },
+                  { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : billingSubmissions.length || null, alert: pendingBillingCount > 0 },
+                  { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : directCosts.length || null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
+                  { key: 'prime', label: 'Prime Contract' },
+                  { key: 'cashflow', label: 'Cash Flow' },
+                ],
+              },
+              {
+                group: 'Field',
+                items: [
+                  { key: 'field', label: 'Field', badge: fieldRfis.filter(r => r.status === 'open').length > 0 ? `${fieldRfis.filter(r => r.status === 'open').length} RFI` : null, alert: fieldRfis.filter(r => r.status === 'open').length > 0 },
+                  { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
+                  { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
+                  { key: 'closeout', label: 'Closeout', badge: punchItems.filter(p => p.status !== 'approved').length || null },
+                ],
+              },
+              {
+                group: 'Team',
+                items: [
+                  { key: 'subs', label: 'Subs', badge: subs.length || null },
+                  { key: 'contracts', label: 'Contracts', badge: contracts.length || null },
+                  ...(userRole === 'pm' ? [{ key: 'labor', label: 'Labor', badge: laborAllocations.length || null }] : []),
+                ],
+              },
+            ].map(({ group, items }) => (
+              <div key={group} style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '4px' }}>{group}</div>
+                {items.map(({ key, label, badge, alert }) => {
+                  const active = activeTab === key
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setActiveTab(key)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        width: '100%', padding: '7px 10px', marginBottom: '1px',
+                        background: active ? '#1a1a1a' : 'transparent',
+                        border: 'none',
+                        borderLeft: active ? '2px solid #e8590c' : '2px solid transparent',
+                        borderRadius: '6px',
+                        color: active ? '#f1f1f1' : '#666',
+                        fontSize: '13px', fontWeight: active ? '700' : '500',
+                        cursor: 'pointer', textAlign: 'left',
+                        transition: 'color 0.1s',
+                      }}
+                      onMouseEnter={e => { if (!active) e.currentTarget.style.color = '#aaa' }}
+                      onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#666' }}
+                    >
+                      <span>{label}</span>
+                      {badge ? (
+                        <span style={{
+                          fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px',
+                          background: alert ? '#3a1200' : '#1a1a1a',
+                          color: alert ? '#e8590c' : '#555',
+                          border: `1px solid ${alert ? '#5a2200' : '#2a2a2a'}`,
+                          letterSpacing: '0.3px', whiteSpace: 'nowrap',
+                        }}>{badge}</span>
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </aside>
+
+          {/* Main content area */}
+          <div style={{ flex: 1, minWidth: 0 }}>
 
         {/* ── DETAILS TAB ── */}
         {activeTab === 'details' && (
@@ -6625,6 +6664,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </>
           )
         })()}
+
+          </div>{/* end content area */}
+        </div>{/* end sidebar + content flex */}
 
       </main>
     </div>

@@ -2461,7 +2461,7 @@ ${(budgets || []).length > 0 ? `
       billing_type: form.billing_type || 'aia',
     }).eq('id', id)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000) }
-    else { setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
+    else { setJob(j => ({ ...j, ...form })); setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
     setSaving(false)
   }
 

@@ -209,6 +209,8 @@ export default function JobDetail() {
   const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
+  const [paymentForm, setPaymentForm] = useState({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
+  const [savingPayment, setSavingPayment] = useState(false)
   const [periodDirectCosts, setPeriodDirectCosts] = useState([])
   const [periodBilling, setPeriodBilling] = useState([])
   const [appliedBillings, setAppliedBillings] = useState(new Set())
@@ -783,11 +785,24 @@ export default function JobDetail() {
 
   async function markPaymentReceived(appId, current) {
     if (current) {
-      if (!window.confirm('Mark this payment as not received?')) return
-      await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null }).eq('id', appId)
+      if (!window.confirm('Unmark this payment as received?')) return
+      await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null, amount_received: null }).eq('id', appId)
+      await loadAiaApplications()
     } else {
-      await supabase.from('aia_applications').update({ payment_received: true, payment_received_at: new Date().toISOString() }).eq('id', appId)
+      setPaymentForm({ appId, amount: '', received_at: new Date().toISOString().split('T')[0] })
     }
+  }
+
+  async function savePaymentReceived() {
+    if (!paymentForm.appId || !paymentForm.amount) return
+    setSavingPayment(true)
+    await supabase.from('aia_applications').update({
+      payment_received: true,
+      payment_received_at: paymentForm.received_at ? new Date(paymentForm.received_at + 'T12:00:00').toISOString() : new Date().toISOString(),
+      amount_received: parseFloat(paymentForm.amount),
+    }).eq('id', paymentForm.appId)
+    setSavingPayment(false)
+    setPaymentForm({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
     await loadAiaApplications()
   }
 
@@ -1005,7 +1020,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadContracts() }
     if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
     if (activeTab === 'prelim') { loadPrelimNotices() }
-    if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests() }
+    if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
   }, [activeTab, id])
 
@@ -5217,12 +5232,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>AIA Applications ({aiaApplications.length})</p>
+                <p style={{ ...s.cardTitle, margin: 0 }}>
+                  {job.billing_type === 'draw_request' ? `Draw Requests (${aiaApplications.length})` : `AIA Applications (${aiaApplications.length})`}
+                </p>
                 {!showNewAia && (
                   <button style={s.btnSmallOrange} onClick={() => {
                     setShowNewAia(true)
                     setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', retainage_pct: '10' })
-                  }}>+ New application</button>
+                  }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
                 )}
               </div>
 
@@ -5231,7 +5248,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const canCreate = !savingAia && newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from) && budgetItems.length > 0
                 return (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
-                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application</p>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{job.billing_type === 'draw_request' ? 'New Draw Request' : 'New AIA Application'}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                     <div>
                       <label style={s.label}>App #</label>
@@ -5297,7 +5314,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               })()}
 
               {aiaApplications.length === 0 && !showNewAia && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No AIA applications yet. Create your first application above to get started.</p>
+                <p style={{ color: '#444', fontSize: '14px' }}>
+                  {job.billing_type === 'draw_request' ? 'No draw requests yet. Create your first draw request above.' : 'No AIA applications yet. Create your first application above to get started.'}
+                </p>
               )}
 
               {aiaApplications.map(app => {
@@ -5309,14 +5328,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div key={app.id} style={{ ...s.billingEntryRow, border: `1px solid ${isActive ? '#4a2200' : '#1e1e1e'}` }}>
                     <div style={{ ...s.billingEntryHeader, cursor: 'pointer' }} onClick={() => openAiaApp(app)}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>App #{app.app_number}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>
+                            {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
+                          </span>
                           <span style={{ fontSize: '13px', color: '#888' }}>{periodLabel}</span>
                           <span style={s.coBadge(app.status === 'certified' ? 'approved' : app.status === 'submitted' ? 'pending' : 'pending')}>{app.status}</span>
                           {app.payment_received && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>
-                              Payment Received
+                              {app.amount_received ? `$${Number(app.amount_received).toLocaleString()} received` : 'Payment Received'}
                             </span>
+                          )}
+                          {app.payment_received && app.payment_received_at && (
+                            <span style={{ fontSize: '11px', color: '#555' }}>{new Date(app.payment_received_at).toLocaleDateString()}</span>
                           )}
                         </div>
                       </div>
@@ -5324,7 +5348,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button
                           style={app.payment_received ? s.btnSmallGreen : s.btnSmall}
                           onClick={e => { e.stopPropagation(); markPaymentReceived(app.id, app.payment_received) }}>
-                          {app.payment_received ? '✓ Payment Received' : 'Mark Payment Received'}
+                          {app.payment_received ? '✓ Received' : 'Record Payment'}
                         </button>
                         {isActive && (
                           <button style={s.btnSmallRed} onClick={e => { e.stopPropagation(); deleteAiaApplication(app.id) }}>Delete</button>
@@ -5654,6 +5678,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               })}
             </div>
           </>
+        )}
+
+        {/* ── PAYMENT RECEIVED MODAL ── */}
+        {paymentForm.appId && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '400px' }}>
+              <p style={{ margin: '0 0 1.25rem', fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>Record Payment Received</p>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={s.label}>Amount received ($)</label>
+                <input type="number" step="0.01" min="0" autoFocus style={s.input} value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+              </div>
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={s.label}>Date received</label>
+                <input type="date" style={s.input} value={paymentForm.received_at} onChange={e => setPaymentForm(f => ({ ...f, received_at: e.target.value }))} />
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button style={{ ...s.btn, opacity: savingPayment || !paymentForm.amount ? 0.5 : 1 }} disabled={savingPayment || !paymentForm.amount} onClick={savePaymentReceived}>
+                  {savingPayment ? 'Saving...' : 'Save payment'}
+                </button>
+                <button style={s.btnGray} onClick={() => setPaymentForm({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })}>Cancel</button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ── SCHEDULE TAB ── */}
@@ -6299,89 +6346,126 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── CASH FLOW TAB ── */}
         {activeTab === 'cashflow' && (() => {
           const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-          // Group approved billing submissions by month (what NV owes subs)
+          const fmtSigned = (n) => n === 0 ? '$0' : n > 0 ? `+$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : `-$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+          // Cash IN: payments received from owner via AIA / draw request applications
+          const cashInByMonth = {}
+          aiaApplications.filter(a => a.payment_received && a.amount_received).forEach(a => {
+            const key = (a.payment_received_at || a.period_to || '').slice(0, 7)
+            if (key) cashInByMonth[key] = (cashInByMonth[key] || 0) + Number(a.amount_received)
+          })
+
+          // Cash OUT: approved sub billings
           const subPayByMonth = {}
           billingSubmissions.filter(b => b.status === 'approved').forEach(b => {
             const key = b.billing_period ? b.billing_period.slice(0, 7) : (b.submitted_at ? b.submitted_at.slice(0, 7) : 'unknown')
             subPayByMonth[key] = (subPayByMonth[key] || 0) + Number(b.amount_billed || 0)
           })
-          // Group direct costs approved by month
+
+          // Cash OUT: approved direct costs
           const dcByMonth = {}
           directCosts.filter(c => c.status === 'approved').forEach(c => {
             const key = (c.cost_date || c.created_at || '').slice(0, 7)
             dcByMonth[key] = (dcByMonth[key] || 0) + Number(c.amount || 0)
           })
-          // Draw requests (owner income to NV) — use billing for job total
-          const drawByMonth = {}
-          drawRequests.forEach(d => {
-            const key = (d.created_at || '').slice(0, 7)
-            drawByMonth[key] = (drawByMonth[key] || 0)
-          })
-          const allMonths = [...new Set([...Object.keys(subPayByMonth), ...Object.keys(dcByMonth)])].filter(k => k && k !== 'unknown').sort()
+
+          const allMonths = [...new Set([...Object.keys(cashInByMonth), ...Object.keys(subPayByMonth), ...Object.keys(dcByMonth)])].filter(k => k && k !== 'unknown').sort()
+          const totalIn = Object.values(cashInByMonth).reduce((a, v) => a + v, 0)
           const totalSubPay = Object.values(subPayByMonth).reduce((a, v) => a + v, 0)
           const totalDC = Object.values(dcByMonth).reduce((a, v) => a + v, 0)
           const totalOut = totalSubPay + totalDC
+          const netCashFlow = totalIn - totalOut
           const retainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
           const retainageReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
 
           return (
             <>
-              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(4, 1fr)' }} className="rx-stats">
-                <div style={s.statCard}><div style={s.statLabel}>Sub billings paid</div><div style={s.statValue('#e8590c')}>{fmt(totalSubPay)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Direct costs paid</div><div style={s.statValue()}>{fmt(totalDC)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Total out</div><div style={s.statValue('#ff6b6b')}>{fmt(totalOut)}</div></div>
+              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(5, 1fr)' }} className="rx-stats">
+                <div style={s.statCard}><div style={s.statLabel}>Cash in (received)</div><div style={s.statValue('#4ade80')}>{fmt(totalIn)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Sub billings out</div><div style={s.statValue('#e8590c')}>{fmt(totalSubPay)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Direct costs out</div><div style={s.statValue()}>{fmt(totalDC)}</div></div>
+                <div style={s.statCard}>
+                  <div style={s.statLabel}>Net cash flow</div>
+                  <div style={s.statValue(netCashFlow >= 0 ? '#4ade80' : '#ff6b6b')}>{fmtSigned(netCashFlow)}</div>
+                </div>
                 <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#facc15')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
               </div>
 
+              {totalIn === 0 && (
+                <div style={{ background: '#1a1200', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#888' }}>
+                  No payments recorded from the owner yet. Use the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab to record payments received on each {job.billing_type === 'draw_request' ? 'draw request' : 'AIA application'}.
+                </div>
+              )}
+
               <div style={s.card}>
-                <p style={s.cardTitle}>Monthly cash out</p>
-                {allMonths.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No approved billing or direct costs yet.</p> : (
+                <p style={s.cardTitle}>Monthly cash flow</p>
+                {allMonths.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No approved billing, direct costs, or payments yet.</p> : (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
-                        {['Month', 'Sub billings', 'Direct costs', 'Total out'].map(h => (
+                        {['Month', 'Cash in', 'Sub billings', 'Direct costs', 'Total out', 'Net'].map(h => (
                           <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {allMonths.map(m => {
-                        const sub = subPayByMonth[m] || 0
-                        const dc = dcByMonth[m] || 0
-                        const total = sub + dc
-                        return (
-                          <tr key={m} style={{ borderBottom: '1px solid #111' }}>
-                            <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
-                            <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
-                            <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
-                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: '#f1f1f1' }}>{fmt(total)}</td>
-                          </tr>
-                        )
-                      })}
+                      {(() => {
+                        let running = 0
+                        return allMonths.map(m => {
+                          const inflow = cashInByMonth[m] || 0
+                          const sub = subPayByMonth[m] || 0
+                          const dc = dcByMonth[m] || 0
+                          const out = sub + dc
+                          const net = inflow - out
+                          running += net
+                          return (
+                            <tr key={m} style={{ borderBottom: '1px solid #111' }}>
+                              <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#4ade80' : '#444' }}>{fmt(inflow)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: out > 0 ? '#ff6b6b' : '#444' }}>{fmt(out)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: net >= 0 ? '#4ade80' : '#ff6b6b' }}>{fmtSigned(net)}</td>
+                            </tr>
+                          )
+                        })
+                      })()}
                       <tr style={{ borderTop: '2px solid #222' }}>
                         <td style={{ padding: '10px 12px', color: '#555', fontWeight: '700' }}>Total</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '700' }}>{fmt(totalIn)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', color: '#f1f1f1', fontSize: '15px' }}>{fmt(totalOut)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ff6b6b', fontWeight: '700' }}>{fmt(totalOut)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#4ade80' : '#ff6b6b' }}>{fmtSigned(netCashFlow)}</td>
                       </tr>
                     </tbody>
                   </table>
                 )}
               </div>
 
-              {drawRequests.length > 0 && (
+              {aiaApplications.length > 0 && (
                 <div style={s.card}>
-                  <p style={s.cardTitle}>Draw requests</p>
-                  {drawRequests.map(d => (
-                    <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #111' }}>
+                  <p style={s.cardTitle}>{job.billing_type === 'draw_request' ? 'Draw Requests — Payment Status' : 'AIA Applications — Payment Status'}</p>
+                  {aiaApplications.map(a => (
+                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #111', flexWrap: 'wrap', gap: '8px' }}>
                       <div>
-                        <div style={{ fontSize: '14px', color: '#f1f1f1', fontWeight: '600' }}>{d.title}</div>
-                        <div style={{ fontSize: '12px', color: '#555' }}>Draw #{d.draw_number} · {new Date(d.created_at).toLocaleDateString()}</div>
+                        <div style={{ fontSize: '14px', color: '#f1f1f1', fontWeight: '600' }}>
+                          {job.billing_type === 'draw_request' ? `Draw #${a.app_number}` : `App #${a.app_number}`}
+                          {a.period_to && <span style={{ fontSize: '12px', color: '#555', marginLeft: '8px' }}>{new Date(a.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                        </div>
                       </div>
-                      <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', textTransform: 'uppercase',
-                        color: d.status === 'open' ? '#e8590c' : '#4ade80',
-                        background: d.status === 'open' ? '#2a1200' : '#0a2a0a',
-                        border: `1px solid ${d.status === 'open' ? '#4a2200' : '#1a4a1a'}` }}>{d.status}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {a.payment_received && a.amount_received && (
+                          <span style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80' }}>{fmt(a.amount_received)}</span>
+                        )}
+                        <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', textTransform: 'uppercase',
+                          color: a.payment_received ? '#4ade80' : '#e8590c',
+                          background: a.payment_received ? '#0a2a0a' : '#2a1200',
+                          border: `1px solid ${a.payment_received ? '#1a4a1a' : '#4a2200'}` }}>
+                          {a.payment_received ? 'Received' : 'Pending'}
+                        </span>
+                        {a.payment_received_at && <span style={{ fontSize: '11px', color: '#555' }}>{new Date(a.payment_received_at).toLocaleDateString()}</span>}
+                      </div>
                     </div>
                   ))}
                 </div>

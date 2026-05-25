@@ -220,7 +220,7 @@ export default function Field() {
       setDailyReports(rpts || [])
       reports = rpts || []
     }
-    // Batch-fetch ALL photo URLs at once so thumbnails appear immediately
+    // Batch-sign all URLs in one API call; loading="lazy" on <img> prevents browser from downloading off-screen images
     const allPaths = [
       ...(data || []).map(p => p.storage_path),
       ...reports.flatMap(r => (r.photos || []).map(p => p.path)),
@@ -714,7 +714,7 @@ export default function Field() {
                                     {r.photos.map((p, i) => (
                                       <button key={i} type="button" onClick={() => openLightbox(r.photos, i)} style={{ aspectRatio: '1', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', padding: 0 }}>
                                         {photoUrls[p.path]
-                                          ? <img src={photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                          ? <img src={photoUrls[p.path]} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px', padding: '4px', textAlign: 'center' }}>{p.name || `#${i+1}`}</div>
                                         }
                                       </button>
@@ -1277,7 +1277,7 @@ export default function Field() {
                               return (
                                 <button key={i} type="button" onClick={() => openLightbox(allPhotos, allPhotos.indexOf(p))} style={{ aspectRatio: '1', background: '#0f0f0f', border: 'none', overflow: 'hidden', cursor: 'pointer', padding: 0, borderRadius: '4px', position: 'relative' }}>
                                   {photoUrls[p.path]
-                                    ? <img src={photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                    ? <img src={photoUrls[p.path]} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                                     : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
                                   }
                                   {p.caption && (

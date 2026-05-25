@@ -59,7 +59,25 @@
   /* Multi-column form rows (crew log, equipment, etc.) */
   .rx-form-row  { grid-template-columns: 1fr 1fr !important; }
 
-  /* Prevent iOS input zoom (font-size < 16px triggers auto-zoom) */
+  /* Input / select / textarea focus glow */
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #e8590c !important;
+  box-shadow: 0 0 0 3px rgba(232, 89, 12, 0.15) !important;
+  outline: none !important;
+}
+
+/* Wizard step entrance animation */
+@keyframes wizardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wizard-step {
+  animation: wizardIn 0.18s ease-out;
+}
+
+/* Prevent iOS input zoom (font-size < 16px triggers auto-zoom) */
   input[type="text"],
   input[type="email"],
   input[type="password"],

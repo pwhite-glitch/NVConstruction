@@ -539,10 +539,37 @@ export default function Field() {
                   </div>
                 )}
 
+                {!activeTab && selectedJob && (
+                  <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.75rem 1rem', background: '#111', border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '1rem' }}>
+                    {selectedJob.location && (
+                      <div>
+                        <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Location</div>
+                        <div style={{ fontSize: '12px', color: '#888' }}>{selectedJob.location}</div>
+                      </div>
+                    )}
+                    {selectedJob.start_date && (
+                      <div>
+                        <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Day on Project</div>
+                        <div style={{ fontSize: '12px', color: '#888' }}>Day {Math.max(1, Math.floor((Date.now() - new Date(selectedJob.start_date)) / 86400000) + 1)}</div>
+                      </div>
+                    )}
+                    {selectedJob.contract_value && (
+                      <div>
+                        <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Contract</div>
+                        <div style={{ fontSize: '12px', color: '#888' }}>${Number(selectedJob.contract_value).toLocaleString()}</div>
+                      </div>
+                    )}
+                    <div>
+                      <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Status</div>
+                      <div style={{ fontSize: '12px', color: selectedJob.status === 'active' ? '#4ade80' : '#888', textTransform: 'capitalize' }}>{selectedJob.status || 'Active'}</div>
+                    </div>
+                  </div>
+                )}
+
                 {activeTab && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
-                    <button style={{ padding: '8px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }} onClick={() => setActiveTab('')}>← Back</button>
-                    <span style={{ fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>
+                  <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
+                    <button style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>← Back</button>
+                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos' }[activeTab]}
                     </span>
                   </div>
@@ -567,7 +594,7 @@ export default function Field() {
 
                       {/* Step 1: Date & Weather */}
                       {wizardStep === 1 && (
-                        <div>
+                        <div className="wizard-step">
                           <div style={{ ...s.grid2, marginBottom: '1rem' }}>
                             <div><label style={s.label}>Date *</label><input type="date" style={s.input} value={dailyForm.report_date} onChange={e => setDailyForm(f => ({ ...f, report_date: e.target.value }))} /></div>
                             <div>
@@ -593,7 +620,7 @@ export default function Field() {
 
                       {/* Step 2: Work Summary */}
                       {wizardStep === 2 && (
-                        <div>
+                        <div className="wizard-step">
                           <div style={{ marginBottom: '1.25rem' }}>
                             <label style={s.label}>Work performed today *</label>
                             <textarea rows={5} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.work_performed} onChange={e => setDailyForm(f => ({ ...f, work_performed: e.target.value }))} placeholder="Describe all work completed today..." autoFocus />
@@ -619,7 +646,7 @@ export default function Field() {
 
                       {/* Step 3: Crew & Activity */}
                       {wizardStep === 3 && (
-                        <div>
+                        <div className="wizard-step">
                           {/* Crew Presets */}
                           {crewPresets.length > 0 && (
                             <div style={{ marginBottom: '1rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -742,7 +769,7 @@ export default function Field() {
 
                       {/* Step 4: Photos & Submit */}
                       {wizardStep === 4 && (
-                        <div>
+                        <div className="wizard-step">
                           {/* Quick summary */}
                           <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem', fontSize: '13px', color: '#888', lineHeight: '1.8' }}>
                             <span style={{ color: '#f1f1f1', fontWeight: '700' }}>{new Date(dailyForm.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
@@ -785,16 +812,25 @@ export default function Field() {
                     {dailyReports.length > 0 && (
                       <>
                         <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>Past reports ({dailyReports.length})</p>
-                        {dailyReports.map(r => (
-                          <div key={r.id} style={s.row}>
+                        {dailyReports.map(r => {
+                          const accent = r.weather_delay ? '#ff6b6b' : r.issues ? '#e8590c' : '#4ade80'
+                          const crewCount = r.crew_count ?? r.crew_log?.filter(c => c.name || c.company).length ?? 0
+                          const photoCount = r.photos?.length ?? 0
+                          return (
+                          <div key={r.id} style={{ ...s.row, borderLeft: `3px solid ${accent}` }}>
                             <div style={s.rowHead} onClick={() => { const opening = expandedReport !== r.id; setExpandedReport(opening ? r.id : null); if (opening && r.photos?.length) fetchPhotoUrls(r.photos.map(p => p.path)) }}>
-                              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                                {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}{r.weather_temp ? ` · ${r.weather_temp}` : ''}</span>}
-                                {r.weather_delay && <span style={{ fontSize: '11px', color: '#ff6b6b', fontWeight: '700' }}>WEATHER DELAY</span>}
-                                {r.crew_count != null && <span style={{ fontSize: '12px', color: '#555' }}>{r.crew_count} crew</span>}
+                              <div>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                                  {r.weather_delay && <span style={{ fontSize: '10px', color: '#ff6b6b', fontWeight: '700', letterSpacing: '0.5px' }}>DELAY</span>}
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  {r.weather && <span style={{ fontSize: '11px', color: '#555' }}>{r.weather}{r.weather_temp ? ` ${r.weather_temp}°` : ''}</span>}
+                                  {crewCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>👷 {crewCount}</span>}
+                                  {photoCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>📷 {photoCount}</span>}
+                                </div>
                               </div>
-                              <span style={{ color: '#555' }}>{expandedReport === r.id ? '▲' : '▼'}</span>
+                              <span style={{ color: '#333', fontSize: '14px', flexShrink: 0 }}>{expandedReport === r.id ? '▲' : '▼'}</span>
                             </div>
                             {expandedReport === r.id && (
                               <div style={s.rowBody}>
@@ -844,7 +880,7 @@ export default function Field() {
                               </div>
                             )}
                           </div>
-                        ))}
+                        )})}
                       </>
                     )}
                   </>

@@ -102,7 +102,16 @@ export default function Field() {
   const [standalonePhotos, setStandalonePhotos] = useState([])
   const [captionDraft, setCaptionDraft] = useState('')
   const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false)
-  const [migration, setMigration] = useState(null) // null | { processed, total, done }
+  const [migration, setMigration] = useState(null)
+
+  // Wizard + status + FAB + crew presets
+  const [wizardStep, setWizardStep] = useState(1)
+  const [todayReportStatus, setTodayReportStatus] = useState(null) // null | 'submitted' | 'none'
+  const [fabOpen, setFabOpen] = useState(false)
+  const [fabCaption, setFabCaption] = useState('')
+  const [crewPresets, setCrewPresets] = useState([])
+  const [showSavePreset, setShowSavePreset] = useState(false)
+  const [presetNameDraft, setPresetNameDraft] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -121,6 +130,14 @@ export default function Field() {
   }, [router])
 
   useEffect(() => {
+    try { const s = localStorage.getItem('nv_crew_presets'); if (s) setCrewPresets(JSON.parse(s)) } catch {}
+  }, [])
+
+  useEffect(() => { if (selectedJobId) checkTodayReport() }, [selectedJobId])
+
+  useEffect(() => { if (activeTab === 'daily') setWizardStep(1) }, [activeTab])
+
+  useEffect(() => {
     if (!selectedJobId) return
     if (activeTab === 'daily') loadDailyReports()
     else if (activeTab === 'rfi') loadRfis()
@@ -132,6 +149,12 @@ export default function Field() {
     else if (activeTab === 'punch') loadPunchItems()
     else if (activeTab === 'photos') loadPhotoGallery()
   }, [selectedJobId, activeTab])
+
+  async function checkTodayReport() {
+    const today = new Date().toISOString().split('T')[0]
+    const { data } = await supabase.from('daily_reports').select('id').eq('job_id', selectedJobId).eq('report_date', today).maybeSingle()
+    setTodayReportStatus(data ? 'submitted' : 'none')
+  }
 
   async function loadDailyReports() {
     const { data } = await supabase.from('daily_reports').select('*').eq('job_id', selectedJobId).order('report_date', { ascending: false })
@@ -232,7 +255,7 @@ export default function Field() {
     if (allPaths.length) fetchPhotoUrls(allPaths)
   }
 
-  async function uploadGalleryPhoto(file) {
+  async function uploadGalleryPhoto(file, captionOverride) {
     setUploadingGalleryPhoto(true)
     const ts = Date.now()
     const path = `${selectedJobId}/gallery/${ts}.jpg`
@@ -240,8 +263,9 @@ export default function Field() {
     const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
     if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
     await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
-    await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: captionDraft || null, taken_at: new Date().toISOString() })
-    setCaptionDraft('')
+    const usedCaption = captionOverride !== undefined ? captionOverride : captionDraft
+    await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, taken_at: new Date().toISOString() })
+    if (captionOverride === undefined) setCaptionDraft('')
     await loadPhotoGallery()
     setUploadingGalleryPhoto(false)
   }
@@ -339,7 +363,8 @@ export default function Field() {
   }
 
   async function submitDailyReport(e) {
-    e.preventDefault()
+    if (e?.preventDefault) e.preventDefault()
+    if (!dailyForm.work_performed.trim()) { alert('Work performed is required.'); return }
     setSubmittingDaily(true)
     const filledCrew = crewLog.filter(r => r.name || r.company)
     const { error } = await supabase.from('daily_reports').insert({
@@ -369,7 +394,9 @@ export default function Field() {
       setVisitorsLog([])
       setSubActivityLog([])
       setReportPhotos([])
+      setWizardStep(1)
       await loadDailyReports()
+      checkTodayReport()
       setTimeout(() => setDailySuccess(false), 3000)
     }
     setSubmittingDaily(false)
@@ -487,19 +514,22 @@ export default function Field() {
                 {!activeTab && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
                     {[
-                      { key: 'daily', label: 'Daily Reports', count: dailyReports.length || null },
-                      { key: 'rfi', label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
-                      { key: 'deliveries', label: 'Deliveries', count: deliveries.length || null },
-                      { key: 'schedule', label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
-                      { key: 'subs', label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
-                      { key: 'costs', label: 'Direct Costs', count: directCosts.length || null },
-                      { key: 'docs', label: 'Documents', count: jobDocs.length || null },
-                      { key: 'punch', label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
-                      { key: 'photos', label: 'Site Photos', count: totalGalleryPhotos || null },
+                      { key: 'daily', icon: '📋', label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? '✓ Filed today' : null },
+                      { key: 'rfi', icon: '❓', label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
+                      { key: 'deliveries', icon: '📦', label: 'Deliveries', count: deliveries.length || null },
+                      { key: 'schedule', icon: '📅', label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
+                      { key: 'subs', icon: '👥', label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
+                      { key: 'costs', icon: '💰', label: 'Direct Costs', count: directCosts.length || null },
+                      { key: 'docs', icon: '📄', label: 'Documents', count: jobDocs.length || null },
+                      { key: 'punch', icon: '✅', label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
+                      { key: 'photos', icon: '📸', label: 'Site Photos', count: totalGalleryPhotos || null },
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <span style={{ fontSize: '22px', lineHeight: 1 }}>{item.icon}</span>
                         <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
-                        {(item.count || item.alert) ? (
+                        {item.successLabel ? (
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{item.successLabel}</span>
+                        ) : (item.count || item.alert) ? (
                           <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#555', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
                             {item.alert && item.alertLabel ? item.alertLabel : item.count}
                           </span>
@@ -522,154 +552,234 @@ export default function Field() {
                 {activeTab === 'daily' && (
                   <>
                     {dailySuccess && <div style={s.success}>Daily report submitted successfully.</div>}
+
+                    {/* Wizard card */}
                     <div style={s.card}>
-                      <h2 style={s.cardTitle}>Submit daily report</h2>
-                      <form onSubmit={submitDailyReport}>
-
-                        {/* Header */}
-                        <div style={{ ...s.grid3, marginBottom: '1rem' }} className="rx-grid-3">
-                          <div><label style={s.label}>Date *</label><input type="date" style={s.input} value={dailyForm.report_date} onChange={e => setDailyForm(f => ({ ...f, report_date: e.target.value }))} required /></div>
-                          <div>
-                            <label style={s.label}>Weather</label>
-                            <select style={s.input} value={dailyForm.weather} onChange={e => setDailyForm(f => ({ ...f, weather: e.target.value }))}>
-                              <option value="">—</option>
-                              {WEATHER.map(w => <option key={w} value={w}>{w}</option>)}
-                            </select>
+                      {/* Progress bar */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.25rem' }}>
+                        {['Date & Weather', 'Work Summary', 'Crew & Activity', 'Photos & Submit'].map((label, i) => (
+                          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: i < wizardStep ? 'pointer' : 'default' }} onClick={() => { if (i < wizardStep) setWizardStep(i + 1) }}>
+                            <div style={{ height: '3px', width: '100%', borderRadius: '2px', background: i < wizardStep ? '#e8590c' : i === wizardStep - 1 ? '#e8590c' : '#2a2a2a', opacity: i < wizardStep ? 1 : i === wizardStep - 1 ? 1 : 0.4 }} />
+                            <span style={{ fontSize: '9px', color: i === wizardStep - 1 ? '#e8590c' : i < wizardStep ? '#555' : '#333', fontWeight: '700', letterSpacing: '0.5px', textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
                           </div>
-                          <div><label style={s.label}>Temp (°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75°F" /></div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.25rem' }}>
-                          <input type="checkbox" id="weather_delay" checked={dailyForm.weather_delay} onChange={e => setDailyForm(f => ({ ...f, weather_delay: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
-                          <label htmlFor="weather_delay" style={{ fontSize: '13px', color: '#aaa', cursor: 'pointer' }}>Weather caused a delay today</label>
-                        </div>
+                        ))}
+                      </div>
 
-                        {/* Work performed */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <label style={s.label}>Work performed *</label>
-                          <textarea required rows={4} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.work_performed} onChange={e => setDailyForm(f => ({ ...f, work_performed: e.target.value }))} placeholder="Describe work completed today..." />
-                        </div>
-
-                        {/* Crew / Manpower */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <label style={s.label}>Crew / Manpower</label>
-                            <button type="button" onClick={() => setCrewLog(l => [...l, { name: '', company: '', trade: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
-                          </div>
-                          {crewLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
-                              <input style={s.input} placeholder="Name" value={row.name} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                              <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                      {/* Step 1: Date & Weather */}
+                      {wizardStep === 1 && (
+                        <div>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                            <div><label style={s.label}>Date *</label><input type="date" style={s.input} value={dailyForm.report_date} onChange={e => setDailyForm(f => ({ ...f, report_date: e.target.value }))} /></div>
+                            <div>
+                              <label style={s.label}>Weather</label>
+                              <select style={s.input} value={dailyForm.weather} onChange={e => setDailyForm(f => ({ ...f, weather: e.target.value }))}>
+                                <option value="">—</option>
+                                {WEATHER.map(w => <option key={w} value={w}>{w}</option>)}
+                              </select>
                             </div>
-                          ))}
-                        </div>
-
-                        {/* Subcontractor Activity */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <label style={s.label}>Subcontractor Activity</label>
-                            <button type="button" onClick={() => setSubActivityLog(l => [...l, { company: '', trade: '', crew_count: '', work_performed: '' }])} style={s.btnSm('orange')}>+ Add</button>
                           </div>
-                          {subActivityLog.map((row, i) => (
-                            <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
-                                <input style={s.input} placeholder="Company" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
-                                <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
-                                <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
-                                <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
-                              </div>
-                              <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} placeholder="Work performed..." value={row.work_performed} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, work_performed: e.target.value } : r))} />
+                          <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
+                            <div><label style={s.label}>Temp (°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75" /></div>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={dailyForm.weather_delay} onChange={e => setDailyForm(f => ({ ...f, weather_delay: e.target.checked }))} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#e8590c' }} />
+                                <span style={{ fontSize: '13px', color: '#aaa' }}>Weather delay today</span>
+                              </label>
                             </div>
-                          ))}
-                        </div>
-
-                        {/* Equipment */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <label style={s.label}>Equipment On Site</label>
-                            <button type="button" onClick={() => setEquipmentLog(l => [...l, { name: '', quantity: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
                           </div>
-                          {equipmentLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
-                              <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                              <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
-                            </div>
-                          ))}
+                          <button onClick={() => setWizardStep(2)} style={{ ...s.btn, width: '100%' }}>Continue →</button>
                         </div>
+                      )}
 
-                        {/* Materials Delivered */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <label style={s.label}>Materials Delivered</label>
-                            <button type="button" onClick={() => setMaterialsLog(l => [...l, { description: '', quantity: '', supplier: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                      {/* Step 2: Work Summary */}
+                      {wizardStep === 2 && (
+                        <div>
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <label style={s.label}>Work performed today *</label>
+                            <textarea rows={5} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.work_performed} onChange={e => setDailyForm(f => ({ ...f, work_performed: e.target.value }))} placeholder="Describe all work completed today..." autoFocus />
                           </div>
-                          {materialsLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
-                              <input style={s.input} placeholder="Material description" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
-                              <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Visitors */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <label style={s.label}>Visitors / Inspections</label>
-                            <button type="button" onClick={() => setVisitorsLog(l => [...l, { name: '', company: '', purpose: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <label style={s.label}>Issues / Delays</label>
+                            <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.issues} onChange={e => setDailyForm(f => ({ ...f, issues: e.target.value }))} placeholder="Anything that held up work today..." />
                           </div>
-                          {visitorsLog.map((row, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 3fr 32px', gap: '8px', marginBottom: '8px', alignItems: 'center' }} className="rx-form-row">
-                              <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
-                              <input style={s.input} placeholder="Purpose / notes" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
-                              <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
-                            </div>
-                          ))}
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <label style={s.label}>Toolbox Talk / Safety Topic</label>
+                            <input style={s.input} value={dailyForm.toolbox_talk} onChange={e => setDailyForm(f => ({ ...f, toolbox_talk: e.target.value }))} placeholder="Topic discussed at morning meeting..." />
+                          </div>
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={s.label}>Safety Observations</label>
+                            <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.safety_observations} onChange={e => setDailyForm(f => ({ ...f, safety_observations: e.target.value }))} placeholder="Near misses, hazards, corrective actions..." />
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setWizardStep(1)} style={{ ...s.btnSm(), padding: '11px 20px' }}>← Back</button>
+                            <button onClick={() => { if (!dailyForm.work_performed.trim()) { alert('Please describe the work performed.'); return }; setWizardStep(3) }} style={{ ...s.btn, flex: 1 }}>Continue →</button>
+                          </div>
                         </div>
+                      )}
 
-                        {/* Safety */}
-                        <div style={{ marginBottom: '1rem' }}>
-                          <label style={s.label}>Toolbox Talk / Safety Topic</label>
-                          <input style={{ ...s.input, marginBottom: '10px' }} value={dailyForm.toolbox_talk} onChange={e => setDailyForm(f => ({ ...f, toolbox_talk: e.target.value }))} placeholder="Topic discussed at morning meeting..." />
-                          <label style={s.label}>Safety Observations / Incidents</label>
-                          <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.safety_observations} onChange={e => setDailyForm(f => ({ ...f, safety_observations: e.target.value }))} placeholder="Near misses, hazards observed, corrective actions taken..." />
-                        </div>
-
-                        {/* Issues */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <label style={s.label}>Issues / Delays</label>
-                          <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.issues} onChange={e => setDailyForm(f => ({ ...f, issues: e.target.value }))} placeholder="Anything that held up work today..." />
-                        </div>
-
-                        {/* Photos */}
-                        <div style={{ marginBottom: '1.5rem' }}>
-                          <label style={s.label}>Site Photos</label>
-                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                            {uploadingPhoto ? 'Uploading...' : '+ Add Photo'}
-                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { if (e.target.files?.[0]) uploadReportPhoto(e.target.files[0]); e.target.value = '' }} />
-                          </label>
-                          {reportPhotos.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-                              {reportPhotos.map((p, i) => (
-                                <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span>📷 {p.name}</span>
-                                  <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
-                                </div>
+                      {/* Step 3: Crew & Activity */}
+                      {wizardStep === 3 && (
+                        <div>
+                          {/* Crew Presets */}
+                          {crewPresets.length > 0 && (
+                            <div style={{ marginBottom: '1rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              {crewPresets.map((p, i) => (
+                                <button key={i} type="button" onClick={() => setCrewLog(p.crew.map(r => ({ ...r })))} style={{ ...s.btnSm('orange'), fontSize: '11px' }}>
+                                  Load: {p.name}
+                                </button>
                               ))}
                             </div>
                           )}
-                        </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                          <button type="submit" disabled={submittingDaily} style={{ ...s.btn, opacity: submittingDaily ? 0.6 : 1 }}>{submittingDaily ? 'Submitting...' : 'Submit report'}</button>
+                          {/* Crew Log */}
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <label style={s.label}>Crew / Manpower</label>
+                              <button type="button" onClick={() => setCrewLog(l => [...l, { name: '', company: '', trade: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                            </div>
+                            {crewLog.map((row, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
+                                <input style={s.input} placeholder="Name" value={row.name} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
+                                <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                              </div>
+                            ))}
+                            {/* Save preset */}
+                            {crewLog.filter(r => r.name || r.company).length > 0 && !showSavePreset && (
+                              <button type="button" onClick={() => setShowSavePreset(true)} style={{ ...s.btnSm(), marginTop: '6px', fontSize: '11px' }}>Save as preset</button>
+                            )}
+                            {showSavePreset && (
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                                <input style={{ ...s.input, flex: 1 }} placeholder="Preset name (e.g. Framing crew)" value={presetNameDraft} onChange={e => setPresetNameDraft(e.target.value)} autoFocus />
+                                <button type="button" onClick={() => {
+                                  if (!presetNameDraft.trim()) return
+                                  const preset = { name: presetNameDraft.trim(), crew: crewLog.filter(r => r.name || r.company).map(r => ({ ...r })) }
+                                  const updated = [...crewPresets, preset]
+                                  setCrewPresets(updated)
+                                  try { localStorage.setItem('nv_crew_presets', JSON.stringify(updated)) } catch {}
+                                  setPresetNameDraft(''); setShowSavePreset(false)
+                                }} style={s.btnSm('green')}>Save</button>
+                                <button type="button" onClick={() => { setShowSavePreset(false); setPresetNameDraft('') }} style={s.btnSm('red')}>✕</button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Subcontractor Activity */}
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <label style={s.label}>Subcontractor Activity</label>
+                              <button type="button" onClick={() => setSubActivityLog(l => [...l, { company: '', trade: '', crew_count: '', work_performed: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                            </div>
+                            {subActivityLog.map((row, i) => (
+                              <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
+                                  <input style={s.input} placeholder="Company" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                  <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
+                                  <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
+                                  <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                </div>
+                                <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} placeholder="Work performed..." value={row.work_performed} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, work_performed: e.target.value } : r))} />
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Equipment */}
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <label style={s.label}>Equipment On Site</label>
+                              <button type="button" onClick={() => setEquipmentLog(l => [...l, { name: '', quantity: '', hours: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                            </div>
+                            {equipmentLog.map((row, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
+                                <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
+                                <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Materials */}
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <label style={s.label}>Materials Delivered</label>
+                              <button type="button" onClick={() => setMaterialsLog(l => [...l, { description: '', quantity: '', supplier: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                            </div>
+                            {materialsLog.map((row, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 2fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
+                                <input style={s.input} placeholder="Material" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
+                                <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Visitors */}
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <label style={s.label}>Visitors / Inspections</label>
+                              <button type="button" onClick={() => setVisitorsLog(l => [...l, { name: '', company: '', purpose: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                            </div>
+                            {visitorsLog.map((row, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 3fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
+                                <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                <input style={s.input} placeholder="Purpose" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
+                                <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setWizardStep(2)} style={{ ...s.btnSm(), padding: '11px 20px' }}>← Back</button>
+                            <button onClick={() => setWizardStep(4)} style={{ ...s.btn, flex: 1 }}>Continue →</button>
+                          </div>
                         </div>
-                      </form>
+                      )}
+
+                      {/* Step 4: Photos & Submit */}
+                      {wizardStep === 4 && (
+                        <div>
+                          {/* Quick summary */}
+                          <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem', fontSize: '13px', color: '#888', lineHeight: '1.8' }}>
+                            <span style={{ color: '#f1f1f1', fontWeight: '700' }}>{new Date(dailyForm.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+                            {dailyForm.weather && <span> · {dailyForm.weather}{dailyForm.weather_temp ? ` ${dailyForm.weather_temp}°` : ''}</span>}
+                            {dailyForm.weather_delay && <span style={{ color: '#ff6b6b' }}> · Weather delay</span>}
+                            <br />
+                            {crewLog.filter(r => r.name || r.company).length > 0 && <span>{crewLog.filter(r => r.name || r.company).length} crew · </span>}
+                            {subActivityLog.filter(r => r.company).length > 0 && <span>{subActivityLog.filter(r => r.company).length} sub co. · </span>}
+                            {dailyForm.work_performed && <span style={{ color: '#aaa' }}>{dailyForm.work_performed.substring(0, 80)}{dailyForm.work_performed.length > 80 ? '...' : ''}</span>}
+                          </div>
+
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={s.label}>Attach photos</label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                              {uploadingPhoto ? 'Uploading...' : '📷 Add Photos'}
+                              <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadReportPhoto(f)); e.target.value = '' }} />
+                            </label>
+                            {reportPhotos.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                                {reportPhotos.map((p, i) => (
+                                  <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    📷 {p.name}
+                                    <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px' }}>← Back</button>
+                            <button onClick={submitDailyReport} disabled={submittingDaily} style={{ ...s.btn, flex: 1, opacity: submittingDaily ? 0.6 : 1 }}>
+                              {submittingDaily ? 'Submitting...' : 'Submit Report ✓'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {dailyReports.length > 0 && (
@@ -1308,6 +1418,35 @@ export default function Field() {
           </>
         )}
       </main>
+
+      {/* ── FLOATING CAMERA BUTTON ── */}
+      {selectedJobId && !lightbox && (
+        <div style={{ position: 'fixed', bottom: '24px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+          {fabOpen && (
+            <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '14px', width: '260px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Caption / Tag (optional)</label>
+              <input value={fabCaption} onChange={e => setFabCaption(e.target.value)} placeholder="Foundation, framing, MEP..." style={{ ...s.input, marginBottom: '10px' }} autoFocus />
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: uploadingGalleryPhoto ? '#111' : '#e8590c', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'not-allowed' : 'pointer', letterSpacing: '0.5px' }}>
+                {uploadingGalleryPhoto ? 'Uploading...' : '📷  Take / Choose Photo'}
+                <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} disabled={uploadingGalleryPhoto} onChange={async e => {
+                  const files = Array.from(e.target.files || [])
+                  if (!files.length) return
+                  setFabOpen(false)
+                  for (const f of files) await uploadGalleryPhoto(f, fabCaption)
+                  setFabCaption('')
+                  e.target.value = ''
+                }} />
+              </label>
+            </div>
+          )}
+          <button
+            onClick={() => setFabOpen(o => !o)}
+            style={{ width: '58px', height: '58px', borderRadius: '50%', background: fabOpen ? '#333' : '#e8590c', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 24px rgba(232,89,12,0.45)', transition: 'background 0.15s' }}
+          >
+            {fabOpen ? '✕' : '📷'}
+          </button>
+        </div>
+      )}
 
       {/* ── LIGHTBOX ── */}
       {lightbox && (

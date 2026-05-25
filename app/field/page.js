@@ -553,12 +553,6 @@ export default function Field() {
                         <div style={{ fontSize: '12px', color: '#888' }}>Day {Math.max(1, Math.floor((Date.now() - new Date(selectedJob.start_date)) / 86400000) + 1)}</div>
                       </div>
                     )}
-                    {selectedJob.contract_value && (
-                      <div>
-                        <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Contract</div>
-                        <div style={{ fontSize: '12px', color: '#888' }}>${Number(selectedJob.contract_value).toLocaleString()}</div>
-                      </div>
-                    )}
                     <div>
                       <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Status</div>
                       <div style={{ fontSize: '12px', color: selectedJob.status === 'active' ? '#4ade80' : '#888', textTransform: 'capitalize' }}>{selectedJob.status || 'Active'}</div>

@@ -177,6 +177,27 @@ export default function Field() {
     setPunchItems(items || [])
   }
 
+  async function compressImage(file, maxWidth = 1200, quality = 0.82) {
+    return new Promise(resolve => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const scale = Math.min(1, maxWidth / img.width)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(
+          blob => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })),
+          'image/jpeg', quality
+        )
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.src = url
+    })
+  }
+
   async function fetchPhotoUrls(paths) {
     const clean = [...new Set(paths.filter(Boolean))]
     if (!clean.length) return
@@ -192,14 +213,25 @@ export default function Field() {
   async function loadPhotoGallery() {
     const { data } = await supabase.from('job_photos').select('*').eq('job_id', selectedJobId).order('taken_at', { ascending: false })
     setStandalonePhotos(data || [])
-    if (dailyReports.length === 0) await loadDailyReports()
-    if (data?.length) fetchPhotoUrls(data.map(p => p.storage_path))
+    let reports = dailyReports
+    if (reports.length === 0) {
+      const { data: rpts } = await supabase.from('daily_reports').select('*').eq('job_id', selectedJobId).order('report_date', { ascending: false })
+      setDailyReports(rpts || [])
+      reports = rpts || []
+    }
+    // Batch-fetch ALL photo URLs at once so thumbnails appear immediately
+    const allPaths = [
+      ...(data || []).map(p => p.storage_path),
+      ...reports.flatMap(r => (r.photos || []).map(p => p.path)),
+    ]
+    if (allPaths.length) fetchPhotoUrls(allPaths)
   }
 
   async function uploadGalleryPhoto(file) {
     setUploadingGalleryPhoto(true)
-    const path = `${selectedJobId}/gallery/${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
+    const compressed = await compressImage(file)
+    const path = `${selectedJobId}/gallery/${Date.now()}.jpg`
+    const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
     if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
     await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: captionDraft || null, taken_at: new Date().toISOString() })
     setCaptionDraft('')
@@ -256,8 +288,9 @@ export default function Field() {
 
   async function uploadReportPhoto(file) {
     setUploadingPhoto(true)
-    const path = `${selectedJobId}/${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
+    const compressed = await compressImage(file)
+    const path = `${selectedJobId}/${Date.now()}.jpg`
+    const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
     if (!error) setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
     else alert('Photo upload failed: ' + error.message)
     setUploadingPhoto(false)

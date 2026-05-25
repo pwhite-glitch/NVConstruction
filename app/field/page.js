@@ -199,10 +199,14 @@ export default function Field() {
     })
   }
 
+  function tp(path) { return path?.replace(/\.jpg$/i, '_thumb.jpg') ?? null }
+
   async function fetchPhotoUrls(paths) {
     const clean = [...new Set(paths.filter(Boolean))]
     if (!clean.length) return
-    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(clean, 7200)
+    // Sign full paths + thumb variants in one batch call
+    const toSign = [...new Set([...clean, ...clean.map(tp).filter(Boolean)])]
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(toSign, 7200)
     if (data) setPhotoUrls(prev => { const u = { ...prev }; data.forEach(d => { if (d.signedUrl) u[d.path] = d.signedUrl }); return u })
   }
 
@@ -230,10 +234,12 @@ export default function Field() {
 
   async function uploadGalleryPhoto(file) {
     setUploadingGalleryPhoto(true)
-    const compressed = await compressImage(file)
-    const path = `${selectedJobId}/gallery/${Date.now()}.jpg`
+    const ts = Date.now()
+    const path = `${selectedJobId}/gallery/${ts}.jpg`
+    const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
     const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
     if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
+    await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
     await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: captionDraft || null, taken_at: new Date().toISOString() })
     setCaptionDraft('')
     await loadPhotoGallery()
@@ -253,10 +259,11 @@ export default function Field() {
         const { data: blob, error } = await supabase.storage.from('daily-report-photos').download(path)
         if (!error && blob) {
           const file = new File([blob], path.split('/').pop(), { type: 'image/jpeg' })
-          const compressed = await compressImage(file)
+          const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
           if (compressed.size < file.size * 0.9) {
             await supabase.storage.from('daily-report-photos').upload(path, compressed, { upsert: true })
           }
+          await supabase.storage.from('daily-report-photos').upload(tp(path), thumb, { upsert: true })
         }
       } catch {}
       setMigration(m => ({ ...m, processed: m.processed + 1 }))
@@ -315,11 +322,14 @@ export default function Field() {
 
   async function uploadReportPhoto(file) {
     setUploadingPhoto(true)
-    const compressed = await compressImage(file)
-    const path = `${selectedJobId}/${Date.now()}.jpg`
+    const ts = Date.now()
+    const path = `${selectedJobId}/${ts}.jpg`
+    const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
     const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
-    if (!error) setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
-    else alert('Photo upload failed: ' + error.message)
+    if (!error) {
+      await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
+      setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
+    } else alert('Photo upload failed: ' + error.message)
     setUploadingPhoto(false)
   }
 
@@ -713,8 +723,8 @@ export default function Field() {
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '1rem' }}>
                                     {r.photos.map((p, i) => (
                                       <button key={i} type="button" onClick={() => openLightbox(r.photos, i)} style={{ aspectRatio: '1', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', padding: 0 }}>
-                                        {photoUrls[p.path]
-                                          ? <img src={photoUrls[p.path]} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                        {(photoUrls[tp(p.path)] || photoUrls[p.path])
+                                          ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px', padding: '4px', textAlign: 'center' }}>{p.name || `#${i+1}`}</div>
                                         }
                                       </button>
@@ -1276,8 +1286,8 @@ export default function Field() {
                               const allForDate = byDate[date]
                               return (
                                 <button key={i} type="button" onClick={() => openLightbox(allPhotos, allPhotos.indexOf(p))} style={{ aspectRatio: '1', background: '#0f0f0f', border: 'none', overflow: 'hidden', cursor: 'pointer', padding: 0, borderRadius: '4px', position: 'relative' }}>
-                                  {photoUrls[p.path]
-                                    ? <img src={photoUrls[p.path]} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                  {(photoUrls[tp(p.path)] || photoUrls[p.path])
+                                    ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                                     : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
                                   }
                                   {p.caption && (
@@ -1331,8 +1341,8 @@ export default function Field() {
             <div style={{ display: 'flex', gap: '4px', padding: '10px 14px', background: 'rgba(0,0,0,0.8)', overflowX: 'auto', flexShrink: 0 }}>
               {lightbox.photos.map((p, i) => (
                 <button key={i} onClick={() => setLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === lightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#111' }}>
-                  {photoUrls[p.path]
-                    ? <img src={photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" />
+                  {(photoUrls[tp(p.path)] || photoUrls[p.path])
+                    ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" />
                     : <div style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
                   }
                 </button>

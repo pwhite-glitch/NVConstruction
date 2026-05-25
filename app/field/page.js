@@ -102,6 +102,7 @@ export default function Field() {
   const [standalonePhotos, setStandalonePhotos] = useState([])
   const [captionDraft, setCaptionDraft] = useState('')
   const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false)
+  const [migration, setMigration] = useState(null) // null | { processed, total, done }
 
   useEffect(() => {
     async function load() {
@@ -237,6 +238,32 @@ export default function Field() {
     setCaptionDraft('')
     await loadPhotoGallery()
     setUploadingGalleryPhoto(false)
+  }
+
+  async function migratePhotos() {
+    const allPaths = [
+      ...standalonePhotos.map(p => p.storage_path),
+      ...dailyReports.flatMap(r => (r.photos || []).map(p => p.path)),
+    ].filter(Boolean)
+    if (!allPaths.length) return
+    setMigration({ processed: 0, total: allPaths.length, done: false })
+    for (let i = 0; i < allPaths.length; i++) {
+      const path = allPaths[i]
+      try {
+        const { data: blob, error } = await supabase.storage.from('daily-report-photos').download(path)
+        if (!error && blob) {
+          const file = new File([blob], path.split('/').pop(), { type: 'image/jpeg' })
+          const compressed = await compressImage(file)
+          if (compressed.size < file.size * 0.9) {
+            await supabase.storage.from('daily-report-photos').upload(path, compressed, { upsert: true })
+          }
+        }
+      } catch {}
+      setMigration(m => ({ ...m, processed: m.processed + 1 }))
+    }
+    setMigration(m => ({ ...m, done: true }))
+    setPhotoUrls({})
+    await loadPhotoGallery()
   }
 
   async function uploadJobDoc(file) {
@@ -1210,6 +1237,29 @@ export default function Field() {
                           </label>
                         </div>
                       </div>
+
+                      {/* Migration banner / button */}
+                      {migration ? (
+                        <div style={{ background: migration.done ? '#0a1a0a' : '#141414', border: `1px solid ${migration.done ? '#1a4a1a' : '#2a2a2a'}`, borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          {migration.done ? (
+                            <>
+                              <span style={{ color: '#4ade80', fontSize: '13px', fontWeight: '700', flex: 1 }}>All photos optimized — load times are now faster.</span>
+                              <button onClick={() => setMigration(null)} style={s.btnSm()}>Dismiss</button>
+                            </>
+                          ) : (
+                            <>
+                              <span style={{ color: '#aaa', fontSize: '13px', flex: 1 }}>Optimizing {migration.processed} / {migration.total} photos...</span>
+                              <div style={{ width: '100px', height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden', flexShrink: 0 }}>
+                                <div style={{ height: '100%', background: '#e8590c', width: `${migration.total ? (migration.processed / migration.total) * 100 : 0}%`, transition: 'width 0.3s ease' }} />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ) : totalGalleryPhotos > 0 && (
+                        <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                          <button onClick={migratePhotos} style={s.btnSm()}>Optimize {totalGalleryPhotos} existing photos</button>
+                        </div>
+                      )}
 
                       {allPhotos.length === 0 && (
                         <div style={s.empty}>No photos yet.<br />Add photos directly or they'll appear here from daily reports.</div>

@@ -10,6 +10,9 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Mobile section nav dropdown (jobdetail) — hidden on desktop */
+.rx-mobile-nav-select { display: none !important; }
+
 /* Bottom nav: hidden on desktop, shown on mobile */
 .rx-bottom-nav {
   display: none;
@@ -46,6 +49,12 @@
   .rx-main      { padding-left: 0.75rem !important; padding-right: 0.75rem !important; padding-top: 1.25rem !important; }
   .rx-card      { padding: 1rem !important; }
   .rx-card-body { padding: 1rem !important; }
+
+  /* Mobile section nav dropdown (jobdetail) */
+  .rx-mobile-nav-select { display: block !important; }
+
+  /* Photo grid: 3-col on mobile instead of 4 */
+  .rx-grid-photos { grid-template-columns: repeat(3, 1fr) !important; }
 
   /* Multi-column form rows (crew log, equipment, etc.) */
   .rx-form-row  { grid-template-columns: 1fr 1fr !important; }

@@ -291,6 +291,11 @@ export default function JobDetail() {
   const [sendingMessageFor, setSendingMessageFor] = useState(null)
   const [expandedMessageSubId, setExpandedMessageSubId] = useState(null)
 
+  // Field photos state
+  const [fieldPhotos, setFieldPhotos] = useState([])
+  const [fieldPhotoUrls, setFieldPhotoUrls] = useState({})
+  const [fieldLightbox, setFieldLightbox] = useState(null)
+
   // Warranty state
   const [warrantySetting, setWarrantySetting] = useState(null)
   const [warrantyOrders, setWarrantyOrders] = useState([])
@@ -319,6 +324,13 @@ export default function JobDetail() {
       if (stored) setPinnedLineIds(new Set(JSON.parse(stored)))
     } catch {}
   }, [id])
+
+  useEffect(() => {
+    if (!fieldLightbox) return
+    const onKey = e => { if (e.key === 'Escape') setFieldLightbox(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fieldLightbox])
 
   useEffect(() => {
     if (!id) return
@@ -1024,6 +1036,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
+    if (activeTab === 'photos') { loadFieldPhotos() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
@@ -1052,6 +1065,31 @@ ${sovLines.length > 0 ? `
     if (setting) setWarrantySettingForm({ start_date: setting.start_date || '', end_date: setting.end_date || '', coverage_notes: setting.coverage_notes || '' })
   }
 
+
+  // ── Field Photos ────────────────────────────────────────────
+  function fpThumb(path) { return path?.replace(/\.jpg$/i, '_thumb.jpg') ?? null }
+
+  async function fetchFieldPhotoUrls(paths) {
+    const clean = [...new Set(paths.filter(Boolean))]
+    if (!clean.length) return
+    const toSign = [...new Set([...clean, ...clean.map(fpThumb).filter(Boolean)])]
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(toSign, 7200)
+    if (data) setFieldPhotoUrls(prev => { const u = { ...prev }; data.forEach(d => { if (d.signedUrl) u[d.path] = d.signedUrl }); return u })
+  }
+
+  async function loadFieldPhotos() {
+    const [{ data: standalone }, { data: reports }] = await Promise.all([
+      supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
+      supabase.from('daily_reports').select('report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
+    ])
+    const all = [
+      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, date: p.taken_at?.split('T')[0], name: p.file_name })),
+      ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true })))),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date))
+    setFieldPhotos(all)
+    const paths = all.map(p => p.path).filter(Boolean)
+    if (paths.length) fetchFieldPhotoUrls(paths)
+  }
 
   // ── Sub SOV ─────────────────────────────────────────────────
   async function loadContractSov(contractId) {
@@ -2663,7 +2701,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
 
           {/* Left sidebar nav */}
-          <aside style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
+          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
             {[
               {
                 group: 'Project',
@@ -2695,6 +2733,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'field', label: 'Field', badge: fieldRfis.filter(r => r.status === 'open').length > 0 ? `${fieldRfis.filter(r => r.status === 'open').length} RFI` : null, alert: fieldRfis.filter(r => r.status === 'open').length > 0 },
                   { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
                   { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
+                  { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
                 ],
               },
               {
@@ -2748,6 +2787,39 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
           {/* Main content area */}
           <div style={{ flex: 1, minWidth: 0 }}>
+
+        {/* ── MOBILE SECTION NAV (hidden on desktop) ── */}
+        <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f1f1f1', fontSize: '16px', marginBottom: '1.25rem' }}>
+          <optgroup label="Project">
+            <option value="details">Details</option>
+            <option value="contacts">Contacts</option>
+            <option value="documents">Documents</option>
+            <option value="schedule">Schedule</option>
+            <option value="closeout">Closeout</option>
+            <option value="warranty">Warranty</option>
+          </optgroup>
+          <optgroup label="Financials">
+            <option value="budget">Budget</option>
+            <option value="changeorders">Change Orders</option>
+            <option value="billing">Billing</option>
+            <option value="costs">Direct Costs</option>
+            <option value="prime">Prime Contract</option>
+            <option value="cashflow">Cash Flow</option>
+            <option value="retainage">Retainage</option>
+            <option value="prelim">Lien Log</option>
+          </optgroup>
+          <optgroup label="Field">
+            <option value="field">Field Reports</option>
+            <option value="submittals">Submittals</option>
+            <option value="punch">Punch List</option>
+            <option value="photos">Site Photos</option>
+          </optgroup>
+          <optgroup label="Team">
+            <option value="subs">Subs</option>
+            <option value="contracts">Contracts</option>
+            {userRole === 'pm' && <option value="labor">Labor</option>}
+          </optgroup>
+        </select>
 
         {/* ── DETAILS TAB ── */}
         {activeTab === 'details' && (
@@ -7013,10 +7085,88 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
+        {/* ── SITE PHOTOS TAB ── */}
+        {activeTab === 'photos' && (() => {
+          const byDate = fieldPhotos.reduce((acc, p) => { const d = p.date || 'Unknown'; (acc[d] = acc[d] || []).push(p); return acc }, {})
+          const dates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a))
+          return (
+            <>
+              {fieldPhotos.length === 0 ? (
+                <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' }}>
+                  No field photos yet. Photos taken by the superintendent will appear here once uploaded.
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: '13px', color: '#555', margin: '0 0 1.25rem' }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} — gallery uploads + daily reports</p>
+                  {dates.map(date => (
+                    <div key={date} style={{ marginBottom: '1.5rem' }}>
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
+                        {date !== 'Unknown' ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown Date'}
+                        <span style={{ color: '#333', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }} className="rx-grid-photos">
+                        {byDate[date].map((p, i) => (
+                          <button key={i} type="button" onClick={() => setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) })} style={{ aspectRatio: '1', background: '#0f0f0f', border: 'none', overflow: 'hidden', cursor: 'pointer', padding: 0, borderRadius: '4px', position: 'relative' }}>
+                            {(fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path])
+                              ? <img src={fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = fieldPhotoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                              : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
+                            }
+                            {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
+                            {p.fromReport && <div style={{ position: 'absolute', top: 3, right: 3, background: 'rgba(0,0,0,0.7)', borderRadius: '3px', padding: '1px 4px', fontSize: '8px', color: '#888' }}>Daily</div>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          )
+        })()}
+
           </div>{/* end content area */}
         </div>{/* end sidebar + content flex */}
 
       </main>
+
+      {/* ── FIELD PHOTOS LIGHTBOX ── */}
+      {fieldLightbox && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
+            <div>
+              {fieldLightbox.photos[fieldLightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px', marginRight: '12px' }}>{fieldLightbox.photos[fieldLightbox.index].caption}</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(fieldLightbox.photos[fieldLightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#444', fontSize: '11px', marginLeft: '8px' }}>· From daily report</span>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ color: '#555', fontSize: '12px' }}>{fieldLightbox.index + 1} / {fieldLightbox.photos.length}</span>
+              <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+            </div>
+          </div>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '0 60px' }}>
+            {fieldPhotoUrls[fieldLightbox.photos[fieldLightbox.index]?.path]
+              ? <img src={fieldPhotoUrls[fieldLightbox.photos[fieldLightbox.index].path]} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', userSelect: 'none' }} alt="" />
+              : <div style={{ color: '#444', fontSize: '13px' }}>Loading...</div>
+            }
+            {fieldLightbox.photos.length > 1 && <>
+              <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
+              <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
+            </>}
+          </div>
+          {fieldLightbox.photos.length > 1 && (
+            <div style={{ display: 'flex', gap: '4px', padding: '10px 14px', background: 'rgba(0,0,0,0.8)', overflowX: 'auto', flexShrink: 0 }}>
+              {fieldLightbox.photos.map((p, i) => (
+                <button key={i} onClick={() => setFieldLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === fieldLightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#111' }}>
+                  {(fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path])
+                    ? <img src={fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" />
+                    : <div style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
+                  }
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

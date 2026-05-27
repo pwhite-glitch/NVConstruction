@@ -1327,7 +1327,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
   const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   const pendingTotal = pending.reduce((sum, sub) => sum + (sub.amount_billed || 0), 0)
   const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
-  const billingBadge = (pending.length + unsignedWaivers.length) || null
+  const billingBadge = pending.length || null
   const dirBadge = (pendingApps + expiringCOIs.length) || null
 
   const navItems = [

@@ -107,6 +107,7 @@ export default function Field() {
   const [captionDraft, setCaptionDraft] = useState('')
   const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false)
   const [migration, setMigration] = useState(null)
+  const [deletingPhoto, setDeletingPhoto] = useState(null)
 
   // Wizard + status + FAB + crew presets
   const [wizardStep, setWizardStep] = useState(1)
@@ -285,6 +286,28 @@ export default function Field() {
       ...reports.flatMap(r => (r.photos || []).map(p => p.path)),
     ]
     if (allPaths.length) fetchPhotoUrls(allPaths)
+  }
+
+  async function deletePhoto(photo) {
+    if (!window.confirm('Delete this photo? This cannot be undone.')) return
+    setDeletingPhoto(photo.path)
+    try {
+      await supabase.storage.from('daily-report-photos').remove([photo.path, tp(photo.path)].filter(Boolean))
+      if (photo.fromReport) {
+        const report = dailyReports.find(r => r.id === photo.reportId)
+        if (report) {
+          const updated = (report.photos || []).filter(p => p.path !== photo.path)
+          await supabase.from('daily_reports').update({ photos: updated.length ? updated : null }).eq('id', report.id)
+        }
+      } else {
+        await supabase.from('job_photos').delete().eq('storage_path', photo.path)
+      }
+      await loadPhotoGallery()
+    } catch (err) {
+      alert('Delete failed: ' + err.message)
+    } finally {
+      setDeletingPhoto(null)
+    }
   }
 
   async function uploadGalleryPhoto(file, captionOverride) {
@@ -1438,7 +1461,7 @@ export default function Field() {
                 {activeTab === 'photos' && (() => {
                   const allPhotos = [
                     ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, date: p.taken_at?.split('T')[0] })),
-                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: null, date: r.report_date, fromReport: true }))),
+                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: null, date: r.report_date, fromReport: true, reportId: r.id }))),
                   ].sort((a, b) => new Date(b.date) - new Date(a.date))
                   const byDate = allPhotos.reduce((acc, p) => { const d = p.date || 'Unknown'; (acc[d] = acc[d] || []).push(p); return acc }, {})
                   const dates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a))
@@ -1493,22 +1516,26 @@ export default function Field() {
                             <span style={{ color: '#333', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
                           </p>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-                            {byDate[date].map((p, i) => {
-                              const allForDate = byDate[date]
-                              return (
-                                <button key={i} type="button" onClick={() => openLightbox(allPhotos, allPhotos.indexOf(p))} style={{ aspectRatio: '1', background: '#0f0f0f', border: 'none', overflow: 'hidden', cursor: 'pointer', padding: 0, borderRadius: '4px', position: 'relative' }}>
-                                  {(photoUrls[tp(p.path)] || photoUrls[p.path])
-                                    ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
-                                    : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
-                                  }
-                                  {p.caption && (
-                                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 6px 4px', fontSize: '9px', color: '#ddd', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {p.caption}
-                                    </div>
-                                  )}
+                            {byDate[date].map((p, i) => (
+                              <div key={i} style={{ aspectRatio: '1', background: '#0f0f0f', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => openLightbox(allPhotos, allPhotos.indexOf(p))}>
+                                {(photoUrls[tp(p.path)] || photoUrls[p.path])
+                                  ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
+                                  : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
+                                }
+                                {p.caption && (
+                                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 6px 4px', fontSize: '9px', color: '#ddd', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {p.caption}
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={e => { e.stopPropagation(); deletePhoto(p) }}
+                                  style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingPhoto === p.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
+                                >
+                                  {deletingPhoto === p.path ? '…' : '✕'}
                                 </button>
-                              )
-                            })}
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}

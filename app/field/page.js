@@ -77,6 +77,10 @@ export default function Field() {
 
   const [subContacts, setSubContacts] = useState([])
   const [jobContacts, setJobContacts] = useState([])
+  const [contactForm, setContactForm] = useState({ name: '', company: '', role: '', phone: '', email: '', notes: '' })
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [submittingContact, setSubmittingContact] = useState(false)
+  const [contactSuccess, setContactSuccess] = useState(false)
 
   const [directCosts, setDirectCosts] = useState([])
   const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
@@ -185,6 +189,31 @@ export default function Field() {
     setJobContacts(data || [])
   }
 
+  async function submitJobContact(e) {
+    e.preventDefault()
+    if (!contactForm.name.trim()) { alert('Name is required.'); return }
+    setSubmittingContact(true)
+    const { error } = await supabase.from('job_contacts').insert({
+      job_id: selectedJobId,
+      name: contactForm.name.trim(),
+      company: contactForm.company || null,
+      role: contactForm.role || null,
+      phone: contactForm.phone || null,
+      email: contactForm.email || null,
+      notes: contactForm.notes || null,
+    })
+    if (!error) {
+      setContactSuccess(true)
+      setContactForm({ name: '', company: '', role: '', phone: '', email: '', notes: '' })
+      setShowContactForm(false)
+      await loadJobContacts()
+      setTimeout(() => setContactSuccess(false), 3000)
+    } else {
+      alert('Error adding contact: ' + error.message)
+    }
+    setSubmittingContact(false)
+  }
+
   async function loadDirectCosts() {
     const { data } = await supabase.from('direct_costs').select('*').eq('job_id', selectedJobId).order('cost_date', { ascending: false })
     setDirectCosts(data || [])
@@ -239,7 +268,8 @@ export default function Field() {
   }
 
   async function loadPhotoGallery() {
-    const { data } = await supabase.from('job_photos').select('*').eq('job_id', selectedJobId).order('taken_at', { ascending: false })
+    const { data, error: photoErr } = await supabase.from('job_photos').select('*').eq('job_id', selectedJobId).order('taken_at', { ascending: false })
+    if (photoErr) console.error('job_photos query error:', photoErr.message)
     setStandalonePhotos(data || [])
     let reports = dailyReports
     if (reports.length === 0) {
@@ -264,7 +294,8 @@ export default function Field() {
     if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
     await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
     const usedCaption = captionOverride !== undefined ? captionOverride : captionDraft
-    await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, taken_at: new Date().toISOString() })
+    const { error: dbErr } = await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, taken_at: new Date().toISOString() })
+    if (dbErr) { alert('Photo saved to storage but could not save to gallery: ' + dbErr.message); setUploadingGalleryPhoto(false); return }
     if (captionOverride === undefined) setCaptionDraft('')
     await loadPhotoGallery()
     setUploadingGalleryPhoto(false)
@@ -1105,6 +1136,44 @@ export default function Field() {
                 {/* ── CONTACTS ── */}
                 {activeTab === 'subs' && (
                   <>
+                    {contactSuccess && <div style={s.success}>Contact added successfully.</div>}
+
+                    {/* Add contact button / form */}
+                    <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                      <button onClick={() => setShowContactForm(f => !f)} style={s.btnSm('orange')}>
+                        {showContactForm ? '✕ Cancel' : '+ Add Contact'}
+                      </button>
+                    </div>
+
+                    {showContactForm && (
+                      <div style={{ ...s.card, marginBottom: '1.5rem' }}>
+                        <p style={s.cardTitle}>Add Contact</p>
+                        <form onSubmit={submitJobContact}>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                            <div><label style={s.label}>Name *</label><input style={s.input} required value={contactForm.name} onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))} placeholder="John Smith" autoFocus /></div>
+                            <div><label style={s.label}>Company</label><input style={s.input} value={contactForm.company} onChange={e => setContactForm(f => ({ ...f, company: e.target.value }))} placeholder="ABC Engineering" /></div>
+                          </div>
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                            <div><label style={s.label}>Role</label><input style={s.input} value={contactForm.role} onChange={e => setContactForm(f => ({ ...f, role: e.target.value }))} placeholder="Inspector, Engineer..." /></div>
+                            <div><label style={s.label}>Phone</label><input type="tel" style={s.input} value={contactForm.phone} onChange={e => setContactForm(f => ({ ...f, phone: e.target.value }))} placeholder="(555) 000-0000" /></div>
+                          </div>
+                          <div style={{ marginBottom: '1rem' }}>
+                            <label style={s.label}>Email</label>
+                            <input type="email" style={s.input} value={contactForm.email} onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))} placeholder="email@example.com" />
+                          </div>
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <label style={s.label}>Notes</label>
+                            <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={contactForm.notes} onChange={e => setContactForm(f => ({ ...f, notes: e.target.value }))} placeholder="Available Mon-Fri, call before noon..." />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button type="submit" disabled={submittingContact} style={{ ...s.btn, opacity: submittingContact ? 0.6 : 1 }}>
+                              {submittingContact ? 'Saving...' : 'Save Contact'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
                     {jobContacts.length > 0 && (
                       <>
                         <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', paddingLeft: '2px' }}>Project Contacts</div>
@@ -1168,8 +1237,8 @@ export default function Field() {
                       </>
                     )}
 
-                    {jobContacts.length === 0 && subContacts.length === 0 && (
-                      <div style={s.empty}>No contacts on this job yet. PMs can add inspectors, engineers, and other contacts from the job detail page.</div>
+                    {jobContacts.length === 0 && subContacts.length === 0 && !showContactForm && (
+                      <div style={s.empty}>No contacts yet.<br />Tap "+ Add Contact" to save inspectors, engineers, and other project contacts.</div>
                     )}
                   </>
                 )}

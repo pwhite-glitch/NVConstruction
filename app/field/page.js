@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
@@ -113,6 +113,8 @@ export default function Field() {
   const [todayReportStatus, setTodayReportStatus] = useState(null) // null | 'submitted' | 'none'
   const [fabOpen, setFabOpen] = useState(false)
   const [fabCaption, setFabCaption] = useState('')
+  const [fabCount, setFabCount] = useState(0)
+  const fabInputRef = useRef(null)
   const [crewPresets, setCrewPresets] = useState([])
   const [showSavePreset, setShowSavePreset] = useState(false)
   const [presetNameDraft, setPresetNameDraft] = useState('')
@@ -1523,23 +1525,38 @@ export default function Field() {
         <div style={{ position: 'fixed', bottom: '24px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
           {fabOpen && (
             <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '14px', width: '260px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Caption / Tag (optional)</label>
-              <input value={fabCaption} onChange={e => setFabCaption(e.target.value)} placeholder="Foundation, framing, MEP..." style={{ ...s.input, marginBottom: '10px' }} autoFocus />
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: uploadingGalleryPhoto ? '#111' : '#e8590c', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'not-allowed' : 'pointer', letterSpacing: '0.5px' }}>
-                {uploadingGalleryPhoto ? 'Uploading...' : '📷  Take / Choose Photo'}
-                <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} disabled={uploadingGalleryPhoto} onChange={async e => {
-                  const files = Array.from(e.target.files || [])
-                  if (!files.length) return
-                  setFabOpen(false)
-                  for (const f of files) await uploadGalleryPhoto(f, fabCaption)
-                  setFabCaption('')
-                  e.target.value = ''
-                }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Caption / Tag (optional)</label>
+                {fabCount > 0 && <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '2px 8px' }}>📷 {fabCount} saved</span>}
+              </div>
+              <input value={fabCaption} onChange={e => setFabCaption(e.target.value)} placeholder="Foundation, framing, MEP..." style={{ ...s.input, marginBottom: '10px' }} />
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: uploadingGalleryPhoto ? '#333' : '#e8590c', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'default' : 'pointer', letterSpacing: '0.5px' }}>
+                {uploadingGalleryPhoto ? '⏳ Saving...' : fabCount > 0 ? '📷  Take Another' : '📷  Take / Choose Photo'}
+                <input
+                  ref={fabInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  disabled={uploadingGalleryPhoto}
+                  onChange={async e => {
+                    const files = Array.from(e.target.files || [])
+                    if (!files.length) return
+                    e.target.value = ''
+                    for (const f of files) await uploadGalleryPhoto(f, fabCaption)
+                    setFabCount(n => n + files.length)
+                    // Auto-open camera again for next shot
+                    fabInputRef.current?.click()
+                  }}
+                />
               </label>
+              {fabCount > 0 && (
+                <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#444', textAlign: 'center' }}>Tap ✕ when done</p>
+              )}
             </div>
           )}
           <button
-            onClick={() => setFabOpen(o => !o)}
+            onClick={() => { setFabOpen(o => { if (o) setFabCount(0); return !o }); setFabCaption('') }}
             style={{ width: '58px', height: '58px', borderRadius: '50%', background: fabOpen ? '#333' : '#e8590c', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 24px rgba(232,89,12,0.45)', transition: 'background 0.15s' }}
           >
             {fabOpen ? '✕' : '📷'}

@@ -2724,10 +2724,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {
                 group: 'Financials',
                 items: [
-                  { key: 'budget', label: 'Budget', badge: budgetItems.length || null },
-                  { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : allCOs.length || null, alert: pendingCOs > 0 },
-                  { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : billingSubmissions.length || null, alert: pendingBillingCount > 0 },
-                  { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : directCosts.length || null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
+                  { key: 'budget', label: 'Budget' },
+                  { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : null, alert: pendingCOs > 0 },
+                  { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
+                  { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
                   { key: 'prime', label: 'Prime Contract' },
                   { key: 'cashflow', label: 'Cash Flow' },
                   { key: 'retainage', label: 'Retainage' },

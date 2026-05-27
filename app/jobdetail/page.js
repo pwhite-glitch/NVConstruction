@@ -95,6 +95,7 @@ export default function JobDetail() {
   const [errMsg, setErrMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [activeTab, setActiveTab] = useState('details')
+  const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
 
   // Labor / employee state
@@ -2641,6 +2642,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.logoSub}>Job Detail</div>
             </div>
           </div>
+          <button style={{ padding: '7px 16px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
         </div>
       </header>
 
@@ -2899,7 +2901,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
 
               <div style={s.card}>
-                <p style={s.cardTitle}>Billing dates</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showBillingDates ? '1.25rem' : 0, cursor: 'pointer' }} onClick={() => setShowBillingDates(v => !v)}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Billing schedule</p>
+                  <span style={{ fontSize: '12px', color: '#555', fontWeight: '700', userSelect: 'none' }}>{showBillingDates ? '▲ Hide' : '▼ Show'}</span>
+                </div>
+                {showBillingDates && <>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
                   <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
@@ -2950,37 +2956,32 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {(form.owner_billing_frequency || 'monthly') === 'biweekly' && <div><label style={s.label}>Anchor date</label><input type="date" style={s.input} value={form.owner_billing_anchor || ''} onChange={e => update('owner_billing_anchor', e.target.value)} /></div>}
                   </div>
                 </div>
+                </>}
               </div>
 
               <div style={s.card}>
-                <p style={s.cardTitle}>Owner info</p>
-                <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
-                  <div><label style={s.label}>Owner company</label><input style={s.input} value={form.owner_company || ''} onChange={e => update('owner_company', e.target.value)} /></div>
-                  <div><label style={s.label}>Owner name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} /></div>
+                <p style={s.cardTitle}>Owner, design team & permits</p>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Owner</p>
+                <div style={{ ...s.grid2, marginBottom: '16px' }} className="rx-grid-2">
+                  <div><label style={s.label}>Company</label><input style={s.input} value={form.owner_company || ''} onChange={e => update('owner_company', e.target.value)} /></div>
+                  <div><label style={s.label}>Name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} /></div>
+                  <div><label style={s.label}>Email</label><input style={s.input} value={form.owner_email || ''} onChange={e => update('owner_email', e.target.value)} /></div>
+                  <div><label style={s.label}>Phone</label><input style={s.input} value={form.owner_phone || ''} onChange={e => update('owner_phone', e.target.value)} /></div>
                 </div>
-                <div style={s.grid2} className="rx-grid-2">
-                  <div><label style={s.label}>Owner email</label><input style={s.input} value={form.owner_email || ''} onChange={e => update('owner_email', e.target.value)} /></div>
-                  <div><label style={s.label}>Owner phone</label><input style={s.input} value={form.owner_phone || ''} onChange={e => update('owner_phone', e.target.value)} /></div>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Architect</p>
+                <div style={{ ...s.grid3, marginBottom: '16px' }} className="rx-grid-3">
+                  <div><label style={s.label}>Name</label><input style={s.input} value={form.architect_name || ''} onChange={e => update('architect_name', e.target.value)} /></div>
+                  <div><label style={s.label}>Company</label><input style={s.input} value={form.architect_company || ''} onChange={e => update('architect_company', e.target.value)} /></div>
+                  <div><label style={s.label}>Email</label><input style={s.input} value={form.architect_email || ''} onChange={e => update('architect_email', e.target.value)} /></div>
                 </div>
-              </div>
-
-              <div style={s.card}>
-                <p style={s.cardTitle}>Architect & engineer</p>
-                <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
-                  <div><label style={s.label}>Architect name</label><input style={s.input} value={form.architect_name || ''} onChange={e => update('architect_name', e.target.value)} /></div>
-                  <div><label style={s.label}>Architect company</label><input style={s.input} value={form.architect_company || ''} onChange={e => update('architect_company', e.target.value)} /></div>
-                  <div><label style={s.label}>Architect email</label><input style={s.input} value={form.architect_email || ''} onChange={e => update('architect_email', e.target.value)} /></div>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Engineer</p>
+                <div style={{ ...s.grid3, marginBottom: '16px' }} className="rx-grid-3">
+                  <div><label style={s.label}>Name</label><input style={s.input} value={form.engineer_name || ''} onChange={e => update('engineer_name', e.target.value)} /></div>
+                  <div><label style={s.label}>Company</label><input style={s.input} value={form.engineer_company || ''} onChange={e => update('engineer_company', e.target.value)} /></div>
+                  <div><label style={s.label}>Email</label><input style={s.input} value={form.engineer_email || ''} onChange={e => update('engineer_email', e.target.value)} /></div>
                 </div>
-                <div style={s.grid3} className="rx-grid-3">
-                  <div><label style={s.label}>Engineer name</label><input style={s.input} value={form.engineer_name || ''} onChange={e => update('engineer_name', e.target.value)} /></div>
-                  <div><label style={s.label}>Engineer company</label><input style={s.input} value={form.engineer_company || ''} onChange={e => update('engineer_company', e.target.value)} /></div>
-                  <div><label style={s.label}>Engineer email</label><input style={s.input} value={form.engineer_email || ''} onChange={e => update('engineer_email', e.target.value)} /></div>
-                </div>
-              </div>
-
-              <div style={s.card}>
-                <p style={s.cardTitle}>Permits</p>
-                <div style={s.grid2} className="rx-grid-2">
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Permits</p>
+                <div style={{ ...s.grid2 }} className="rx-grid-2">
                   <div><label style={s.label}>Permit number</label><input style={s.input} value={form.permit_number || ''} onChange={e => update('permit_number', e.target.value)} /></div>
                   <div><label style={s.label}>Permit date</label><input type="date" style={s.input} value={form.permit_date || ''} onChange={e => update('permit_date', e.target.value)} /></div>
                 </div>
@@ -3051,34 +3052,6 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
             </form>
 
-            <div style={s.card}>
-              <p style={s.cardTitle}>Assigned subcontractors ({subs.length})</p>
-              {subs.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No subs assigned yet.</p> : subs.map(a => (
-                <div key={a.id} style={s.subRow}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{a.profiles?.company_name || a.sub_email}</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>{a.profiles?.full_name} · {a.sub_email}</p>
-                  </div>
-                  <span style={{ fontSize: '12px', color: a.sub_id ? '#4ade80' : '#e8590c' }}>{a.sub_id ? 'Registered' : 'Pending registration'}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={s.card}>
-              <p style={s.cardTitle}>Billing activity ({billing.length} submissions · {pendingBilling} pending)</p>
-              {billing.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No billing submissions yet.</p> : billing.map(b => (
-                <div key={b.id} style={s.billingRow}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>{new Date(b.submitted_at).toLocaleDateString()} · {b.pct_complete}% complete</p>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <span style={{ fontWeight: '700', color: '#f1f1f1' }}>${b.amount_billed?.toLocaleString()}</span>
-                    <span style={s.coBadge(b.status)}>{b.status}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
           </>
         )}
 

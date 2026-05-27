@@ -93,6 +93,7 @@ const IconBuilding = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconCalc     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><circle cx="8" cy="11" r="1" fill="currentColor"/><circle cx="12" cy="11" r="1" fill="currentColor"/><circle cx="16" cy="11" r="1" fill="currentColor"/><circle cx="8" cy="15" r="1" fill="currentColor"/><circle cx="12" cy="15" r="1" fill="currentColor"/><circle cx="8" cy="19" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
 const IconTrend    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
 const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+const IconLogout   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 
 export default function Dashboard() {
   const router = useRouter()
@@ -1374,8 +1375,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
           { tab: 'billing',   icon: <IconDollar />,     label: 'Billing' },
           { tab: 'directory', icon: <IconUsers />,      label: 'Subs' },
           { tab: 'estimator', icon: <IconCalc />,       label: 'Est.' },
+          { tab: 'signout',   icon: <IconLogout />,     label: 'Sign Out' },
         ].map(({ tab, icon, label }) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: activeTab === tab ? '#e8590c' : '#444', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: activeTab === tab ? '700' : '400', padding: '8px 0' }}>
+          <button key={tab}
+            onClick={() => tab === 'signout' ? supabase.auth.signOut().then(() => router.push('/login')) : setActiveTab(tab)}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: tab === 'signout' ? '#555' : activeTab === tab ? '#e8590c' : '#444', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: activeTab === tab ? '700' : '400', padding: '8px 0' }}>
             {icon}
             {label}
           </button>

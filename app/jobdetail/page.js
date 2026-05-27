@@ -2079,13 +2079,18 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
   function committedForItem(budgetItemId) {
     return contracts.reduce((total, c) => {
+      const adjusted = Number(c.adjusted_contract_value || c.contract_value || 0)
       const allocs = c.budget_allocations
       if (allocs && allocs.length > 0) {
         const match = allocs.find(a => a.budget_item_id === budgetItemId)
-        return total + (match ? Number(match.amount) : 0)
+        if (!match) return total
+        // Scale the allocation proportionally by the adjusted contract value (includes approved COs)
+        const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+        const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
+        return total + pct * adjusted
       }
       if (c.budget_item_id === budgetItemId) {
-        return total + Number(c.adjusted_contract_value || c.contract_value || 0)
+        return total + adjusted
       }
       return total
     }, 0)
@@ -3296,6 +3301,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 </form>
               )}
+
+              {/* Warn about contracts not tied to any budget line */}
+              {(() => {
+                const unlinked = contracts.filter(c => {
+                  const hasAllocs = c.budget_allocations && c.budget_allocations.length > 0
+                  return !hasAllocs && !c.budget_item_id
+                })
+                return unlinked.length > 0 ? (
+                  <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', fontSize: '13px', color: '#e8590c' }}>
+                    ⚠ {unlinked.length} contract{unlinked.length !== 1 ? 's' : ''} not linked to any budget line and not counted in committed totals:{' '}
+                    <span style={{ color: '#aaa' }}>{unlinked.map(c => c.company_name || c.vendor_name || 'Unnamed').join(', ')}</span>
+                    . Open each contract and assign it to a budget line.
+                  </div>
+                ) : null
+              })()}
 
               {budgetItems.length === 0 && !showAddBudgetItem && (
                 <p style={{ color: '#444', fontSize: '14px' }}>No budget lines yet. Import a CSV or add lines manually.</p>

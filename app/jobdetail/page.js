@@ -300,6 +300,7 @@ export default function JobDetail() {
   const [fieldPhotos, setFieldPhotos] = useState([])
   const [fieldPhotoUrls, setFieldPhotoUrls] = useState({})
   const [fieldLightbox, setFieldLightbox] = useState(null)
+  const [deletingFieldPhoto, setDeletingFieldPhoto] = useState(null)
 
   // Warranty state
   const [warrantySetting, setWarrantySetting] = useState(null)
@@ -1121,15 +1122,36 @@ ${sovLines.length > 0 ? `
   async function loadFieldPhotos() {
     const [{ data: standalone }, { data: reports }] = await Promise.all([
       supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
-      supabase.from('daily_reports').select('report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
+      supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     const all = [
-      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, date: p.taken_at?.split('T')[0], name: p.file_name })),
-      ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true })))),
+      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: p.taken_at?.split('T')[0], name: p.file_name })),
+      ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id })))),
     ].sort((a, b) => new Date(b.date) - new Date(a.date))
     setFieldPhotos(all)
     const paths = all.map(p => p.path).filter(Boolean)
     if (paths.length) fetchFieldPhotoUrls(paths)
+  }
+
+  async function deleteFieldPhoto(photo) {
+    if (!window.confirm('Delete this photo? This cannot be undone.')) return
+    setDeletingFieldPhoto(photo.path)
+    const { data: { session } } = await supabase.auth.getSession()
+    try {
+      const res = await fetch('/api/delete-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ path: photo.path, fromReport: photo.fromReport || false, reportId: photo.reportId || null, jobId: id }),
+      })
+      if (!res.ok) { const e = await res.json(); alert('Delete failed: ' + (e.error || 'Unknown error')); return }
+      // If lightbox is open on this photo, close it
+      if (fieldLightbox && fieldLightbox.photos[fieldLightbox.index]?.path === photo.path) setFieldLightbox(null)
+      await loadFieldPhotos()
+    } catch (err) {
+      alert('Delete failed: ' + err.message)
+    } finally {
+      setDeletingFieldPhoto(null)
+    }
   }
 
   // ── Sub SOV ─────────────────────────────────────────────────
@@ -5070,14 +5092,23 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {r.photos?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
                           <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                             {r.photos.map((ph, i) => (
-                              <div key={i} style={{ fontSize: '12px', color: '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
-                                onClick={async () => {
-                                  const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(ph.path, 3600)
-                                  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                                }}>
-                                {ph.name || `Photo ${i + 1}`}
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#141414', border: '1px solid #222', borderRadius: '6px', padding: '5px 10px' }}>
+                                <span style={{ fontSize: '12px', color: '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
+                                  onClick={async () => {
+                                    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(ph.path, 3600)
+                                    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                                  }}>
+                                  {ph.name || `Photo ${i + 1}`}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteFieldPhoto({ path: ph.path, fromReport: true, reportId: r.id })}
+                                  disabled={deletingFieldPhoto === ph.path}
+                                  style={{ background: 'none', border: 'none', color: deletingFieldPhoto === ph.path ? '#555' : '#ff6b6b', cursor: 'pointer', fontSize: '13px', padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>
+                                  {deletingFieldPhoto === ph.path ? '…' : '✕'}
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -7165,14 +7196,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </p>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }} className="rx-grid-photos">
                         {byDate[date].map((p, i) => (
-                          <button key={i} type="button" onClick={() => setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) })} style={{ aspectRatio: '1', background: '#0f0f0f', border: 'none', overflow: 'hidden', cursor: 'pointer', padding: 0, borderRadius: '4px', position: 'relative' }}>
+                          <div key={i} style={{ aspectRatio: '1', background: '#0f0f0f', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) })}>
                             {(fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path])
                               ? <img src={fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = fieldPhotoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                               : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
                             }
+                            {p.tag && <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tag}</div>}
                             {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
-                            {p.fromReport && <div style={{ position: 'absolute', top: 3, right: 3, background: 'rgba(0,0,0,0.7)', borderRadius: '3px', padding: '1px 4px', fontSize: '8px', color: '#888' }}>Daily</div>}
-                          </button>
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); deleteFieldPhoto(p) }}
+                              style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingFieldPhoto === p.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+                              {deletingFieldPhoto === p.path ? '…' : '✕'}
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -7192,13 +7229,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       {fieldLightbox && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
-            <div>
-              {fieldLightbox.photos[fieldLightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px', marginRight: '12px' }}>{fieldLightbox.photos[fieldLightbox.index].caption}</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {fieldLightbox.photos[fieldLightbox.index]?.tag && <span style={{ background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '10px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px' }}>{fieldLightbox.photos[fieldLightbox.index].tag}</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px' }}>{fieldLightbox.photos[fieldLightbox.index].caption}</span>}
               {fieldLightbox.photos[fieldLightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(fieldLightbox.photos[fieldLightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#444', fontSize: '11px', marginLeft: '8px' }}>· From daily report</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#444', fontSize: '11px' }}>· Daily report</span>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ color: '#555', fontSize: '12px' }}>{fieldLightbox.index + 1} / {fieldLightbox.photos.length}</span>
+              <button
+                onClick={() => deleteFieldPhoto(fieldLightbox.photos[fieldLightbox.index])}
+                disabled={deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path}
+                style={{ padding: '6px 14px', background: 'rgba(90,10,10,0.8)', border: '1px solid #5a1a1a', borderRadius: '6px', color: deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
+                {deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? 'Deleting...' : 'Delete'}
+              </button>
               <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
             </div>
           </div>

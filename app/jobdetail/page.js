@@ -186,6 +186,10 @@ export default function JobDetail() {
   const [showMilestoneForm, setShowMilestoneForm] = useState(false)
   const [editingMilestone, setEditingMilestone] = useState(null)
   const [editMilestoneForm, setEditMilestoneForm] = useState({})
+  const [pmDeliveryForm, setPmDeliveryForm] = useState({ material: '', vendor: '', expected_date: '', quantity: '', notes: '' })
+  const [pmDeliveryFile, setPmDeliveryFile] = useState(null)
+  const [showPmDeliveryForm, setShowPmDeliveryForm] = useState(false)
+  const [submittingPmDelivery, setSubmittingPmDelivery] = useState(false)
 
   // Direct Costs tab state
   const [directCosts, setDirectCosts] = useState([])
@@ -469,6 +473,42 @@ export default function JobDetail() {
     if (!window.confirm('Delete this milestone?')) return
     await supabase.from('milestones').delete().eq('id', milestoneId)
     await loadFieldData()
+  }
+
+  async function submitPmDelivery(e) {
+    e.preventDefault()
+    if (!pmDeliveryForm.material.trim()) return
+    setSubmittingPmDelivery(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    let bol_url = null
+    if (pmDeliveryFile) {
+      const ext = pmDeliveryFile.name.split('.').pop()
+      const path = `${id}/bol/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, pmDeliveryFile)
+      if (!upErr) bol_url = path
+    }
+    await supabase.from('deliveries').insert({
+      job_id: id,
+      logged_by: session.user.id,
+      material: pmDeliveryForm.material.trim(),
+      vendor: pmDeliveryForm.vendor || null,
+      expected_date: pmDeliveryForm.expected_date || null,
+      quantity: pmDeliveryForm.quantity || null,
+      notes: pmDeliveryForm.notes || null,
+      status: 'pending',
+      source: 'pm',
+      bol_url,
+    })
+    setPmDeliveryForm({ material: '', vendor: '', expected_date: '', quantity: '', notes: '' })
+    setPmDeliveryFile(null)
+    setShowPmDeliveryForm(false)
+    await loadFieldData()
+    setSubmittingPmDelivery(false)
+  }
+
+  async function openBolUrl(path) {
+    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
   async function loadDirectCosts() {
@@ -5098,22 +5138,48 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* Deliveries */}
             {fieldSubTab === 'deliveries' && (
-              fieldDeliveries.length === 0 ? <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No deliveries logged yet.</div>
-              : fieldDeliveries.map(d => (
-                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 12px', borderBottom: '1px solid #1a1a1a', flexWrap: 'wrap', gap: '8px' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{d.material}</span>
-                      <span style={s.coBadge(d.status === 'received' ? 'approved' : d.status === 'partial' ? 'pending' : 'pending')}>{d.status}</span>
-                    </div>
-                    <span style={{ fontSize: '12px', color: '#555' }}>
-                      {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
-                      {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
-                      {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
-                    </span>
-                  </div>
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                  <button style={s.btnSmallOrange} onClick={() => setShowPmDeliveryForm(v => !v)}>{showPmDeliveryForm ? 'Cancel' : '+ Log Expected Delivery'}</button>
                 </div>
-              ))
+                {showPmDeliveryForm && (
+                  <div style={s.inlineForm}>
+                    <form onSubmit={submitPmDelivery}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
+                        <div style={{ gridColumn: 'span 2' }}><label style={s.label}>Material / Description *</label><input style={s.input} required value={pmDeliveryForm.material} onChange={e => setPmDeliveryForm(f => ({ ...f, material: e.target.value }))} placeholder="Lumber, rebar, HVAC unit..." /></div>
+                        <div><label style={s.label}>Vendor / Supplier</label><input style={s.input} value={pmDeliveryForm.vendor} onChange={e => setPmDeliveryForm(f => ({ ...f, vendor: e.target.value }))} placeholder="ABC Supply Co." /></div>
+                        <div><label style={s.label}>Expected Date</label><input type="date" style={s.input} value={pmDeliveryForm.expected_date} onChange={e => setPmDeliveryForm(f => ({ ...f, expected_date: e.target.value }))} /></div>
+                        <div><label style={s.label}>Quantity</label><input style={s.input} value={pmDeliveryForm.quantity} onChange={e => setPmDeliveryForm(f => ({ ...f, quantity: e.target.value }))} placeholder="24 sheets, 5 tons..." /></div>
+                        <div><label style={s.label}>Bill of Lading</label><input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, paddingTop: '8px' }} onChange={e => setPmDeliveryFile(e.target.files?.[0] || null)} /></div>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><input style={s.input} value={pmDeliveryForm.notes} onChange={e => setPmDeliveryForm(f => ({ ...f, notes: e.target.value }))} placeholder="Driver contact, gate code, specific location..." /></div>
+                      <button type="submit" disabled={submittingPmDelivery} style={{ ...s.btnSmallOrange, opacity: submittingPmDelivery ? 0.6 : 1 }}>{submittingPmDelivery ? 'Saving...' : 'Log Delivery'}</button>
+                    </form>
+                  </div>
+                )}
+                {fieldDeliveries.length === 0 && <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No deliveries logged yet.</div>}
+                {fieldDeliveries.map(d => (
+                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 12px', borderBottom: '1px solid #1a1a1a', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{d.material}</span>
+                        <span style={s.coBadge(d.status === 'received' ? 'approved' : 'pending')}>{d.status}</span>
+                        {d.source === 'pm' && <span style={{ fontSize: '10px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>PM</span>}
+                        {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>DAILY RPT</span>}
+                      </div>
+                      <span style={{ fontSize: '12px', color: '#555' }}>
+                        {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                        {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
+                        {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
+                        {d.notes && ` · ${d.notes}`}
+                      </span>
+                    </div>
+                    {d.bol_url && (
+                      <button style={s.btnSmall} onClick={() => openBolUrl(d.bol_url)}>View BOL</button>
+                    )}
+                  </div>
+                ))}
+              </>
             )}
 
             {/* Milestones */}

@@ -5,6 +5,19 @@ import { supabase } from '../../lib/supabase'
 
 const WEATHER = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain', 'Heavy Rain', 'Thunderstorm', 'Snow', 'Windy', 'Extreme Heat', 'Fog']
 
+const IC = {
+  daily:     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg>,
+  rfi:       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>,
+  deliveries:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>,
+  schedule:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>,
+  subs:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+  costs:     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
+  docs:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>,
+  punch:     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
+  photos:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+  camera:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+}
+
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
   header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem' },
@@ -71,6 +84,7 @@ export default function Field() {
   const [deliverySuccess, setDeliverySuccess] = useState(false)
   const [showDeliveryForm, setShowDeliveryForm] = useState(false)
   const [updatingDelivery, setUpdatingDelivery] = useState(null)
+  const [deliverySubTab, setDeliverySubTab] = useState('mine')
 
   const [milestones, setMilestones] = useState([])
   const [completingMilestone, setCompletingMilestone] = useState(null)
@@ -146,7 +160,7 @@ export default function Field() {
 
   useEffect(() => {
     if (!selectedJobId) return
-    if (activeTab === 'daily') loadDailyReports()
+    if (activeTab === 'daily') { loadDailyReports(); loadSubContacts() }
     else if (activeTab === 'rfi') loadRfis()
     else if (activeTab === 'deliveries') loadDeliveries()
     else if (activeTab === 'schedule') loadMilestones()
@@ -442,6 +456,22 @@ export default function Field() {
       photos: reportPhotos.length ? reportPhotos : null,
     })
     if (!error) {
+      // Auto-create delivery records for any materials logged
+      const filledMaterials = materialsLog.filter(r => r.description)
+      if (filledMaterials.length > 0) {
+        await supabase.from('deliveries').insert(
+          filledMaterials.map(m => ({
+            job_id: selectedJobId,
+            super_id: user.id,
+            material: m.description,
+            vendor: m.supplier || null,
+            quantity: m.quantity || null,
+            status: 'received',
+            received_date: dailyForm.report_date,
+            source: 'daily_report',
+          }))
+        )
+      }
       setDailySuccess(true)
       setDailyForm({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
       setCrewLog([{ name: '', company: '', trade: '', hours: '' }])
@@ -570,18 +600,18 @@ export default function Field() {
                 {!activeTab && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
                     {[
-                      { key: 'daily', icon: '📋', label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? '✓ Filed today' : null },
-                      { key: 'rfi', icon: '❓', label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
-                      { key: 'deliveries', icon: '📦', label: 'Deliveries', count: deliveries.length || null },
-                      { key: 'schedule', icon: '📅', label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
-                      { key: 'subs', icon: '👥', label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
-                      { key: 'costs', icon: '💰', label: 'Direct Costs', count: directCosts.length || null },
-                      { key: 'docs', icon: '📄', label: 'Documents', count: jobDocs.length || null },
-                      { key: 'punch', icon: '✅', label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
-                      { key: 'photos', icon: '📸', label: 'Site Photos', count: totalGalleryPhotos || null },
+                      { key: 'daily', icon: IC.daily, label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? '✓ Filed today' : null },
+                      { key: 'rfi', icon: IC.rfi, label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
+                      { key: 'deliveries', icon: IC.deliveries, label: 'Deliveries', count: deliveries.length || null },
+                      { key: 'schedule', icon: IC.schedule, label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
+                      { key: 'subs', icon: IC.subs, label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
+                      { key: 'costs', icon: IC.costs, label: 'Direct Costs', count: directCosts.length || null },
+                      { key: 'docs', icon: IC.docs, label: 'Documents', count: jobDocs.length || null },
+                      { key: 'punch', icon: IC.punch, label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
+                      { key: 'photos', icon: IC.photos, label: 'Site Photos', count: totalGalleryPhotos || null },
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <span style={{ fontSize: '22px', lineHeight: 1 }}>{item.icon}</span>
+                        <span style={{ color: item.alert ? '#e8590c' : '#555', display: 'flex', lineHeight: 1 }}>{item.icon}</span>
                         <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
                         {item.successLabel ? (
                           <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{item.successLabel}</span>
@@ -747,12 +777,27 @@ export default function Field() {
                           <div style={{ marginBottom: '1.25rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                               <label style={s.label}>Subcontractor Activity</label>
-                              <button type="button" onClick={() => setSubActivityLog(l => [...l, { company: '', trade: '', crew_count: '', work_performed: '' }])} style={s.btnSm('orange')}>+ Add</button>
+                              <button type="button" onClick={() => setSubActivityLog(l => [...l, { subId: '', company: '', trade: '', crew_count: '', work_performed: '' }])} style={s.btnSm('orange')}>+ Add</button>
                             </div>
                             {subActivityLog.map((row, i) => (
                               <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
-                                  <input style={s.input} placeholder="Company" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                  {subContacts.length > 0 ? (
+                                    row.subId === 'other' ? (
+                                      <input style={s.input} placeholder="Company name" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                    ) : (
+                                      <select style={s.input} value={row.subId} onChange={e => {
+                                        const chosen = subContacts.find(sc => sc.id === e.target.value)
+                                        setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, subId: e.target.value, company: chosen ? chosen.company_name : '', trade: chosen ? (chosen.trade || r.trade) : r.trade } : r))
+                                      }}>
+                                        <option value="">Select sub...</option>
+                                        {subContacts.map(sc => <option key={sc.id} value={sc.id}>{sc.company_name}</option>)}
+                                        <option value="other">Other / Manual</option>
+                                      </select>
+                                    )
+                                  ) : (
+                                    <input style={s.input} placeholder="Company" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
+                                  )}
                                   <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                   <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
                                   <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
@@ -834,14 +879,14 @@ export default function Field() {
                           <div style={{ marginBottom: '1.5rem' }}>
                             <label style={s.label}>Attach photos</label>
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                              {uploadingPhoto ? 'Uploading...' : '📷 Add Photos'}
+                              {uploadingPhoto ? 'Uploading...' : 'Add Photos'}
                               <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadReportPhoto(f)); e.target.value = '' }} />
                             </label>
                             {reportPhotos.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
                                 {reportPhotos.map((p, i) => (
                                   <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    📷 {p.name}
+                                    {p.name}
                                     <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
                                   </div>
                                 ))}
@@ -876,8 +921,8 @@ export default function Field() {
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                                   {r.weather && <span style={{ fontSize: '11px', color: '#555' }}>{r.weather}{r.weather_temp ? ` ${r.weather_temp}°` : ''}</span>}
-                                  {crewCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>👷 {crewCount}</span>}
-                                  {photoCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>📷 {photoCount}</span>}
+                                  {crewCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{crewCount} crew</span>}
+                                  {photoCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{photoCount} photos</span>}
                                 </div>
                               </div>
                               <span style={{ color: '#333', fontSize: '14px', flexShrink: 0 }}>{expandedReport === r.id ? '▲' : '▼'}</span>
@@ -999,54 +1044,100 @@ export default function Field() {
                 {activeTab === 'deliveries' && (
                   <>
                     {deliverySuccess && <div style={s.success}>Delivery logged.</div>}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{deliveries.length} entr{deliveries.length !== 1 ? 'ies' : 'y'}</p>
-                      <button style={s.btnSm('orange')} onClick={() => setShowDeliveryForm(v => !v)}>{showDeliveryForm ? 'Cancel' : '+ Log delivery'}</button>
+
+                    {/* Sub-tabs */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid #222', marginBottom: '1rem' }}>
+                      {[{ key: 'mine', label: 'My Log' }, { key: 'expected', label: 'Expected (PM)' }].map(t => (
+                        <button key={t.key} onClick={() => setDeliverySubTab(t.key)} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: deliverySubTab === t.key ? '#f1f1f1' : '#555', borderBottom: deliverySubTab === t.key ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap' }}>{t.label}</button>
+                      ))}
                     </div>
-                    {showDeliveryForm && (
-                      <div style={s.card}>
-                        <h2 style={s.cardTitle}>Log delivery</h2>
-                        <form onSubmit={submitDelivery}>
-                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
-                            <div><label style={s.label}>Material *</label><input style={s.input} required value={deliveryForm.material} onChange={e => setDeliveryForm(f => ({ ...f, material: e.target.value }))} placeholder="Lumber, rebar, concrete..." /></div>
-                            <div><label style={s.label}>Vendor</label><input style={s.input} value={deliveryForm.vendor} onChange={e => setDeliveryForm(f => ({ ...f, vendor: e.target.value }))} placeholder="ABC Supply" /></div>
-                          </div>
-                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
-                            <div><label style={s.label}>Expected date</label><input type="date" style={s.input} value={deliveryForm.expected_date} onChange={e => setDeliveryForm(f => ({ ...f, expected_date: e.target.value }))} /></div>
-                            <div><label style={s.label}>Quantity</label><input style={s.input} value={deliveryForm.quantity} onChange={e => setDeliveryForm(f => ({ ...f, quantity: e.target.value }))} placeholder="100 sheets, 5 tons..." /></div>
-                          </div>
-                          <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={s.label}>Notes</label>
-                            <input style={s.input} value={deliveryForm.notes} onChange={e => setDeliveryForm(f => ({ ...f, notes: e.target.value }))} placeholder="Special instructions..." />
-                          </div>
-                          <button type="submit" disabled={submittingDelivery} style={{ ...s.btn, opacity: submittingDelivery ? 0.6 : 1 }}>{submittingDelivery ? 'Saving...' : 'Log delivery'}</button>
-                        </form>
-                      </div>
-                    )}
-                    {deliveries.length === 0 && !showDeliveryForm && <div style={s.empty}>No deliveries logged yet.</div>}
-                    {deliveries.map(d => (
-                      <div key={d.id} style={{ ...s.row, border: `1px solid ${d.status === 'received' ? '#1a4a1a' : '#1e1e1e'}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{d.material}</span>
-                              <span style={s.badge(d.status)}>{d.status}</span>
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>
-                              {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
-                              {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
-                              {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
-                            </div>
-                            {d.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{d.notes}</div>}
-                          </div>
-                          {d.status === 'pending' && (
-                            <button style={{ ...s.btnSm('green'), opacity: updatingDelivery === d.id ? 0.6 : 1 }} disabled={updatingDelivery === d.id} onClick={() => markDeliveryReceived(d.id)}>
-                              {updatingDelivery === d.id ? '...' : 'Mark received'}
-                            </button>
-                          )}
+
+                    {/* My Log sub-tab */}
+                    {deliverySubTab === 'mine' && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{deliveries.filter(d => d.source !== 'pm').length} entr{deliveries.filter(d => d.source !== 'pm').length !== 1 ? 'ies' : 'y'}</p>
+                          <button style={s.btnSm('orange')} onClick={() => setShowDeliveryForm(v => !v)}>{showDeliveryForm ? 'Cancel' : '+ Log delivery'}</button>
                         </div>
-                      </div>
-                    ))}
+                        {showDeliveryForm && (
+                          <div style={s.card}>
+                            <h2 style={s.cardTitle}>Log delivery</h2>
+                            <form onSubmit={submitDelivery}>
+                              <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
+                                <div><label style={s.label}>Material *</label><input style={s.input} required value={deliveryForm.material} onChange={e => setDeliveryForm(f => ({ ...f, material: e.target.value }))} placeholder="Lumber, rebar, concrete..." /></div>
+                                <div><label style={s.label}>Vendor</label><input style={s.input} value={deliveryForm.vendor} onChange={e => setDeliveryForm(f => ({ ...f, vendor: e.target.value }))} placeholder="ABC Supply" /></div>
+                              </div>
+                              <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
+                                <div><label style={s.label}>Expected date</label><input type="date" style={s.input} value={deliveryForm.expected_date} onChange={e => setDeliveryForm(f => ({ ...f, expected_date: e.target.value }))} /></div>
+                                <div><label style={s.label}>Quantity</label><input style={s.input} value={deliveryForm.quantity} onChange={e => setDeliveryForm(f => ({ ...f, quantity: e.target.value }))} placeholder="100 sheets, 5 tons..." /></div>
+                              </div>
+                              <div style={{ marginBottom: '1.5rem' }}>
+                                <label style={s.label}>Notes</label>
+                                <input style={s.input} value={deliveryForm.notes} onChange={e => setDeliveryForm(f => ({ ...f, notes: e.target.value }))} placeholder="Special instructions..." />
+                              </div>
+                              <button type="submit" disabled={submittingDelivery} style={{ ...s.btn, opacity: submittingDelivery ? 0.6 : 1 }}>{submittingDelivery ? 'Saving...' : 'Log delivery'}</button>
+                            </form>
+                          </div>
+                        )}
+                        {deliveries.filter(d => d.source !== 'pm').length === 0 && !showDeliveryForm && <div style={s.empty}>No deliveries logged yet.</div>}
+                        {deliveries.filter(d => d.source !== 'pm').map(d => (
+                          <div key={d.id} style={{ ...s.row, border: `1px solid ${d.status === 'received' ? '#1a4a1a' : '#1e1e1e'}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{d.material}</span>
+                                  <span style={s.badge(d.status)}>{d.status}</span>
+                                  {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#666', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700' }}>DAILY RPT</span>}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#555' }}>
+                                  {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                                  {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
+                                  {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
+                                </div>
+                                {d.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{d.notes}</div>}
+                              </div>
+                              {d.status === 'pending' && (
+                                <button style={{ ...s.btnSm('green'), opacity: updatingDelivery === d.id ? 0.6 : 1 }} disabled={updatingDelivery === d.id} onClick={() => markDeliveryReceived(d.id)}>
+                                  {updatingDelivery === d.id ? '...' : 'Mark received'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Expected (PM) sub-tab */}
+                    {deliverySubTab === 'expected' && (
+                      <>
+                        {deliveries.filter(d => d.source === 'pm').length === 0
+                          ? <div style={s.empty}>No deliveries have been scheduled by the PM yet.</div>
+                          : deliveries.filter(d => d.source === 'pm').map(d => (
+                            <div key={d.id} style={{ ...s.row, border: `1px solid ${d.status === 'received' ? '#1a4a1a' : '#4a2200'}` }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{d.material}</span>
+                                    <span style={s.badge(d.status)}>{d.status}</span>
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#555' }}>
+                                    {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                                    {d.expected_date && <span style={{ color: '#e8590c', fontWeight: '600' }}>Expected {new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                    {d.received_date && <span> · Received {new Date(d.received_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                  </div>
+                                  {d.notes && <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>{d.notes}</div>}
+                                </div>
+                                {d.status === 'pending' && (
+                                  <button style={{ ...s.btnSm('green'), opacity: updatingDelivery === d.id ? 0.6 : 1 }} disabled={updatingDelivery === d.id} onClick={() => markDeliveryReceived(d.id)}>
+                                    {updatingDelivery === d.id ? '...' : 'Mark received'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        }
+                      </>
+                    )}
                   </>
                 )}
 
@@ -1318,7 +1409,7 @@ export default function Field() {
                         {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).map(d => (
                           <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
                             <div>
-                              <span style={{ fontSize: '14px', color: '#f1f1f1' }}>📄 {d.file_name}</span>
+                              <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{d.file_name}</span>
                               <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
                                 <span style={{ padding: '2px 8px', background: '#1a1200', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
                                   {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
@@ -1554,11 +1645,11 @@ export default function Field() {
             <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '14px', width: '260px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Caption / Tag (optional)</label>
-                {fabCount > 0 && <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '2px 8px' }}>📷 {fabCount} saved</span>}
+                {fabCount > 0 && <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '2px 8px' }}>{fabCount} saved</span>}
               </div>
               <input value={fabCaption} onChange={e => setFabCaption(e.target.value)} placeholder="Foundation, framing, MEP..." style={{ ...s.input, marginBottom: '10px' }} />
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: uploadingGalleryPhoto ? '#333' : '#e8590c', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'default' : 'pointer', letterSpacing: '0.5px' }}>
-                {uploadingGalleryPhoto ? '⏳ Saving...' : fabCount > 0 ? '📷  Take Another' : '📷  Take / Choose Photo'}
+                {uploadingGalleryPhoto ? 'Saving...' : fabCount > 0 ? 'Take Another' : 'Take / Choose Photo'}
                 <input
                   ref={fabInputRef}
                   type="file"
@@ -1586,7 +1677,7 @@ export default function Field() {
             onClick={() => { setFabOpen(o => { if (o) setFabCount(0); return !o }); setFabCaption('') }}
             style={{ width: '58px', height: '58px', borderRadius: '50%', background: fabOpen ? '#333' : '#e8590c', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 24px rgba(232,89,12,0.45)', transition: 'background 0.15s' }}
           >
-            {fabOpen ? '✕' : '📷'}
+            {fabOpen ? '✕' : IC.camera}
           </button>
         </div>
       )}

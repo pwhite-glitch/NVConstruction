@@ -5,6 +5,23 @@ import { supabase } from '../../lib/supabase'
 
 const WEATHER = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain', 'Heavy Rain', 'Thunderstorm', 'Snow', 'Windy', 'Extreme Heat', 'Fog']
 
+const PHOTO_TAGS = [
+  'Framing',
+  'Concrete',
+  'Foundation',
+  'Structural Steel',
+  'Roofing',
+  'Plumbing',
+  'Electrical',
+  'Mechanical',
+  'HVAC',
+  'Cooler Box',
+  'Drywall',
+  'Site Work',
+  'Permitting / Inspections',
+  'General Progress',
+]
+
 const IC = {
   daily:     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg>,
   rfi:       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>,
@@ -119,6 +136,9 @@ export default function Field() {
   const [lightbox, setLightbox] = useState(null)
   const [standalonePhotos, setStandalonePhotos] = useState([])
   const [captionDraft, setCaptionDraft] = useState('')
+  const [tagDraft, setTagDraft] = useState('')
+  const [fabTag, setFabTag] = useState('')
+  const [photoTagFilter, setPhotoTagFilter] = useState('all')
   const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false)
   const [migration, setMigration] = useState(null)
   const [deletingPhoto, setDeletingPhoto] = useState(null)
@@ -324,7 +344,7 @@ export default function Field() {
     }
   }
 
-  async function uploadGalleryPhoto(file, captionOverride) {
+  async function uploadGalleryPhoto(file, captionOverride, tagOverride) {
     setUploadingGalleryPhoto(true)
     const ts = Date.now()
     const path = `${selectedJobId}/gallery/${ts}.jpg`
@@ -333,9 +353,11 @@ export default function Field() {
     if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
     await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
     const usedCaption = captionOverride !== undefined ? captionOverride : captionDraft
-    const { error: dbErr } = await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, taken_at: new Date().toISOString() })
+    const usedTag = tagOverride !== undefined ? tagOverride : tagDraft
+    const { error: dbErr } = await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, tag: usedTag || null, taken_at: new Date().toISOString() })
     if (dbErr) { alert('Photo saved to storage but could not save to gallery: ' + dbErr.message); setUploadingGalleryPhoto(false); return }
     if (captionOverride === undefined) setCaptionDraft('')
+    if (tagOverride === undefined) setTagDraft('')
     await loadPhotoGallery()
     setUploadingGalleryPhoto(false)
   }
@@ -1551,24 +1573,35 @@ export default function Field() {
                 {/* ── SITE PHOTOS ── */}
                 {activeTab === 'photos' && (() => {
                   const allPhotos = [
-                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, date: p.taken_at?.split('T')[0] })),
-                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: null, date: r.report_date, fromReport: true, reportId: r.id }))),
+                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: p.taken_at?.split('T')[0] })),
+                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: p.caption || null, tag: p.tag || null, date: r.report_date, fromReport: true, reportId: r.id }))),
                   ].sort((a, b) => new Date(b.date) - new Date(a.date))
-                  const byDate = allPhotos.reduce((acc, p) => { const d = p.date || 'Unknown'; (acc[d] = acc[d] || []).push(p); return acc }, {})
+                  const usedTags = [...new Set(allPhotos.filter(p => p.tag).map(p => p.tag))].sort()
+                  const filtered = photoTagFilter === 'all' ? allPhotos : allPhotos.filter(p => p.tag === photoTagFilter)
+                  const byDate = filtered.reduce((acc, p) => { const d = p.date || 'Unknown'; (acc[d] = acc[d] || []).push(p); return acc }, {})
                   const dates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a))
 
                   return (
                     <>
                       {/* Upload strip */}
                       <div style={s.card}>
+                        <label style={{ ...s.label, marginBottom: '8px' }}>Tag</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '12px' }}>
+                          {PHOTO_TAGS.map(t => (
+                            <button key={t} type="button" onClick={() => setTagDraft(prev => prev === t ? '' : t)}
+                              style={{ padding: '4px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${tagDraft === t ? '#e8590c' : '#2a2a2a'}`, background: tagDraft === t ? '#2a1200' : '#0a0a0a', color: tagDraft === t ? '#e8590c' : '#555', transition: 'all 0.1s' }}>
+                              {t}
+                            </button>
+                          ))}
+                        </div>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                           <div style={{ flex: 1, minWidth: '180px' }}>
-                            <label style={s.label}>Caption / tag</label>
-                            <input style={s.input} value={captionDraft} onChange={e => setCaptionDraft(e.target.value)} placeholder="Foundation pour, Framing, MEP rough-in..." />
+                            <label style={s.label}>Caption (optional)</label>
+                            <input style={s.input} value={captionDraft} onChange={e => setCaptionDraft(e.target.value)} placeholder="Notes about this photo..." />
                           </div>
                           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 20px', background: uploadingGalleryPhoto ? '#111' : '#e8590c', color: '#fff', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>
                             {uploadingGalleryPhoto ? 'Uploading...' : '+ Add Photo'}
-                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={uploadingGalleryPhoto} multiple onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadGalleryPhoto(f); e.target.value = '' }} />
+                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={uploadingGalleryPhoto} multiple onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadGalleryPhoto(f, undefined, undefined); e.target.value = '' }} />
                           </label>
                         </div>
                       </div>
@@ -1596,8 +1629,25 @@ export default function Field() {
                         </div>
                       )}
 
+                      {/* Tag filter pills */}
+                      {usedTags.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '1.25rem' }}>
+                          <button onClick={() => setPhotoTagFilter('all')} style={{ padding: '5px 12px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${photoTagFilter === 'all' ? '#e8590c' : '#2a2a2a'}`, background: photoTagFilter === 'all' ? '#2a1200' : '#141414', color: photoTagFilter === 'all' ? '#e8590c' : '#555' }}>
+                            All ({allPhotos.length})
+                          </button>
+                          {usedTags.map(t => (
+                            <button key={t} onClick={() => setPhotoTagFilter(prev => prev === t ? 'all' : t)} style={{ padding: '5px 12px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${photoTagFilter === t ? '#e8590c' : '#2a2a2a'}`, background: photoTagFilter === t ? '#2a1200' : '#141414', color: photoTagFilter === t ? '#e8590c' : '#555' }}>
+                              {t} ({allPhotos.filter(p => p.tag === t).length})
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {allPhotos.length === 0 && (
                         <div style={s.empty}>No photos yet.<br />Add photos directly or they'll appear here from daily reports.</div>
+                      )}
+                      {allPhotos.length > 0 && filtered.length === 0 && (
+                        <div style={s.empty}>No photos tagged "{photoTagFilter}".</div>
                       )}
 
                       {dates.map(date => (
@@ -1608,11 +1658,17 @@ export default function Field() {
                           </p>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
                             {byDate[date].map((p, i) => (
-                              <div key={i} style={{ aspectRatio: '1', background: '#0f0f0f', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => openLightbox(allPhotos, allPhotos.indexOf(p))}>
+                              <div key={i} style={{ aspectRatio: '1', background: '#0f0f0f', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => openLightbox(filtered, filtered.indexOf(p))}>
                                 {(photoUrls[tp(p.path)] || photoUrls[p.path])
                                   ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
                                   : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
                                 }
+                                {/* Tag badge */}
+                                {p.tag && (
+                                  <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3', maxWidth: '65%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', backdropFilter: 'blur(2px)' }}>
+                                    {p.tag}
+                                  </div>
+                                )}
                                 {p.caption && (
                                   <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 6px 4px', fontSize: '9px', color: '#ddd', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {p.caption}
@@ -1642,12 +1698,21 @@ export default function Field() {
       {selectedJobId && !lightbox && (
         <div style={{ position: 'fixed', bottom: '24px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
           {fabOpen && (
-            <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '14px', width: '260px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Caption / Tag (optional)</label>
+            <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '14px', width: '280px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Tag</label>
                 {fabCount > 0 && <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '2px 8px' }}>{fabCount} saved</span>}
               </div>
-              <input value={fabCaption} onChange={e => setFabCaption(e.target.value)} placeholder="Foundation, framing, MEP..." style={{ ...s.input, marginBottom: '10px' }} />
+              {/* Tag pill picker */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '10px' }}>
+                {PHOTO_TAGS.map(t => (
+                  <button key={t} type="button" onClick={() => setFabTag(prev => prev === t ? '' : t)}
+                    style={{ padding: '4px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${fabTag === t ? '#e8590c' : '#2a2a2a'}`, background: fabTag === t ? '#2a1200' : '#141414', color: fabTag === t ? '#e8590c' : '#555', transition: 'all 0.1s' }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <input value={fabCaption} onChange={e => setFabCaption(e.target.value)} placeholder="Caption (optional)" style={{ ...s.input, marginBottom: '10px' }} />
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', background: uploadingGalleryPhoto ? '#333' : '#e8590c', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'default' : 'pointer', letterSpacing: '0.5px' }}>
                 {uploadingGalleryPhoto ? 'Saving...' : fabCount > 0 ? 'Take Another' : 'Take / Choose Photo'}
                 <input
@@ -1661,9 +1726,8 @@ export default function Field() {
                     const files = Array.from(e.target.files || [])
                     if (!files.length) return
                     e.target.value = ''
-                    for (const f of files) await uploadGalleryPhoto(f, fabCaption)
+                    for (const f of files) await uploadGalleryPhoto(f, fabCaption, fabTag)
                     setFabCount(n => n + files.length)
-                    // Auto-open camera again for next shot
                     fabInputRef.current?.click()
                   }}
                 />
@@ -1674,7 +1738,7 @@ export default function Field() {
             </div>
           )}
           <button
-            onClick={() => { setFabOpen(o => { if (o) setFabCount(0); return !o }); setFabCaption('') }}
+            onClick={() => { setFabOpen(o => { if (o) { setFabCount(0); setFabTag('') } return !o }); setFabCaption('') }}
             style={{ width: '58px', height: '58px', borderRadius: '50%', background: fabOpen ? '#333' : '#e8590c', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 24px rgba(232,89,12,0.45)', transition: 'background 0.15s' }}
           >
             {fabOpen ? '✕' : IC.camera}
@@ -1687,8 +1751,13 @@ export default function Field() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
           {/* Top bar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
-            <div>
-              {lightbox.photos[lightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px', marginRight: '12px' }}>{lightbox.photos[lightbox.index].caption}</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {lightbox.photos[lightbox.index]?.tag && (
+                <span style={{ background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '10px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px' }}>
+                  {lightbox.photos[lightbox.index].tag}
+                </span>
+              )}
+              {lightbox.photos[lightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px' }}>{lightbox.photos[lightbox.index].caption}</span>}
               {lightbox.photos[lightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(lightbox.photos[lightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

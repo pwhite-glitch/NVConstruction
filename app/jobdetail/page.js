@@ -1670,7 +1670,7 @@ ${sovLines.length > 0 ? `
 <style>
 @page{size:8.5in 11in;margin:.85in 1in}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Times New Roman',serif;font-size:10.5pt;color:#000;background:#fff;line-height:1.5}
+body{font-family:'Times New Roman',serif;font-size:10.5pt;color:#000;background:#fff;line-height:1.5;width:6.5in;margin:0 auto}
 .np{break-before:page;page-break-before:always}
 .logo-wrap{text-align:center;margin-bottom:22px}
 .logo-wrap img{height:80px;width:auto;object-fit:contain;display:inline-block}

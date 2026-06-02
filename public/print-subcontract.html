@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script>
+    window.onload = function () {
+      var key = new URLSearchParams(window.location.search).get('key');
+      if (!key) return;
+      var html = localStorage.getItem(key);
+      if (!html) return;
+      localStorage.removeItem(key);
+      document.open('text/html', 'replace');
+      document.write(html);
+      document.close();
+      setTimeout(function () { window.print(); }, 800);
+    };
+  </script>
+</head>
+<body></body>
+</html>

@@ -1854,7 +1854,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 </body></html>`
     const key = `sc_print_${Date.now()}`
     localStorage.setItem(key, html)
-    window.open(`/print/subcontract?key=${key}`, '_blank')
+    window.open(`/print-subcontract.html?key=${key}`, '_blank')
   }
 
   // ── Change Orders ───────────────────────────────────────────

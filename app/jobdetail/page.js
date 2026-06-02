@@ -1666,12 +1666,11 @@ ${sovLines.length > 0 ? `
     const fmt = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const subNoShort = f.subcontract_number.split('-').pop() || f.subcontract_number
     const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/logo.png'
-    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=816"><title>Subcontract — ${f.sub_name}</title>
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Subcontract — ${f.sub_name}</title>
 <style>
 @page{size:8.5in 11in;margin:.85in 1in}
 *{margin:0;padding:0;box-sizing:border-box}
-html{width:8.5in}
-body{font-family:'Times New Roman',serif;font-size:10.5pt;color:#000;background:#fff;line-height:1.5;width:8.5in;margin:0 auto}
+body{font-family:'Times New Roman',serif;font-size:10.5pt;color:#000;background:#fff;line-height:1.5}
 .np{break-before:page;page-break-before:always}
 .logo-wrap{text-align:center;margin-bottom:22px}
 .logo-wrap img{height:80px;width:auto;object-fit:contain;display:inline-block}
@@ -1853,10 +1852,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 </div>
 
 </body></html>`
-    const blob = new Blob([html], { type: 'text/html' })
-    const blobUrl = URL.createObjectURL(blob)
-    const w = window.open(blobUrl, '_blank')
-    setTimeout(() => { w.print(); URL.revokeObjectURL(blobUrl) }, 1200)
+    const key = `sc_print_${Date.now()}`
+    localStorage.setItem(key, html)
+    window.open(`/print/subcontract?key=${key}`, '_blank')
   }
 
   // ── Change Orders ───────────────────────────────────────────

@@ -1665,30 +1665,30 @@ ${sovLines.length > 0 ? `
     const f = contractGenForm
     const fmt = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const subNoShort = f.subcontract_number.split('-').pop() || f.subcontract_number
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Subcontract — ${f.sub_name}</title>
+    const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/logo.png'
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Subcontract — ${f.sub_name}</title>
 <style>
+@page{size:8.5in 11in;margin:.8in 1in}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Times New Roman',serif;font-size:11pt;color:#000;background:#fff}
-.page{width:8.5in;min-height:11in;padding:.8in 1in;position:relative;page-break-after:always}
+.page{width:100%;padding-bottom:40px;position:relative;page-break-after:always;background:#fff}
 .page:last-child{page-break-after:auto}
 .logo-wrap{text-align:center;margin-bottom:28px}
-.logo-box{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:130px;height:130px;background:#1b2a4a}
-.logo-nv{color:#e8560c;font-size:54px;font-weight:900;font-family:Arial Black,sans-serif;line-height:1;letter-spacing:-2px}
-.logo-sub{color:#fff;font-size:7.5px;letter-spacing:2.5px;font-family:Arial,sans-serif;margin-top:5px}
+.logo-wrap img{height:90px;width:auto;object-fit:contain;display:inline-block}
 .sub-num{font-weight:bold;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:14px}
 .nv-hdr{font-size:12pt;font-weight:bold;text-decoration:underline;margin-bottom:4px}
 .agreement-title{text-align:center;font-size:14pt;font-weight:bold;text-decoration:underline;margin:16px 0}
-p{margin-bottom:9px;line-height:1.55}
+p{margin-bottom:9px;line-height:1.55;overflow-wrap:break-word}
 .indent{margin-left:36px}
-.num-item{margin-left:28px;margin-bottom:10px;line-height:1.55}
+.num-item{margin-left:28px;margin-bottom:10px;line-height:1.55;overflow-wrap:break-word}
 .gp-title{text-align:center;font-size:13pt;font-weight:bold;margin-bottom:18px}
-.provision{margin-bottom:12px;line-height:1.6;text-align:justify}
+.provision{margin-bottom:12px;line-height:1.6;text-align:left;overflow-wrap:break-word;word-break:break-word}
 .pnum{font-weight:bold}
-.initial{position:absolute;bottom:22px;right:40px;font-size:10pt;border-top:1px solid #000;padding-top:3px;width:55px;text-align:center}
+.initial{position:absolute;bottom:0;right:0;font-size:10pt;border-top:1px solid #000;padding-top:3px;width:55px;text-align:center}
 .sig-line{border-bottom:1px solid #000;display:inline-block;vertical-align:bottom}
 .dbl{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:14px}
-.footer-bar{border-top:3px solid #e8560c;margin-top:32px}
-.footer-bar2{border-top:1px solid #e8560c;margin-top:4px}
+.footer-bar{border-top:3px solid #e8590c;margin-top:32px}
+.footer-bar2{border-top:1px solid #e8590c;margin-top:4px}
 .footer-addr{text-align:center;font-size:9pt;color:#444;margin-top:8px}
 .bold{font-weight:bold}.ul{text-decoration:underline}.bu{font-weight:bold;text-decoration:underline}
 .section-lg{font-weight:bold;font-size:13pt;margin:18px 0 8px}
@@ -1699,7 +1699,7 @@ p{margin-bottom:9px;line-height:1.55}
 
 <!-- PAGE 1: COVER LETTER -->
 <div class="page">
-  <div class="logo-wrap"><div class="logo-box"><div class="logo-nv">NV</div><div class="logo-sub">NV CONSTRUCTION</div></div></div>
+  <div class="logo-wrap"><img src="${logoUrl}" alt="NV Construction" /></div>
   <p>${f.date}</p>
   <p>${f.sub_name}<br>${f.sub_address}</p>
   <br>

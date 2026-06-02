@@ -1545,7 +1545,7 @@ ${sovLines.length > 0 ? `
 
   // ── Contracts ──────────────────────────────────────────────
   async function addContract() {
-    if (!contractForm.dir_id || !contractForm.contract_value) return
+    if (!contractForm.dir_id || !contractForm.contract_value || !contractForm.description) return
     setAddingContract(true)
     const { data: { session } } = await supabase.auth.getSession()
     const dirEntry = subDirectory.find(d => d.id === contractForm.dir_id)
@@ -3676,8 +3676,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   </div>
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={s.label}>Description / scope</label>
-                    <input style={s.input} placeholder="Framing, electrical, plumbing..." value={contractForm.description} onChange={e => setContractForm(f => ({ ...f, description: e.target.value }))} />
+                    <label style={s.label}>Description / scope *</label>
+                    <input style={s.input} placeholder="e.g. Plumbing Rough-In, Electrical Trim-Out..." value={contractForm.description} onChange={e => setContractForm(f => ({ ...f, description: e.target.value }))} />
                   </div>
                   {budgetItems.length > 0 && (() => {
                     const allocs = contractForm.budget_allocations || []
@@ -3744,7 +3744,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={s.contractRowHeader}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
-                        {c.description && <span style={{ fontSize: '12px', color: '#555' }}>{c.description}</span>}
+                        {c.description && <span style={{ fontSize: '12px', color: '#888', background: '#111', border: '1px solid #222', borderRadius: '4px', padding: '1px 7px' }}>{c.description}</span>}
                         {allocations.length > 0
                           ? allocations.map((a, i) => {
                               const item = budgetItems.find(b => b.id === a.budget_item_id)
@@ -4619,7 +4619,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {c.vendor_name || 'Unknown'}{c.description ? ` — ${c.description}` : ''}
                         </option>
                       ))}
-                      {subs.filter(s => s.profiles?.company_name && !contracts.some(c => c.sub_id === s.sub_id)).map(s => (
+                      {subs.filter(s => s.profiles?.company_name).map(s => (
                         <option key={`sub:${s.id}`} value={`sub:${s.id}`}>
                           {s.profiles.company_name}{s.profiles.full_name ? ` — ${s.profiles.full_name}` : ''}
                         </option>

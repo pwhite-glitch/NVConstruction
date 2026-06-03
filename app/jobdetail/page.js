@@ -2947,53 +2947,65 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {showBillingDates && <>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
-                  <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
-                    <div><label style={s.label}>Billing start date</label><input type="date" style={s.input} value={form.sub_billing_start || ''} onChange={e => update('sub_billing_start', e.target.value)} /></div>
-                    <div><label style={s.label}>Frequency</label>
-                      <select style={s.input} value={form.sub_billing_frequency || 'monthly'} onChange={e => { update('sub_billing_frequency', e.target.value); update('sub_billing_due', ''); update('sub_billing_anchor', '') }}>
-                        <option value="monthly">Monthly</option>
+                  <div style={{ ...s.grid2, marginBottom: '8px' }} className="rx-grid-2">
+                    <div>
+                      <label style={s.label}>Frequency</label>
+                      <select style={s.input} value={form.sub_billing_frequency || 'biweekly'} onChange={e => { update('sub_billing_frequency', e.target.value); update('sub_billing_due', ''); update('sub_billing_start', ''); update('sub_billing_anchor', '') }}>
                         <option value="weekly">Weekly</option>
                         <option value="biweekly">Bi-weekly</option>
+                        <option value="monthly">Monthly</option>
                       </select>
                     </div>
+                    <div>
+                      <label style={s.label}>First billing due date</label>
+                      <input type="date" style={s.input} value={form.sub_billing_start || ''} onChange={e => {
+                        const v = e.target.value; if (!v) return
+                        const [yr, mo, dy] = v.split('-').map(Number)
+                        const freq = form.sub_billing_frequency || 'biweekly'
+                        update('sub_billing_start', v); update('sub_billing_anchor', v)
+                        update('sub_billing_due', freq === 'monthly' ? dy : new Date(yr, mo - 1, dy).getDay())
+                      }} />
+                    </div>
                   </div>
-                  <div style={s.grid2} className="rx-grid-2">
-                    {(form.sub_billing_frequency || 'monthly') === 'monthly'
-                      ? <div><label style={s.label}>Due day of month</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 25" value={form.sub_billing_due || ''} onChange={e => update('sub_billing_due', e.target.value)} /></div>
-                      : <div><label style={s.label}>Due day of week</label>
-                          <select style={s.input} value={form.sub_billing_due ?? ''} onChange={e => update('sub_billing_due', e.target.value)}>
-                            <option value="">Select...</option>
-                            {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
-                          </select>
-                        </div>
-                    }
-                    {(form.sub_billing_frequency || 'monthly') === 'biweekly' && <div><label style={s.label}>Anchor date</label><input type="date" style={s.input} value={form.sub_billing_anchor || ''} onChange={e => update('sub_billing_anchor', e.target.value)} /></div>}
-                  </div>
+                  {form.sub_billing_start && form.sub_billing_due !== '' && form.sub_billing_due !== undefined && (() => {
+                    const freq = form.sub_billing_frequency || 'biweekly'
+                    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+                    const due = Number(form.sub_billing_due)
+                    const ord = n => { const s = n % 10, h = n % 100; return n + (h >= 11 && h <= 13 ? 'th' : s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th') }
+                    const label = freq === 'monthly' ? `Bills on the ${ord(due)} of each month` : `Bills every ${days[due]}${freq === 'biweekly' ? ' (bi-weekly)' : ''}`
+                    return <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{label}</p>
+                  })()}
                 </div>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
-                  <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
-                    <div><label style={s.label}>Billing start date</label><input type="date" style={s.input} value={form.owner_billing_start || ''} onChange={e => update('owner_billing_start', e.target.value)} /></div>
-                    <div><label style={s.label}>Frequency</label>
-                      <select style={s.input} value={form.owner_billing_frequency || 'monthly'} onChange={e => { update('owner_billing_frequency', e.target.value); update('owner_billing_due', ''); update('owner_billing_anchor', '') }}>
-                        <option value="monthly">Monthly</option>
+                  <div style={{ ...s.grid2, marginBottom: '8px' }} className="rx-grid-2">
+                    <div>
+                      <label style={s.label}>Frequency</label>
+                      <select style={s.input} value={form.owner_billing_frequency || 'monthly'} onChange={e => { update('owner_billing_frequency', e.target.value); update('owner_billing_due', ''); update('owner_billing_start', ''); update('owner_billing_anchor', '') }}>
                         <option value="weekly">Weekly</option>
                         <option value="biweekly">Bi-weekly</option>
+                        <option value="monthly">Monthly</option>
                       </select>
                     </div>
+                    <div>
+                      <label style={s.label}>First billing due date</label>
+                      <input type="date" style={s.input} value={form.owner_billing_start || ''} onChange={e => {
+                        const v = e.target.value; if (!v) return
+                        const [yr, mo, dy] = v.split('-').map(Number)
+                        const freq = form.owner_billing_frequency || 'monthly'
+                        update('owner_billing_start', v); update('owner_billing_anchor', v)
+                        update('owner_billing_due', freq === 'monthly' ? dy : new Date(yr, mo - 1, dy).getDay())
+                      }} />
+                    </div>
                   </div>
-                  <div style={s.grid2} className="rx-grid-2">
-                    {(form.owner_billing_frequency || 'monthly') === 'monthly'
-                      ? <div><label style={s.label}>Due day of month</label><input type="number" min="1" max="28" style={s.input} placeholder="e.g. 1" value={form.owner_billing_due || ''} onChange={e => update('owner_billing_due', e.target.value)} /></div>
-                      : <div><label style={s.label}>Due day of week</label>
-                          <select style={s.input} value={form.owner_billing_due ?? ''} onChange={e => update('owner_billing_due', e.target.value)}>
-                            <option value="">Select...</option>
-                            {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
-                          </select>
-                        </div>
-                    }
-                    {(form.owner_billing_frequency || 'monthly') === 'biweekly' && <div><label style={s.label}>Anchor date</label><input type="date" style={s.input} value={form.owner_billing_anchor || ''} onChange={e => update('owner_billing_anchor', e.target.value)} /></div>}
-                  </div>
+                  {form.owner_billing_start && form.owner_billing_due !== '' && form.owner_billing_due !== undefined && (() => {
+                    const freq = form.owner_billing_frequency || 'monthly'
+                    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+                    const due = Number(form.owner_billing_due)
+                    const ord = n => { const s = n % 10, h = n % 100; return n + (h >= 11 && h <= 13 ? 'th' : s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th') }
+                    const label = freq === 'monthly' ? `Bills on the ${ord(due)} of each month` : `Bills every ${days[due]}${freq === 'biweekly' ? ' (bi-weekly)' : ''}`
+                    return <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{label}</p>
+                  })()}
                 </div>
                 </>}
               </div>

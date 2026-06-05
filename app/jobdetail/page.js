@@ -200,6 +200,9 @@ export default function JobDetail() {
   const [showDcForm, setShowDcForm] = useState(false)
   const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
   const [dcFile, setDcFile] = useState(null)
+  const [showCsvImport, setShowCsvImport] = useState(false)
+  const [csvRows, setCsvRows] = useState([])
+  const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
 
   const [billingByItem, setBillingByItem] = useState({})
@@ -554,6 +557,59 @@ export default function JobDetail() {
     setShowDcForm(false)
     await loadDirectCosts()
     setSubmittingDc(false)
+  }
+
+  function parseCsvDirect(text) {
+    const CATS = ['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other']
+    const lines = text.trim().split(/\r?\n/)
+    if (lines.length < 2) return []
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z]/g, ''))
+    return lines.slice(1).map((line, i) => {
+      const fields = []; let inQ = false, curr = ''
+      for (const ch of line + ',') {
+        if (ch === '"') inQ = !inQ
+        else if (ch === ',' && !inQ) { fields.push(curr.trim()); curr = '' }
+        else curr += ch
+      }
+      const get = k => { const idx = headers.indexOf(k); return idx >= 0 ? (fields[idx] || '').replace(/^"|"$/g, '').trim() : '' }
+      const dateRaw = get('date')
+      let cost_date = ''
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) cost_date = dateRaw
+      else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateRaw)) {
+        const [m, d, y] = dateRaw.split('/'); cost_date = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+      }
+      const amount = parseFloat(get('amount').replace(/[$,]/g, ''))
+      const description = get('description')
+      const catRaw = get('category')
+      const category = CATS.find(c => c.toLowerCase() === catRaw.toLowerCase()) || 'Materials'
+      const notes = get('notes') || get('note') || ''
+      const errors = []
+      if (!cost_date) errors.push('bad date')
+      if (!description) errors.push('no description')
+      if (isNaN(amount) || amount <= 0) errors.push('bad amount')
+      return { cost_date, description, category, amount: isNaN(amount) ? 0 : amount, notes, errors }
+    }).filter(r => r.description || r.amount > 0)
+  }
+
+  async function submitCsvImport() {
+    const valid = csvRows.filter(r => r.errors.length === 0)
+    if (!valid.length) return
+    setImportingCsv(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('direct_costs').insert(valid.map(r => ({
+      job_id: id, submitted_by: session.user.id,
+      cost_date: r.cost_date, description: r.description,
+      category: r.category, amount: r.amount,
+      notes: r.notes || null, budget_item_id: null, status: 'approved',
+    })))
+    setShowCsvImport(false); setCsvRows([]); setImportingCsv(false)
+    await loadDirectCosts()
+  }
+
+  function downloadDcTemplate() {
+    const csv = 'date,description,category,amount,notes\n06/06/2025,Lumber delivery,Materials,2500.00,\n06/07/2025,Concrete pour,Materials,8000.00,Foundation'
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: 'direct_costs_template.csv' })
+    a.click()
   }
 
   async function updateCostStatus(costId, status, notes) {
@@ -5290,7 +5346,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {directCosts.length > 0 && <button style={s.btnSmall} onClick={exportDirectCostsCSV}>Export CSV</button>}
-                  <button style={s.btnSmallOrange} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
+                  <button style={s.btnSmall} onClick={() => { setShowCsvImport(v => !v); setShowDcForm(false); setCsvRows([]) }}>{showCsvImport ? 'Cancel' : 'Import CSV'}</button>
+                  <button style={s.btnSmallOrange} onClick={() => { setShowDcForm(v => !v); setShowCsvImport(false) }}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                 </div>
               </div>
 
@@ -5343,7 +5400,54 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )}
 
-              {directCosts.length === 0 && (
+              {showCsvImport && (
+                <div style={{ ...s.inlineForm, border: '1px solid #1a3a1a', marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <p style={{ ...s.cardTitle, margin: 0 }}>Import direct costs from CSV</p>
+                    <button style={s.btnSmall} onClick={downloadDcTemplate}>Download template</button>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#555', marginBottom: '12px' }}>Columns: <strong style={{ color: '#888' }}>date, description, category, amount, notes</strong>. Budget lines can be assigned after import. Categories: Materials, Labor, Equipment, Subcontractor, Permits, Fees, Other.</p>
+                  <input type="file" accept=".csv" style={{ ...s.input, padding: '8px 14px', marginBottom: '12px' }} onChange={e => {
+                    const file = e.target.files[0]; if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = ev => setCsvRows(parseCsvDirect(ev.target.result))
+                    reader.readAsText(file)
+                  }} />
+                  {csvRows.length > 0 && (
+                    <>
+                      <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid #222' }}>
+                              {['Date','Description','Category','Amount','Notes','Status'].map(h => <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: '#555', fontWeight: '600' }}>{h}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {csvRows.map((r, i) => (
+                              <tr key={i} style={{ borderBottom: '1px solid #111', background: r.errors.length ? '#1a0a0a' : 'transparent' }}>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad date') ? '#e74c3c' : '#ccc' }}>{r.cost_date || '—'}</td>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('no description') ? '#e74c3c' : '#ccc' }}>{r.description || '—'}</td>
+                                <td style={{ padding: '4px 8px', color: '#ccc' }}>{r.category}</td>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad amount') ? '#e74c3c' : '#ccc' }}>{r.amount > 0 ? `$${r.amount.toLocaleString()}` : '—'}</td>
+                                <td style={{ padding: '4px 8px', color: '#666' }}>{r.notes || ''}</td>
+                                <td style={{ padding: '4px 8px' }}>{r.errors.length ? <span style={{ color: '#e74c3c' }}>{r.errors.join(', ')}</span> : <span style={{ color: '#4ade80' }}>OK</span>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button style={{ ...s.btn, opacity: importingCsv ? 0.6 : 1 }} disabled={importingCsv || csvRows.every(r => r.errors.length > 0)} onClick={submitCsvImport}>
+                          {importingCsv ? 'Importing...' : `Import ${csvRows.filter(r => !r.errors.length).length} cost${csvRows.filter(r => !r.errors.length).length !== 1 ? 's' : ''}`}
+                        </button>
+                        {csvRows.some(r => r.errors.length > 0) && <span style={{ fontSize: '12px', color: '#e8590c' }}>{csvRows.filter(r => r.errors.length > 0).length} row{csvRows.filter(r => r.errors.length > 0).length !== 1 ? 's' : ''} with errors will be skipped</span>}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {directCosts.length === 0 && !showCsvImport && (
                 <p style={{ color: '#444', fontSize: '14px' }}>No direct costs logged yet. Superintendents can log costs from the field portal.</p>
               )}
 

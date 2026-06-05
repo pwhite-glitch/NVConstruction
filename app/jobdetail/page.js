@@ -5451,10 +5451,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <p style={{ color: '#444', fontSize: '14px' }}>No direct costs logged yet. Superintendents can log costs from the field portal.</p>
               )}
 
-              {directCosts.map(c => {
+              {(() => {
+                const _seen = {}; const dupIds = new Set()
+                directCosts.forEach(c => {
+                  const k = `${c.cost_date}|${Number(c.amount).toFixed(2)}`
+                  if (_seen[k]) { dupIds.add(c.id); dupIds.add(_seen[k]) } else _seen[k] = c.id
+                })
+                const pairCount = Math.floor(dupIds.size / 2)
+                return <>
+                  {dupIds.size > 0 && (
+                    <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#f59e0b' }}>
+                      {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same date &amp; amount) — entries marked below.
+                    </div>
+                  )}
+                  {directCosts.map(c => {
                 const isRejecting = rejectingCostId === c.id
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
+                const isDup = dupIds.has(c.id)
                 return (
                   <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#3a1a5a' : c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
                     <div style={s.billingEntryHeader}>
@@ -5466,6 +5480,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {drawnApp && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a' }}>
                               Drawn — App #{drawnApp.app_number}
+                            </span>
+                          )}
+                          {isDup && (
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3800' }}>
+                              Possible duplicate
                             </span>
                           )}
                         </div>
@@ -5529,6 +5548,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 )
               })}
+                </>
+              })()}
             </div>
           </>
         )}

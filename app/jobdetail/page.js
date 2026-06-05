@@ -712,6 +712,7 @@ export default function JobDetail() {
         description: b.description,
         budget_amount: bAmt,
         pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
+        dollar_prev: lineMap[b.id]?.dollar_prev ?? null,
         pct_this: String(pctThis),
         dollar_this: dollarThis,
       }
@@ -785,16 +786,18 @@ export default function JobDetail() {
     if (totalSched === 0) return lines
     const totalDone = unpinnedLines.reduce((a, l) => {
       const sched = Number(l.budget_amount || 0)
+      const prevAmt = l.dollar_prev != null ? Number(l.dollar_prev) : sched * (parseFloat(l.pct_prev) || 0) / 100
       const thisDollar = l.dollar_this !== undefined ? Number(l.dollar_this) : sched * (parseFloat(l.pct_this) || 0) / 100
-      return a + sched * (parseFloat(l.pct_prev) || 0) / 100 + thisDollar
+      return a + prevAmt + thisDollar
     }, 0)
     const overallPct = totalDone / totalSched * 100
     return lines.map(l => {
       if (!pinnedIds.has(l.budget_item_id)) return l
       const sched = Number(l.budget_amount || 0)
-      const prevPct = parseFloat(l.pct_prev) || 0
+      const prevAmt = l.dollar_prev != null ? Number(l.dollar_prev) : sched * (parseFloat(l.pct_prev) || 0) / 100
+      const prevPct = sched > 0 ? prevAmt / sched * 100 : 0
       const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
-      const newDollar = sched * newThisPct / 100
+      const newDollar = Math.max(0, Math.min(sched - prevAmt, sched * overallPct / 100 - prevAmt))
       return { ...l, pct_this: String(newThisPct), dollar_this: newDollar }
     })
   }
@@ -854,10 +857,17 @@ export default function JobDetail() {
     if (budgetItems.length > 0) {
       const lineInserts = budgetItems.map(b => {
         const prevLine = prevLines.find(l => l.budget_item_id === b.id)
+        const bAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
+        // Use exact dollar amounts to avoid floating-point drift across apps
+        const prevDollarPrev = prevLine?.dollar_prev != null ? Number(prevLine.dollar_prev) : bAmt * (parseFloat(prevLine?.pct_prev || 0) / 100)
+        const prevDollarThis = Number(prevLine?.dollar_this_period || 0)
+        const newDollarPrev = prevLine ? prevDollarPrev + prevDollarThis : 0
+        const newPctPrev = bAmt > 0 ? Math.min(100, newDollarPrev / bAmt * 100) : 0
         return {
           application_id: newApp.id,
           budget_item_id: b.id,
-          pct_prev: prevLine ? Math.min(100, parseFloat(prevLine.pct_prev || 0) + parseFloat(prevLine.pct_this_period || 0)) : 0,
+          pct_prev: newPctPrev,
+          dollar_prev: newDollarPrev,
           pct_this_period: 0,
           dollar_this_period: 0,
         }
@@ -972,7 +982,7 @@ export default function JobDetail() {
 
     const sovLines = aiaLines.map((line, idx) => {
       const scheduled = Number(line.budget_amount || 0)
-      const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+      const prevAmt = line.dollar_prev != null ? Math.min(scheduled, Number(line.dollar_prev)) : scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
       const thisAmt = line.dollar_this !== undefined
         ? Math.min(scheduled, Math.max(0, Number(line.dollar_this)))
         : scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
@@ -5910,7 +5920,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <tbody>
                                       {aiaLines.map((line, i) => {
                                         const scheduled = Number(line.budget_amount || 0)
-                                        const prevAmt = scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                                        const prevAmt = line.dollar_prev != null ? Math.min(scheduled, Number(line.dollar_prev)) : scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
                                         const thisAmt = line.dollar_this !== undefined
                                           ? Math.min(scheduled, Math.max(0, Number(line.dollar_this)))
                                           : scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
@@ -6000,7 +6010,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01
                                   const totalCompleted = aiaLines.reduce((a, line) => {
                                     const sv = Number(line.budget_amount || 0)
-                                    const prevAmt = sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                                    const prevAmt = line.dollar_prev != null ? Math.min(sv, Number(line.dollar_prev)) : sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
                                     const thisAmt = line.dollar_this !== undefined
                                       ? Math.min(sv, Math.max(0, Number(line.dollar_this)))
                                       : sv * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100
@@ -6009,7 +6019,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const totalRetainage = totalCompleted * retPct
                                   const totalPrevCompleted = aiaLines.reduce((a, line) => {
                                     const sv = Number(line.budget_amount || 0)
-                                    return a + sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100
+                                    return a + (line.dollar_prev != null ? Math.min(sv, Number(line.dollar_prev)) : sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100)
                                   }, 0)
                                   const earnedLessRet = totalCompleted - totalRetainage
                                   const prevCerts = totalPrevCompleted * (1 - retPct)

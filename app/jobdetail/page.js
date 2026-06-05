@@ -698,9 +698,7 @@ export default function JobDetail() {
       monthPrefix
         ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
         : Promise.resolve({ data: [] }),
-      periodFrom && periodTo
-        ? supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').gte('cost_date', periodFrom).lte('cost_date', periodTo)
-        : Promise.resolve({ data: [] }),
+      supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').order('cost_date', { ascending: false }),
     ])
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
     setAiaLines(budgetItems.map(b => {
@@ -5833,46 +5831,65 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               </div>
                             )}
 
-                            {periodDirectCosts.length > 0 && (
-                              <div style={{ background: '#100a1a', border: '1px solid #3a1a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#c084fc', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                                  Direct costs this period — ${periodDirectCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({periodDirectCosts.length} item{periodDirectCosts.length !== 1 ? 's' : ''})
-                                </p>
-                                {periodDirectCosts.map((c, i) => {
-                                  const drawn = !!c.drawn_application_id
-                                  const drawnApp = drawn ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
-                                  return (
-                                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < periodDirectCosts.length - 1 ? '1px solid #2a1a3a' : 'none' }}>
-                                      <div>
-                                        <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
-                                        <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{c.category}</span>
-                                        {drawn && (
-                                          <span style={{ fontSize: '11px', color: '#c084fc', marginLeft: '8px', fontWeight: '700' }}>
-                                            Drawn — App #{drawnApp?.app_number || '?'}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
-                                        {drawn ? (
-                                          <button
-                                            style={{ padding: '4px 10px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
-                                            onClick={() => undrawDirectCost(c.id)}>
-                                            Undo draw
-                                          </button>
-                                        ) : (
-                                          <button
-                                            style={{ padding: '4px 10px', background: '#0a0a2a', color: '#a78bfa', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
-                                            onClick={() => drawDirectCost(c.id, activeAia.id)}>
-                                            Draw
-                                          </button>
-                                        )}
-                                      </div>
+                            {(() => {
+                              const pFrom = activeAia?.period_from
+                              const pTo = activeAia?.period_to
+                              const thisPeriod = periodDirectCosts.filter(c => pFrom && pTo ? c.cost_date >= pFrom && c.cost_date <= pTo : true)
+                              const otherPeriod = periodDirectCosts.filter(c => !c.drawn_application_id && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
+                              const renderCostRow = (c, i, list) => {
+                                const drawn = !!c.drawn_application_id
+                                const drawnApp = drawn ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
+                                return (
+                                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < list.length - 1 ? '1px solid #2a1a3a' : 'none' }}>
+                                    <div>
+                                      <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
+                                      <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{c.category}</span>
+                                      {drawn && (
+                                        <span style={{ fontSize: '11px', color: '#c084fc', marginLeft: '8px', fontWeight: '700' }}>
+                                          Drawn — App #{drawnApp?.app_number || '?'}
+                                        </span>
+                                      )}
                                     </div>
-                                  )
-                                })}
-                              </div>
-                            )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                                      {drawn ? (
+                                        <button
+                                          style={{ padding: '4px 10px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                          onClick={() => undrawDirectCost(c.id)}>
+                                          Undo draw
+                                        </button>
+                                      ) : (
+                                        <button
+                                          style={{ padding: '4px 10px', background: '#0a0a2a', color: '#a78bfa', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                          onClick={() => drawDirectCost(c.id, activeAia.id)}>
+                                          Draw
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              }
+                              return <>
+                                {thisPeriod.length > 0 && (
+                                  <div style={{ background: '#100a1a', border: '1px solid #3a1a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#c084fc', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                      Direct costs — this period — ${thisPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({thisPeriod.length} item{thisPeriod.length !== 1 ? 's' : ''})
+                                    </p>
+                                    {thisPeriod.map((c, i) => renderCostRow(c, i, thisPeriod))}
+                                  </div>
+                                )}
+                                {otherPeriod.length > 0 && (
+                                  <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
+                                      Previous period costs — undrawn — ${otherPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({otherPeriod.length} item{otherPeriod.length !== 1 ? 's' : ''})
+                                    </p>
+                                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>Costs from outside this application period. Draw them here to include in this billing.</p>
+                                    {otherPeriod.map((c, i) => renderCostRow(c, i, otherPeriod))}
+                                  </div>
+                                )}
+                              </>
+                            })()}
 
                             {aiaLines.length === 0 ? (
                               <p style={{ color: '#444', fontSize: '14px' }}>No budget line items found. Add them in the Budget tab.</p>

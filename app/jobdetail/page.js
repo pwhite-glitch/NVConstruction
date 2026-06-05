@@ -5329,14 +5329,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'costs' && (
           <>
             {(() => {
-              const totalCosts = directCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
               const approvedTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+              const pendingTotal = directCosts.filter(c => c.status === 'pending').reduce((a, c) => a + Number(c.amount || 0), 0)
               const pendingCount = directCosts.filter(c => c.status === 'pending').length
               return (
                 <div style={s.statRow} className="rx-stats">
-                  <div style={s.statCard}><div style={s.statLabel}>Total submitted</div><div style={s.statValue()}>${totalCosts.toLocaleString()}</div></div>
-                  <div style={s.statCard}><div style={s.statLabel}>Approved</div><div style={s.statValue('#4ade80')}>${approvedTotal.toLocaleString()}</div></div>
-                  <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Total approved</div><div style={s.statValue('#4ade80')}>${approvedTotal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Pending approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>${pendingTotal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Pending count</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
                 </div>
               )
             })()}

@@ -5454,14 +5454,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {(() => {
                 const _seen = {}; const dupIds = new Set()
                 directCosts.forEach(c => {
-                  const k = `${c.cost_date}|${Number(c.amount).toFixed(2)}`
+                  const k = Number(c.amount).toFixed(2)
                   if (_seen[k]) { dupIds.add(c.id); dupIds.add(_seen[k]) } else _seen[k] = c.id
                 })
                 const pairCount = Math.floor(dupIds.size / 2)
                 return <>
                   {dupIds.size > 0 && (
                     <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#f59e0b' }}>
-                      {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same date &amp; amount) — entries marked below.
+                      {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) — entries marked below.
                     </div>
                   )}
                   {directCosts.map(c => {

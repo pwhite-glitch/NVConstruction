@@ -204,6 +204,7 @@ export default function JobDetail() {
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
+  const [dismissedDupIds, setDismissedDupIds] = useState(new Set())
 
   const [billingByItem, setBillingByItem] = useState({})
 
@@ -5452,14 +5453,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {(() => {
-                const _seen = {}; const dupIds = new Set()
+                const byAmount = {}
                 directCosts.forEach(c => {
                   const k = Number(c.amount).toFixed(2)
-                  if (_seen[k]) { dupIds.add(c.id); dupIds.add(_seen[k]) } else _seen[k] = c.id
+                  if (!byAmount[k]) byAmount[k] = []
+                  byAmount[k].push(c.id)
                 })
-                const pairCount = Math.floor(dupIds.size / 2)
+                const dupIds = new Set(); const dupPairs = {}
+                Object.values(byAmount).forEach(ids => {
+                  if (ids.length > 1) {
+                    ids.forEach(id => {
+                      if (!dismissedDupIds.has(id)) {
+                        dupIds.add(id)
+                        dupPairs[id] = ids.filter(i => i !== id && !dismissedDupIds.has(i))
+                      }
+                    })
+                  }
+                })
+                const activeDupIds = new Set([...dupIds].filter(id => dupPairs[id]?.length > 0))
+                const pairCount = Math.floor(activeDupIds.size / 2)
                 return <>
-                  {dupIds.size > 0 && (
+                  {activeDupIds.size > 0 && (
                     <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#f59e0b' }}>
                       {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) — entries marked below.
                     </div>
@@ -5468,7 +5482,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const isRejecting = rejectingCostId === c.id
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
-                const isDup = dupIds.has(c.id)
+                const isDup = activeDupIds.has(c.id)
                 return (
                   <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#3a1a5a' : c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
                     <div style={s.billingEntryHeader}>
@@ -5482,11 +5496,23 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               Drawn — App #{drawnApp.app_number}
                             </span>
                           )}
-                          {isDup && (
-                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3800' }}>
-                              Possible duplicate
-                            </span>
-                          )}
+                          {isDup && (() => {
+                            const matches = (dupPairs[c.id] || []).map(mid => directCosts.find(x => x.id === mid)).filter(Boolean)
+                            const tipText = matches.map(m => `${new Date(m.cost_date + 'T12:00:00').toLocaleDateString()} — ${m.description} — $${Number(m.amount).toLocaleString()}`).join('\n')
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <span title={tipText} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3800', cursor: 'help' }}>
+                                  Possible duplicate
+                                </span>
+                                <button
+                                  title="Mark as not a duplicate"
+                                  onClick={() => setDismissedDupIds(prev => new Set([...prev, c.id, ...(dupPairs[c.id] || [])]))}
+                                  style={{ background: 'none', border: '1px solid #4a3800', borderRadius: '99px', color: '#f59e0b', fontSize: '10px', fontWeight: '700', padding: '2px 7px', cursor: 'pointer', lineHeight: 1 }}>
+                                  Not a duplicate
+                                </button>
+                              </span>
+                            )
+                          })()}
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}

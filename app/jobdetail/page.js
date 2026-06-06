@@ -1960,11 +1960,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   async function addCO() {
     const sovTotal = coForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
     const finalAmount = coForm.sov.length > 0 ? sovTotal : parseFloat(coForm.amount)
-    if (!coForm.subcontract_id || !finalAmount || !coForm.description) return
+    if (!coForm.subcontract_id) { setErrMsg('Select a subcontract.'); setTimeout(() => setErrMsg(''), 4000); return }
+    if (!coForm.description) { setErrMsg('Description is required.'); setTimeout(() => setErrMsg(''), 4000); return }
+    if (!finalAmount) { setErrMsg('Enter an amount or add SOV lines.'); setTimeout(() => setErrMsg(''), 4000); return }
     setAddingCO(true)
     const { data: { session } } = await supabase.auth.getSession()
     const validSOV = coForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
-    await supabase.from('change_orders').insert({
+    const { error: insertErr } = await supabase.from('change_orders').insert({
       subcontract_id: coForm.subcontract_id,
       initiated_by: session.user.id,
       direction: coForm.direction,
@@ -1973,6 +1975,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       status: 'pending',
       sov: validSOV.length > 0 ? validSOV : null,
     })
+    if (insertErr) { setErrMsg(insertErr.message); setTimeout(() => setErrMsg(''), 6000); setAddingCO(false); return }
     // Notify sub if this is a PM-to-sub CO
     if (coForm.direction === 'pm_to_sub') {
       const { data: subcontract } = await supabase.from('subcontracts').select('vendor_name, sub_id').eq('id', coForm.subcontract_id).single()

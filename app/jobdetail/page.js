@@ -204,7 +204,9 @@ export default function JobDetail() {
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
-  const [dismissedDupIds, setDismissedDupIds] = useState(new Set())
+  const [dismissedDupIds, setDismissedDupIds] = useState(() => {
+    try { const s = localStorage.getItem(`dc_nodups_${id}`); return s ? new Set(JSON.parse(s)) : new Set() } catch { return new Set() }
+  })
 
   const [billingByItem, setBillingByItem] = useState({})
 
@@ -5514,7 +5516,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </span>
                                 <button
                                   title="Mark as not a duplicate"
-                                  onClick={() => setDismissedDupIds(prev => new Set([...prev, c.id, ...(dupPairs[c.id] || [])]))}
+                                  onClick={() => setDismissedDupIds(prev => {
+                                    const next = new Set([...prev, c.id, ...(dupPairs[c.id] || [])])
+                                    try { localStorage.setItem(`dc_nodups_${id}`, JSON.stringify([...next])) } catch {}
+                                    return next
+                                  })}
                                   style={{ background: 'none', border: '1px solid #4a3800', borderRadius: '99px', color: '#f59e0b', fontSize: '10px', fontWeight: '700', padding: '2px 7px', cursor: 'pointer', lineHeight: 1 }}>
                                   Not a duplicate
                                 </button>

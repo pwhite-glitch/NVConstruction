@@ -693,10 +693,11 @@ export default function JobDetail() {
     setActiveAia(app)
     setAppliedBillings(new Set())
     const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
-    const periodFrom = app.period_from || (app.period_to ? app.period_to.slice(0, 7) + '-01' : null)
-    const periodTo = app.period_to || null
     const linkedDrawId = app.linked_draw_request_id || null
-    const [{ data: lines }, { data: bills }, { data: dcs }] = await Promise.all([
+    const prevApps = aiaApplications
+      .filter(a => a.app_number < app.app_number)
+      .sort((a, b) => a.app_number - b.app_number)
+    const [{ data: lines }, { data: bills }, { data: dcs }, { data: prevAppLines }] = await Promise.all([
       supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
       linkedDrawId
         ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('draw_request_id', linkedDrawId)
@@ -704,20 +705,39 @@ export default function JobDetail() {
           ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
           : Promise.resolve({ data: [] }),
       supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').order('cost_date', { ascending: false }),
+      prevApps.length > 0
+        ? supabase.from('aia_application_lines').select('*').in('application_id', prevApps.map(a => a.id))
+        : Promise.resolve({ data: [] }),
     ])
+    // Recompute dollar_prev from scratch using actual previous app line data.
+    // This fixes cases where dollar_this_period was null in older apps (stored before the column existed),
+    // which caused the accumulated total to silently drop those periods.
+    const budgetMap = Object.fromEntries(budgetItems.map(b => [b.id, Number(b.owner_amount ?? b.budget_amount ?? 0)]))
+    const dollarPrevByItem = {}
+    for (const prevApp of prevApps) {
+      const appLines = (prevAppLines || []).filter(l => l.application_id === prevApp.id)
+      for (const l of appLines) {
+        const bAmt = budgetMap[l.budget_item_id] || 0
+        const thisAmt = l.dollar_this_period != null
+          ? Number(l.dollar_this_period)
+          : bAmt * (parseFloat(l.pct_this_period) || 0) / 100
+        dollarPrevByItem[l.budget_item_id] = (dollarPrevByItem[l.budget_item_id] || 0) + thisAmt
+      }
+    }
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
     setAiaLines(budgetItems.map(b => {
       const bAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
       const pctThis = parseFloat(lineMap[b.id]?.pct_this_period ?? 0)
       const savedDollar = lineMap[b.id]?.dollar_this_period
       const dollarThis = savedDollar != null ? Number(savedDollar) : bAmt * pctThis / 100
+      const dollarPrev = prevApps.length > 0 ? (dollarPrevByItem[b.id] || 0) : (lineMap[b.id]?.dollar_prev ?? null)
       return {
         budget_item_id: b.id,
         cost_code: b.cost_code,
         description: b.description,
         budget_amount: bAmt,
         pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
-        dollar_prev: lineMap[b.id]?.dollar_prev ?? null,
+        dollar_prev: dollarPrev,
         pct_this: String(pctThis),
         dollar_this: dollarThis,
       }
@@ -871,7 +891,9 @@ export default function JobDetail() {
         const bAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
         // Use exact dollar amounts to avoid floating-point drift across apps
         const prevDollarPrev = prevLine?.dollar_prev != null ? Number(prevLine.dollar_prev) : bAmt * (parseFloat(prevLine?.pct_prev || 0) / 100)
-        const prevDollarThis = Number(prevLine?.dollar_this_period || 0)
+        const prevDollarThis = prevLine?.dollar_this_period != null
+          ? Number(prevLine.dollar_this_period)
+          : bAmt * (parseFloat(prevLine?.pct_this_period || 0) / 100)
         const newDollarPrev = prevLine ? prevDollarPrev + prevDollarThis : 0
         const newPctPrev = bAmt > 0 ? Math.min(100, newDollarPrev / bAmt * 100) : 0
         return {
@@ -910,6 +932,7 @@ export default function JobDetail() {
       await supabase.from('aia_application_lines').update({
         pct_this_period: pctToSave,
         dollar_this_period: dollarToSave,
+        dollar_prev: line.dollar_prev != null ? Number(line.dollar_prev) : null,
       }).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
     }
     await loadAiaApplications()

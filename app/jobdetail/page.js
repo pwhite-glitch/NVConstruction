@@ -5886,25 +5886,35 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 : periodDirectCosts.filter(c => pFrom && pTo ? c.cost_date >= pFrom && c.cost_date <= pTo : true)
                               const otherPeriod = linkedDrawId
                                 ? periodDirectCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
-                                : periodDirectCosts.filter(c => !c.drawn_application_id && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
+                                : periodDirectCosts.filter(c => !c.drawn_application_id && !c.draw_request_id && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
                               const renderCostRow = (c, i, list) => {
-                                const drawn = !!c.drawn_application_id
-                                const drawnApp = drawn ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
+                                const drawnToThisApp = c.drawn_application_id === activeAia?.id
+                                const drawnElsewhere = !!c.drawn_application_id && !drawnToThisApp
+                                const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
                                 return (
                                   <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < list.length - 1 ? '1px solid #2a1a3a' : 'none' }}>
                                     <div>
                                       <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}</span>
-                                      <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
+                                      <span style={{ fontSize: '13px', color: drawnElsewhere ? '#666' : '#aaa' }}>{c.description}</span>
                                       <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{c.category}</span>
-                                      {drawn && (
+                                      {drawnElsewhere && (
+                                        <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px', fontWeight: '700' }}>
+                                          Already drawn — App #{drawnApp?.app_number || '?'}
+                                        </span>
+                                      )}
+                                      {drawnToThisApp && (
                                         <span style={{ fontSize: '11px', color: '#c084fc', marginLeft: '8px', fontWeight: '700' }}>
                                           Drawn — App #{drawnApp?.app_number || '?'}
                                         </span>
                                       )}
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
-                                      {drawn ? (
+                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: drawnElsewhere ? '#666' : '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                                      {drawnElsewhere ? (
+                                        <span style={{ padding: '4px 10px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3000', borderRadius: '5px', fontSize: '11px', fontWeight: '700' }}>
+                                          In App #{drawnApp?.app_number || '?'}
+                                        </span>
+                                      ) : drawnToThisApp ? (
                                         <button
                                           style={{ padding: '4px 10px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
                                           onClick={() => undrawDirectCost(c.id)}>

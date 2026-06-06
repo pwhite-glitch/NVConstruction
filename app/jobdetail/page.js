@@ -217,7 +217,7 @@ export default function JobDetail() {
   const [activeAia, setActiveAia] = useState(null)
   const [aiaLines, setAiaLines] = useState([])
   const [showNewAia, setShowNewAia] = useState(false)
-  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0' })
+  const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
   const [paymentForm, setPaymentForm] = useState({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
@@ -695,11 +695,14 @@ export default function JobDetail() {
     const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
     const periodFrom = app.period_from || (app.period_to ? app.period_to.slice(0, 7) + '-01' : null)
     const periodTo = app.period_to || null
+    const linkedDrawId = app.linked_draw_request_id || null
     const [{ data: lines }, { data: bills }, { data: dcs }] = await Promise.all([
       supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
-      monthPrefix
-        ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
-        : Promise.resolve({ data: [] }),
+      linkedDrawId
+        ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('draw_request_id', linkedDrawId)
+        : monthPrefix
+          ? supabase.from('billing_submissions').select('id, sub_id, company_name, amount_billed, retainage_held').eq('job_id', id).eq('status', 'approved').eq('billing_period', monthPrefix)
+          : Promise.resolve({ data: [] }),
       supabase.from('direct_costs').select('*').eq('job_id', id).eq('status', 'approved').order('cost_date', { ascending: false }),
     ])
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
@@ -828,7 +831,9 @@ export default function JobDetail() {
   }
 
   async function createAiaApplication() {
-    if (!newAiaForm.period_to) return
+    const isDrawType = job?.billing_type === 'draw_request'
+    if (!isDrawType && !newAiaForm.period_to) return
+    if (isDrawType && !newAiaForm.linked_draw_request_id) return
     setSavingAia(true)
     const { data: { session } } = await supabase.auth.getSession()
     const prevApp = aiaApplications[0]
@@ -837,15 +842,18 @@ export default function JobDetail() {
       const { data: pl } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
       prevLines = pl || []
     }
-    let periodTo, periodFrom
-    if (newAiaForm.period_from) {
-      periodTo = newAiaForm.period_to
-      periodFrom = newAiaForm.period_from
-    } else {
-      const [year, month] = newAiaForm.period_to.split('-').map(Number)
-      periodTo = new Date(year, month, 0).toISOString().split('T')[0]
-      periodFrom = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
+    let periodTo = null, periodFrom = null
+    if (!isDrawType) {
+      if (newAiaForm.period_from) {
+        periodTo = newAiaForm.period_to
+        periodFrom = newAiaForm.period_from
+      } else {
+        const [year, month] = newAiaForm.period_to.split('-').map(Number)
+        periodTo = new Date(year, month, 0).toISOString().split('T')[0]
+        periodFrom = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
+      }
     }
+    const linkedDraw = isDrawType ? drawRequests.find(d => d.id === newAiaForm.linked_draw_request_id) : null
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
       job_id: id,
       app_number: parseInt(newAiaForm.app_number) || (aiaApplications.length + 1),
@@ -854,6 +862,7 @@ export default function JobDetail() {
       retainage_pct: isNaN(parseFloat(newAiaForm.retainage_pct)) ? 10 : parseFloat(newAiaForm.retainage_pct),
       markup_pct: parseFloat(newAiaForm.markup_pct) || 0,
       created_by: session.user.id,
+      linked_draw_request_id: linkedDraw?.id || null,
     }).select().single()
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setSavingAia(false); return }
     if (budgetItems.length > 0) {
@@ -1147,7 +1156,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
-    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }
@@ -5626,23 +5635,44 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {!showNewAia && (
                   <button style={s.btnSmallOrange} onClick={() => {
                     setShowNewAia(true)
-                    setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', retainage_pct: '10' })
+                    setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
                   }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
                 )}
               </div>
 
               {showNewAia && (() => {
-                const isBiweekly = (form.owner_billing_frequency || form.billing_frequency || 'monthly') === 'biweekly'
-                const canCreate = !savingAia && newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from) && budgetItems.length > 0
+                const isDrawType = job.billing_type === 'draw_request'
+                const isBiweekly = !isDrawType && (form.owner_billing_frequency || form.billing_frequency || 'monthly') === 'biweekly'
+                const canCreate = !savingAia && budgetItems.length > 0 && (isDrawType ? !!newAiaForm.linked_draw_request_id : newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from))
                 return (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
-                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{job.billing_type === 'draw_request' ? 'New Draw Request' : 'New AIA Application'}</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{isDrawType ? 'New Draw Request' : 'New AIA Application'}</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                     <div>
-                      <label style={s.label}>App #</label>
+                      <label style={s.label}>Draw #</label>
                       <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
                     </div>
-                    {isBiweekly ? (
+                    {isDrawType ? (
+                      <div>
+                        <label style={s.label}>Link to sub draw request</label>
+                        <select style={s.input} value={newAiaForm.linked_draw_request_id} onChange={e => {
+                          const dr = drawRequests.find(d => d.id === e.target.value)
+                          setNewAiaForm(f => ({ ...f, linked_draw_request_id: e.target.value, app_number: dr ? String(dr.draw_number) : f.app_number }))
+                        }}>
+                          <option value="">— Select sub draw request —</option>
+                          {drawRequests.filter(d => d.status === 'open').map(d => (
+                            <option key={d.id} value={d.id}>{d.title}</option>
+                          ))}
+                          {drawRequests.filter(d => d.status !== 'open').length > 0 && (
+                            <optgroup label="Closed">
+                              {drawRequests.filter(d => d.status !== 'open').map(d => (
+                                <option key={d.id} value={d.id}>{d.title} (closed)</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
+                    ) : isBiweekly ? (
                       <>
                         <div>
                           <label style={s.label}>Period from</label>
@@ -5848,10 +5878,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             )}
 
                             {(() => {
+                              const linkedDrawId = activeAia?.linked_draw_request_id
                               const pFrom = activeAia?.period_from
                               const pTo = activeAia?.period_to
-                              const thisPeriod = periodDirectCosts.filter(c => pFrom && pTo ? c.cost_date >= pFrom && c.cost_date <= pTo : true)
-                              const otherPeriod = periodDirectCosts.filter(c => !c.drawn_application_id && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
+                              const thisPeriod = linkedDrawId
+                                ? periodDirectCosts.filter(c => c.draw_request_id === linkedDrawId)
+                                : periodDirectCosts.filter(c => pFrom && pTo ? c.cost_date >= pFrom && c.cost_date <= pTo : true)
+                              const otherPeriod = linkedDrawId
+                                ? periodDirectCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
+                                : periodDirectCosts.filter(c => !c.drawn_application_id && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
                               const renderCostRow = (c, i, list) => {
                                 const drawn = !!c.drawn_application_id
                                 const drawnApp = drawn ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
@@ -5890,7 +5925,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {thisPeriod.length > 0 && (
                                   <div style={{ background: '#100a1a', border: '1px solid #3a1a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ fontSize: '11px', fontWeight: '700', color: '#c084fc', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                                      Direct costs — this period — ${thisPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({thisPeriod.length} item{thisPeriod.length !== 1 ? 's' : ''})
+                                      {linkedDrawId ? 'Direct costs — this draw' : 'Direct costs — this period'} — ${thisPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({thisPeriod.length} item{thisPeriod.length !== 1 ? 's' : ''})
                                     </p>
                                     {thisPeriod.map((c, i) => renderCostRow(c, i, thisPeriod))}
                                   </div>
@@ -5898,9 +5933,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {otherPeriod.length > 0 && (
                                   <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
-                                      Previous period costs — undrawn — ${otherPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({otherPeriod.length} item{otherPeriod.length !== 1 ? 's' : ''})
+                                      {linkedDrawId ? 'Other undrawn costs' : 'Previous period costs — undrawn'} — ${otherPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({otherPeriod.length} item{otherPeriod.length !== 1 ? 's' : ''})
                                     </p>
-                                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>Costs from outside this application period. Draw them here to include in this billing.</p>
+                                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>{linkedDrawId ? 'Approved costs not assigned to any draw request.' : 'Costs from outside this application period.'} Draw them here to include in this billing.</p>
                                     {otherPeriod.map((c, i) => renderCostRow(c, i, otherPeriod))}
                                   </div>
                                 )}

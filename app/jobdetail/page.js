@@ -2064,8 +2064,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         setForm(f => ({ ...f, contract_value: newVal }))
       }
       const co = primeCOs.find(c => c.id === coId)
-      for (const sovItem of co?.sov || []) {
-        if (!sovItem.budget_item_id || !sovItem.amount) continue
+      const linkedSovItems = (co?.sov || []).filter(r => r.budget_item_id && r.amount)
+      for (const sovItem of linkedSovItems) {
         const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
         if (item) {
           const updates = { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) }
@@ -2074,6 +2074,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         }
       }
       await loadBudgetItems()
+      if (linkedSovItems.length === 0 && coAmount) {
+        alert(`CO approved — contract value updated by $${Number(coAmount).toLocaleString()}.\n\nNo budget line items were linked to this CO, so your SOV total was NOT updated. Go to the Budget tab and add $${Number(coAmount).toLocaleString()} to the relevant owner amount(s) to keep the contract sum and SOV in sync.`)
+      }
     }
     await loadPrimeCOs()
   }
@@ -5654,6 +5657,40 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </p>
               )}
             </div>
+
+            {(() => {
+              const approvedCOsTotal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+              const contractSumToDate = Number(job.contract_value || 0) + approvedCOsTotal
+              const sovTotal = budgetItems.reduce((a, b) => a + Number(b.owner_amount ?? b.budget_amount ?? 0), 0)
+              const diff = contractSumToDate - sovTotal
+              if (Math.abs(diff) < 0.01) return null
+              return (
+                <div style={{ background: '#1a0800', border: '1px solid #e8590c', borderRadius: '10px', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>
+                    Contract sum to date doesn't match your budget SOV — G703 won't balance
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '12px', marginBottom: '10px' }}>
+                    <span style={{ color: '#888' }}>Original contract</span>
+                    <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${Number(job.contract_value || 0).toLocaleString()}</span>
+                    {approvedCOsTotal !== 0 && <>
+                      <span style={{ color: '#888' }}>Approved prime COs</span>
+                      <span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>
+                    </>}
+                    <span style={{ color: '#aaa', fontWeight: '700' }}>Contract sum to date</span>
+                    <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
+                    <span style={{ color: '#888' }}>Budget / SOV total</span>
+                    <span style={{ color: '#ff6b6b', fontFamily: 'monospace', textAlign: 'right' }}>${sovTotal.toLocaleString()}</span>
+                    <span style={{ color: '#e8590c', fontWeight: '700' }}>Difference</span>
+                    <span style={{ color: '#e8590c', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>{diff > 0 ? '+' : '-'}${Math.abs(diff).toLocaleString()}</span>
+                  </div>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#888', lineHeight: '1.5' }}>
+                    {diff > 0
+                      ? `Your contract sum is $${Math.abs(diff).toLocaleString()} more than your budget lines. Add that amount to one or more owner amounts in the Budget tab, or reduce the contract value in the Details tab.`
+                      : `Your budget lines total $${Math.abs(diff).toLocaleString()} more than your contract sum. Reduce owner amounts in the Budget tab, or increase the contract value in the Details tab.`}
+                  </p>
+                </div>
+              )
+            })()}
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>

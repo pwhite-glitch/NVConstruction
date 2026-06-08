@@ -1174,7 +1174,7 @@ ${sovLines.length > 0 ? `
   useEffect(() => {
     if (!id) return
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem(); loadPrimeCOs() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
     if (activeTab === 'subs') { loadSubDirectory() }
@@ -3485,7 +3485,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={{ textAlign: 'right' }}>% Used</span>
                     <span></span>
                   </div>
-                  {budgetItems.map(item => {
+                  {(() => {
+                    const cosByBudgetItem = {}
+                    for (const co of primeCOs) {
+                      for (const sovItem of co.sov || []) {
+                        if (!sovItem.budget_item_id) continue
+                        if (!cosByBudgetItem[sovItem.budget_item_id]) cosByBudgetItem[sovItem.budget_item_id] = []
+                        cosByBudgetItem[sovItem.budget_item_id].push({ description: co.description, amount: sovItem.amount, status: co.status })
+                      }
+                    }
+                    return budgetItems.map(item => {
                     const committed = committedForItem(item.id)
                     const uncommitted = Number(item.budget_amount) - committed
                     const pct = Number(item.budget_amount) > 0 ? Math.min(110, (committed / Number(item.budget_amount)) * 100) : 0
@@ -3493,12 +3502,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const ownerAmt = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                     const markup = ownerAmt - Number(item.budget_amount)
                     const rowAccent = over ? '#ff4444' : pct >= 80 ? '#e8590c' : pct >= 50 ? '#facc15' : committed > 0 ? '#4ade80' : 'transparent'
+                    const itemCOs = cosByBudgetItem[item.id] || []
                     return (
                       <div key={item.id} style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1, borderLeft: `3px solid ${rowAccent}`, paddingLeft: '10px' }}>
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace', flexShrink: 0 }}>{item.cost_code}</span>}
                             <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{item.description}</span>
+                            {itemCOs.length > 0 && (
+                              <span
+                                title={itemCOs.map(co => `${co.status === 'approved' ? '✓' : co.status === 'pending' ? '⏳' : '✗'} ${co.description || 'CO'}: ${Number(co.amount) >= 0 ? '+' : ''}$${Math.abs(Number(co.amount)).toLocaleString()} (${co.status})`).join('\n')}
+                                style={{ display: 'inline-flex', alignItems: 'center', background: '#1a1000', color: '#f59e0b', border: '1px solid #4a3000', borderRadius: '4px', padding: '1px 7px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', cursor: 'help', flexShrink: 0, userSelect: 'none' }}
+                              >
+                                CO{itemCOs.length > 1 ? ` ×${itemCOs.length}` : ''}
+                              </span>
+                            )}
                           </div>
                           <div style={{ height: '4px', background: '#1a1a1a', borderRadius: '2px', marginTop: '8px' }}>
                             <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px' }} />
@@ -3518,7 +3536,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
                     )
-                  })}
+                  })})()}
                 </div>
               )}
             </div>

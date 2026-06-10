@@ -3287,7 +3287,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>GC Awarded Subcontracts</p>
-                  <button style={s.btnSm('orange')} type="button" onClick={() => setShowNvSubForm(v => !v)}>{showNvSubForm ? 'Cancel' : '+ Add scope'}</button>
+                  <button style={s.btnSmallOrange} type="button" onClick={() => setShowNvSubForm(v => !v)}>{showNvSubForm ? 'Cancel' : '+ Add scope'}</button>
                 </div>
                 <p style={{ fontSize: '12px', color: '#555', margin: '0 0 1rem' }}>Track each subcontract the GC has issued to NV for different scopes on this project.</p>
 
@@ -3365,8 +3365,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               {sc.notes && <p style={{ fontSize: '12px', color: '#555', margin: '6px 0 0' }}>{sc.notes}</p>}
                             </div>
                             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                              <button style={s.btnSm('gray')} type="button" onClick={() => { setEditingNvSubId(sc.id); setEditNvSubForm({ gc_name: sc.gc_name || '', contract_number: sc.contract_number || '', scope_description: sc.scope_description || '', contract_value: sc.contract_value || '', status: sc.status || 'active', signed_date: sc.signed_date || '', notes: sc.notes || '' }) }}>Edit</button>
-                              <button style={s.btnSm('red')} type="button" onClick={() => deleteNvSubcontract(sc.id)}>Delete</button>
+                              <button style={s.btnSmall} type="button" onClick={() => { setEditingNvSubId(sc.id); setEditNvSubForm({ gc_name: sc.gc_name || '', contract_number: sc.contract_number || '', scope_description: sc.scope_description || '', contract_value: sc.contract_value || '', status: sc.status || 'active', signed_date: sc.signed_date || '', notes: sc.notes || '' }) }}>Edit</button>
+                              <button style={s.btnSmallRed} type="button" onClick={() => deleteNvSubcontract(sc.id)}>Delete</button>
                             </div>
                           </div>
                         </>

@@ -1017,8 +1017,10 @@ export default function JobDetail() {
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-    const origContract = Number(job.contract_value || 0)
-    const contractSumToDate = origContract + approvedCOsVal
+    const origContract = job.nv_role === 'sub'
+      ? nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+      : Number(job.contract_value || 0)
+    const contractSumToDate = origContract + (job.nv_role === 'sub' ? 0 : approvedCOsVal)
     const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
     const genDate = new Date().toLocaleDateString()
     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -1191,7 +1193,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
-    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests(); loadNvSubcontracts() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }
@@ -2473,9 +2475,11 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
       const genDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
-      const origContract = Number(job.contract_value || 0)
       const approvedCOsTotal = (primeCOData || []).reduce((a, co) => a + Number(co.amount || 0), 0)
-      const contractSumToDate = origContract + approvedCOsTotal
+      const origContract = job.nv_role === 'sub'
+        ? nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+        : Number(job.contract_value || 0)
+      const contractSumToDate = job.nv_role === 'sub' ? origContract : origContract + approvedCOsTotal
 
       const totalBilledAIA = (aiaApps || []).reduce((a, app) => {
         // Use last app's completed value — we'll calc from lines if needed; use billed from apps status
@@ -2894,16 +2898,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <div style={s.statCard}><div style={s.statLabel}>Total billed</div><div style={s.statValue()}>${totalBilled.toLocaleString()}</div></div>
           <div style={s.statCard}>
             <div style={s.statLabel}>Contract sum to date</div>
-            <div style={s.statValue()}>
-              {job.contract_value
-                ? '$' + (parseFloat(job.contract_value) + primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)).toLocaleString()
-                : '—'}
-            </div>
-            {primeCOs.filter(co => co.status === 'approved').length > 0 && (
-              <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
-                ${parseFloat(job.contract_value || 0).toLocaleString()} + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
-              </div>
-            )}
+            {(() => {
+              const isSub = job.nv_role === 'sub'
+              const subTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+              const approvedCOs = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+              const total = isSub ? subTotal : (parseFloat(job.contract_value || 0) + approvedCOs)
+              const hasValue = isSub ? subTotal > 0 : !!job.contract_value
+              return (
+                <>
+                  <div style={s.statValue()}>{hasValue ? '$' + total.toLocaleString() : '—'}</div>
+                  {isSub && nvSubcontracts.length > 0 && (
+                    <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>{nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}</div>
+                  )}
+                  {!isSub && primeCOs.filter(co => co.status === 'approved').length > 0 && (
+                    <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
+                      ${parseFloat(job.contract_value || 0).toLocaleString()} + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
           <div style={s.statCard}><div style={s.statLabel}>% billed</div><div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : '—'}</div></div>
         </div>
@@ -5844,17 +5858,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </button>
                 </div>
               </div>
-              {job.contract_value && (
-                <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
-                  Contract value: <strong style={{ color: '#f1f1f1' }}>${Number(job.contract_value).toLocaleString()}</strong>
-                  <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— edit in the Details tab</span>
-                </p>
+              {job.nv_role === 'sub' ? (
+                nvSubcontracts.length > 0 && (
+                  <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
+                    GC contract total: <strong style={{ color: '#f1f1f1' }}>${nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0).toLocaleString()}</strong>
+                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— {nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}, manage in the Details tab</span>
+                  </p>
+                )
+              ) : (
+                job.contract_value && (
+                  <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
+                    Contract value: <strong style={{ color: '#f1f1f1' }}>${Number(job.contract_value).toLocaleString()}</strong>
+                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— edit in the Details tab</span>
+                  </p>
+                )
               )}
             </div>
 
             {(() => {
+              const isSub = job.nv_role === 'sub'
               const approvedCOsTotal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-              const contractSumToDate = Number(job.contract_value || 0) + approvedCOsTotal
+              const subContractsTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+              const contractSumToDate = isSub ? subContractsTotal : (Number(job.contract_value || 0) + approvedCOsTotal)
               const sovTotal = budgetItems.reduce((a, b) => a + Number(b.owner_amount ?? b.budget_amount ?? 0), 0)
               const diff = contractSumToDate - sovTotal
               if (Math.abs(diff) < 0.01) return null
@@ -5864,12 +5889,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     Contract sum to date doesn't match your budget SOV — G703 won't balance
                   </p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '12px', marginBottom: '10px' }}>
-                    <span style={{ color: '#888' }}>Original contract</span>
-                    <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${Number(job.contract_value || 0).toLocaleString()}</span>
-                    {approvedCOsTotal !== 0 && <>
-                      <span style={{ color: '#888' }}>Approved prime COs</span>
-                      <span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>
-                    </>}
+                    {isSub ? (
+                      <>
+                        <span style={{ color: '#888' }}>GC subcontracts ({nvSubcontracts.length})</span>
+                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${subContractsTotal.toLocaleString()}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ color: '#888' }}>Original contract</span>
+                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${Number(job.contract_value || 0).toLocaleString()}</span>
+                        {approvedCOsTotal !== 0 && <>
+                          <span style={{ color: '#888' }}>Approved prime COs</span>
+                          <span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>
+                        </>}
+                      </>
+                    )}
                     <span style={{ color: '#aaa', fontWeight: '700' }}>Contract sum to date</span>
                     <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
                     <span style={{ color: '#888' }}>Budget / SOV total</span>

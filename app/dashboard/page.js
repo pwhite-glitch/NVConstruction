@@ -111,7 +111,7 @@ export default function Dashboard() {
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
   const [searchDir, setSearchDir] = useState('')
-  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
+  const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', billing_type: 'aia', nv_role: 'gc', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
   const [rejectingSubId, setRejectingSubId] = useState(null)
   const [rejectionReasonDraft, setRejectionReasonDraft] = useState('')
   const [billingPage, setBillingPage] = useState(1)
@@ -656,6 +656,7 @@ export default function Dashboard() {
       owner_billing_anchor: newJob.owner_billing_anchor || null,
       pm_email: newJob.pm_email || null,
       billing_type: newJob.billing_type || 'aia',
+      nv_role: newJob.nv_role || 'gc',
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     router.push(`/jobdetail?id=${data.id}`)
@@ -2026,7 +2027,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {activeTab === 'jobs' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
+                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
                   </button>
                 </div>
@@ -2035,6 +2036,16 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <div style={{ ...s.formBox, marginBottom: '1.25rem' }}>
                     <p style={s.formTitle}>New job</p>
                     <form onSubmit={addJob}>
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={s.label}>NV role on this job</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {[{ v: 'gc', label: 'General Contractor' }, { v: 'sub', label: 'Subcontractor' }].map(({ v, label }) => (
+                            <button key={v} type="button" onClick={() => setNewJob(j => ({ ...j, nv_role: v }))} style={{ padding: '8px 18px', borderRadius: '6px', border: `1px solid ${(newJob.nv_role || 'gc') === v ? '#e8590c' : '#2a2a2a'}`, background: (newJob.nv_role || 'gc') === v ? '#2a1200' : '#0a0a0a', color: (newJob.nv_role || 'gc') === v ? '#e8590c' : '#666', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /></div>
                         <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
@@ -2042,7 +2053,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Job start date</label><input style={s.input} type="date" value={newJob.start_date} onChange={e => setNewJob(j => ({ ...j, start_date: e.target.value }))} /></div>
                         <div>
-                          <label style={s.label}>Prime billing type</label>
+                          <label style={s.label}>{(newJob.nv_role || 'gc') === 'sub' ? 'GC billing type' : 'Prime billing type'}</label>
                           <select style={s.input} value={newJob.billing_type} onChange={e => setNewJob(j => ({ ...j, billing_type: e.target.value }))}>
                             <option value="aia">AIA Application for Payment (G702/G703)</option>
                             <option value="draw_request">Draw Request</option>
@@ -2058,33 +2069,35 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           ))}
                         </select>
                       </div>
-                      <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
-                        <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
-                          <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.sub_billing_start} onChange={e => setNewJob(j => ({ ...j, sub_billing_start: e.target.value }))} /></div>
-                          <div><label style={s.label}>Frequency</label>
-                            <select style={s.input} value={newJob.sub_billing_frequency} onChange={e => setNewJob(j => ({ ...j, sub_billing_frequency: e.target.value, sub_billing_due: '', sub_billing_anchor: '' }))}>
-                              <option value="monthly">Monthly</option>
-                              <option value="weekly">Weekly</option>
-                              <option value="biweekly">Bi-weekly</option>
-                            </select>
+                      {(newJob.nv_role || 'gc') === 'gc' && (
+                        <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                          <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
+                          <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                            <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.sub_billing_start} onChange={e => setNewJob(j => ({ ...j, sub_billing_start: e.target.value }))} /></div>
+                            <div><label style={s.label}>Frequency</label>
+                              <select style={s.input} value={newJob.sub_billing_frequency} onChange={e => setNewJob(j => ({ ...j, sub_billing_frequency: e.target.value, sub_billing_due: '', sub_billing_anchor: '' }))}>
+                                <option value="monthly">Monthly</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Bi-weekly</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={s.grid2} className="rx-grid-2">
+                            {newJob.sub_billing_frequency === 'monthly'
+                              ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
+                              : <div><label style={s.label}>Due day of week</label>
+                                  <select style={s.input} value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))}>
+                                    <option value="">Select...</option>
+                                    {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                  </select>
+                                </div>
+                            }
+                            {newJob.sub_billing_frequency === 'biweekly' && <div><label style={s.label}>Anchor date</label><input style={s.input} type="date" value={newJob.sub_billing_anchor} onChange={e => setNewJob(j => ({ ...j, sub_billing_anchor: e.target.value }))} /></div>}
                           </div>
                         </div>
-                        <div style={s.grid2} className="rx-grid-2">
-                          {newJob.sub_billing_frequency === 'monthly'
-                            ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
-                            : <div><label style={s.label}>Due day of week</label>
-                                <select style={s.input} value={newJob.sub_billing_due} onChange={e => setNewJob(j => ({ ...j, sub_billing_due: e.target.value }))}>
-                                  <option value="">Select...</option>
-                                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
-                                </select>
-                              </div>
-                          }
-                          {newJob.sub_billing_frequency === 'biweekly' && <div><label style={s.label}>Anchor date</label><input style={s.input} type="date" value={newJob.sub_billing_anchor} onChange={e => setNewJob(j => ({ ...j, sub_billing_anchor: e.target.value }))} /></div>}
-                        </div>
-                      </div>
+                      )}
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
+                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>{(newJob.nv_role || 'gc') === 'sub' ? 'Our billing to GC' : 'Prime contract (owner) billing'}</p>
                         <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                           <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newJob.owner_billing_start} onChange={e => setNewJob(j => ({ ...j, owner_billing_start: e.target.value }))} /></div>
                           <div><label style={s.label}>Frequency</label>
@@ -2135,6 +2148,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
                             </div>
                           )}
+                          {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
                           <span style={s.jobBadge(j.status)}>{j.status}</span>
                           <span style={{ color: '#555', fontSize: '18px' }}>›</span>
                         </div>

@@ -308,6 +308,15 @@ export default function JobDetail() {
   const [fieldLightbox, setFieldLightbox] = useState(null)
   const [deletingFieldPhoto, setDeletingFieldPhoto] = useState(null)
 
+  // NV Subcontracts (when NV is acting as sub on a job)
+  const [nvSubcontracts, setNvSubcontracts] = useState([])
+  const [nvSubForm, setNvSubForm] = useState({ gc_name: '', contract_number: '', scope_description: '', contract_value: '', status: 'active', signed_date: '', notes: '' })
+  const [addingNvSub, setAddingNvSub] = useState(false)
+  const [showNvSubForm, setShowNvSubForm] = useState(false)
+  const [editingNvSubId, setEditingNvSubId] = useState(null)
+  const [editNvSubForm, setEditNvSubForm] = useState({})
+  const [savingNvSub, setSavingNvSub] = useState(false)
+
   // Warranty state
   const [warrantySetting, setWarrantySetting] = useState(null)
   const [warrantyOrders, setWarrantyOrders] = useState([])
@@ -1173,6 +1182,7 @@ ${sovLines.length > 0 ? `
 
   useEffect(() => {
     if (!id) return
+    if (activeTab === 'details') { loadNvSubcontracts() }
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem(); loadPrimeCOs() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
@@ -1195,6 +1205,55 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
   }, [activeTab, id])
+
+  async function loadNvSubcontracts() {
+    const { data } = await supabase.from('nv_subcontracts').select('*').eq('job_id', id).order('created_at', { ascending: true })
+    setNvSubcontracts(data || [])
+  }
+
+  async function addNvSubcontract(e) {
+    e.preventDefault()
+    setAddingNvSub(true)
+    const { error } = await supabase.from('nv_subcontracts').insert({
+      job_id: id,
+      gc_name: nvSubForm.gc_name || null,
+      contract_number: nvSubForm.contract_number || null,
+      scope_description: nvSubForm.scope_description || null,
+      contract_value: nvSubForm.contract_value ? parseFloat(nvSubForm.contract_value) : null,
+      status: nvSubForm.status || 'active',
+      signed_date: nvSubForm.signed_date || null,
+      notes: nvSubForm.notes || null,
+    })
+    setAddingNvSub(false)
+    if (error) { setErrMsg('Error: ' + error.message); setTimeout(() => setErrMsg(''), 4000); return }
+    setNvSubForm({ gc_name: '', contract_number: '', scope_description: '', contract_value: '', status: 'active', signed_date: '', notes: '' })
+    setShowNvSubForm(false)
+    await loadNvSubcontracts()
+  }
+
+  async function saveNvSubcontract(e) {
+    e.preventDefault()
+    setSavingNvSub(true)
+    const { error } = await supabase.from('nv_subcontracts').update({
+      gc_name: editNvSubForm.gc_name || null,
+      contract_number: editNvSubForm.contract_number || null,
+      scope_description: editNvSubForm.scope_description || null,
+      contract_value: editNvSubForm.contract_value ? parseFloat(editNvSubForm.contract_value) : null,
+      status: editNvSubForm.status || 'active',
+      signed_date: editNvSubForm.signed_date || null,
+      notes: editNvSubForm.notes || null,
+    }).eq('id', editingNvSubId)
+    setSavingNvSub(false)
+    if (error) { setErrMsg('Error: ' + error.message); setTimeout(() => setErrMsg(''), 4000); return }
+    setEditingNvSubId(null)
+    await loadNvSubcontracts()
+  }
+
+  async function deleteNvSubcontract(subId) {
+    if (!confirm('Delete this subcontract?')) return
+    await supabase.from('nv_subcontracts').delete().eq('id', subId)
+    await loadNvSubcontracts()
+  }
 
   async function loadWarranty() {
     const [settingsRes, ordersRes] = await Promise.all([
@@ -2672,6 +2731,7 @@ ${(budgets || []).length > 0 ? `
       permit_number: form.permit_number, permit_date: form.permit_date || null, scope_notes: form.scope_notes,
       pm_email: form.pm_email || null,
       billing_type: form.billing_type || 'aia',
+      nv_role: form.nv_role || 'gc',
     }).eq('id', id)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000) }
     else { setJob(j => ({ ...j, ...form })); setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
@@ -2800,7 +2860,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
           <div>
-            <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h1 style={{ ...s.jobTitle, margin: 0 }}>#{job.job_number} — {job.project_name}</h1>
+              {job.nv_role === 'sub' && <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>Subcontractor</span>}
+            </div>
             <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2869,7 +2932,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : null, alert: pendingCOs > 0 },
                   { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
                   { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
-                  { key: 'prime', label: 'Prime Contract' },
+                  { key: 'prime', label: job?.nv_role === 'sub' ? 'GC Billing' : 'Prime Contract' },
                   { key: 'cashflow', label: 'Cash Flow' },
                   { key: 'retainage', label: 'Retainage' },
                   { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
@@ -2975,6 +3038,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <form onSubmit={saveJob}>
               <div style={s.card}>
                 <p style={s.cardTitle}>Job info</p>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={s.label}>NV role on this job</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[{ v: 'gc', label: 'General Contractor' }, { v: 'sub', label: 'Subcontractor' }].map(({ v, label }) => (
+                      <button key={v} type="button" onClick={() => update('nv_role', v)} style={{ padding: '8px 18px', borderRadius: '6px', border: `1px solid ${(form.nv_role || 'gc') === v ? '#e8590c' : '#2a2a2a'}`, background: (form.nv_role || 'gc') === v ? '#2a1200' : '#0a0a0a', color: (form.nv_role || 'gc') === v ? '#e8590c' : '#666', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                   <div><label style={s.label}>Job number</label><input style={s.input} value={form.job_number || ''} onChange={e => update('job_number', e.target.value)} required /></div>
                   <div><label style={s.label}>Project name</label><input style={s.input} value={form.project_name || ''} onChange={e => update('project_name', e.target.value)} required /></div>
@@ -3084,7 +3157,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   })()}
                 </div>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px' }}>
-                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Prime contract (owner) billing</p>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>{(form.nv_role || 'gc') === 'sub' ? 'Our billing to GC' : 'Prime contract (owner) billing'}</p>
                   <div style={{ ...s.grid2, marginBottom: '8px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Frequency</label>
@@ -3118,8 +3191,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
 
               <div style={s.card}>
-                <p style={s.cardTitle}>Owner, design team & permits</p>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Owner</p>
+                <p style={s.cardTitle}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor, design team & permits' : 'Owner, design team & permits'}</p>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor' : 'Owner'}</p>
                 <div style={{ ...s.grid2, marginBottom: '16px' }} className="rx-grid-2">
                   <div><label style={s.label}>Company</label><input style={s.input} value={form.owner_company || ''} onChange={e => update('owner_company', e.target.value)} /></div>
                   <div><label style={s.label}>Name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} /></div>
@@ -3209,6 +3282,109 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )}
             </form>
+
+            {(form.nv_role || 'gc') === 'sub' && (
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>GC Awarded Subcontracts</p>
+                  <button style={s.btnSm('orange')} type="button" onClick={() => setShowNvSubForm(v => !v)}>{showNvSubForm ? 'Cancel' : '+ Add scope'}</button>
+                </div>
+                <p style={{ fontSize: '12px', color: '#555', margin: '0 0 1rem' }}>Track each subcontract the GC has issued to NV for different scopes on this project.</p>
+
+                {showNvSubForm && (
+                  <form onSubmit={addNvSubcontract} style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px', marginBottom: '1rem' }}>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                      <div><label style={s.label}>GC / General Contractor name</label><input style={s.input} value={nvSubForm.gc_name} onChange={e => setNvSubForm(f => ({ ...f, gc_name: e.target.value }))} placeholder="Hensel Phelps" /></div>
+                      <div><label style={s.label}>Contract number</label><input style={s.input} value={nvSubForm.contract_number} onChange={e => setNvSubForm(f => ({ ...f, contract_number: e.target.value }))} placeholder="GC-2024-001" /></div>
+                    </div>
+                    <div style={{ marginBottom: '10px' }}><label style={s.label}>Scope of work</label><input style={s.input} required value={nvSubForm.scope_description} onChange={e => setNvSubForm(f => ({ ...f, scope_description: e.target.value }))} placeholder="Site Utilities, Concrete Foundations, etc." /></div>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                      <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={nvSubForm.contract_value} onChange={e => setNvSubForm(f => ({ ...f, contract_value: e.target.value }))} placeholder="0.00" /></div>
+                      <div><label style={s.label}>Signed date</label><input type="date" style={s.input} value={nvSubForm.signed_date} onChange={e => setNvSubForm(f => ({ ...f, signed_date: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                      <div><label style={s.label}>Status</label>
+                        <select style={s.input} value={nvSubForm.status} onChange={e => setNvSubForm(f => ({ ...f, status: e.target.value }))}>
+                          <option value="pending">Pending</option>
+                          <option value="active">Active</option>
+                          <option value="complete">Complete</option>
+                        </select>
+                      </div>
+                      <div><label style={s.label}>Notes</label><input style={s.input} value={nvSubForm.notes} onChange={e => setNvSubForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                    </div>
+                    <button type="submit" style={s.btn} disabled={addingNvSub}>{addingNvSub ? 'Saving...' : 'Add subcontract'}</button>
+                  </form>
+                )}
+
+                {nvSubcontracts.length === 0 && !showNvSubForm && <p style={s.emptyMsg}>No subcontracts added yet.</p>}
+
+                {nvSubcontracts.map(sc => {
+                  const statusColor = sc.status === 'active' ? '#4ade80' : sc.status === 'complete' ? '#60a5fa' : '#f59e0b'
+                  return (
+                    <div key={sc.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px', marginBottom: '10px' }}>
+                      {editingNvSubId === sc.id ? (
+                        <form onSubmit={saveNvSubcontract}>
+                          <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                            <div><label style={s.label}>GC name</label><input style={s.input} value={editNvSubForm.gc_name || ''} onChange={e => setEditNvSubForm(f => ({ ...f, gc_name: e.target.value }))} /></div>
+                            <div><label style={s.label}>Contract number</label><input style={s.input} value={editNvSubForm.contract_number || ''} onChange={e => setEditNvSubForm(f => ({ ...f, contract_number: e.target.value }))} /></div>
+                          </div>
+                          <div style={{ marginBottom: '10px' }}><label style={s.label}>Scope of work</label><input style={s.input} required value={editNvSubForm.scope_description || ''} onChange={e => setEditNvSubForm(f => ({ ...f, scope_description: e.target.value }))} /></div>
+                          <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                            <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={editNvSubForm.contract_value || ''} onChange={e => setEditNvSubForm(f => ({ ...f, contract_value: e.target.value }))} /></div>
+                            <div><label style={s.label}>Signed date</label><input type="date" style={s.input} value={editNvSubForm.signed_date || ''} onChange={e => setEditNvSubForm(f => ({ ...f, signed_date: e.target.value }))} /></div>
+                          </div>
+                          <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                            <div><label style={s.label}>Status</label>
+                              <select style={s.input} value={editNvSubForm.status || 'active'} onChange={e => setEditNvSubForm(f => ({ ...f, status: e.target.value }))}>
+                                <option value="pending">Pending</option>
+                                <option value="active">Active</option>
+                                <option value="complete">Complete</option>
+                              </select>
+                            </div>
+                            <div><label style={s.label}>Notes</label><input style={s.input} value={editNvSubForm.notes || ''} onChange={e => setEditNvSubForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button type="submit" style={s.btn} disabled={savingNvSub}>{savingNvSub ? 'Saving...' : 'Save'}</button>
+                            <button type="button" style={s.btnGray} onClick={() => setEditingNvSubId(null)}>Cancel</button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sc.scope_description}</span>
+                                <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', color: statusColor, border: `1px solid ${statusColor}33`, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{sc.status}</span>
+                              </div>
+                              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                                {sc.gc_name && <span style={{ fontSize: '12px', color: '#888' }}>{sc.gc_name}</span>}
+                                {sc.contract_number && <span style={{ fontSize: '12px', color: '#666' }}>#{sc.contract_number}</span>}
+                                {sc.contract_value && <span style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>${Number(sc.contract_value).toLocaleString()}</span>}
+                                {sc.signed_date && <span style={{ fontSize: '12px', color: '#555' }}>Signed {new Date(sc.signed_date + 'T12:00:00').toLocaleDateString()}</span>}
+                              </div>
+                              {sc.notes && <p style={{ fontSize: '12px', color: '#555', margin: '6px 0 0' }}>{sc.notes}</p>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                              <button style={s.btnSm('gray')} type="button" onClick={() => { setEditingNvSubId(sc.id); setEditNvSubForm({ gc_name: sc.gc_name || '', contract_number: sc.contract_number || '', scope_description: sc.scope_description || '', contract_value: sc.contract_value || '', status: sc.status || 'active', signed_date: sc.signed_date || '', notes: sc.notes || '' }) }}>Edit</button>
+                              <button style={s.btnSm('red')} type="button" onClick={() => deleteNvSubcontract(sc.id)}>Delete</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {nvSubcontracts.length > 0 && (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', color: '#555' }}>{nvSubcontracts.length} scope{nvSubcontracts.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#4ade80' }}>
+                      Total: ${nvSubcontracts.filter(s => s.contract_value).reduce((a, s) => a + Number(s.contract_value), 0).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
           </>
         )}

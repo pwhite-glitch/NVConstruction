@@ -131,6 +131,9 @@ export default function JobDetail() {
   const [pushMarkup, setPushMarkup] = useState('')
   const [pushingToPrime, setPushingToPrime] = useState(false)
   const [expandedPrimeCOId, setExpandedPrimeCOId] = useState(null)
+  const [editingPrimeCOId, setEditingPrimeCOId] = useState(null)
+  const [editPrimeCOForm, setEditPrimeCOForm] = useState(emptyPrimeCO)
+  const [savingPrimeCO, setSavingPrimeCO] = useState(false)
   const [expandedSubCOId, setExpandedSubCOId] = useState(null)
 
   // Budget state
@@ -2162,6 +2165,31 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       }
       await loadBudgetItems()
     }
+    await loadPrimeCOs()
+  }
+
+  async function savePrimeCO() {
+    setSavingPrimeCO(true)
+    const co = primeCOs.find(c => c.id === editingPrimeCOId)
+    const sovTotal = editPrimeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+    const newAmount = parseFloat(editPrimeCOForm.sov.length > 0 ? sovTotal : editPrimeCOForm.amount) || 0
+    const validSOV = editPrimeCOForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
+    const { error } = await supabase.from('prime_change_orders').update({
+      description: editPrimeCOForm.description,
+      amount: newAmount,
+      notes: editPrimeCOForm.notes || null,
+      sov: validSOV.length > 0 ? validSOV : null,
+    }).eq('id', editingPrimeCOId)
+    setSavingPrimeCO(false)
+    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
+    if (co?.status === 'approved' && Number(co.amount) !== newAmount) {
+      const diff = newAmount - Number(co.amount)
+      const newVal = (Number(job.contract_value) || 0) + diff
+      await supabase.from('jobs').update({ contract_value: newVal }).eq('id', id)
+      setJob(j => ({ ...j, contract_value: newVal }))
+      setForm(f => ({ ...f, contract_value: newVal }))
+    }
+    setEditingPrimeCOId(null)
     await loadPrimeCOs()
   }
 
@@ -4424,7 +4452,96 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {primeCOs.map(co => {
                 const isExpanded = expandedPrimeCOId === co.id
+                const isEditing = editingPrimeCOId === co.id
                 const hasSov = co.sov?.length > 0
+                if (isEditing) {
+                  const sovTotal = editPrimeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                  const totalAmt = sovTotal || parseFloat(editPrimeCOForm.amount) || 0
+                  const allLinesAssigned = editPrimeCOForm.sov.length > 0 && editPrimeCOForm.sov.every(r => r.budget_item_id && r.amount)
+                  return (
+                    <div key={co.id} style={{ ...s.inlineForm, border: '1px solid #2a3a2a', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <p style={{ ...s.cardTitle, margin: 0 }}>Edit prime CO</p>
+                        {co.status === 'approved' && (
+                          <span style={{ fontSize: '11px', color: '#f59e0b', background: '#1a1200', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
+                            Approved — amount change will adjust contract value
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div>
+                          <label style={s.label}>Description *</label>
+                          <input style={s.input} value={editPrimeCOForm.description} onChange={e => setEditPrimeCOForm(f => ({ ...f, description: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Notes (optional)</label>
+                          <input style={s.input} value={editPrimeCOForm.notes || ''} onChange={e => setEditPrimeCOForm(f => ({ ...f, notes: e.target.value }))} />
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                          <div>
+                            <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Budget line assignment</p>
+                            <p style={{ fontSize: '11px', color: '#555', margin: '3px 0 0' }}>When approved, each line updates budget and SOV automatically.</p>
+                          </div>
+                          <button type="button" style={s.btnSmall} onClick={() => setEditPrimeCOForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] }))}>+ Add line</button>
+                        </div>
+                        {editPrimeCOForm.sov.length === 0 && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <label style={s.label}>Total amount (no SOV lines)</label>
+                            <input type="number" style={s.input} placeholder="Amount" value={editPrimeCOForm.amount}
+                              onChange={e => setEditPrimeCOForm(f => ({ ...f, amount: e.target.value }))} />
+                          </div>
+                        )}
+                        {editPrimeCOForm.sov.map((row, i) => (
+                          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
+                            <select style={{ ...s.input, borderColor: row.budget_item_id ? '#1a4a1a' : '#4a2200' }}
+                              value={row.budget_item_id}
+                              onChange={e => {
+                                const bi = budgetItems.find(b => b.id === e.target.value)
+                                setEditPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value, description: r.description || bi?.description || '' } : r) }))
+                              }}>
+                              <option value="">— Select budget line —</option>
+                              {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
+                            </select>
+                            <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
+                            <input type="number" style={{ ...s.input, borderColor: row.amount ? '#1a4a1a' : '#4a2200' }} placeholder="Amount" value={row.amount}
+                              onChange={e => {
+                                const newSov = editPrimeCOForm.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r)
+                                const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                                setEditPrimeCOForm(f => ({ ...f, sov: newSov, amount: String(newTotal || '') }))
+                              }} />
+                            <button type="button" style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }} onClick={() => {
+                              const newSov = editPrimeCOForm.sov.filter((_, j) => j !== i)
+                              const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                              setEditPrimeCOForm(f => ({ ...f, sov: newSov, amount: String(newTotal || '') }))
+                            }}>×</button>
+                          </div>
+                        ))}
+                        {editPrimeCOForm.sov.length > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #1a3a1a' }}>
+                            <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
+                              {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
+                            </span>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>
+                              Total: ${totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button style={{ ...s.btn, opacity: (savingPrimeCO || !editPrimeCOForm.description || !totalAmt) ? 0.6 : 1 }}
+                          disabled={savingPrimeCO || !editPrimeCOForm.description || !totalAmt}
+                          onClick={savePrimeCO}>
+                          {savingPrimeCO ? 'Saving...' : 'Save changes'}
+                        </button>
+                        <button style={s.btnGray} onClick={() => setEditingPrimeCOId(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  )
+                }
                 return (
                 <div key={co.id} style={{ ...s.coRow, flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4436,7 +4553,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                       {co.notes && <span style={{ fontSize: '13px', color: '#aaa' }}>{co.notes}</span>}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
                         {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
                       </span>
@@ -4447,6 +4564,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
                         </div>
                       )}
+                      <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
+                        loadBudgetItems()
+                        setEditingPrimeCOId(co.id)
+                        setExpandedPrimeCOId(null)
+                        setEditPrimeCOForm({ description: co.description || '', notes: co.notes || '', amount: String(co.amount || ''), sov: co.sov?.length > 0 ? co.sov.map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || '', amount: String(r.amount || '') })) : [] })
+                      }}>Edit</button>
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1) }}>Print CO</button>
                       <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px' }} onClick={() => deletePrimeCO(co.id)}>Delete</button>
                     </div>

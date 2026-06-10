@@ -1020,10 +1020,10 @@ export default function JobDetail() {
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-    const origContract = job.nv_role === 'sub'
+    const contractSumToDate = job.nv_role === 'sub'
       ? nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
       : Number(job.contract_value || 0)
-    const contractSumToDate = origContract + (job.nv_role === 'sub' ? 0 : approvedCOsVal)
+    const origContract = job.nv_role === 'sub' ? contractSumToDate : contractSumToDate - approvedCOsVal
     const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
     const genDate = new Date().toLocaleDateString()
     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -2504,10 +2504,10 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       const genDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
       const approvedCOsTotal = (primeCOData || []).reduce((a, co) => a + Number(co.amount || 0), 0)
-      const origContract = job.nv_role === 'sub'
+      const contractSumToDate = job.nv_role === 'sub'
         ? nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
         : Number(job.contract_value || 0)
-      const contractSumToDate = job.nv_role === 'sub' ? origContract : origContract + approvedCOsTotal
+      const origContract = job.nv_role === 'sub' ? contractSumToDate : contractSumToDate - approvedCOsTotal
 
       const totalBilledAIA = (aiaApps || []).reduce((a, app) => {
         // Use last app's completed value — we'll calc from lines if needed; use billed from apps status
@@ -2930,7 +2930,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const isSub = job.nv_role === 'sub'
               const subTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
               const approvedCOs = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-              const total = isSub ? subTotal : (parseFloat(job.contract_value || 0) + approvedCOs)
+              const total = isSub ? subTotal : parseFloat(job.contract_value || 0)
               const hasValue = isSub ? subTotal > 0 : !!job.contract_value
               return (
                 <>
@@ -2938,9 +2938,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   {isSub && nvSubcontracts.length > 0 && (
                     <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>{nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}</div>
                   )}
-                  {!isSub && primeCOs.filter(co => co.status === 'approved').length > 0 && (
+                  {!isSub && approvedCOs !== 0 && (
                     <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
-                      ${parseFloat(job.contract_value || 0).toLocaleString()} + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
+                      ${(total - approvedCOs).toLocaleString()} base + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
                     </div>
                   )}
                 </>
@@ -6004,7 +6004,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const isSub = job.nv_role === 'sub'
               const approvedCOsTotal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
               const subContractsTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
-              const contractSumToDate = isSub ? subContractsTotal : (Number(job.contract_value || 0) + approvedCOsTotal)
+              const contractSumToDate = isSub ? subContractsTotal : Number(job.contract_value || 0)
               const sovTotal = budgetItems.reduce((a, b) => a + Number(b.owner_amount ?? b.budget_amount ?? 0), 0)
               const diff = contractSumToDate - sovTotal
               if (Math.abs(diff) < 0.01) return null
@@ -6022,7 +6022,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     ) : (
                       <>
                         <span style={{ color: '#888' }}>Original contract</span>
-                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${Number(job.contract_value || 0).toLocaleString()}</span>
+                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${(Number(job.contract_value || 0) - approvedCOsTotal).toLocaleString()}</span>
                         {approvedCOsTotal !== 0 && <>
                           <span style={{ color: '#888' }}>Approved prime COs</span>
                           <span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>

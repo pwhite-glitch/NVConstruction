@@ -2099,7 +2099,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   async function addPrimeCO() {
     const sovTotal = primeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
     const finalAmount = primeCOForm.sov.length > 0 ? sovTotal : parseFloat(primeCOForm.amount)
-    if (!finalAmount || !primeCOForm.description) return
+    if (finalAmount == null || isNaN(finalAmount) || !primeCOForm.description) return
     setAddingPrimeCO(true)
     const { data: { session } } = await supabase.auth.getSession()
     const validSOV = primeCOForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
@@ -4377,7 +4377,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {showAddPrimeCO && (() => {
                 const sovTotal = primeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
-                const totalAmt = sovTotal || parseFloat(primeCOForm.amount) || 0
+                const totalAmt = primeCOForm.sov.length > 0 ? sovTotal : (parseFloat(primeCOForm.amount) ?? 0)
+                const amountEntered = primeCOForm.sov.length > 0 ? true : primeCOForm.amount !== ''
                 const allLinesAssigned = primeCOForm.sov.length > 0 && primeCOForm.sov.every(r => r.budget_item_id && r.amount)
                 return (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
@@ -4437,8 +4438,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{ ...s.btn, opacity: (addingPrimeCO || !primeCOForm.description || !totalAmt) ? 0.6 : 1 }}
-                      disabled={addingPrimeCO || !primeCOForm.description || !totalAmt}
+                    <button style={{ ...s.btn, opacity: (addingPrimeCO || !primeCOForm.description || !amountEntered) ? 0.6 : 1 }}
+                      disabled={addingPrimeCO || !primeCOForm.description || !amountEntered}
                       onClick={addPrimeCO}>
                       {addingPrimeCO ? 'Saving...' : 'Save Prime CO'}
                     </button>
@@ -4456,7 +4457,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const hasSov = co.sov?.length > 0
                 if (isEditing) {
                   const sovTotal = editPrimeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
-                  const totalAmt = sovTotal || parseFloat(editPrimeCOForm.amount) || 0
+                  const totalAmt = editPrimeCOForm.sov.length > 0 ? sovTotal : (parseFloat(editPrimeCOForm.amount) ?? 0)
+                  const amountEntered = editPrimeCOForm.sov.length > 0 ? true : editPrimeCOForm.amount !== ''
                   const allLinesAssigned = editPrimeCOForm.sov.length > 0 && editPrimeCOForm.sov.every(r => r.budget_item_id && r.amount)
                   return (
                     <div key={co.id} style={{ ...s.inlineForm, border: '1px solid #2a3a2a', marginBottom: '8px' }}>
@@ -4532,8 +4534,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
 
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button style={{ ...s.btn, opacity: (savingPrimeCO || !editPrimeCOForm.description || !totalAmt) ? 0.6 : 1 }}
-                          disabled={savingPrimeCO || !editPrimeCOForm.description || !totalAmt}
+                        <button style={{ ...s.btn, opacity: (savingPrimeCO || !editPrimeCOForm.description || !amountEntered) ? 0.6 : 1 }}
+                          disabled={savingPrimeCO || !editPrimeCOForm.description || !amountEntered}
                           onClick={savePrimeCO}>
                           {savingPrimeCO ? 'Saving...' : 'Save changes'}
                         </button>

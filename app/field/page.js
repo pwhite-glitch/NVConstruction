@@ -118,6 +118,7 @@ export default function Field() {
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
   const [dcSuccess, setDcSuccess] = useState(false)
+  const [dcError, setDcError] = useState('')
   const [showDcForm, setShowDcForm] = useState(false)
 
   const [jobDocs, setJobDocs] = useState([])
@@ -407,12 +408,18 @@ export default function Field() {
   async function submitDirectCost(e) {
     e.preventDefault()
     setSubmittingDc(true)
+    setDcError('')
     let receipt_url = null
     if (dcFile) {
-      const ext = dcFile.name.split('.').pop()
+      const ext = dcFile.name.split('.').pop().toLowerCase()
       const path = `${selectedJobId}/${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage.from('receipts').upload(path, dcFile)
-      if (!uploadError) receipt_url = path
+      if (uploadError) {
+        setDcError('Receipt upload failed: ' + uploadError.message + '. Please try again or remove the file and save without it.')
+        setSubmittingDc(false)
+        return
+      }
+      receipt_url = path
     }
     const { error } = await supabase.from('direct_costs').insert({
       job_id: selectedJobId, submitted_by: user.id,
@@ -420,14 +427,17 @@ export default function Field() {
       category: dcForm.category, amount: parseFloat(dcForm.amount),
       receipt_url, notes: dcForm.notes || null,
     })
-    if (!error) {
-      setDcSuccess(true)
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
-      setDcFile(null)
-      setShowDcForm(false)
-      await loadDirectCosts()
-      setTimeout(() => setDcSuccess(false), 3000)
+    if (error) {
+      setDcError('Failed to save cost: ' + error.message)
+      setSubmittingDc(false)
+      return
     }
+    setDcSuccess(true)
+    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+    setDcFile(null)
+    setShowDcForm(false)
+    await loadDirectCosts()
+    setTimeout(() => setDcSuccess(false), 3000)
     setSubmittingDc(false)
   }
 
@@ -1195,6 +1205,7 @@ export default function Field() {
                 {activeTab === 'costs' && (
                   <>
                     {dcSuccess && <div style={s.success}>Cost logged successfully.</div>}
+                    {dcError && <div style={{ background: '#1a0000', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{dcError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                       <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} · Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
                       <button style={s.btnSm('orange')} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>

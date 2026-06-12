@@ -1744,7 +1744,7 @@ ${sovLines.length > 0 ? `
       if (dirEntry?.email) {
         const alreadyAssigned = subs.some(s => s.sub_email?.toLowerCase() === dirEntry.email.toLowerCase())
         if (!alreadyAssigned) {
-          await supabase.from('job_assignments').insert({ job_id: id, sub_email: dirEntry.email.toLowerCase(), sub_id: subUserId || null, invited_at: new Date().toISOString() })
+          await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: dirEntry.email.toLowerCase(), sub_id: subUserId || null, invited_at: new Date().toISOString() }) })
           await reloadSubs()
         }
       }
@@ -2341,9 +2341,10 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     )?.toLowerCase()
     if (!normalEmail) return
     setAssigningSubLoading(true)
-    const { error } = await supabase.from('job_assignments').insert({ job_id: id, sub_email: normalEmail })
-    if (error) {
-      setErrMsg(error.code === '23505' ? 'This sub is already assigned to this job.' : error.message)
+    const assignRes = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail }) })
+    if (!assignRes.ok) {
+      const assignJson = await assignRes.json()
+      setErrMsg(assignRes.status === 409 ? 'This sub is already assigned to this job.' : assignJson.error || 'Assignment failed.')
       setTimeout(() => setErrMsg(''), 4000)
       setAssigningSubLoading(false)
       return

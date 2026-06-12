@@ -669,8 +669,9 @@ export default function Dashboard() {
 
   async function inviteSub(e) {
     e.preventDefault()
-    const { error } = await supabase.from('job_assignments').insert({ job_id: inviteJobId, sub_email: inviteEmail.toLowerCase().trim() })
-    if (error) { setInviteMsg(error.code === '23505' ? 'Already invited to this job.' : 'Error: ' + error.message); return }
+    const res = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: inviteJobId, sub_email: inviteEmail.toLowerCase().trim() }) })
+    const result = await res.json()
+    if (!res.ok) { setInviteMsg(res.status === 409 ? 'Already invited to this job.' : 'Error: ' + result.error); return }
     await syncAssignments()
     setInviteEmail('')
     await loadAll()

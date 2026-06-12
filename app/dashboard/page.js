@@ -660,6 +660,10 @@ export default function Dashboard() {
       nv_role: newJob.nv_role || 'gc',
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
+    if (profile?.role === 'apm') {
+      const { data: { session } } = await supabase.auth.getSession()
+      await supabase.from('pm_job_assignments').insert({ job_id: data.id, user_id: session.user.id, assigned_by: session.user.id })
+    }
     router.push(`/jobdetail?id=${data.id}`)
   }
 

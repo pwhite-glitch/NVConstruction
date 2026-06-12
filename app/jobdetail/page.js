@@ -1724,20 +1724,15 @@ ${sovLines.length > 0 ? `
     }
     const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
-    const { error } = await supabase.from('subcontracts').insert({
-      job_id: id,
-      sub_id: subUserId,
-      vendor_name: dirEntry?.company_name || '',
+    const scRes = await fetch('/api/subcontracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      job_id: id, sub_id: subUserId, vendor_name: dirEntry?.company_name || '',
       contract_value: parseFloat(contractForm.contract_value),
-      description: contractForm.description || null,
-      onedrive_url: contractForm.onedrive_url || null,
-      budget_item_id: singleBudgetId,
-      budget_allocations: validAllocs.length > 0 ? validAllocs : null,
-      retainage_pct: parseFloat(contractForm.retainage_pct) || 0,
-      created_by: session.user.id,
-      status: 'active',
-    })
-    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
+      description: contractForm.description || null, onedrive_url: contractForm.onedrive_url || null,
+      budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
+      retainage_pct: parseFloat(contractForm.retainage_pct) || 0, created_by: session.user.id, status: 'active',
+    }) })
+    const scJson = await scRes.json()
+    if (!scRes.ok) { setErrMsg(scJson.error || 'Failed to save contract'); setTimeout(() => setErrMsg(''), 4000) }
     else {
       setShowAddContract(false); setContractForm(emptyContract); await loadContracts()
       // Auto-assign sub to job if not already assigned
@@ -1780,22 +1775,20 @@ ${sovLines.length > 0 ? `
   async function updateContract() {
     const validAllocs = (editContractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (editContractForm.budget_item_id || null)
-    const { error } = await supabase.from('subcontracts').update({
-      contract_value: parseFloat(editContractForm.contract_value),
-      description: editContractForm.description || null,
-      onedrive_url: editContractForm.onedrive_url || null,
-      budget_item_id: singleBudgetId,
-      budget_allocations: validAllocs.length > 0 ? validAllocs : null,
+    const scUpRes = await fetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      id: editingContract, contract_value: parseFloat(editContractForm.contract_value),
+      description: editContractForm.description || null, onedrive_url: editContractForm.onedrive_url || null,
+      budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
       retainage_pct: parseFloat(editContractForm.retainage_pct) || 0,
-    }).eq('id', editingContract)
-    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
+    }) })
+    if (!scUpRes.ok) { const j = await scUpRes.json(); setErrMsg('Save failed: ' + j.error); setTimeout(() => setErrMsg(''), 5000); return }
     setEditingContract(null)
     await loadContracts()
   }
 
   async function deleteContract(contractId) {
     if (!window.confirm('Delete this subcontract and all its change orders?')) return
-    await supabase.from('subcontracts').delete().eq('id', contractId)
+    await fetch('/api/subcontracts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: contractId }) })
     await loadContracts()
   }
 
@@ -2083,7 +2076,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       for (const sovItem of co?.sov || []) {
         if (!sovItem.budget_item_id || !sovItem.amount) continue
         const { data: item } = await supabase.from('budget_items').select('budget_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) await supabase.from('budget_items').update({ budget_amount: Number(item.budget_amount) + Number(sovItem.amount) }).eq('id', sovItem.budget_item_id)
+        if (item) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) } }) })
       }
       await loadBudgetItems()
     }
@@ -2135,7 +2128,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         if (item) {
           const updates = { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) }
           if (item.owner_amount != null) updates.owner_amount = Number(item.owner_amount) + Number(sovItem.amount)
-          await supabase.from('budget_items').update(updates).eq('id', sovItem.budget_item_id)
+          await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
         }
       }
       await loadBudgetItems()
@@ -2161,7 +2154,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         if (item) {
           const updates = { budget_amount: Number(item.budget_amount) - Number(sovItem.amount) }
           if (item.owner_amount != null) updates.owner_amount = Number(item.owner_amount) - Number(sovItem.amount)
-          await supabase.from('budget_items').update(updates).eq('id', sovItem.budget_item_id)
+          await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
         }
       }
       await loadBudgetItems()
@@ -2253,13 +2246,11 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
   async function saveBudgetItem(e) {
     e.preventDefault()
     setAddingBudgetItem(true)
-    await supabase.from('budget_items').insert({
-      job_id: id,
-      cost_code: budgetItemForm.cost_code || null,
-      description: budgetItemForm.description,
+    await fetch('/api/budget-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      job_id: id, cost_code: budgetItemForm.cost_code || null, description: budgetItemForm.description,
       budget_amount: parseFloat(budgetItemForm.budget_amount),
       owner_amount: budgetItemForm.owner_amount ? parseFloat(budgetItemForm.owner_amount) : null,
-    })
+    }) })
     await loadBudgetItems()
     setShowAddBudgetItem(false)
     setBudgetItemForm(emptyBudgetItem)
@@ -2268,19 +2259,20 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
   async function updateBudgetItem(e) {
     e.preventDefault()
-    await supabase.from('budget_items').update({
-      cost_code: editBudgetForm.cost_code || null,
-      description: editBudgetForm.description,
-      budget_amount: parseFloat(editBudgetForm.budget_amount),
-      owner_amount: editBudgetForm.owner_amount ? parseFloat(editBudgetForm.owner_amount) : null,
-    }).eq('id', editingBudgetItem)
+    await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      id: editingBudgetItem, fields: {
+        cost_code: editBudgetForm.cost_code || null, description: editBudgetForm.description,
+        budget_amount: parseFloat(editBudgetForm.budget_amount),
+        owner_amount: editBudgetForm.owner_amount ? parseFloat(editBudgetForm.owner_amount) : null,
+      }
+    }) })
     setEditingBudgetItem(null)
     await loadBudgetItems()
   }
 
   async function deleteBudgetItem(itemId) {
     if (!window.confirm('Delete this budget line?')) return
-    await supabase.from('budget_items').delete().eq('id', itemId)
+    await fetch('/api/budget-items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: itemId }) })
     await loadBudgetItems()
   }
 
@@ -2299,7 +2291,7 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
           rows.push({ job_id: id, cost_code: cols[0] || null, description: cols[1], budget_amount: parseFloat(cols[2]) || 0 })
         }
       }
-      if (rows.length > 0) { await supabase.from('budget_items').insert(rows); await loadBudgetItems() }
+      if (rows.length > 0) { await fetch('/api/budget-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rows) }); await loadBudgetItems() }
     } catch (err) {
       setErrMsg('CSV import failed: ' + err.message)
       setTimeout(() => setErrMsg(''), 4000)
@@ -2329,7 +2321,7 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
   async function saveForecastEac(budgetItemId, value) {
     const val = value === '' ? null : parseFloat(value)
-    await supabase.from('budget_items').update({ forecast_eac: val }).eq('id', budgetItemId)
+    await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: budgetItemId, fields: { forecast_eac: val } }) })
     setBudgetItems(prev => prev.map(b => b.id === budgetItemId ? { ...b, forecast_eac: val } : b))
   }
 

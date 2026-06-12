@@ -552,21 +552,21 @@ export default function JobDetail() {
     e.preventDefault()
     setSubmittingDc(true)
     const { data: { session } } = await supabase.auth.getSession()
-    let receipt_url = null
-    if (dcFile) {
-      const ext = dcFile.name.split('.').pop()
-      const path = `${id}/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('receipts').upload(path, dcFile)
-      if (!uploadError) receipt_url = path
-    }
-    await supabase.from('direct_costs').insert({
+    const rowData = {
       job_id: id, submitted_by: session.user.id,
       cost_date: dcForm.cost_date, description: dcForm.description,
       category: dcForm.category, amount: parseFloat(dcForm.amount),
-      receipt_url, notes: dcForm.notes || null,
-      budget_item_id: dcForm.budget_item_id || null,
+      notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
       status: 'approved',
-    })
+    }
+    if (dcFile) {
+      const formData = new FormData()
+      formData.append('file', dcFile)
+      formData.append('data', JSON.stringify(rowData))
+      await fetch('/api/direct-costs', { method: 'POST', body: formData })
+    } else {
+      await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    }
     setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
     setDcFile(null)
     setShowDcForm(false)
@@ -611,12 +611,12 @@ export default function JobDetail() {
     if (!valid.length) return
     setImportingCsv(true)
     const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('direct_costs').insert(valid.map(r => ({
+    await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid.map(r => ({
       job_id: id, submitted_by: session.user.id,
       cost_date: r.cost_date, description: r.description,
       category: r.category, amount: r.amount,
       notes: r.notes || null, budget_item_id: null, status: 'approved',
-    })))
+    }))) })
     setShowCsvImport(false); setCsvRows([]); setImportingCsv(false)
     await loadDirectCosts()
   }
@@ -641,9 +641,9 @@ export default function JobDetail() {
           `)
         )
       }
-      await supabase.from('direct_costs').delete().eq('id', costId)
+      await fetch('/api/direct-costs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId }) })
     } else {
-      await supabase.from('direct_costs').update({ status, notes: notes || null }).eq('id', costId)
+      await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status, notes: notes || null }) })
     }
     setRejectingCostId(null)
     setCostRejectNote('')
@@ -653,7 +653,7 @@ export default function JobDetail() {
 
   async function assignDcBudgetItem(costId, budgetItemId) {
     setAssigningCostId(costId)
-    await supabase.from('direct_costs').update({ budget_item_id: budgetItemId || null }).eq('id', costId)
+    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
     await loadDirectCosts()
     setAssigningCostId(null)
   }
@@ -992,7 +992,7 @@ export default function JobDetail() {
       return
     }
     const now = new Date().toISOString()
-    await supabase.from('direct_costs').update({ drawn_application_id: appId, drawn_at: now }).eq('id', costId)
+    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, drawn_application_id: appId, drawn_at: now }) })
     setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: appId, drawn_at: now } : c))
     const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
     const addAmt = Math.round(Number(cost.amount) * markupMultiplier * 100) / 100
@@ -1011,7 +1011,7 @@ export default function JobDetail() {
   }
 
   async function undrawDirectCost(costId) {
-    await supabase.from('direct_costs').update({ drawn_application_id: null, drawn_at: null }).eq('id', costId)
+    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, drawn_application_id: null, drawn_at: null }) })
     setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: null, drawn_at: null } : c))
   }
 

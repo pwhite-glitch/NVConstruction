@@ -117,6 +117,7 @@ export default function Dashboard() {
   const [billingPage, setBillingPage] = useState(1)
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
   const [showNewJobForm, setShowNewJobForm] = useState(false)
+  const [showCompletedJobs, setShowCompletedJobs] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -2026,10 +2027,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
-                  <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setShowCompletedJobs(false)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedJobs ? '#e8590c' : '#555' }}>Active</button>
+                    <button onClick={() => setShowCompletedJobs(true)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
+                  </div>
+                  {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
-                  </button>
+                  </button>}
                 </div>
 
                 {showNewJobForm && (
@@ -2129,38 +2134,42 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   </div>
                 )}
 
-                {jobs.length === 0 ? <div style={s.emptyMsg}>No jobs yet.</div> : jobs.map(j => {
-                  const billed = billedByJob[j.id] || 0
-                  const contract = j.contract_value ? parseFloat(j.contract_value) : 0
-                  const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
-                  const over = pct > 100
-                  return (
-                    <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                          <p style={s.meta}>{j.location}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                {(() => {
+                  const visibleJobs = jobs.filter(j => showCompletedJobs ? j.status === 'complete' : j.status !== 'complete')
+                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showCompletedJobs ? 'No completed jobs.' : 'No active jobs.'}</div>
+                  return visibleJobs.map(j => {
+                    const billed = billedByJob[j.id] || 0
+                    const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                    const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
+                    const over = pct > 100
+                    return (
+                      <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                            <p style={s.meta}>{j.location}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {contract > 0 && (
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
+                                <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
+                              </div>
+                            )}
+                            {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
+                            <span style={s.jobBadge(j.status)}>{j.status}</span>
+                            <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          {contract > 0 && (
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
-                              <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
-                            </div>
-                          )}
-                          {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
-                          <span style={s.jobBadge(j.status)}>{j.status}</span>
-                          <span style={{ color: '#555', fontSize: '18px' }}>›</span>
-                        </div>
+                        {contract > 0 && (
+                          <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '10px' }}>
+                            <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
+                          </div>
+                        )}
                       </div>
-                      {contract > 0 && (
-                        <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '10px' }}>
-                          <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                })()}
               </>
             )}
 

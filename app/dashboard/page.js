@@ -898,7 +898,7 @@ export default function Dashboard() {
   async function loadEstimates() {
     const { data: { session } } = await supabase.auth.getSession()
     let q = supabase.from('estimates').select('*, estimate_line_items(*)').order('created_at', { ascending: false })
-    if (profile?.role === 'apm') q = q.contains('allowed_users', [session.user.id])
+    // APMs see all estimates (not filtered by allowed_users)
     const { data } = await q
     setEstimates((data || []).map(e => ({ ...e, estimate_line_items: (e.estimate_line_items || []).sort((a, b) => a.sort_order - b.sort_order) })))
   }
@@ -2682,7 +2682,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''} · {estimates.filter(e => e.status === 'won').length} won · {estimates.filter(e => e.status === 'lost').length} lost</p>
-                  {profile?.role === 'pm' && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
+                  {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
                 {showNewEstimate && (
@@ -2893,7 +2893,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               })()}
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: convertingEst === est.id ? '1rem' : 0 }}>
                                 <button style={s.btnSm('orange')} onClick={() => generateEstimatePDF(est)}>Export PDF</button>
-                                {profile?.role === 'pm' && <>
+                                {['pm', 'apm'].includes(profile?.role) && <>
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
                                     setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft' })

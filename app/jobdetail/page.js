@@ -5177,6 +5177,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {billingSubmissions.map(b => {
                 const isEditing = editingBilling === b.id
                 const isOwnerPay = job?.payment_type === 'owner_pays_direct'
+                // Cumulative % billed to date for this sub
+                const matchContract = contracts.find(c => c.vendor_name?.toLowerCase() === b.company_name?.toLowerCase())
+                const contractVal = Number(matchContract?.adjusted_contract_value || matchContract?.contract_value || 0)
+                const companySubs = billingSubmissions
+                  .filter(s => s.company_name === b.company_name && s.status !== 'rejected')
+                  .sort((a, z) => new Date(a.submitted_at) - new Date(z.submitted_at))
+                let cumAmt = 0
+                for (const s of companySubs) {
+                  cumAmt += Number(s.amount_billed || 0)
+                  if (s.id === b.id) break
+                }
+                const cumPct = contractVal > 0 ? Math.round(cumAmt / contractVal * 1000) / 10 : null
                 return (
                   <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.ready_to_pay ? '1px solid #1a4a1a' : b.nv_cuts_check ? '1px solid #4a2200' : '1px solid #1e1e1e' }}>
                     <div style={{ ...s.billingEntryHeader, background: b.ready_to_pay ? '#0a1a0a' : b.nv_cuts_check ? '#140a00' : '#0f0f0f' }}>
@@ -5200,7 +5212,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>{drawRequests.find(d => d.id === b.draw_request_id)?.title || 'Draw'}</span>
                             : b.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                           }
-                          {b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
+                          {cumPct != null ? ` · ${cumPct}% billed to date` : b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
                           {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
                         </div>
                         {drawRequests.length > 0 && (

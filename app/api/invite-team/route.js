@@ -216,9 +216,19 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
-  const { user_id } = await request.json()
-  if (!user_id) return Response.json({ error: 'user_id required' }, { status: 400 })
-  const { error } = await adminSupabase.auth.admin.deleteUser(user_id)
-  if (error) return Response.json({ error: error.message }, { status: 400 })
-  return Response.json({ ok: true })
+  try {
+    const { user_id } = await request.json()
+    if (!user_id) return Response.json({ error: 'user_id required' }, { status: 400 })
+
+    // Clean up dependent records before deleting the auth user to avoid FK constraint errors
+    await adminSupabase.from('pm_job_assignments').delete().eq('user_id', user_id)
+    await adminSupabase.from('profiles').delete().eq('id', user_id)
+
+    const { error } = await adminSupabase.auth.admin.deleteUser(user_id)
+    if (error) return Response.json({ error: error.message }, { status: 400 })
+
+    return Response.json({ ok: true })
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
 }

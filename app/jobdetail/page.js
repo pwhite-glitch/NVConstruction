@@ -6299,12 +6299,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const linkedDrawId = activeAia?.linked_draw_request_id
                               const pFrom = activeAia?.period_from
                               const pTo = activeAia?.period_to
+                              // Hide costs that have been drawn to an application where payment has been received
+                              const isPaidOut = c => {
+                                if (!c.drawn_application_id) return false
+                                const drawnApp = aiaApplications.find(a => a.id === c.drawn_application_id)
+                                return !!drawnApp?.payment_received
+                              }
                               const thisPeriod = linkedDrawId
-                                ? periodDirectCosts.filter(c => c.draw_request_id === linkedDrawId)
-                                : periodDirectCosts.filter(c => pFrom && pTo ? c.cost_date >= pFrom && c.cost_date <= pTo : true)
+                                ? periodDirectCosts.filter(c => c.draw_request_id === linkedDrawId && !isPaidOut(c))
+                                : periodDirectCosts.filter(c => !isPaidOut(c) && (pFrom && pTo ? c.cost_date >= pFrom && c.cost_date <= pTo : true))
+                              // Other period: show all previous costs (drawn or not) unless paid out
                               const otherPeriod = linkedDrawId
-                                ? periodDirectCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
-                                : periodDirectCosts.filter(c => !c.drawn_application_id && !c.draw_request_id && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
+                                ? periodDirectCosts.filter(c => !c.draw_request_id && !isPaidOut(c) && c.drawn_application_id !== activeAia?.id && !(pFrom && pTo && c.cost_date >= pFrom && c.cost_date <= pTo))
+                                : periodDirectCosts.filter(c => !c.draw_request_id && !isPaidOut(c) && pFrom && pTo && (c.cost_date < pFrom || c.cost_date > pTo))
                               const renderCostRow = (c, i, list) => {
                                 const drawnToThisApp = c.drawn_application_id === activeAia?.id
                                 const drawnElsewhere = !!c.drawn_application_id && !drawnToThisApp
@@ -6361,9 +6368,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {otherPeriod.length > 0 && (
                                   <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
-                                      {linkedDrawId ? 'Other undrawn costs' : 'Previous period costs — undrawn'} — ${otherPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({otherPeriod.length} item{otherPeriod.length !== 1 ? 's' : ''})
+                                      {linkedDrawId ? 'Other costs' : 'Previous period costs'} — ${otherPeriod.filter(c => !c.drawn_application_id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} undrawn · {otherPeriod.filter(c => c.drawn_application_id).length} drawn elsewhere
                                     </p>
-                                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>{linkedDrawId ? 'Approved costs not assigned to any draw request.' : 'Costs from outside this application period.'} Draw them here to include in this billing.</p>
+                                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>Costs from outside this application period. Undrawn costs can be pulled into this billing. Costs already drawn to another application are shown for reference.</p>
                                     {otherPeriod.map((c, i) => renderCostRow(c, i, otherPeriod))}
                                   </div>
                                 )}

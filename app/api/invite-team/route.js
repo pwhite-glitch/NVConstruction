@@ -220,8 +220,14 @@ export async function DELETE(request) {
     const { user_id } = await request.json()
     if (!user_id) return Response.json({ error: 'user_id required' }, { status: 400 })
 
-    // Clean up dependent records before deleting the auth user to avoid FK constraint errors
+    // Remove job assignments
     await adminSupabase.from('pm_job_assignments').delete().eq('user_id', user_id)
+    // Null out FK references so historical records are preserved
+    await adminSupabase.from('direct_costs').update({ submitted_by: null }).eq('submitted_by', user_id)
+    await adminSupabase.from('job_photos').update({ super_id: null }).eq('super_id', user_id)
+    await adminSupabase.from('rfis').update({ super_id: null }).eq('super_id', user_id)
+    await adminSupabase.from('deliveries').update({ super_id: null }).eq('super_id', user_id)
+    await adminSupabase.from('milestones').update({ created_by: null }).eq('created_by', user_id)
     await adminSupabase.from('profiles').delete().eq('id', user_id)
 
     const { error } = await adminSupabase.auth.admin.deleteUser(user_id)

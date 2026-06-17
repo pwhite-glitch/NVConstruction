@@ -151,7 +151,9 @@ export default function JobDetail() {
   const [createBillingForm, setCreateBillingForm] = useState(emptyCreateBilling)
   const [creatingBilling, setCreatingBilling] = useState(false)
   const [createBillingError, setCreateBillingError] = useState('')
+  const [createBillingFile, setCreateBillingFile] = useState(null)
   const [editingBilling, setEditingBilling] = useState(null)
+  const [editBillingFile, setEditBillingFile] = useState(null)
 
   // Draw requests state
   const [drawRequests, setDrawRequests] = useState([])
@@ -2379,7 +2381,7 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     const amtBilled = parseFloat(createBillingForm.amount_billed) || 0
     const retPct = parseFloat(createBillingForm._retainage_pct) || 0
     const retHeld = Math.round(amtBilled * retPct / 100 * 100) / 100
-    const { error } = await supabase.from('billing_submissions').insert({
+    const rowData = {
       job_id: id,
       company_name: createBillingForm.company_name,
       contact_name: createBillingForm.contact_name || null,
@@ -2394,12 +2396,23 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       status,
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
-    })
-    if (error) { setCreateBillingError(error.message) }
+    }
+    let res, result
+    if (createBillingFile) {
+      const formData = new FormData()
+      formData.append('file', createBillingFile)
+      formData.append('data', JSON.stringify(rowData))
+      res = await fetch('/api/billing-entry', { method: 'POST', body: formData })
+    } else {
+      res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    }
+    result = await res.json()
+    if (result.error) { setCreateBillingError(result.error) }
     else {
       setCreateBillingError('')
       setShowCreateBilling(false)
       setCreateBillingForm(emptyCreateBilling)
+      setCreateBillingFile(null)
       await loadBillingForJob()
     }
     setCreatingBilling(false)
@@ -2416,27 +2429,33 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     const editAmt = parseFloat(editBillingForm.amount_billed) || 0
     const retPctRaw = parseFloat(editBillingForm.retainage_pct)
     const editRetPct = isNaN(retPctRaw) ? 0 : retPctRaw
-    const res = await fetch('/api/billing-entry', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: editingBilling,
-        company_name: editBillingForm.company_name,
-        contact_name: editBillingForm.contact_name || null,
-        contact_info: editBillingForm.contact_info || null,
-        amount_billed: editAmt,
-        retainage_pct: editRetPct,
-        retainage_held: Math.round(editAmt * editRetPct / 100 * 100) / 100,
-        pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
-        work_description: editBillingForm.work_description || null,
-        billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
-        status: editBillingForm.status,
-        reviewed_at: editBillingForm.status !== 'pending' ? now : null,
-      }),
-    })
+    const patchData = {
+      id: editingBilling,
+      company_name: editBillingForm.company_name,
+      contact_name: editBillingForm.contact_name || null,
+      contact_info: editBillingForm.contact_info || null,
+      amount_billed: editAmt,
+      retainage_pct: editRetPct,
+      retainage_held: Math.round(editAmt * editRetPct / 100 * 100) / 100,
+      pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
+      work_description: editBillingForm.work_description || null,
+      billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
+      status: editBillingForm.status,
+      reviewed_at: editBillingForm.status !== 'pending' ? now : null,
+    }
+    let res
+    if (editBillingFile) {
+      const formData = new FormData()
+      formData.append('file', editBillingFile)
+      formData.append('data', JSON.stringify(patchData))
+      res = await fetch('/api/billing-entry', { method: 'PATCH', body: formData })
+    } else {
+      res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
+    }
     const result = await res.json()
     if (result.error) { alert('Save error: ' + result.error); return }
     setEditingBilling(null)
+    setEditBillingFile(null)
     await loadBillingForJob()
   }
 
@@ -5089,6 +5108,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <label style={s.label}>Work description</label>
                       <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
+                      <div style={{ marginTop: '10px' }}>
+                        <label style={s.label}>Attachment (PDF, image, etc.)</label>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#ccc' }} onChange={e => setCreateBillingFile(e.target.files[0] || null)} />
+                        {createBillingFile && <p style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{createBillingFile.name}</p>}
+                      </div>
                     </div>
                     <div>
                       <div style={{ marginBottom: '12px' }}>
@@ -5141,7 +5165,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <button style={{ ...s.btn, opacity: (creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed) ? 0.4 : 1 }} disabled={creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed} onClick={createBilling}>
                       {creatingBilling ? 'Saving...' : createBillingForm.auto_approve ? 'Save & approve' : 'Save as pending'}
                     </button>
-                    <button style={s.btnGray} onClick={() => { setShowCreateBilling(false); setCreateBillingForm(emptyCreateBilling); setCreateBillingError('') }}>Cancel</button>
+                    <button style={s.btnGray} onClick={() => { setShowCreateBilling(false); setCreateBillingForm(emptyCreateBilling); setCreateBillingError(''); setCreateBillingFile(null) }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -5325,6 +5349,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Attachment (PDF, image, etc.)</label>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#ccc' }} onChange={e => setEditBillingFile(e.target.files[0] || null)} />
+                          {editBillingFile && <p style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{editBillingFile.name}</p>}
+                        </div>
+                        <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Status</label>
                           <select style={s.input} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
                             <option value="pending">Pending</option>
@@ -5334,7 +5363,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button style={s.btnSmallOrange} onClick={updateBillingEntry}>Save changes</button>
-                          <button style={s.btnSmall} onClick={() => setEditingBilling(null)}>Cancel</button>
+                          <button style={s.btnSmall} onClick={() => { setEditingBilling(null); setEditBillingFile(null) }}>Cancel</button>
                         </div>
                         {billingSovData[b.id] && billingSovData[b.id].length > 0 && (
                           <div style={{ marginTop: '1.25rem', borderTop: '1px solid #1e1e1e', paddingTop: '1rem' }}>

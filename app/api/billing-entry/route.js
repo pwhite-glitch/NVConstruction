@@ -5,14 +5,75 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-export async function PATCH(request) {
+async function uploadBillingDoc(file, jobId) {
+  const ext = file.name.split('.').pop()
+  const path = `${jobId}/${Date.now()}.${ext}`
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const { error } = await adminSupabase.storage
+    .from('billing-docs')
+    .upload(path, buffer, { contentType: file.type })
+  if (error) throw new Error('File upload failed: ' + error.message)
+  return path
+}
+
+export async function POST(request) {
   try {
-    const { id, ...fields } = await request.json()
-    if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const contentType = request.headers.get('content-type') || ''
+    let row = {}
+    let doc_url = null
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      row = JSON.parse(formData.get('data') || '{}')
+      if (file && file.size > 0) {
+        doc_url = await uploadBillingDoc(file, row.job_id)
+      }
+    } else {
+      row = await request.json()
+    }
 
     const { error } = await adminSupabase
       .from('billing_submissions')
-      .update(fields)
+      .insert({ ...row, doc_url })
+
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ ok: true })
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const contentType = request.headers.get('content-type') || ''
+    let id = null
+    let fields = {}
+    let doc_url = undefined
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      const parsed = JSON.parse(formData.get('data') || '{}')
+      id = parsed.id
+      const { id: _id, ...rest } = parsed
+      fields = rest
+      if (file && file.size > 0) {
+        doc_url = await uploadBillingDoc(file, fields.job_id)
+      }
+    } else {
+      const body = await request.json()
+      id = body.id
+      const { id: _id, ...rest } = body
+      fields = rest
+    }
+
+    if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+
+    const update = doc_url !== undefined ? { ...fields, doc_url } : fields
+    const { error } = await adminSupabase
+      .from('billing_submissions')
+      .update(update)
       .eq('id', id)
 
     if (error) return Response.json({ error: error.message }, { status: 500 })

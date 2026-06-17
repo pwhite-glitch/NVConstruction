@@ -132,6 +132,7 @@ export default function Dashboard() {
   // Billing edit state
   const [editingBilling, setEditingBilling] = useState(null)
   const [editBillingForm, setEditBillingForm] = useState({})
+  const [editBillingFile, setEditBillingFile] = useState(null)
 
   // Manual sub add state
   const [showAddSubManual, setShowAddSubManual] = useState(false)
@@ -572,7 +573,8 @@ export default function Dashboard() {
 
   async function saveBillingEdit() {
     const now = new Date().toISOString()
-    await supabase.from('billing_submissions').update({
+    const patchData = {
+      id: editingBilling,
       company_name: editBillingForm.company_name,
       contact_name: editBillingForm.contact_name || null,
       contact_info: editBillingForm.contact_info || null,
@@ -581,8 +583,17 @@ export default function Dashboard() {
       work_description: editBillingForm.work_description || null,
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
-    }).eq('id', editingBilling)
+    }
+    if (editBillingFile) {
+      const formData = new FormData()
+      formData.append('file', editBillingFile)
+      formData.append('data', JSON.stringify(patchData))
+      await fetch('/api/billing-entry', { method: 'PATCH', body: formData })
+    } else {
+      await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
+    }
     setEditingBilling(null)
+    setEditBillingFile(null)
     await loadAll()
   }
 
@@ -1471,6 +1482,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               <label style={s.label}>Work description</label>
                               <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={editBillingForm.work_description} onChange={e => setEditBillingForm(f => ({ ...f, work_description: e.target.value }))} />
                             </div>
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={s.label}>Attachment (PDF, image, etc.)</label>
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#ccc' }} onChange={e => setEditBillingFile(e.target.files[0] || null)} />
+                              {editBillingFile && <p style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{editBillingFile.name}</p>}
+                            </div>
                             <div style={{ marginBottom: '1rem' }}>
                               <label style={s.label}>Status</label>
                               <select style={s.input} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
@@ -1481,7 +1497,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <button onClick={saveBillingEdit} style={s.btnSm('orange')}>Save changes</button>
-                              <button onClick={() => setEditingBilling(null)} style={s.btnSm('gray')}>Cancel</button>
+                              <button onClick={() => { setEditingBilling(null); setEditBillingFile(null) }} style={s.btnSm('gray')}>Cancel</button>
                             </div>
                           </>
                         ) : (

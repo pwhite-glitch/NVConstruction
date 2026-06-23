@@ -809,8 +809,8 @@ export default function JobDetail() {
         const budgetAmt = Number(line.budget_amount || 0)
         if (budgetAmt === 0) return line
         const prevDollar = Number(line.dollar_this) || 0
-        const newDollar = r2(Math.min(budgetAmt, prevDollar + addAmt))
-        const newPct = newDollar / budgetAmt * 100
+        const newDollar = r2(prevDollar + addAmt)
+        const newPct = budgetAmt > 0 ? newDollar / budgetAmt * 100 : 0
         return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
       })
       return recalcPinnedLines(updated, pinnedLineIds)

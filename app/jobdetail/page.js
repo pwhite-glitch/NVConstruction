@@ -1023,10 +1023,11 @@ export default function JobDetail() {
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const subNvTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+    const baseContract = Number(job.contract_value || 0)
     const contractSumToDate = job.nv_role === 'sub'
-      ? (subNvTotal > 0 ? subNvTotal : Number(job.contract_value || 0))
-      : Number(job.contract_value || 0)
-    const origContract = job.nv_role === 'sub' ? contractSumToDate : contractSumToDate - approvedCOsVal
+      ? (subNvTotal > 0 ? subNvTotal : baseContract)
+      : baseContract + approvedCOsVal
+    const origContract = job.nv_role === 'sub' ? contractSumToDate : baseContract
     const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
     const genDate = new Date().toLocaleDateString()
     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -2117,12 +2118,6 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const { error } = await supabase.from('prime_change_orders').update({ status }).eq('id', coId)
     if (error) { alert('Error updating prime CO: ' + error.message); return }
     if (status === 'approved') {
-      if (coAmount != null) {
-        const newVal = (Number(job.contract_value) || 0) + Number(coAmount)
-        await supabase.from('jobs').update({ contract_value: newVal }).eq('id', id)
-        setJob(j => ({ ...j, contract_value: newVal }))
-        setForm(f => ({ ...f, contract_value: newVal }))
-      }
       const co = primeCOs.find(c => c.id === coId)
       const linkedSovItems = (co?.sov || []).filter(r => r.budget_item_id && r.amount)
       for (const sovItem of linkedSovItems) {
@@ -2146,10 +2141,6 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const co = primeCOs.find(c => c.id === coId)
     await supabase.from('prime_change_orders').delete().eq('id', coId)
     if (co?.status === 'approved') {
-      const newVal = (Number(job.contract_value) || 0) - Number(co.amount)
-      await supabase.from('jobs').update({ contract_value: newVal }).eq('id', id)
-      setJob(j => ({ ...j, contract_value: newVal }))
-      setForm(f => ({ ...f, contract_value: newVal }))
       for (const sovItem of co.sov || []) {
         if (!sovItem.budget_item_id || !sovItem.amount) continue
         const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
@@ -2178,13 +2169,6 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }).eq('id', editingPrimeCOId)
     setSavingPrimeCO(false)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
-    if (co?.status === 'approved' && Number(co.amount) !== newAmount) {
-      const diff = newAmount - Number(co.amount)
-      const newVal = (Number(job.contract_value) || 0) + diff
-      await supabase.from('jobs').update({ contract_value: newVal }).eq('id', id)
-      setJob(j => ({ ...j, contract_value: newVal }))
-      setForm(f => ({ ...f, contract_value: newVal }))
-    }
     setEditingPrimeCOId(null)
     await loadPrimeCOs()
   }
@@ -2518,10 +2502,11 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
 
       const approvedCOsTotal = (primeCOData || []).reduce((a, co) => a + Number(co.amount || 0), 0)
       const subNvTotalReport = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+      const baseContractReport = Number(job.contract_value || 0)
       const contractSumToDate = job.nv_role === 'sub'
-        ? (subNvTotalReport > 0 ? subNvTotalReport : Number(job.contract_value || 0))
-        : Number(job.contract_value || 0)
-      const origContract = job.nv_role === 'sub' ? contractSumToDate : contractSumToDate - approvedCOsTotal
+        ? (subNvTotalReport > 0 ? subNvTotalReport : baseContractReport)
+        : baseContractReport + approvedCOsTotal
+      const origContract = job.nv_role === 'sub' ? contractSumToDate : baseContractReport
 
       const totalBilledAIA = (aiaApps || []).reduce((a, app) => {
         // Use last app's completed value — we'll calc from lines if needed; use billed from apps status
@@ -2944,7 +2929,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const isSub = job.nv_role === 'sub'
               const subTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
               const approvedCOs = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-              const total = isSub ? (subTotal > 0 ? subTotal : parseFloat(job.contract_value || 0)) : parseFloat(job.contract_value || 0)
+              const baseVal = parseFloat(job.contract_value || 0)
+              const total = isSub ? (subTotal > 0 ? subTotal : baseVal) : baseVal + approvedCOs
               const hasValue = isSub ? (subTotal > 0 || !!job.contract_value) : !!job.contract_value
               return (
                 <>
@@ -2954,7 +2940,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   )}
                   {!isSub && approvedCOs !== 0 && (
                     <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
-                      ${(total - approvedCOs).toLocaleString()} base + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
+                      ${baseVal.toLocaleString()} base + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
                     </div>
                   )}
                 </>
@@ -6040,7 +6026,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const isSub = job.nv_role === 'sub'
               const approvedCOsTotal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
               const subContractsTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
-              const contractSumToDate = isSub ? (subContractsTotal > 0 ? subContractsTotal : Number(job.contract_value || 0)) : Number(job.contract_value || 0)
+              const baseContractBanner = Number(job.contract_value || 0)
+              const contractSumToDate = isSub ? (subContractsTotal > 0 ? subContractsTotal : baseContractBanner) : baseContractBanner + approvedCOsTotal
               const subUsingJobValue = isSub && subContractsTotal === 0
               const sovTotal = budgetItems.reduce((a, b) => a + Number(b.owner_amount ?? b.budget_amount ?? 0), 0)
               const diff = contractSumToDate - sovTotal
@@ -6059,7 +6046,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     ) : (
                       <>
                         <span style={{ color: '#888' }}>Original contract</span>
-                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${(Number(job.contract_value || 0) - approvedCOsTotal).toLocaleString()}</span>
+                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${baseContractBanner.toLocaleString()}</span>
                         {approvedCOsTotal !== 0 && <>
                           <span style={{ color: '#888' }}>Approved prime COs</span>
                           <span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>
@@ -6524,7 +6511,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
                                   const subNvTotalAia = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
                                   const isSubAia = job.nv_role === 'sub'
-                                  const contractSumToDate = isSubAia ? (subNvTotalAia > 0 ? subNvTotalAia : Number(job.contract_value || 0)) : Number(job.contract_value || 0)
+                                  const baseContractAia = Number(job.contract_value || 0)
+                                  const contractSumToDate = isSubAia ? (subNvTotalAia > 0 ? subNvTotalAia : baseContractAia) : baseContractAia + approvedCOsVal
                                   const totalSov = aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
                                   const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01
                                   const r2 = n => Math.round(n * 100) / 100
@@ -6559,7 +6547,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               <><span style={{ color: '#888' }}>Contract sum</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${contractSumToDate.toLocaleString()}</span></>
                                             ) : (
                                               <>
-                                                <span style={{ color: '#888' }}>Original contract</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${(Number(job.contract_value || 0) - approvedCOsHere).toLocaleString()}</span>
+                                                <span style={{ color: '#888' }}>Original contract</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${baseContractAia.toLocaleString()}</span>
                                                 {approvedCOsHere !== 0 && <><span style={{ color: '#888' }}>Approved COs</span><span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsHere >= 0 ? '+' : '-'}${Math.abs(approvedCOsHere).toLocaleString()}</span></>}
                                               </>
                                             )}

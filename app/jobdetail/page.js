@@ -799,16 +799,17 @@ export default function JobDetail() {
   }
 
   function applyAmountsToAiaLines(byBudgetItem, billingId) {
+    const r2 = n => Math.round(n * 100) / 100
     const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
     setAiaLines(lines => {
       const updated = lines.map(line => {
         const rawAmt = byBudgetItem[line.budget_item_id]
         if (!rawAmt) return line
-        const addAmt = Math.round(rawAmt * markupMultiplier * 100) / 100
+        const addAmt = r2(rawAmt * markupMultiplier)
         const budgetAmt = Number(line.budget_amount || 0)
         if (budgetAmt === 0) return line
         const prevDollar = Number(line.dollar_this) || 0
-        const newDollar = Math.min(budgetAmt, prevDollar + addAmt)
+        const newDollar = r2(Math.min(budgetAmt, prevDollar + addAmt))
         const newPct = newDollar / budgetAmt * 100
         return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
       })
@@ -940,7 +941,8 @@ export default function JobDetail() {
     }).eq('id', activeAia.id)
     for (const line of aiaLines) {
       const scheduled = Number(line.budget_amount || 0)
-      const dollarToSave = line.dollar_this !== undefined ? Number(line.dollar_this) : null
+      const dollarRaw = line.dollar_this !== undefined ? Number(line.dollar_this) : null
+      const dollarToSave = dollarRaw != null ? Math.round(dollarRaw * 100) / 100 : null
       const pctToSave = scheduled > 0 && dollarToSave != null
         ? dollarToSave / scheduled * 100
         : parseFloat(line.pct_this) || 0

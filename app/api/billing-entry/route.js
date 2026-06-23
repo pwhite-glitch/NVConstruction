@@ -70,6 +70,8 @@ export async function PATCH(request) {
 
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
+    // amount_billed is immutable once submitted — never allow it to be overwritten
+    delete fields.amount_billed
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
     const { error } = await adminSupabase
       .from('billing_submissions')

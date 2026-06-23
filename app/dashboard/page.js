@@ -578,7 +578,6 @@ export default function Dashboard() {
       company_name: editBillingForm.company_name,
       contact_name: editBillingForm.contact_name || null,
       contact_info: editBillingForm.contact_info || null,
-      amount_billed: parseFloat(editBillingForm.amount_billed),
       pct_complete: editBillingForm.pct_complete !== '' ? parseFloat(editBillingForm.pct_complete) : null,
       work_description: editBillingForm.work_description || null,
       status: editBillingForm.status,
@@ -1475,7 +1474,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             </div>
                             <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                               <div><label style={s.label}>Contact info</label><input style={s.input} value={editBillingForm.contact_info} onChange={e => setEditBillingForm(f => ({ ...f, contact_info: e.target.value }))} /></div>
-                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" style={s.input} value={editBillingForm.amount_billed} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} /></div>
+                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" style={{ ...s.input, color: '#888', cursor: 'default' }} value={editBillingForm.amount_billed} readOnly tabIndex={-1} /></div>
                               <div><label style={s.label}>% complete</label><input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} /></div>
                             </div>
                             <div style={{ marginBottom: '12px' }}>

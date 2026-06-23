@@ -2412,7 +2412,7 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       return
     }
     const now = new Date().toISOString()
-    const editAmt = parseFloat(editBillingForm.amount_billed) || 0
+    const origAmt = parseFloat(editBillingForm.amount_billed) || 0
     const retPctRaw = parseFloat(editBillingForm.retainage_pct)
     const editRetPct = isNaN(retPctRaw) ? 0 : retPctRaw
     const patchData = {
@@ -2420,9 +2420,8 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
       company_name: editBillingForm.company_name,
       contact_name: editBillingForm.contact_name || null,
       contact_info: editBillingForm.contact_info || null,
-      amount_billed: editAmt,
       retainage_pct: editRetPct,
-      retainage_held: Math.round(editAmt * editRetPct / 100 * 100) / 100,
+      retainage_held: Math.round(origAmt * editRetPct / 100 * 100) / 100,
       pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
       work_description: editBillingForm.work_description || null,
       billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
@@ -5322,7 +5321,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Amount billed ($)</label>
-                            <input type="number" step="0.01" style={s.input} value={editBillingForm.amount_billed} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
+                            <input type="number" step="0.01" style={{ ...s.input, color: '#888', cursor: 'default' }} value={editBillingForm.amount_billed} readOnly tabIndex={-1} />
                           </div>
                           <div>
                             <label style={s.label}>Retainage %</label>

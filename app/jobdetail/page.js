@@ -4794,7 +4794,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
 
               {showCreateDraw && (() => {
-                const undrawnApproved = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id)
+                const undrawnApproved = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id && !c.drawn_application_id)
                 return (
                   <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
                     <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create new draw request</p>
@@ -4855,7 +4855,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {drawRequests.map(dr => {
                 const isOpen = expandedDrawId === dr.id
                 const taggedCosts = directCosts.filter(c => c.draw_request_id === dr.id)
-                const undrawnCosts = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id)
+                const undrawnCosts = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id && !c.drawn_application_id)
                 const drawBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
                 const taggedTotal = taggedCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
                 return (

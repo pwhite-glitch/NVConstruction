@@ -290,6 +290,9 @@ export default function JobDetail() {
   const [savingSubmittal, setSavingSubmittal] = useState(false)
   const [expandedSubmittalId, setExpandedSubmittalId] = useState(null)
   const [submittalReviewNote, setSubmittalReviewNote] = useState({})
+  const [submittalFile, setSubmittalFile] = useState(null)
+  const [submittalDocFile, setSubmittalDocFile] = useState({})
+  const [uploadingSubmittalDoc, setUploadingSubmittalDoc] = useState(null)
 
   // Prelim notices state
   const [prelimNotices, setPrelimNotices] = useState([])
@@ -549,6 +552,11 @@ export default function JobDetail() {
 
   async function openDcReceiptUrl(path) {
     const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 60)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function openSubmittalDocUrl(path) {
+    const { data } = await supabase.storage.from('submittal-docs').createSignedUrl(path, 60)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -1584,13 +1592,17 @@ ${sovLines.length > 0 ? `
   async function addSubmittal() {
     if (!submittalForm.title.trim()) return
     setSavingSubmittal(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    await fetch('/api/submittals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...submittalForm, job_id: id, submitted_by_sub_id: submittalForm.submitted_by_sub_id || null }),
-    })
+    const payload = { ...submittalForm, job_id: id, submitted_by_sub_id: submittalForm.submitted_by_sub_id || null }
+    if (submittalFile) {
+      const fd = new FormData()
+      fd.append('file', submittalFile)
+      fd.append('data', JSON.stringify(payload))
+      await fetch('/api/submittals', { method: 'POST', body: fd })
+    } else {
+      await fetch('/api/submittals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    }
     setSubmittalForm({ title: '', type: 'shop_drawing', spec_section: '', submitted_by_sub_id: '', submitted_by_company: '', notes: '' })
+    setSubmittalFile(null)
     setShowAddSubmittal(false)
     setSavingSubmittal(false)
     await loadSubmittals()
@@ -7199,6 +7211,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   </div>
                   <div style={{ marginBottom: '10px' }}><label style={s.label}>Notes</label><input style={s.input} value={submittalForm.notes} onChange={e => setSubmittalForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Attach document (PDF, image)</label>
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setSubmittalFile(e.target.files[0])} />
+                    {submittalFile && <p style={{ fontSize: '11px', color: '#4ade80', margin: '4px 0 0' }}>{submittalFile.name}</p>}
+                  </div>
                   <button style={{ ...s.btn, opacity: savingSubmittal || !submittalForm.title ? 0.6 : 1 }} disabled={savingSubmittal || !submittalForm.title} onClick={addSubmittal}>{savingSubmittal ? 'Saving...' : 'Add Submittal'}</button>
                 </div>
               )}
@@ -7224,6 +7241,37 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {isExp && (
                       <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
                         {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{sub.notes}</p>}
+                        {/* Document */}
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Document</label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {sub.file_url && (
+                              <button style={s.btnSmall} onClick={() => openSubmittalDocUrl(sub.file_url)}>View document</button>
+                            )}
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx"
+                              style={{ ...s.input, padding: '6px 12px', flex: 1, margin: 0, fontSize: '12px' }}
+                              onChange={e => setSubmittalDocFile(prev => ({ ...prev, [sub.id]: e.target.files[0] }))}
+                            />
+                            {submittalDocFile[sub.id] && (
+                              <button
+                                style={{ ...s.btnSmallOrange, opacity: uploadingSubmittalDoc === sub.id ? 0.6 : 1 }}
+                                disabled={uploadingSubmittalDoc === sub.id}
+                                onClick={async () => {
+                                  setUploadingSubmittalDoc(sub.id)
+                                  const fd = new FormData()
+                                  fd.append('file', submittalDocFile[sub.id])
+                                  fd.append('data', JSON.stringify({ id: sub.id, job_id: sub.job_id }))
+                                  await fetch('/api/submittals', { method: 'PATCH', body: fd })
+                                  setSubmittalDocFile(prev => { const n = { ...prev }; delete n[sub.id]; return n })
+                                  setUploadingSubmittalDoc(null)
+                                  await loadSubmittals()
+                                }}
+                              >{uploadingSubmittalDoc === sub.id ? 'Uploading...' : sub.file_url ? 'Replace' : 'Upload'}</button>
+                            )}
+                          </div>
+                        </div>
                         <div style={{ marginBottom: '10px' }}>
                           <label style={s.label}>Review note</label>
                           <input style={s.input} value={submittalReviewNote[sub.id] || ''} onChange={e => setSubmittalReviewNote(prev => ({ ...prev, [sub.id]: e.target.value }))} placeholder="Optional note to subcontractor..." />

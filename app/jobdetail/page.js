@@ -6267,41 +6267,73 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </p>
               )}
 
-              {aiaApplications.map(app => {
-                const isActive = activeAia?.id === app.id
-                const periodLabel = app.period_from && app.period_from !== (app.period_to ? app.period_to.slice(0, 7) + '-01' : '')
-                  ? `${new Date(app.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
+              {aiaApplications.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '1rem' }}>
+                  {aiaApplications.map(app => {
+                    const isActivePill = activeAia?.id === app.id
+                    const isCert = app.status === 'certified'
+                    const isSub = app.status === 'submitted'
+                    const shortLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : ''
+                    return (
+                      <button
+                        key={app.id}
+                        onClick={() => openAiaApp(app)}
+                        title={shortLabel}
+                        style={{
+                          padding: '5px 12px',
+                          background: isActivePill ? '#2a1200' : isCert ? '#0a1a0a' : isSub ? '#1a1400' : '#111',
+                          color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSub ? '#facc15' : '#666',
+                          border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#1a4a1a' : isSub ? '#4a3800' : '#2a2a2a'}`,
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: isActivePill ? '700' : '500',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
+                        {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {activeAia && (() => {
+                const isActive = true
+                const periodLabel = activeAia.period_from && activeAia.period_from !== (activeAia.period_to ? activeAia.period_to.slice(0, 7) + '-01' : '')
+                  ? `${new Date(activeAia.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : activeAia.period_to ? new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
                 return (
-                  <div key={app.id} style={{ ...s.billingEntryRow, border: `1px solid ${isActive ? '#4a2200' : '#1e1e1e'}` }}>
-                    <div style={{ ...s.billingEntryHeader, cursor: 'pointer' }} onClick={() => openAiaApp(app)}>
+                  <div style={{ ...s.billingEntryRow, border: '1px solid #4a2200' }}>
+                    <div style={s.billingEntryHeader}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>
-                            {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
+                            {job.billing_type === 'draw_request' ? `Draw #${activeAia.app_number}` : `App #${activeAia.app_number}`}
                           </span>
                           <span style={{ fontSize: '13px', color: '#888' }}>{periodLabel}</span>
-                          <span style={s.coBadge(app.status === 'certified' ? 'approved' : app.status === 'submitted' ? 'pending' : 'pending')}>{app.status}</span>
-                          {app.payment_received && (
+                          <span style={s.coBadge(activeAia.status === 'certified' ? 'approved' : activeAia.status === 'submitted' ? 'pending' : 'pending')}>{activeAia.status}</span>
+                          {activeAia.payment_received && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>
-                              {app.amount_received ? `$${Number(app.amount_received).toLocaleString()} received` : 'Payment Received'}
+                              {activeAia.amount_received ? `$${Number(activeAia.amount_received).toLocaleString()} received` : 'Payment Received'}
                             </span>
                           )}
-                          {app.payment_received && app.payment_received_at && (
-                            <span style={{ fontSize: '11px', color: '#555' }}>{new Date(app.payment_received_at).toLocaleDateString()}</span>
+                          {activeAia.payment_received && activeAia.payment_received_at && (
+                            <span style={{ fontSize: '11px', color: '#555' }}>{new Date(activeAia.payment_received_at).toLocaleDateString()}</span>
                           )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button
-                          style={app.payment_received ? s.btnSmallGreen : s.btnSmall}
-                          onClick={e => { e.stopPropagation(); markPaymentReceived(app.id, app.payment_received) }}>
-                          {app.payment_received ? '✓ Received' : 'Record Payment'}
+                          style={activeAia.payment_received ? s.btnSmallGreen : s.btnSmall}
+                          onClick={() => markPaymentReceived(activeAia.id, activeAia.payment_received)}>
+                          {activeAia.payment_received ? '✓ Received' : 'Record Payment'}
                         </button>
-                        {isActive && (
-                          <button style={s.btnSmallRed} onClick={e => { e.stopPropagation(); deleteAiaApplication(app.id) }}>Delete</button>
-                        )}
-                        <span style={{ color: '#555', fontSize: '14px' }}>{isActive ? '▲' : '▼'}</span>
+                        <button style={s.btnSmallRed} onClick={() => deleteAiaApplication(activeAia.id)}>Delete</button>
                       </div>
                     </div>
 
@@ -6678,7 +6710,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )}
                   </div>
                 )
-              })}
+              })()}
             </div>
           </>
         )}

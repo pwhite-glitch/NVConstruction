@@ -167,6 +167,7 @@ export default function JobDetail() {
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
   const [dcSearch, setDcSearch] = useState('')
+  const [dcStatusFilter, setDcStatusFilter] = useState('all')
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
@@ -5751,8 +5752,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             })()}
 
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({dcSearch ? `${directCosts.filter(c => { const q = dcSearch.toLowerCase(); return c.description?.toLowerCase().includes(q) || String(c.amount).includes(dcSearch) || Number(c.amount).toLocaleString().includes(dcSearch) }).length} of ` : ''}{directCosts.length})</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '10px' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <input
                     style={{ ...s.input, width: '200px', margin: 0, fontSize: '13px', padding: '6px 12px' }}
@@ -5764,6 +5765,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <button style={s.btnSmall} onClick={() => { setShowCsvImport(v => !v); setShowDcForm(false); setCsvRows([]) }}>{showCsvImport ? 'Cancel' : 'Import CSV'}</button>
                   <button style={s.btnSmallOrange} onClick={() => { setShowDcForm(v => !v); setShowCsvImport(false) }}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                 </div>
+              </div>
+              {/* Status filter pills */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'all', label: 'All', count: directCosts.length },
+                  { key: 'pending', label: 'Pending', count: directCosts.filter(c => c.status === 'pending').length },
+                  { key: 'approved', label: 'Approved', count: directCosts.filter(c => c.status === 'approved').length },
+                  { key: 'rejected', label: 'Rejected', count: directCosts.filter(c => c.status === 'rejected').length },
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setDcStatusFilter(f.key)}
+                    style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#2a2a2a'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#2a1200' : f.key === 'rejected' ? '#2a0a0a' : '#0a2a0a') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#555' }}
+                  >{f.label} ({f.count})</button>
+                ))}
               </div>
 
               {showDcForm && (
@@ -5868,13 +5884,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {(() => {
                 const q = dcSearch.toLowerCase().trim()
-                const visibleCosts = q
-                  ? directCosts.filter(c =>
-                      c.description?.toLowerCase().includes(q) ||
-                      String(c.amount).includes(dcSearch.trim()) ||
-                      Number(c.amount).toLocaleString().includes(dcSearch.trim())
-                    )
-                  : directCosts
+                const visibleCosts = directCosts.filter(c => {
+                  if (dcStatusFilter !== 'all' && c.status !== dcStatusFilter) return false
+                  if (!q) return true
+                  return c.description?.toLowerCase().includes(q) ||
+                    String(c.amount).includes(dcSearch.trim()) ||
+                    Number(c.amount).toLocaleString().includes(dcSearch.trim())
+                })
                 const byAmount = {}
                 directCosts.forEach(c => {
                   const k = Number(c.amount).toFixed(2)
@@ -5900,8 +5916,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) — entries marked below.
                     </div>
                   )}
-                  {visibleCosts.length === 0 && q && (
-                    <p style={{ color: '#555', fontSize: '13px', marginBottom: '1rem' }}>No costs match "{dcSearch}".</p>
+                  {visibleCosts.length === 0 && (
+                    <p style={{ color: '#555', fontSize: '13px', marginBottom: '1rem' }}>No costs match{q ? ` "${dcSearch}"` : ''}{dcStatusFilter !== 'all' ? ` with status "${dcStatusFilter}"` : ''}.</p>
                   )}
                   {visibleCosts.map(c => {
                 const isRejecting = rejectingCostId === c.id

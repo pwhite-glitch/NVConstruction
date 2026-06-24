@@ -87,6 +87,7 @@ export default function JobDetail() {
   const [id, setId] = useState(null)
   const [job, setJob] = useState(null)
   const [form, setForm] = useState({})
+  const [contractValueUnlocked, setContractValueUnlocked] = useState(false)
   const [subs, setSubs] = useState([])
   const [billing, setBilling] = useState([])
   const [loading, setLoading] = useState(true)
@@ -376,6 +377,7 @@ export default function JobDetail() {
       if (!jobData) { router.push('/dashboard'); return }
       setJob(jobData)
       setForm(jobData)
+      setContractValueUnlocked(false)
       const { data: subList } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone)').eq('job_id', id)
       setSubs(subList || [])
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
@@ -3119,7 +3121,33 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div><label style={s.label}>Location</label><input style={s.input} value={form.location || ''} onChange={e => update('location', e.target.value)} /></div>
                 </div>
                 <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
-                  <div><label style={s.label}>Contract value</label><input type="number" style={s.input} value={form.contract_value || ''} onChange={e => update('contract_value', e.target.value)} /></div>
+                  <div>
+                    <label style={s.label}>Contract value {job.contract_value && !contractValueUnlocked && <span style={{ color: '#e8590c', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', marginLeft: '6px' }}>LOCKED</span>}</label>
+                    {job.contract_value && !contractValueUnlocked ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ ...s.input, color: '#888', cursor: 'default', flex: 1, display: 'flex', alignItems: 'center' }}>
+                          ${Number(job.contract_value).toLocaleString()}
+                        </div>
+                        <button
+                          type="button"
+                          style={{ ...s.btnSmall, whiteSpace: 'nowrap', flexShrink: 0 }}
+                          onClick={() => {
+                            if (window.confirm('The original contract value is locked because it is used as the base for all change order calculations.\n\nUnlock only to correct a data entry mistake — do NOT use this to apply change orders (use Prime COs for that).\n\nUnlock to edit?')) {
+                              setContractValueUnlocked(true)
+                            }
+                          }}
+                        >🔒 Unlock</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input type="number" style={{ ...s.input, flex: 1 }} value={form.contract_value || ''} onChange={e => update('contract_value', e.target.value)} placeholder="0.00" />
+                        {contractValueUnlocked && (
+                          <button type="button" style={{ ...s.btnSmallRed, whiteSpace: 'nowrap', flexShrink: 0 }} onClick={() => { setContractValueUnlocked(false); update('contract_value', job.contract_value) }}>Cancel</button>
+                        )}
+                      </div>
+                    )}
+                    {contractValueUnlocked && <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Correction mode — use Prime COs to apply change orders, not this field.</p>}
+                  </div>
                   <div><label style={s.label}>Default markup %</label><input type="number" style={s.input} placeholder="0" value={form.markup_pct || ''} onChange={e => update('markup_pct', e.target.value)} /></div>
                   <div>
                     <label style={s.label}>Billing frequency</label>

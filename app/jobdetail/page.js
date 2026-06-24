@@ -293,6 +293,7 @@ export default function JobDetail() {
   const [submittalFile, setSubmittalFile] = useState(null)
   const [submittalDocFile, setSubmittalDocFile] = useState({})
   const [uploadingSubmittalDoc, setUploadingSubmittalDoc] = useState(null)
+  const [approvalNoteEdit, setApprovalNoteEdit] = useState({})
 
   // Prelim notices state
   const [prelimNotices, setPrelimNotices] = useState([])
@@ -7247,7 +7248,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     {isExp && (
                       <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
-                        {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{sub.notes}</p>}
+                        {/* Approval panel */}
+                        {sub.status === 'approved' && (
+                          <div style={{ background: '#061a06', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.5px' }}>✓ Approved</span>
+                              {sub.reviewed_at && <span style={{ fontSize: '11px', color: '#555' }}>{new Date(sub.reviewed_at).toLocaleDateString()}</span>}
+                            </div>
+                            <label style={s.label}>Approval notes</label>
+                            <textarea
+                              rows={3}
+                              style={{ ...s.input, resize: 'vertical', fontFamily: 'inherit', fontSize: '13px' }}
+                              placeholder="Add approval conditions, stamp notes, or reference numbers..."
+                              value={approvalNoteEdit[sub.id] !== undefined ? approvalNoteEdit[sub.id] : (sub.notes || '')}
+                              onChange={e => setApprovalNoteEdit(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                              onBlur={async e => {
+                                const val = e.target.value
+                                await fetch('/api/submittals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sub.id, notes: val }) })
+                                setSubmittals(prev => prev.map(s => s.id === sub.id ? { ...s, notes: val } : s))
+                              }}
+                            />
+                          </div>
+                        )}
+                        {sub.status !== 'approved' && sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{sub.notes}</p>}
                         {/* Documents */}
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Documents ({parseSubmittalFiles(sub.file_url).length})</label>

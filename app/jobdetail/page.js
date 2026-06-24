@@ -556,8 +556,9 @@ export default function JobDetail() {
   }
 
   async function openSubmittalDocUrl(path) {
-    const { data } = await supabase.storage.from('submittal-docs').createSignedUrl(path, 60)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    const res = await fetch(`/api/submittals?file_path=${encodeURIComponent(path)}`)
+    const { url } = await res.json()
+    if (url) window.open(url, '_blank')
   }
 
   function parseSubmittalFiles(raw) {

@@ -31,6 +31,16 @@ function parseFileUrls(raw) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
+  const file_path = searchParams.get('file_path')
+
+  if (file_path) {
+    const { data, error } = await adminSupabase.storage
+      .from('submittal-docs')
+      .createSignedUrl(file_path, 300)
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ url: data.signedUrl })
+  }
+
   if (!job_id) return Response.json({ submittals: [] })
   const { data, error } = await adminSupabase
     .from('submittals')

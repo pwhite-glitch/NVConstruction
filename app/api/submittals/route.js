@@ -9,13 +9,23 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 async function uploadSubmittalDoc(file, jobId) {
   const ext = file.name.split('.').pop()
-  const path = `${jobId}/${Date.now()}.${ext}`
+  const path = `${jobId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
   const buffer = Buffer.from(await file.arrayBuffer())
   const { error } = await adminSupabase.storage
     .from('submittal-docs')
     .upload(path, buffer, { contentType: file.type })
   if (error) throw new Error('File upload failed: ' + error.message)
-  return path
+  return { path, name: file.name }
+}
+
+// file_url is stored as JSON array: [{path, name}, ...] or legacy string
+function parseFileUrls(raw) {
+  if (!raw) return []
+  if (raw.startsWith('[')) {
+    try { return JSON.parse(raw) } catch { return [] }
+  }
+  // legacy single string
+  return [{ path: raw, name: raw.split('/').pop() }]
 }
 
 export async function GET(request) {
@@ -35,22 +45,23 @@ export async function POST(request) {
   try {
     const contentType = request.headers.get('content-type') || ''
     let fields = {}
-    let file_url = null
+    let newFiles = []
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      const files = formData.getAll('file')
       fields = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        file_url = await uploadSubmittalDoc(file, fields.job_id)
+      for (const file of files) {
+        if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
       }
     } else {
       fields = await request.json()
-      if (fields.file_url) file_url = fields.file_url
     }
 
     const { job_id, title, type, spec_section, submitted_by_sub_id, submitted_by_company, notes } = fields
     if (!job_id || !title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
+
+    const file_url = newFiles.length > 0 ? JSON.stringify(newFiles) : null
 
     // Auto-number
     const { data: existing } = await adminSupabase.from('submittals').select('number').eq('job_id', job_id).order('number', { ascending: false }).limit(1)
@@ -73,7 +84,7 @@ export async function POST(request) {
       html: `<div style="font-family:sans-serif;background:#0a0a0a;color:#f1f1f1;padding:32px;max-width:500px;margin:0 auto;border-radius:12px;">
         <p style="color:#60a5fa;font-size:16px;font-weight:700;margin:0 0 8px">New submittal #${nextNum}</p>
         <p style="color:#aaa;margin:0 0 8px"><strong style="color:#f1f1f1">${submitted_by_company || 'Subcontractor'}</strong> submitted <strong style="color:#f1f1f1">${title}</strong> on job <strong style="color:#f1f1f1">#${jobRow?.job_number} — ${jobRow?.project_name}</strong>.</p>
-        <p style="color:#555;font-size:13px">Type: ${type || 'Shop Drawing'}${spec_section ? ` · Section ${spec_section}` : ''}</p>
+        <p style="color:#555;font-size:13px">Type: ${type || 'Shop Drawing'}${spec_section ? ` · Section ${spec_section}` : ''}${newFiles.length > 0 ? ` · ${newFiles.length} file(s) attached` : ''}</p>
       </div>`,
     }).catch(() => {})
 
@@ -87,20 +98,20 @@ export async function PATCH(request) {
   try {
     const contentType = request.headers.get('content-type') || ''
     let fields = {}
-    let newFileUrl = undefined
+    let newFiles = []
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      const files = formData.getAll('file')
       fields = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        newFileUrl = await uploadSubmittalDoc(file, fields.job_id)
+      for (const file of files) {
+        if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
       }
     } else {
       fields = await request.json()
     }
 
-    const { id, status, notes, reviewer_id, file_url, title, spec_section, job_id } = fields
+    const { id, status, notes, reviewer_id, title, spec_section, job_id, remove_file_path } = fields
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
     const updates = {}
@@ -108,8 +119,15 @@ export async function PATCH(request) {
     if (notes !== undefined) updates.notes = notes
     if (title !== undefined) updates.title = title
     if (spec_section !== undefined) updates.spec_section = spec_section
-    if (newFileUrl !== undefined) updates.file_url = newFileUrl
-    else if (file_url !== undefined) updates.file_url = file_url
+
+    if (newFiles.length > 0 || remove_file_path !== undefined) {
+      // Merge with existing files
+      const { data: current } = await adminSupabase.from('submittals').select('file_url').eq('id', id).single()
+      let existing = parseFileUrls(current?.file_url)
+      if (remove_file_path) existing = existing.filter(f => f.path !== remove_file_path)
+      const merged = [...existing, ...newFiles]
+      updates.file_url = merged.length > 0 ? JSON.stringify(merged) : null
+    }
 
     const { error } = await adminSupabase.from('submittals').update(updates).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })

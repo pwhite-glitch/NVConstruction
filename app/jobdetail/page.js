@@ -560,6 +560,12 @@ export default function JobDetail() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  function parseSubmittalFiles(raw) {
+    if (!raw) return []
+    if (raw.startsWith('[')) { try { return JSON.parse(raw) } catch { return [] } }
+    return [{ path: raw, name: raw.split('/').pop() }]
+  }
+
   async function submitDirectCostPM(e) {
     e.preventDefault()
     setSubmittingDc(true)
@@ -1593,9 +1599,9 @@ ${sovLines.length > 0 ? `
     if (!submittalForm.title.trim()) return
     setSavingSubmittal(true)
     const payload = { ...submittalForm, job_id: id, submitted_by_sub_id: submittalForm.submitted_by_sub_id || null }
-    if (submittalFile) {
+    if (submittalFile && submittalFile.length > 0) {
       const fd = new FormData()
-      fd.append('file', submittalFile)
+      for (const f of submittalFile) fd.append('file', f)
       fd.append('data', JSON.stringify(payload))
       await fetch('/api/submittals', { method: 'POST', body: fd })
     } else {
@@ -7212,9 +7218,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ marginBottom: '10px' }}><label style={s.label}>Notes</label><input style={s.input} value={submittalForm.notes} onChange={e => setSubmittalForm(f => ({ ...f, notes: e.target.value }))} /></div>
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={s.label}>Attach document (PDF, image)</label>
-                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setSubmittalFile(e.target.files[0])} />
-                    {submittalFile && <p style={{ fontSize: '11px', color: '#4ade80', margin: '4px 0 0' }}>{submittalFile.name}</p>}
+                    <label style={s.label}>Attach documents (PDF, image — select multiple)</label>
+                    <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setSubmittalFile(e.target.files.length > 0 ? Array.from(e.target.files) : null)} />
+                    {submittalFile && submittalFile.length > 0 && <p style={{ fontSize: '11px', color: '#4ade80', margin: '4px 0 0' }}>{submittalFile.length} file{submittalFile.length > 1 ? 's' : ''} selected: {submittalFile.map(f => f.name).join(', ')}</p>}
                   </div>
                   <button style={{ ...s.btn, opacity: savingSubmittal || !submittalForm.title ? 0.6 : 1 }} disabled={savingSubmittal || !submittalForm.title} onClick={addSubmittal}>{savingSubmittal ? 'Saving...' : 'Add Submittal'}</button>
                 </div>
@@ -7233,7 +7239,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '11px', fontWeight: '700', color: color, background: color + '22', border: `1px solid ${color}44`, borderRadius: '4px', padding: '1px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sub.status.replace('_', ' ')}</span>
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
-                          {sub.type.replace('_', ' ')} {sub.spec_section ? `· §${sub.spec_section}` : ''} {sub.submitted_by_company ? `· ${sub.submitted_by_company}` : ''} · {new Date(sub.submitted_at).toLocaleDateString()}
+                          {sub.type.replace('_', ' ')} {sub.spec_section ? `· §${sub.spec_section}` : ''} {sub.submitted_by_company ? `· ${sub.submitted_by_company}` : ''} · {new Date(sub.submitted_at).toLocaleDateString()} {parseSubmittalFiles(sub.file_url).length > 0 ? `· ${parseSubmittalFiles(sub.file_url).length} doc${parseSubmittalFiles(sub.file_url).length > 1 ? 's' : ''}` : ''}
                         </div>
                       </div>
                       <span style={{ color: '#555' }}>{isExp ? '▲' : '▼'}</span>
@@ -7241,34 +7247,44 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {isExp && (
                       <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
                         {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{sub.notes}</p>}
-                        {/* Document */}
+                        {/* Documents */}
                         <div style={{ marginBottom: '1rem' }}>
-                          <label style={s.label}>Document</label>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            {sub.file_url && (
-                              <button style={s.btnSmall} onClick={() => openSubmittalDocUrl(sub.file_url)}>View document</button>
-                            )}
+                          <label style={s.label}>Documents ({parseSubmittalFiles(sub.file_url).length})</label>
+                          {parseSubmittalFiles(sub.file_url).map((f, fi) => (
+                            <div key={fi} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                              <button style={s.btnSmall} onClick={() => openSubmittalDocUrl(f.path)}>{f.name || `File ${fi + 1}`}</button>
+                              <button
+                                style={{ ...s.btnSmallRed, fontSize: '11px', padding: '3px 8px' }}
+                                onClick={async () => {
+                                  await fetch('/api/submittals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sub.id, remove_file_path: f.path }) })
+                                  await loadSubmittals()
+                                }}
+                              >Remove</button>
+                            </div>
+                          ))}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
                             <input
                               type="file"
+                              multiple
                               accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx"
                               style={{ ...s.input, padding: '6px 12px', flex: 1, margin: 0, fontSize: '12px' }}
-                              onChange={e => setSubmittalDocFile(prev => ({ ...prev, [sub.id]: e.target.files[0] }))}
+                              onChange={e => setSubmittalDocFile(prev => ({ ...prev, [sub.id]: e.target.files.length > 0 ? Array.from(e.target.files) : null }))}
                             />
                             {submittalDocFile[sub.id] && (
                               <button
-                                style={{ ...s.btnSmallOrange, opacity: uploadingSubmittalDoc === sub.id ? 0.6 : 1 }}
+                                style={{ ...s.btnSmallOrange, opacity: uploadingSubmittalDoc === sub.id ? 0.6 : 1, whiteSpace: 'nowrap' }}
                                 disabled={uploadingSubmittalDoc === sub.id}
                                 onClick={async () => {
                                   setUploadingSubmittalDoc(sub.id)
                                   const fd = new FormData()
-                                  fd.append('file', submittalDocFile[sub.id])
+                                  for (const f of submittalDocFile[sub.id]) fd.append('file', f)
                                   fd.append('data', JSON.stringify({ id: sub.id, job_id: sub.job_id }))
                                   await fetch('/api/submittals', { method: 'PATCH', body: fd })
                                   setSubmittalDocFile(prev => { const n = { ...prev }; delete n[sub.id]; return n })
                                   setUploadingSubmittalDoc(null)
                                   await loadSubmittals()
                                 }}
-                              >{uploadingSubmittalDoc === sub.id ? 'Uploading...' : sub.file_url ? 'Replace' : 'Upload'}</button>
+                              >{uploadingSubmittalDoc === sub.id ? 'Uploading...' : `Upload ${submittalDocFile[sub.id].length} file${submittalDocFile[sub.id].length > 1 ? 's' : ''}`}</button>
                             )}
                           </div>
                         </div>

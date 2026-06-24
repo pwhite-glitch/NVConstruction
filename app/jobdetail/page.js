@@ -3766,7 +3766,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const forecastRows = budgetItems.map(item => {
                 const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
                 const contracted = committedForItem(item.id)
-                const autoEac = contracted > 0 ? Math.max(contracted, spent) : Math.max(spent, Number(item.budget_amount))
+                const totalActual = contracted + spent
+                const autoEac = totalActual > 0 ? totalActual : Number(item.budget_amount)
                 const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
                 const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                 return { item, spent, contracted, autoEac, eac, revenue, variance: Number(item.budget_amount) - eac, projProfit: revenue - eac }
@@ -3781,7 +3782,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.5rem' }}>Cost to Complete Forecast</p>
-                  <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates as max(contracted, direct costs spent). Enter a value to override.</p>
+                  <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates as committed contracts + direct costs spent. Enter a value to override.</p>
                   <div style={{ ...s.statRow, marginBottom: '1.25rem' }} className="rx-stats">
                     <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#4ade80' : '#ff6b6b')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Budget variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>

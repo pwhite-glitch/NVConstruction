@@ -1351,7 +1351,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
     { tab: 'jobs',          label: 'Jobs',           icon: <IconBriefcase /> },
     { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: billingBadge },
-    { tab: 'directory',     label: 'Sub Directory',  icon: <IconUsers />,    badge: dirBadge },
+    { tab: 'directory',     label: 'Companies',      icon: <IconUsers />,    badge: dirBadge },
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },

@@ -568,7 +568,7 @@ export default function AdminPortal() {
             <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
             <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
             <button style={s.tab(activeTab === 'payments')} onClick={() => setActiveTab('payments')}>Payments</button>
-            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Sub Directory</button>
+            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Companies</button>
             <button style={s.tab(activeTab === 'liens')} onClick={() => setActiveTab('liens')}>Lien Waivers</button>
           </div>
 

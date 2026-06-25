@@ -1702,20 +1702,29 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           return (
                             <div style={{ background: '#080808', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                               <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Users ({members.length})</p>
-                              {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No portal users yet — invite someone below.</p>}
+                              {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 12px' }}>No portal users yet — invite someone below.</p>}
                               {members.map(m => {
                                 const isRegistered = !!m.full_name
+                                const initials = m.full_name
+                                  ? m.full_name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                                  : (m.invite_email?.[0] || '?').toUpperCase()
                                 return (
-                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #111' }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
-                                      <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{m.invite_email}</div>
-                                      {isRegistered && m.phone && <div style={{ fontSize: '12px', color: '#555' }}>{m.phone}</div>}
+                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderBottom: '1px solid #111' }}>
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', background: isRegistered ? '#152515' : '#181818', border: `2px solid ${isRegistered ? '#2a4a2a' : '#252525'}`, color: isRegistered ? '#4ade80' : '#444' }}>
+                                      {initials}
                                     </div>
-                                    {isRegistered
-                                      ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', flexShrink: 0 }}>Registered</span>
-                                      : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', flexShrink: 0 }}>Invite sent</span>
-                                    }
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666', marginBottom: '3px' }}>
+                                        {m.full_name || 'Invite pending'}
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
+                                        {m.invite_email && <span>{m.invite_email}</span>}
+                                        {m.phone && <span>{m.phone}</span>}
+                                      </div>
+                                    </div>
+                                    <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', flexShrink: 0, background: isRegistered ? '#0a2a0a' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a2800'}` }}>
+                                      {isRegistered ? '● Active' : 'Invited'}
+                                    </span>
                                   </div>
                                 )
                               })}

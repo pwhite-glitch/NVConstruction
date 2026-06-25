@@ -3598,27 +3598,40 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         </div>
                       )
+                      const initials = contactName
+                        ? contactName.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                        : (a.sub_email?.[0] || '?').toUpperCase()
                       return (
-                        <div key={a.id} style={{ ...s.contractRow, marginBottom: '6px', marginLeft: '12px', borderLeft: '2px solid #1a1a1a' }}>
-                          <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                {contactName && <span style={{ fontSize: '14px', fontWeight: '600', color: '#ccc' }}>{contactName}</span>}
-                                {!isRegistered && <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '99px', background: '#1a1a1a', color: '#555', border: '1px solid #2a2a2a' }}>Not registered</span>}
+                        <div key={a.id} style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 14px' }}>
+                            {/* Avatar */}
+                            <div style={{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', background: isRegistered ? '#152515' : '#181818', border: `2px solid ${isRegistered ? '#2a4a2a' : '#252525'}`, color: isRegistered ? '#4ade80' : '#444' }}>
+                              {initials}
+                            </div>
+                            {/* Name + contact */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666' }}>
+                                  {contactName || a.sub_email || 'Unknown'}
+                                </span>
                                 {existingRating && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}</span>}
                               </div>
                               <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
+                                {a.sub_email && contactName && <span>{a.sub_email}</span>}
                                 {phone && <span>{phone}</span>}
-                                {a.sub_email && <span>{a.sub_email}</span>}
                                 {address && <span>{address}</span>}
                               </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            {/* Status + actions */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', background: isRegistered ? '#0a2a0a' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a2800'}` }}>
+                                {isRegistered ? '● Active' : 'Not registered'}
+                              </span>
                               {isRegistered && (
                                 <button style={s.btnSmall} onClick={() => {
                                   if (isShowingMessages) { setExpandedMessageSubId(null) }
                                   else { setExpandedMessageSubId(a.sub_id); loadMessages(a.sub_id) }
-                                }}>💬 Messages{messages.length > 0 ? ` (${messages.length})` : ''}</button>
+                                }}>💬{messages.length > 0 ? ` (${messages.length})` : ''}</button>
                               )}
                               {isRegistered && (
                                 <button style={s.btnSmall} onClick={() => {

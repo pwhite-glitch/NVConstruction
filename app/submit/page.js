@@ -368,7 +368,8 @@ export default function Submit() {
     const { draws } = await drRes.json()
     const openDraws = (draws || []).filter(d => d.status === 'open')
     setJobDrawRequests(openDraws)
-    const { data: contracts } = await supabase.from('subcontracts').select('id, description, retainage_pct, contract_value').eq('sub_id', user.id).eq('job_id', jobId)
+    const _cRes = await fetch(`/api/sub-contracts?job_id=${jobId}&user_id=${user.id}&company_name=${encodeURIComponent(profile?.company_name || '')}`)
+    const { contracts } = await _cRes.json()
     if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
     setNoContract(false)
     setSovDraftLines([{ description: '', amount: '' }])

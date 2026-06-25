@@ -3556,7 +3556,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 if (!acc[groupKey]) acc[groupKey] = { name: companyName, company_id: a.company_id || a.profiles?.company_id || null, members: [] }
                 acc[groupKey].members.push({ ...a, _dirEntry: dirEntry })
                 return acc
-              }, {})).map(group => {
+              }, {})).sort((a, b) => a.name.localeCompare(b.name)).map(group => {
                 const registeredCount = group.members.filter(a => !!a.sub_id).length
                 const gKey = group.company_id || group.name
                 const isExpanded = expandedCompanyKey === gKey

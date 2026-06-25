@@ -320,7 +320,7 @@ export default function Dashboard() {
     } else if (ids !== null && ids.length === 0) {
       setSubmissions([]); setJobs([]); setAssignments([])
       const [{ data: dir }, { data: cos }, membersRes1] = await Promise.all([
-        supabase.from('sub_directory').select('*').order('applied_at', { ascending: false }),
+        supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('companies').select('*'),
         fetch('/api/company-members').then(r => r.json()),
       ])
@@ -334,7 +334,7 @@ export default function Dashboard() {
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
     const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
-      supabase.from('sub_directory').select('*').order('applied_at', { ascending: false }),
+      supabase.from('sub_directory').select('*').order('company_name'),
       supabase.from('companies').select('*'),
       fetch('/api/company-members').then(r => r.json()),
     ])
@@ -1327,7 +1327,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
   const filteredDir = directory.filter(s =>
     (!filterDirStatus || s.status === filterDirStatus) &&
     (!filterTrade || s.trade === filterTrade) &&
-    (!searchDir || s.company_name.toLowerCase().includes(searchDir.toLowerCase()) || s.contact_name.toLowerCase().includes(searchDir.toLowerCase()))
+    (!searchDir || s.company_name?.toLowerCase().includes(searchDir.toLowerCase()) || s.contact_name?.toLowerCase().includes(searchDir.toLowerCase()))
+  )
+  const duplicateNames = new Set(
+    Object.entries(directory.reduce((acc, s) => {
+      const k = s.company_name?.toLowerCase().trim() || ''
+      acc[k] = (acc[k] || 0) + 1
+      return acc
+    }, {})).filter(([, n]) => n > 1).map(([k]) => k)
   )
   const pendingApps = directory.filter(s => s.status === 'pending').length
   const activeJobs = jobs.filter(j => j.status === 'active')
@@ -1663,10 +1670,16 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   </select>
                 </div>
 
-                {filteredDir.length === 0 ? <div style={s.emptyMsg}>No subcontractors found.</div> : filteredDir.map(sub => (
+                {duplicateNames.size > 0 && (
+                  <div style={{ background: '#1a0f00', border: '1px solid #4a3000', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', fontSize: '13px', color: '#e8590c' }}>
+                    ⚠ {duplicateNames.size} duplicate company name{duplicateNames.size > 1 ? 's' : ''} detected — expand the duplicate entry to delete it.
+                  </div>
+                )}
+
+                {filteredDir.length === 0 ? <div style={s.emptyMsg}>No companies found.</div> : filteredDir.map(sub => (
                   <div key={sub.id} style={s.rowBorder}>
                     {(() => {
-                      // Find ratings for this sub by matching sub_id via profile lookup
+                      const isDuplicate = duplicateNames.has(sub.company_name?.toLowerCase().trim())
                       const ratings = sub.email ? (dirRatings[sub.email.toLowerCase()] || []) : []
                       const avgRating = ratings.length > 0 ? Math.round(ratings.reduce((a, r) => a + (r.quality + r.timeliness + r.communication) / 3, 0) / ratings.length) : 0
                       return (
@@ -1674,10 +1687,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
                               <p style={{ ...s.company, margin: 0 }}>{sub.company_name}</p>
+                              {isDuplicate && <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '4px', background: '#2a1500', color: '#e8590c', border: '1px solid #4a2800', fontWeight: '700', letterSpacing: '0.5px' }}>DUPLICATE</span>}
                               {avgRating > 0 && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(avgRating)}{'☆'.repeat(5 - avgRating)}</span>}
                               {ratings.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{ratings.length} rating{ratings.length > 1 ? 's' : ''}</span>}
                             </div>
-                            <p style={{ ...s.meta, margin: 0 }}>{sub.trade}{sub.trade ? ' · ' : ''}Applied {new Date(sub.applied_at).toLocaleDateString()}</p>
+                            <p style={{ ...s.meta, margin: 0 }}>{sub.trade}{sub.trade ? ' · ' : ''}Added {new Date(sub.applied_at).toLocaleDateString()}</p>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (

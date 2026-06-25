@@ -8,12 +8,27 @@ const adminSupabase = createClient(
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { job_id, sub_email, sub_id, invited_at } = body
-    if (!job_id || !sub_email) return Response.json({ error: 'job_id and sub_email required' }, { status: 400 })
+    const { job_id, sub_email, sub_id, company_id, invited_at } = body
+    if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+    if (!sub_email && !company_id) return Response.json({ error: 'sub_email or company_id required' }, { status: 400 })
 
-    const row = { job_id, sub_email: sub_email.toLowerCase().trim() }
-    if (sub_id) row.sub_id = sub_id
+    const row = { job_id }
+    if (sub_email) row.sub_email = sub_email.toLowerCase().trim()
     if (invited_at) row.invited_at = invited_at
+
+    // Resolve sub_id from email if not provided
+    let resolvedSubId = sub_id || null
+    if (!resolvedSubId && sub_email) {
+      const { data: prof } = await adminSupabase
+        .from('profiles')
+        .select('id, company_id')
+        .ilike('invite_email', sub_email.toLowerCase().trim())
+        .maybeSingle()
+      resolvedSubId = prof?.id || null
+      if (!row.company_id && prof?.company_id) row.company_id = prof.company_id
+    }
+    if (resolvedSubId) row.sub_id = resolvedSubId
+    if (company_id) row.company_id = company_id
 
     const { error } = await adminSupabase.from('job_assignments').insert(row)
     if (error) {

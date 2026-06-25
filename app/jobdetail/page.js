@@ -1751,10 +1751,17 @@ ${sovLines.length > 0 ? `
       const d = await r.json()
       subUserId = d.members?.[0]?.id || null
     }
+    // Find or create company record for this vendor
+    let companyId = null
+    if (dirEntry?.company_name) {
+      const coRes = await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: dirEntry.company_name, find_or_create: true }) })
+      const coJson = await coRes.json()
+      companyId = coJson.company?.id || null
+    }
     const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
     const scRes = await fetch('/api/subcontracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-      job_id: id, sub_id: subUserId, vendor_name: dirEntry?.company_name || '',
+      job_id: id, sub_id: subUserId, company_id: companyId, vendor_name: dirEntry?.company_name || '',
       contract_value: parseFloat(contractForm.contract_value),
       description: contractForm.description || null, onedrive_url: contractForm.onedrive_url || null,
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
@@ -1768,7 +1775,7 @@ ${sovLines.length > 0 ? `
       if (dirEntry?.email) {
         const alreadyAssigned = subs.some(s => s.sub_email?.toLowerCase() === dirEntry.email.toLowerCase())
         if (!alreadyAssigned) {
-          await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: dirEntry.email.toLowerCase(), sub_id: subUserId || null, invited_at: new Date().toISOString() }) })
+          await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: dirEntry.email.toLowerCase(), sub_id: subUserId || null, company_id: companyId || null, invited_at: new Date().toISOString() }) })
           await reloadSubs()
         }
       }

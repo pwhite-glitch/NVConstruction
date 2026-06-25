@@ -137,14 +137,21 @@ export default function Submit() {
           body: JSON.stringify({ user_id: session.user.id, company_name: prof.company_name }),
         })
       }
-      const [{ data: assignments }, { data: contractJobs }] = await Promise.all([
+      const companyId = prof?.company_id
+      const jobQueries = [
         supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id),
         supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id),
-      ])
-      const assignedJobs = (assignments || []).map(a => a.jobs).filter(j => j && j.status === 'active')
-      const contractedJobs = (contractJobs || []).map(c => c.jobs).filter(j => j && j.status === 'active')
-      const allJobIds = new Set(assignedJobs.map(j => j.id))
-      const mergedJobs = [...assignedJobs, ...contractedJobs.filter(j => !allJobIds.has(j.id))]
+      ]
+      if (companyId) {
+        jobQueries.push(
+          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('company_id', companyId),
+          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('company_id', companyId),
+        )
+      }
+      const jobResults = await Promise.all(jobQueries)
+      const allJobRecords = jobResults.flatMap(r => (r.data || []).map(x => x.jobs).filter(j => j && j.status === 'active'))
+      const seenJobIds = new Set()
+      const mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
       setJobs(mergedJobs)
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
@@ -368,7 +375,7 @@ export default function Submit() {
     const { draws } = await drRes.json()
     const openDraws = (draws || []).filter(d => d.status === 'open')
     setJobDrawRequests(openDraws)
-    const _cRes = await fetch(`/api/sub-contracts?job_id=${jobId}&user_id=${user.id}&company_name=${encodeURIComponent(profile?.company_name || '')}`)
+    const _cRes = await fetch(`/api/sub-contracts?job_id=${jobId}&user_id=${user.id}&company_id=${encodeURIComponent(profile?.company_id || '')}&company_name=${encodeURIComponent(profile?.company_name || '')}`)
     const { contracts } = await _cRes.json()
     if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
     setNoContract(false)

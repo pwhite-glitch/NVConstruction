@@ -1677,7 +1677,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               {avgRating > 0 && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(avgRating)}{'☆'.repeat(5 - avgRating)}</span>}
                               {ratings.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{ratings.length} rating{ratings.length > 1 ? 's' : ''}</span>}
                             </div>
-                            <p style={{ ...s.meta, margin: 0 }}>{sub.contact_name} · {sub.trade} · Applied {new Date(sub.applied_at).toLocaleDateString()}</p>
+                            <p style={{ ...s.meta, margin: 0 }}>{sub.trade}{sub.trade ? ' · ' : ''}Applied {new Date(sub.applied_at).toLocaleDateString()}</p>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
@@ -1692,6 +1692,49 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     })()}
                     {expandedDir === sub.id && (
                       <div style={s.detail}>
+
+                        {/* ── Users (subcategory) ── */}
+                        {(() => {
+                          const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+                          const members = company ? subProfiles.filter(p => p.company_id === company.id) : []
+                          const isInviting = subTeamInviteLoading === sub.id
+                          const invResult = subTeamInviteResult[sub.id]
+                          return (
+                            <div style={{ background: '#080808', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                              <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Users ({members.length})</p>
+                              {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No portal users yet — invite someone below.</p>}
+                              {members.map(m => {
+                                const isRegistered = !!m.full_name
+                                return (
+                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #111' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
+                                      <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{m.invite_email}</div>
+                                      {isRegistered && m.phone && <div style={{ fontSize: '12px', color: '#555' }}>{m.phone}</div>}
+                                    </div>
+                                    {isRegistered
+                                      ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', flexShrink: 0 }}>Registered</span>
+                                      : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', flexShrink: 0 }}>Invite sent</span>
+                                    }
+                                  </div>
+                                )
+                              })}
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px' }}>
+                                <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
+                                  placeholder="Invite user by email…"
+                                  value={subTeamInviteForm[sub.id] || ''}
+                                  onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: e.target.value }))} />
+                                <button style={{ ...s.btnSm('orange'), opacity: isInviting ? 0.6 : 1 }}
+                                  disabled={isInviting || !subTeamInviteForm[sub.id]}
+                                  onClick={() => inviteSubTeamMember(sub.id, sub.company_name)}>
+                                  {isInviting ? '…' : 'Invite'}
+                                </button>
+                                {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}
+                                {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         {/* ── Document status ── */}
                         <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
@@ -1866,48 +1909,6 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           </div>
                         )}
 
-                        {/* Team members */}
-                        {(() => {
-                          const company = companiesData.find(c => c.name === sub.company_name)
-                          const members = company ? subProfiles.filter(p => p.company_id === company.id) : []
-                          const isInviting = subTeamInviteLoading === sub.id
-                          const invResult = subTeamInviteResult[sub.id]
-                          return (
-                            <div style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', margin: '1rem 0' }}>
-                              <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
-                              {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No users yet — invite someone below.</p>}
-                              {members.map(m => {
-                                const isRegistered = !!m.full_name
-                                return (
-                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '13px', color: isRegistered ? '#f1f1f1' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
-                                      {isRegistered && m.phone && <div style={{ fontSize: '11px', color: '#555' }}>{m.phone}</div>}
-                                      {!isRegistered && m.invite_email && <div style={{ fontSize: '11px', color: '#555' }}>{m.invite_email}</div>}
-                                    </div>
-                                    {isRegistered
-                                      ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', flexShrink: 0 }}>Registered</span>
-                                      : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', flexShrink: 0 }}>Invite sent</span>
-                                    }
-                                  </div>
-                                )
-                              })}
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px' }}>
-                                <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
-                                  placeholder="Invite additional team member by email…"
-                                  value={subTeamInviteForm[sub.id] || ''}
-                                  onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: e.target.value }))} />
-                                <button style={{ ...s.btnSm('orange'), opacity: isInviting ? 0.6 : 1 }}
-                                  disabled={isInviting || !subTeamInviteForm[sub.id]}
-                                  onClick={() => inviteSubTeamMember(sub.id, sub.company_name)}>
-                                  {isInviting ? '…' : 'Invite'}
-                                </button>
-                                {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}
-                                {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
-                              </div>
-                            </div>
-                          )
-                        })()}
 
                         <div style={{ marginTop: '1rem' }}>
                           {sub.status === 'pending' && (

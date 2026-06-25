@@ -172,6 +172,7 @@ export default function JobDetail() {
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
+  const [expandedCompanyKey, setExpandedCompanyKey] = useState(null)
   const [showAssignSub, setShowAssignSub] = useState(false)
   const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
   const [assigningSubLoading, setAssigningSubLoading] = useState(false)
@@ -3557,18 +3558,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return acc
               }, {})).map(group => {
                 const registeredCount = group.members.filter(a => !!a.sub_id).length
+                const gKey = group.company_id || group.name
+                const isExpanded = expandedCompanyKey === gKey
                 return (
-                  <div key={group.name} style={{ marginBottom: '20px' }}>
-                    {/* Company header */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: '8px', borderBottom: '1px solid #1a1a1a', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{group.name}</span>
+                  <div key={group.name} style={{ marginBottom: '6px', border: '1px solid #1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
+                    {/* Company header — click to expand/collapse */}
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#0f0f0f' : 'transparent', userSelect: 'none' }}
+                      onClick={() => setExpandedCompanyKey(isExpanded ? null : gKey)}
+                    >
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', flex: 1 }}>{group.name}</span>
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#0a2a0a' : '#1a1a1a', color: registeredCount > 0 ? '#4ade80' : '#555', border: `1px solid ${registeredCount > 0 ? '#1a4a1a' : '#2a2a2a'}` }}>
                         {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
                       </span>
                       {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#555' }}>{group.members.length} users</span>}
+                      <span style={{ fontSize: '12px', color: '#555', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
 
-                    {/* Individual users under this company */}
+                    {/* Users — only visible when expanded */}
+                    {isExpanded && <div style={{ borderTop: '1px solid #1a1a1a', padding: '8px 14px 12px' }}>
                     {group.members.map(a => {
                       const contactName = a.profiles?.full_name || a._dirEntry?.contact_name
                       const phone = a.profiles?.phone || a._dirEntry?.phone
@@ -3672,6 +3680,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )
                     })}
+                    </div>}
                   </div>
                 )
               })}

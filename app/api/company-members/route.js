@@ -8,7 +8,6 @@ const adminSupabase = createClient(
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const company_id = searchParams.get('company_id')
-
   const email = searchParams.get('email')
 
   let query = adminSupabase
@@ -21,5 +20,18 @@ export async function GET(request) {
 
   const { data, error } = await query
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ members: data || [] })
+
+  // Merge last_sign_in_at from auth so UI can distinguish truly-registered users from pending invites
+  let members = data || []
+  if (members.length > 0) {
+    const { data: { users } } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
+    const signInByEmail = {}
+    users?.forEach(u => { if (u.email) signInByEmail[u.email.toLowerCase()] = u.last_sign_in_at })
+    members = members.map(m => ({
+      ...m,
+      last_sign_in_at: signInByEmail[m.invite_email?.toLowerCase()] || null,
+    }))
+  }
+
+  return Response.json({ members })
 }

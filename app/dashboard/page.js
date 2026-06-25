@@ -702,7 +702,7 @@ export default function Dashboard() {
     const email = (subTeamInviteForm[dirId] || '').trim().toLowerCase()
     if (!email) return
     setSubTeamInviteLoading(dirId)
-    let company = companiesData.find(c => c.name === companyName)
+    let company = companiesData.find(c => c.name?.toLowerCase().trim() === companyName?.toLowerCase().trim())
     if (!company) {
       const { data: newCo } = await supabase.from('companies').insert({ name: companyName }).select().single()
       if (newCo) { company = newCo; setCompaniesData(prev => [...prev, newCo]) }
@@ -1716,7 +1716,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Users ({members.length})</p>
                               {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 12px' }}>No portal users yet — invite someone below.</p>}
                               {members.map(m => {
-                                const isRegistered = !!m.full_name
+                                const isRegistered = !!m.last_sign_in_at
                                 const initials = m.full_name
                                   ? m.full_name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
                                   : (m.invite_email?.[0] || '?').toUpperCase()
@@ -1727,15 +1727,15 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                       <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666', marginBottom: '3px' }}>
-                                        {m.full_name || 'Invite pending'}
+                                        {m.full_name || m.invite_email}
                                       </div>
                                       <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
-                                        {m.invite_email && <span>{m.invite_email}</span>}
+                                        {m.full_name && m.invite_email && <span>{m.invite_email}</span>}
                                         {m.phone && <span>{m.phone}</span>}
                                       </div>
                                     </div>
-                                    <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', flexShrink: 0, background: isRegistered ? '#0a2a0a' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a2800'}` }}>
-                                      {isRegistered ? '● Active' : 'Invited'}
+                                    <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', flexShrink: 0, background: isRegistered ? '#0a2a0a' : '#181800', color: isRegistered ? '#4ade80' : '#d4a017', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a3000'}` }}>
+                                      {isRegistered ? '● Active' : '○ Pending'}
                                     </span>
                                   </div>
                                 )

@@ -24,13 +24,17 @@ export async function GET(request) {
   // Merge last_sign_in_at from auth so UI can distinguish truly-registered users from pending invites
   let members = data || []
   if (members.length > 0) {
-    const { data: { users } } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
-    const signInByEmail = {}
-    users?.forEach(u => { if (u.email) signInByEmail[u.email.toLowerCase()] = u.last_sign_in_at })
-    members = members.map(m => ({
-      ...m,
-      last_sign_in_at: signInByEmail[m.invite_email?.toLowerCase()] || null,
-    }))
+    try {
+      const { data: authData } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
+      const signInByEmail = {}
+      authData?.users?.forEach(u => { if (u.email) signInByEmail[u.email.toLowerCase()] = u.last_sign_in_at })
+      members = members.map(m => ({
+        ...m,
+        last_sign_in_at: signInByEmail[m.invite_email?.toLowerCase()] || null,
+      }))
+    } catch (_) {
+      // listUsers failed — members still returned, just without sign-in status
+    }
   }
 
   return Response.json({ members })

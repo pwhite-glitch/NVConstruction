@@ -1595,15 +1595,13 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
                 {showAddSubManual && (
                   <div style={s.formBox}>
-                    <p style={s.formTitle}>Add subcontractor to directory</p>
+                    <p style={s.formTitle}>Add company to directory</p>
                     <form onSubmit={addSubManually}>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Company name *</label><input style={s.input} value={newSubManual.company_name} onChange={e => setNewSubManual(f => ({ ...f, company_name: e.target.value }))} required placeholder="ABC Framing LLC" /></div>
-                        <div><label style={s.label}>Contact name</label><input style={s.input} value={newSubManual.contact_name} onChange={e => setNewSubManual(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
+                        <div><label style={s.label}>Phone</label><input style={s.input} value={newSubManual.phone} onChange={e => setNewSubManual(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                       </div>
                       <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
-                        <div><label style={s.label}>Email</label><input type="email" style={s.input} value={newSubManual.email} onChange={e => setNewSubManual(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
-                        <div><label style={s.label}>Phone</label><input style={s.input} value={newSubManual.phone} onChange={e => setNewSubManual(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                         <div><label style={s.label}>Address</label><input style={s.input} value={newSubManual.address} onChange={e => setNewSubManual(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, TX" /></div>
                       </div>
                       <div style={{ ...s.grid3, marginBottom: '1.25rem' }} className="rx-grid-3">
@@ -1804,7 +1802,6 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         {editingSubId !== sub.id ? (
                           <>
                             <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
-                              <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{sub.email}</div></div>
                               <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{sub.phone || '—'}</div></div>
                               <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{sub.address || '—'}</div></div>
                               <div><div style={s.detailLabel}>Trade</div><div style={s.detailValue}>{sub.trade || '—'}</div></div>
@@ -1839,7 +1836,6 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                               <div><label style={s.label}>Company name</label><input style={s.input} value={editSubForm.company_name} onChange={e => setEditSubForm(f => ({ ...f, company_name: e.target.value }))} /></div>
                               <div><label style={s.label}>Contact name</label><input style={s.input} value={editSubForm.contact_name} onChange={e => setEditSubForm(f => ({ ...f, contact_name: e.target.value }))} /></div>
-                              <div><label style={s.label}>Email</label><input type="email" style={s.input} value={editSubForm.email} onChange={e => setEditSubForm(f => ({ ...f, email: e.target.value }))} /></div>
                               <div><label style={s.label}>Phone</label><input style={s.input} value={editSubForm.phone} onChange={e => setEditSubForm(f => ({ ...f, phone: e.target.value }))} /></div>
                               <div><label style={s.label}>Address</label><input style={s.input} value={editSubForm.address} onChange={e => setEditSubForm(f => ({ ...f, address: e.target.value }))} /></div>
                               <div>

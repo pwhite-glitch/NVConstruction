@@ -3024,7 +3024,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {
                 group: 'Team',
                 items: [
-                  { key: 'subs', label: 'Subs', badge: subs.length || null },
+                  { key: 'subs', label: 'Companies', badge: subs.length || null },
                   { key: 'contracts', label: 'Contracts', badge: contracts.length || null },
                   ...(userRole === 'pm' ? [{ key: 'labor', label: 'Labor', badge: laborAllocations.length || null }] : []),
                 ],
@@ -3100,7 +3100,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <option value="photos">Site Photos</option>
           </optgroup>
           <optgroup label="Team">
-            <option value="subs">Subs</option>
+            <option value="subs">Companies</option>
             <option value="contracts">Contracts</option>
             {userRole === 'pm' && <option value="labor">Labor</option>}
           </optgroup>
@@ -3500,12 +3500,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned subcontractors ({subs.length})</p>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned ({subs.length})</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {subs.some(a => !a.sub_id && a.sub_email) && (
                     <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Notify all unregistered</button>
                   )}
-                  {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign sub</button>}
+                  {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign company</button>}
                 </div>
               </div>
 
@@ -3545,116 +3545,133 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {subs.length === 0 && !showAssignSub && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No subcontractors assigned yet.</p>
+                <p style={{ color: '#444', fontSize: '14px' }}>No companies assigned yet.</p>
               )}
 
-              {subs.map(a => {
+              {Object.values(subs.reduce((acc, a) => {
                 const dirEntry = subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())
                 const companyName = a.profiles?.company_name || dirEntry?.company_name || a.sub_email || 'Unknown'
-                const contactName = a.profiles?.full_name || dirEntry?.contact_name
-                const phone = a.profiles?.phone || dirEntry?.phone
-                const address = dirEntry?.address
-                const isRegistered = !!a.sub_id
-                const existingRating = subRatings.find(r => r.sub_id === a.sub_id)
-                const rf = ratingForms[a.sub_id] || {}
-                const messages = messageThreads[a.sub_id] || []
-                const isShowingRating = showRatingFor === a.sub_id
-                const isShowingMessages = expandedMessageSubId === a.sub_id
-                const StarRow = ({ field, label }) => (
-                  <div style={{ marginBottom: '8px' }}>
-                    <label style={{ ...s.label, marginBottom: '4px' }}>{label}</label>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {[1,2,3,4,5].map(n => (
-                        <button key={n} onClick={() => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, [field]: n } }))}
-                          style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#1a1a1a', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#2a2a2a'}`, borderRadius: '6px', color: '#f1f1f1', fontSize: '16px', cursor: 'pointer' }}>★</button>
-                      ))}
-                    </div>
-                  </div>
-                )
+                const groupKey = a.company_id || a.profiles?.company_id || companyName
+                if (!acc[groupKey]) acc[groupKey] = { name: companyName, company_id: a.company_id || a.profiles?.company_id || null, members: [] }
+                acc[groupKey].members.push({ ...a, _dirEntry: dirEntry })
+                return acc
+              }, {})).map(group => {
+                const registeredCount = group.members.filter(a => !!a.sub_id).length
                 return (
-                  <div key={a.id} style={{ ...s.contractRow, marginBottom: '8px' }}>
-                    <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
-                      <div style={{ flex: 1, minWidth: '200px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{companyName}</span>
-                          <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#1a1a1a', color: isRegistered ? '#4ade80' : '#555', border: `1px solid ${isRegistered ? '#1a4a1a' : '#2a2a2a'}` }}>{isRegistered ? 'Registered' : 'Not registered'}</span>
-                          {existingRating && (
-                            <span style={{ fontSize: '12px', color: '#e8590c' }}>
-                              {'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
-                          {contactName && <span>{contactName}</span>}
-                          {phone && <span>{phone}</span>}
-                          {a.sub_email && <span>{a.sub_email}</span>}
-                          {address && <span>{address}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {isRegistered && (
-                          <button style={s.btnSmall} onClick={() => {
-                            if (isShowingMessages) { setExpandedMessageSubId(null) }
-                            else { setExpandedMessageSubId(a.sub_id); loadMessages(a.sub_id) }
-                          }}>💬 Messages{messages.length > 0 ? ` (${messages.length})` : ''}</button>
-                        )}
-                        {isRegistered && (
-                          <button style={s.btnSmall} onClick={() => {
-                            if (isShowingRating) { setShowRatingFor(null) }
-                            else { setShowRatingFor(a.sub_id); setRatingForms(prev => ({ ...prev, [a.sub_id]: existingRating ? { quality: existingRating.quality, timeliness: existingRating.timeliness, communication: existingRating.communication, notes: existingRating.notes || '' } : { quality: 0, timeliness: 0, communication: 0, notes: '' } })) }
-                          }}>{existingRating ? 'Edit Rating' : 'Rate Sub'}</button>
-                        )}
-                        {!isRegistered && a.sub_email && (
-                          notifySubResult[a.sub_email] === 'sent'
-                            ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
-                            : notifySubResult[a.sub_email]
-                              ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{notifySubResult[a.sub_email]}</span>
-                              : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
-                                  {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
-                                </button>
-                        )}
-                        <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
-                      </div>
+                  <div key={group.name} style={{ marginBottom: '20px' }}>
+                    {/* Company header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingBottom: '8px', borderBottom: '1px solid #1a1a1a', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{group.name}</span>
+                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#0a2a0a' : '#1a1a1a', color: registeredCount > 0 ? '#4ade80' : '#555', border: `1px solid ${registeredCount > 0 ? '#1a4a1a' : '#2a2a2a'}` }}>
+                        {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
+                      </span>
+                      {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#555' }}>{group.members.length} users</span>}
                     </div>
 
-                    {/* Rating form */}
-                    {isShowingRating && (
-                      <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
-                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Rate {companyName}</p>
-                        <StarRow field="quality" label="Quality of work" />
-                        <StarRow field="timeliness" label="Timeliness" />
-                        <StarRow field="communication" label="Communication" />
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={s.label}>Notes (optional)</label>
-                          <input style={s.input} value={rf.notes || ''} onChange={e => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, notes: e.target.value } }))} placeholder="Additional comments..." />
+                    {/* Individual users under this company */}
+                    {group.members.map(a => {
+                      const contactName = a.profiles?.full_name || a._dirEntry?.contact_name
+                      const phone = a.profiles?.phone || a._dirEntry?.phone
+                      const address = a._dirEntry?.address
+                      const isRegistered = !!a.sub_id
+                      const existingRating = subRatings.find(r => r.sub_id === a.sub_id)
+                      const rf = ratingForms[a.sub_id] || {}
+                      const messages = messageThreads[a.sub_id] || []
+                      const isShowingRating = showRatingFor === a.sub_id
+                      const isShowingMessages = expandedMessageSubId === a.sub_id
+                      const StarRow = ({ field, label }) => (
+                        <div style={{ marginBottom: '8px' }}>
+                          <label style={{ ...s.label, marginBottom: '4px' }}>{label}</label>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            {[1,2,3,4,5].map(n => (
+                              <button key={n} onClick={() => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, [field]: n } }))}
+                                style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#1a1a1a', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#2a2a2a'}`, borderRadius: '6px', color: '#f1f1f1', fontSize: '16px', cursor: 'pointer' }}>★</button>
+                            ))}
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button style={{ ...s.btn, opacity: savingRatingFor === a.sub_id || !rf.quality ? 0.6 : 1 }} disabled={savingRatingFor === a.sub_id || !rf.quality} onClick={() => saveSubRating(a.sub_id)}>{savingRatingFor === a.sub_id ? 'Saving...' : 'Save Rating'}</button>
-                          <button style={s.btnGray} onClick={() => setShowRatingFor(null)}>Cancel</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Message thread */}
-                    {isShowingMessages && (
-                      <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
-                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Messages — {companyName}</p>
-                        <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {messages.length === 0 ? <p style={{ color: '#444', fontSize: '13px' }}>No messages yet.</p> : messages.map(msg => (
-                            <div key={msg.id} style={{ display: 'flex', flexDirection: msg.sender_role === 'pm' ? 'row-reverse' : 'row', gap: '8px' }}>
-                              <div style={{ maxWidth: '70%', background: msg.sender_role === 'pm' ? '#1a2a0a' : '#1a1a2a', border: `1px solid ${msg.sender_role === 'pm' ? '#2a4a1a' : '#2a2a4a'}`, borderRadius: '10px', padding: '8px 12px' }}>
-                                <div style={{ fontSize: '11px', color: '#555', marginBottom: '3px' }}>{msg.sender_name} · {new Date(msg.created_at).toLocaleString()}</div>
-                                <div style={{ fontSize: '13px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</div>
+                      )
+                      return (
+                        <div key={a.id} style={{ ...s.contractRow, marginBottom: '6px', marginLeft: '12px', borderLeft: '2px solid #1a1a1a' }}>
+                          <div style={{ ...s.contractRowHeader, flexWrap: 'wrap', gap: '12px' }}>
+                            <div style={{ flex: 1, minWidth: '200px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                {contactName && <span style={{ fontSize: '14px', fontWeight: '600', color: '#ccc' }}>{contactName}</span>}
+                                {!isRegistered && <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '99px', background: '#1a1a1a', color: '#555', border: '1px solid #2a2a2a' }}>Not registered</span>}
+                                {existingRating && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}</span>}
+                              </div>
+                              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
+                                {phone && <span>{phone}</span>}
+                                {a.sub_email && <span>{a.sub_email}</span>}
+                                {address && <span>{address}</span>}
                               </div>
                             </div>
-                          ))}
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                              {isRegistered && (
+                                <button style={s.btnSmall} onClick={() => {
+                                  if (isShowingMessages) { setExpandedMessageSubId(null) }
+                                  else { setExpandedMessageSubId(a.sub_id); loadMessages(a.sub_id) }
+                                }}>💬 Messages{messages.length > 0 ? ` (${messages.length})` : ''}</button>
+                              )}
+                              {isRegistered && (
+                                <button style={s.btnSmall} onClick={() => {
+                                  if (isShowingRating) { setShowRatingFor(null) }
+                                  else { setShowRatingFor(a.sub_id); setRatingForms(prev => ({ ...prev, [a.sub_id]: existingRating ? { quality: existingRating.quality, timeliness: existingRating.timeliness, communication: existingRating.communication, notes: existingRating.notes || '' } : { quality: 0, timeliness: 0, communication: 0, notes: '' } })) }
+                                }}>{existingRating ? 'Edit Rating' : 'Rate'}</button>
+                              )}
+                              {!isRegistered && a.sub_email && (
+                                notifySubResult[a.sub_email] === 'sent'
+                                  ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
+                                  : notifySubResult[a.sub_email]
+                                    ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{notifySubResult[a.sub_email]}</span>
+                                    : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
+                                        {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
+                                      </button>
+                              )}
+                              <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
+                            </div>
+                          </div>
+
+                          {/* Rating form */}
+                          {isShowingRating && (
+                            <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                              <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Rate {contactName || group.name}</p>
+                              <StarRow field="quality" label="Quality of work" />
+                              <StarRow field="timeliness" label="Timeliness" />
+                              <StarRow field="communication" label="Communication" />
+                              <div style={{ marginBottom: '12px' }}>
+                                <label style={s.label}>Notes (optional)</label>
+                                <input style={s.input} value={rf.notes || ''} onChange={e => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, notes: e.target.value } }))} placeholder="Additional comments..." />
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button style={{ ...s.btn, opacity: savingRatingFor === a.sub_id || !rf.quality ? 0.6 : 1 }} disabled={savingRatingFor === a.sub_id || !rf.quality} onClick={() => saveSubRating(a.sub_id)}>{savingRatingFor === a.sub_id ? 'Saving...' : 'Save Rating'}</button>
+                                <button style={s.btnGray} onClick={() => setShowRatingFor(null)}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Message thread */}
+                          {isShowingMessages && (
+                            <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                              <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Messages — {contactName || group.name}</p>
+                              <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {messages.length === 0 ? <p style={{ color: '#444', fontSize: '13px' }}>No messages yet.</p> : messages.map(msg => (
+                                  <div key={msg.id} style={{ display: 'flex', flexDirection: msg.sender_role === 'pm' ? 'row-reverse' : 'row', gap: '8px' }}>
+                                    <div style={{ maxWidth: '70%', background: msg.sender_role === 'pm' ? '#1a2a0a' : '#1a1a2a', border: `1px solid ${msg.sender_role === 'pm' ? '#2a4a1a' : '#2a2a4a'}`, borderRadius: '10px', padding: '8px 12px' }}>
+                                      <div style={{ fontSize: '11px', color: '#555', marginBottom: '3px' }}>{msg.sender_name} · {new Date(msg.created_at).toLocaleString()}</div>
+                                      <div style={{ fontSize: '13px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <input style={{ ...s.input, flex: 1 }} value={messageDraft[a.sub_id] || ''} onChange={e => setMessageDraft(prev => ({ ...prev, [a.sub_id]: e.target.value }))} placeholder="Type a message..." onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(a.sub_id, profile?.full_name)} />
+                                <button style={{ ...s.btn, padding: '11px 20px', opacity: sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim() ? 0.6 : 1 }} disabled={sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim()} onClick={() => sendMessage(a.sub_id, profile?.full_name)}>{sendingMessageFor === a.sub_id ? '...' : 'Send'}</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <input style={{ ...s.input, flex: 1 }} value={messageDraft[a.sub_id] || ''} onChange={e => setMessageDraft(prev => ({ ...prev, [a.sub_id]: e.target.value }))} placeholder="Type a message..." onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(a.sub_id, profile?.full_name)} />
-                          <button style={{ ...s.btn, padding: '11px 20px', opacity: sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim() ? 0.6 : 1 }} disabled={sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim()} onClick={() => sendMessage(a.sub_id, profile?.full_name)}>{sendingMessageFor === a.sub_id ? '...' : 'Send'}</button>
-                        </div>
-                      </div>
-                    )}
+                      )
+                    })}
                   </div>
                 )
               })}

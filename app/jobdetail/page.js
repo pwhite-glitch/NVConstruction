@@ -168,6 +168,9 @@ export default function JobDetail() {
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
   const [dcSearch, setDcSearch] = useState('')
+  const [dcBudgetFilter, setDcBudgetFilter] = useState('')
+  const [dcAmountMin, setDcAmountMin] = useState('')
+  const [dcAmountMax, setDcAmountMax] = useState('')
   const [dcStatusFilter, setDcStatusFilter] = useState('all')
 
   // Subs tab state
@@ -5846,35 +5849,94 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             })()}
 
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '10px' }}>
+              {/* Header row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <input
-                    style={{ ...s.input, width: '200px', margin: 0, fontSize: '13px', padding: '6px 12px' }}
-                    placeholder="Search description or amount..."
-                    value={dcSearch}
-                    onChange={e => setDcSearch(e.target.value)}
-                  />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {directCosts.length > 0 && <button style={s.btnSmall} onClick={exportDirectCostsCSV}>Export CSV</button>}
                   <button style={s.btnSmall} onClick={() => { setShowCsvImport(v => !v); setShowDcForm(false); setCsvRows([]) }}>{showCsvImport ? 'Cancel' : 'Import CSV'}</button>
                   <button style={s.btnSmallOrange} onClick={() => { setShowDcForm(v => !v); setShowCsvImport(false) }}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                 </div>
               </div>
-              {/* Status filter pills */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                {[
-                  { key: 'all', label: 'All', count: directCosts.length },
-                  { key: 'pending', label: 'Pending', count: directCosts.filter(c => c.status === 'pending').length },
-                  { key: 'approved', label: 'Approved', count: directCosts.filter(c => c.status === 'approved').length },
-                  { key: 'rejected', label: 'Rejected', count: directCosts.filter(c => c.status === 'rejected').length },
-                ].map(f => (
-                  <button
-                    key={f.key}
-                    onClick={() => setDcStatusFilter(f.key)}
-                    style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#2a2a2a'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#2a1200' : f.key === 'rejected' ? '#2a0a0a' : '#0a2a0a') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#555' }}
-                  >{f.label} ({f.count})</button>
-                ))}
-              </div>
+
+              {/* Filter bar */}
+              {(() => {
+                const hasFilters = dcSearch || dcBudgetFilter || dcAmountMin || dcAmountMax || dcStatusFilter !== 'all'
+                return (
+                  <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                      {/* Keyword search */}
+                      <div style={{ flex: '2 1 180px', minWidth: '150px' }}>
+                        <label style={{ ...s.label, marginBottom: '4px' }}>Keyword</label>
+                        <input
+                          style={{ ...s.input, margin: 0, fontSize: '13px', padding: '6px 10px' }}
+                          placeholder="Description, notes…"
+                          value={dcSearch}
+                          onChange={e => setDcSearch(e.target.value)}
+                        />
+                      </div>
+                      {/* Budget line dropdown */}
+                      <div style={{ flex: '2 1 180px', minWidth: '150px' }}>
+                        <label style={{ ...s.label, marginBottom: '4px' }}>Budget line</label>
+                        <select
+                          style={{ ...s.input, margin: 0, fontSize: '13px', padding: '6px 10px' }}
+                          value={dcBudgetFilter}
+                          onChange={e => setDcBudgetFilter(e.target.value)}
+                        >
+                          <option value="">All lines</option>
+                          <option value="__unassigned__">— Unassigned —</option>
+                          {budgetItems.map(b => (
+                            <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Amount range */}
+                      <div style={{ flex: '1 1 90px', minWidth: '80px' }}>
+                        <label style={{ ...s.label, marginBottom: '4px' }}>Min $</label>
+                        <input
+                          type="number" min="0" step="1"
+                          style={{ ...s.input, margin: 0, fontSize: '13px', padding: '6px 10px' }}
+                          placeholder="0"
+                          value={dcAmountMin}
+                          onChange={e => setDcAmountMin(e.target.value)}
+                        />
+                      </div>
+                      <div style={{ flex: '1 1 90px', minWidth: '80px' }}>
+                        <label style={{ ...s.label, marginBottom: '4px' }}>Max $</label>
+                        <input
+                          type="number" min="0" step="1"
+                          style={{ ...s.input, margin: 0, fontSize: '13px', padding: '6px 10px' }}
+                          placeholder="∞"
+                          value={dcAmountMax}
+                          onChange={e => setDcAmountMax(e.target.value)}
+                        />
+                      </div>
+                      {/* Clear */}
+                      {hasFilters && (
+                        <button
+                          style={{ ...s.btnSmall, alignSelf: 'flex-end', background: '#1a1a1a', border: '1px solid #333', color: '#888', flexShrink: 0 }}
+                          onClick={() => { setDcSearch(''); setDcBudgetFilter(''); setDcAmountMin(''); setDcAmountMax(''); setDcStatusFilter('all') }}
+                        >Clear filters</button>
+                      )}
+                    </div>
+                    {/* Status pills */}
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                      {[
+                        { key: 'all', label: 'All', count: directCosts.length },
+                        { key: 'pending', label: 'Pending', count: directCosts.filter(c => c.status === 'pending').length },
+                        { key: 'approved', label: 'Approved', count: directCosts.filter(c => c.status === 'approved').length },
+                        { key: 'rejected', label: 'Rejected', count: directCosts.filter(c => c.status === 'rejected').length },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => setDcStatusFilter(f.key)}
+                          style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#2a2a2a'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#2a1200' : f.key === 'rejected' ? '#2a0a0a' : '#0a2a0a') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#555' }}
+                        >{f.label} ({f.count})</button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {showDcForm && (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
@@ -5980,8 +6042,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const q = dcSearch.toLowerCase().trim()
                 const visibleCosts = directCosts.filter(c => {
                   if (dcStatusFilter !== 'all' && c.status !== dcStatusFilter) return false
+                  if (dcBudgetFilter === '__unassigned__' && c.budget_item_id) return false
+                  if (dcBudgetFilter && dcBudgetFilter !== '__unassigned__' && c.budget_item_id !== dcBudgetFilter) return false
+                  if (dcAmountMin && Number(c.amount) < Number(dcAmountMin)) return false
+                  if (dcAmountMax && Number(c.amount) > Number(dcAmountMax)) return false
                   if (!q) return true
                   return c.description?.toLowerCase().includes(q) ||
+                    c.notes?.toLowerCase().includes(q) ||
                     String(c.amount).includes(dcSearch.trim()) ||
                     Number(c.amount).toLocaleString().includes(dcSearch.trim())
                 })
@@ -6011,7 +6078,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   )}
                   {visibleCosts.length === 0 && (
-                    <p style={{ color: '#555', fontSize: '13px', marginBottom: '1rem' }}>No costs match{q ? ` "${dcSearch}"` : ''}{dcStatusFilter !== 'all' ? ` with status "${dcStatusFilter}"` : ''}.</p>
+                    <p style={{ color: '#555', fontSize: '13px', marginBottom: '1rem' }}>No costs match the current filters.</p>
                   )}
                   {visibleCosts.map(c => {
                 const isRejecting = rejectingCostId === c.id

@@ -1395,7 +1395,7 @@ export default function AdminPortal() {
               </>
             )}
 
-      </div>  {/* end content */}
-    </div>  {/* end page */}
+      </div>
+    </div>
   )
 }

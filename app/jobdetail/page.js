@@ -565,17 +565,22 @@ export default function JobDetail() {
   }
 
   async function loadDirectCosts() {
-    const res = await fetch(`/api/direct-costs?job_id=${id}`)
-    const json = await res.json()
-    const costs = json.data || []
-    const userIds = [...new Set(costs.map(c => c.submitted_by).filter(Boolean))]
-    if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('id, email, full_name').in('id', userIds)
-      const pmap = {}
-      profiles?.forEach(p => { pmap[p.id] = p })
-      costs.forEach(c => { c._profile = pmap[c.submitted_by] || null })
+    try {
+      const res = await fetch(`/api/direct-costs?job_id=${id}`)
+      const json = await res.json()
+      if (json.error) { console.error('loadDirectCosts error:', json.error); return }
+      const costs = json.data || []
+      const userIds = [...new Set(costs.map(c => c.submitted_by).filter(Boolean))]
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', userIds)
+        const pmap = {}
+        profiles?.forEach(p => { pmap[p.id] = p })
+        costs.forEach(c => { c._profile = pmap[c.submitted_by] || null })
+      }
+      setDirectCosts(costs)
+    } catch (err) {
+      console.error('loadDirectCosts threw:', err)
     }
-    setDirectCosts(costs)
   }
 
   async function openDcReceiptUrl(path) {
@@ -627,6 +632,7 @@ export default function JobDetail() {
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
+      if (userRole === 'apm') { setMsg('Cost submitted for PM approval.'); setTimeout(() => setMsg(''), 5000) }
     } catch (err) {
       setErrMsg('Error submitting cost: ' + err.message); setTimeout(() => setErrMsg(''), 6000)
     }
@@ -690,7 +696,7 @@ export default function JobDetail() {
     setUpdatingCostId(costId)
     if (status === 'rejected') {
       const cost = directCosts.find(c => c.id === costId)
-      const superEmail = cost?._profile?.email
+      const superEmail = cost?._profile?.email || null
       if (superEmail) {
         sendEmail(superEmail, `Cost entry rejected — #${job?.job_number} ${job?.project_name}`,
           emailWrap(`

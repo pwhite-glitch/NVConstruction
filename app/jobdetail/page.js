@@ -212,6 +212,11 @@ export default function JobDetail() {
   const [rejectingCostId, setRejectingCostId] = useState(null)
   const [costRejectNote, setCostRejectNote] = useState('')
   const [assigningCostId, setAssigningCostId] = useState(null)
+  const [movingCostId, setMovingCostId] = useState(null)
+  const [moveTargetJobId, setMoveTargetJobId] = useState('')
+  const [activeJobs, setActiveJobs] = useState([])
+  const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
+  const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
   const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
   const [dcFile, setDcFile] = useState(null)
@@ -685,6 +690,32 @@ export default function JobDetail() {
     await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
     await loadDirectCosts()
     setAssigningCostId(null)
+  }
+
+  async function openMovePanel(costId) {
+    if (movingCostId === costId) { setMovingCostId(null); setMoveTargetJobId(''); return }
+    setMovingCostId(costId)
+    setMoveTargetJobId('')
+    if (activeJobs.length === 0) {
+      setLoadingActiveJobs(true)
+      const { data } = await supabase.from('jobs').select('id, job_number, project_name').eq('status', 'active').neq('id', id).order('job_number')
+      setActiveJobs(data || [])
+      setLoadingActiveJobs(false)
+    }
+  }
+
+  async function moveCostToJob() {
+    if (!moveTargetJobId || !movingCostId) return
+    setConfirmingMoveCostId(movingCostId)
+    await fetch('/api/direct-costs', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: movingCostId, job_id: moveTargetJobId, budget_item_id: null, draw_request_id: null, drawn_application_id: null }),
+    })
+    setDirectCosts(prev => prev.filter(c => c.id !== movingCostId))
+    setMovingCostId(null)
+    setMoveTargetJobId('')
+    setConfirmingMoveCostId(null)
   }
 
   function exportDirectCostsCSV() {
@@ -6204,6 +6235,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {c.status === 'approved' && (
                           <button style={s.btnSmallRed} onClick={() => updateCostStatus(c.id, 'rejected', c.notes)}>Undo approve</button>
                         )}
+                        <button
+                          style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#1a0a2a', color: '#c084fc', border: '1px solid #4a1a6a' } : {}) }}
+                          onClick={() => openMovePanel(c.id)}
+                        >{movingCostId === c.id ? '✕ Cancel' : '⇄ Move'}</button>
                       </div>
                     </div>
 
@@ -6232,6 +6267,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         ))}
                       </select>
                     </div>
+
+                    {movingCostId === c.id && (
+                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '10px', background: '#0f0a1a', borderTop: '1px solid #2a1a4a' }}>
+                        <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap', color: '#c084fc' }}>Move to job</label>
+                        <select
+                          style={{ ...s.input, flex: 1, opacity: loadingActiveJobs ? 0.6 : 1 }}
+                          disabled={loadingActiveJobs || confirmingMoveCostId === c.id}
+                          value={moveTargetJobId}
+                          onChange={e => setMoveTargetJobId(e.target.value)}
+                        >
+                          <option value="">{loadingActiveJobs ? 'Loading jobs...' : '— Select destination job —'}</option>
+                          {activeJobs.map(j => (
+                            <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
+                          ))}
+                        </select>
+                        <button
+                          style={{ padding: '8px 16px', background: '#2a1a4a', color: '#c084fc', border: '1px solid #4a1a6a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: !moveTargetJobId || confirmingMoveCostId === c.id ? 'not-allowed' : 'pointer', opacity: !moveTargetJobId || confirmingMoveCostId === c.id ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                          disabled={!moveTargetJobId || confirmingMoveCostId === c.id}
+                          onClick={moveCostToJob}
+                        >{confirmingMoveCostId === c.id ? 'Moving...' : 'Move cost'}</button>
+                      </div>
+                    )}
                   </div>
                 )
               })}

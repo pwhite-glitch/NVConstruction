@@ -82,6 +82,15 @@ const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
 const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: true }
 
+function CoAttachmentLink({ path, supabase }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    supabase.storage.from('receipts').createSignedUrl(path, 3600).then(({ data }) => { if (data?.signedUrl) setUrl(data.signedUrl) })
+  }, [path])
+  if (!url) return null
+  return <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#e8590c', textDecoration: 'none', marginTop: '3px', display: 'inline-block' }}>📎 Attachment</a>
+}
+
 export default function JobDetail() {
   const router = useRouter()
   const [id, setId] = useState(null)
@@ -124,6 +133,7 @@ export default function JobDetail() {
   const [allCOs, setAllCOs] = useState([])
   const [showAddCO, setShowAddCO] = useState(false)
   const [coForm, setCoForm] = useState(emptyCO)
+  const [coFile, setCoFile] = useState(null)
   const [addingCO, setAddingCO] = useState(false)
   const [primeCOs, setPrimeCOs] = useState([])
   const [showAddPrimeCO, setShowAddPrimeCO] = useState(false)
@@ -2100,6 +2110,12 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setAddingCO(true)
     const { data: { session } } = await supabase.auth.getSession()
     const validSOV = coForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
+    let attachmentUrl = null
+    if (coFile) {
+      const path = `co-attachments/${id}_${Date.now()}_${coFile.name.replace(/\s+/g, '-')}`
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, coFile)
+      if (!upErr) attachmentUrl = path
+    }
     const { error: insertErr } = await supabase.from('change_orders').insert({
       subcontract_id: coForm.subcontract_id,
       initiated_by: session.user.id,
@@ -2108,6 +2124,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       description: coForm.description,
       status: 'pending',
       sov: validSOV.length > 0 ? validSOV : null,
+      attachment_url: attachmentUrl,
     })
     if (insertErr) { setErrMsg(insertErr.message); setTimeout(() => setErrMsg(''), 6000); setAddingCO(false); return }
     // Notify sub if this is a PM-to-sub CO
@@ -2137,6 +2154,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
     setShowAddCO(false)
     setCoForm(emptyCO)
+    setCoFile(null)
     await loadAllCOs()
     await loadContracts()
     setAddingCO(false)
@@ -2247,15 +2265,20 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   async function pushSubCOToPrime(co, subName) {
     setPushingToPrime(true)
     const markupPct = parseFloat(pushMarkup) || 0
-    const markedUpAmt = Math.round(Number(co.amount) * (1 + markupPct / 100) * 100) / 100
+    const subAmt = Number(co.amount)
+    const markedUpAmt = Math.round(subAmt * (1 + markupPct / 100) * 100) / 100
+    const profit = Math.round((markedUpAmt - subAmt) * 100) / 100
     const { data: { session } } = await supabase.auth.getSession()
     const { error } = await supabase.from('prime_change_orders').insert({
       job_id: id,
       description: `${subName} — ${co.description}`,
       amount: markedUpAmt,
-      notes: markupPct > 0 ? `Sub amount: $${Number(co.amount).toLocaleString()} + ${markupPct}% markup` : `From sub CO: ${subName}`,
+      notes: markupPct > 0
+        ? `Sub: $${subAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })} | Our profit: $${profit.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${markupPct}%)`
+        : `From sub CO: ${subName}`,
       status: 'pending',
       created_by: session.user.id,
+      attachment_url: co.attachment_url || null,
     })
     if (error) { alert('Error: ' + error.message) }
     else { setPushCOId(null); setPushMarkup(''); await loadPrimeCOs() }
@@ -2272,6 +2295,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const sovRows = co.sov?.length > 0
       ? co.sov.map(item => `<tr style="border-bottom:1px solid #222"><td style="padding:8px 0;color:#ccc;font-size:13px">${item.description || '—'}</td><td style="text-align:right;padding:8px 0;font-weight:700;font-size:13px;color:${Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b'}">${Number(item.amount) >= 0 ? '+' : ''}$${Math.abs(Number(item.amount)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`).join('')
       : ''
+    let attachmentHtml = ''
+    if (co.attachment_url) {
+      const { data: signedData } = await supabase.storage.from('receipts').createSignedUrl(co.attachment_url, 604800)
+      if (signedData?.signedUrl) {
+        attachmentHtml = `<div style="margin:16px 0 0;padding:12px 16px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px"><p style="margin:0 0 6px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Attachment</p><a href="${signedData.signedUrl}" style="color:#e8590c;font-size:13px;text-decoration:none">View attached document</a></div>`
+      }
+    }
     await sendEmail(
       ownerEmail,
       `Change Order ${coNumber} for Review — ${job.project_name}`,
@@ -2287,7 +2317,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         </div>
         ${sovRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px"><tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:0 0 8px;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Line Item</th><th style="text-align:right;padding:0 0 8px;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Amount</th></tr>${sovRows}</table>` : ''}
         <p style="font-size:24px;font-weight:800;color:#e8590c;margin:12px 0 20px">${amtStr}</p>
-        <p style="color:#888;font-size:13px;margin:0 0 6px">To approve or request modifications, please reply to this email or contact your project manager.</p>
+        ${attachmentHtml}
+        <p style="color:#888;font-size:13px;margin:16px 0 6px">To approve or request modifications, please reply to this email or contact your project manager.</p>
         <p style="color:#555;font-size:12px;margin:0">Job #${job.job_number} · ${job.project_name}${job.location ? ` · ${job.location}` : ''}</p>
       `)
     ).catch(() => {})
@@ -2299,16 +2330,20 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const w = window.open('', '_blank')
     const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
     const amount = Number(co.amount)
-    w.document.write(`<!DOCTYPE html><html><head><title>PCO-${String(coNum).padStart(3,'0')} — Job #${job.job_number}</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;padding:60px;font-size:13px;line-height:1.5;max-width:800px;margin:0 auto}.print-btn{padding:8px 20px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:32px}.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:20px;border-bottom:2px solid #111}.co{font-size:22px;font-weight:800}.co-sub{font-size:12px;color:#888;margin-top:2px}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:3px}.val{font-size:14px;font-weight:600}.num-lbl{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#888;font-weight:700}.num{font-size:28px;font-weight:800}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}.amt-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}.amt{font-size:28px;font-weight:800;color:${amount>=0?'#22863a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px}.notes{background:#f8f8f8;border-radius:8px;padding:16px;margin-bottom:32px;font-size:13px;color:#555}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}.sig-block{border-top:1.5px solid #111;padding-top:12px}.sig-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:8px}.sig-line{height:32px;border-bottom:1px solid #ccc;margin-bottom:6px}.sig-field{font-size:12px;color:#aaa}.footer{margin-top:48px;padding-top:16px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center}@media print{.print-btn{display:none}}</style></head><body>
+    const logoUrl = `${window.location.origin}/logo.png`
+    const coNumStr = `PCO-${String(coNum).padStart(3,'0')}`
+    w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} — Job #${job.job_number}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;background:#fff;font-size:13px;line-height:1.5}.print-btn{padding:8px 20px;background:#e8590c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;display:block;margin:24px auto}.brand-bar{background:#e8590c;padding:20px 48px;display:flex;justify-content:space-between;align-items:center}.brand-logo{display:flex;align-items:center;gap:14px}.brand-name{color:#fff;font-size:18px;font-weight:800;letter-spacing:-0.5px}.brand-tagline{color:rgba(255,255,255,0.7);font-size:11px;margin-top:2px;letter-spacing:1px;text-transform:uppercase}.co-label{text-align:right;color:rgba(255,255,255,0.75);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}.co-num{color:#fff;font-size:26px;font-weight:800}.content{padding:40px 48px;max-width:800px;margin:0 auto}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:3px}.val{font-size:14px;font-weight:600;color:#111}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 32px;margin-bottom:28px;padding-bottom:24px;border-bottom:1px solid #e8e8e8}.amt-box{background:#fff8f5;border:2px solid #e8590c;border-radius:10px;padding:20px 24px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}.amt-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#e8590c;margin-bottom:4px}.amt{font-size:30px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:20px}.notes{background:#fafafa;border-left:3px solid #e8590c;padding:14px 16px;margin-bottom:28px;font-size:13px;color:#555;border-radius:0 6px 6px 0}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:44px}.sig-block{border-top:2px solid #111;padding-top:14px}.sig-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:10px}.sig-line{height:36px;border-bottom:1px solid #ccc;margin-bottom:6px}.sig-field{font-size:12px;color:#aaa}.footer{margin-top:40px;padding:16px 48px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center;background:#fafafa}@media print{.print-btn{display:none}}</style></head><body>
+<div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="44" height="44" style="object-fit:contain;border-radius:4px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Change Order — Prime Contract</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
+<div class="content">
 <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
-<div class="hdr"><div><div class="co">NV Construction</div><div class="co-sub">Change Order — Prime Contract</div></div><div style="text-align:right"><div class="num-lbl">Change Order No.</div><div class="num">PCO-${String(coNum).padStart(3,'0')}</div></div></div>
-<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Date</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div>${job.owner_company||job.owner_name?`<div><div class="lbl">Owner</div><div class="val">${[job.owner_company,job.owner_name].filter(Boolean).join(' · ')}</div></div>`:''}</div>
-<div class="amt-box"><div><div class="num-lbl">Change Order Amount</div><div style="font-size:12px;color:#888;margin-top:4px">Status: ${co.status}</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-<div class="scope-box"><div class="lbl" style="margin-bottom:8px">Description of Change</div><div style="font-size:14px;line-height:1.7">${co.description}</div></div>
-${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppercase;letter-spacing:1px">Notes:</strong><br>${co.notes}</div>`:''}
-<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Owner / Authorized Representative</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div></div>
-<div class="footer">NV Construction · Generated ${new Date().toLocaleDateString()} · Job #${job.job_number}</div>
+<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div>${job.owner_company||job.owner_name?`<div><div class="lbl">Owner</div><div class="val">${[job.owner_company,job.owner_name].filter(Boolean).join(' · ')}</div></div>`:''}<div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
+<div class="amt-box"><div><div class="amt-lbl">Change Order Amount</div><div style="font-size:12px;color:#888">Requires owner signature below</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+<div class="scope-box"><div class="lbl" style="margin-bottom:10px">Description of Change</div><div style="font-size:14px;line-height:1.7;color:#111">${co.description}</div></div>
+${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#e8590c">Notes / Breakdown:</strong><div style="margin-top:6px">${co.notes}</div></div>`:''}
+<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Owner / Authorized Representative</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Date</div></div></div>
+</div>
+<div class="footer">NV Construction &nbsp;·&nbsp; ${coNumStr} &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString()}</div>
 </body></html>`)
     w.document.close()
   }
@@ -2318,16 +2353,21 @@ ${co.notes?`<div class="notes"><strong style="font-size:11px;text-transform:uppe
     const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
     const amount = Number(co.amount)
     const isPmToSub = co.direction === 'pm_to_sub'
-    w.document.write(`<!DOCTYPE html><html><head><title>SCO-${String(coNum).padStart(3,'0')} — ${subName}</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;padding:60px;font-size:13px;line-height:1.5;max-width:800px;margin:0 auto}.print-btn{padding:8px 20px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:32px}.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #111}.co{font-size:22px;font-weight:800}.co-sub{font-size:12px;color:#888;margin-top:2px}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:3px}.val{font-size:14px;font-weight:600}.num-lbl{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#888;font-weight:700}.num{font-size:28px;font-weight:800}.badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:${isPmToSub?'#e8f4e8':'#fff3e0'};color:${isPmToSub?'#22863a':'#e65100'};margin-bottom:20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}.amt-box{background:#f8f8f8;border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}.amt{font-size:28px;font-weight:800;color:${amount>=0?'#22863a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:48px}.sig-block{border-top:1.5px solid #111;padding-top:12px}.sig-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:8px}.sig-line{height:32px;border-bottom:1px solid #ccc;margin-bottom:6px}.sig-field{font-size:12px;color:#aaa}.footer{margin-top:48px;padding-top:16px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center}@media print{.print-btn{display:none}}</style></head><body>
+    const logoUrl = `${window.location.origin}/logo.png`
+    const coNumStr = `SCO-${String(coNum).padStart(3,'0')}`
+    w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} — ${subName}</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;background:#fff;font-size:13px;line-height:1.5}.print-btn{padding:8px 20px;background:#e8590c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;display:block;margin:24px auto}.brand-bar{background:#111;padding:20px 48px;display:flex;justify-content:space-between;align-items:center}.brand-logo{display:flex;align-items:center;gap:14px}.brand-name{color:#fff;font-size:18px;font-weight:800;letter-spacing:-0.5px}.brand-tagline{color:rgba(255,255,255,0.5);font-size:11px;margin-top:2px;letter-spacing:1px;text-transform:uppercase}.co-label{text-align:right;color:rgba(255,255,255,0.5);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}.co-num{color:#e8590c;font-size:26px;font-weight:800}.accent-bar{height:4px;background:#e8590c}.content{padding:36px 48px;max-width:800px;margin:0 auto}.badge{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:22px;background:${isPmToSub?'#e8590c':'#f0f0f0'};color:${isPmToSub?'#fff':'#555'}}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:3px}.val{font-size:14px;font-weight:600;color:#111}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 32px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid #e8e8e8}.amt-box{background:${amount>=0?'#f2fff5':'#fff5f5'};border:2px solid ${amount>=0?'#1a6b2a':'#cc0000'};border-radius:10px;padding:20px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}.amt-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:${amount>=0?'#1a6b2a':'#cc0000'};margin-bottom:4px}.amt{font-size:30px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin-bottom:24px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:44px}.sig-block{border-top:2px solid #111;padding-top:14px}.sig-lbl{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:10px}.sig-line{height:36px;border-bottom:1px solid #ccc;margin-bottom:6px}.sig-field{font-size:12px;color:#aaa}.footer{margin-top:40px;padding:16px 48px;border-top:1px solid #eee;font-size:11px;color:#aaa;text-align:center;background:#fafafa}@media print{.print-btn{display:none}}</style></head><body>
+<div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="44" height="44" style="object-fit:contain;border-radius:4px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Change Order — Subcontract</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
+<div class="accent-bar"></div>
+<div class="content">
 <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
-<div class="hdr"><div><div class="co">NV Construction</div><div class="co-sub">Change Order — Subcontract</div></div><div style="text-align:right"><div class="num-lbl">Change Order No.</div><div class="num">SCO-${String(coNum).padStart(3,'0')}</div></div></div>
 <div class="badge">${isPmToSub?'NV Construction → Subcontractor':'Subcontractor Request'}</div>
-<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Subcontractor</div><div class="val">${subName}</div></div>${scope?`<div><div class="lbl">Contract Scope</div><div class="val">${scope}</div></div>`:''}<div><div class="lbl">Date</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div></div>
-<div class="amt-box"><div><div class="num-lbl">Change Order Amount</div><div style="font-size:12px;color:#888;margin-top:4px">Status: ${co.status}</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-<div class="scope-box"><div class="lbl" style="margin-bottom:8px">Description of Change</div><div style="font-size:14px;line-height:1.7">${co.description}</div></div>
-<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Subcontractor — ${subName}</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:16px"></div><div class="sig-field">Date</div></div></div>
-<div class="footer">NV Construction · Generated ${new Date().toLocaleDateString()} · Job #${job.job_number}</div>
+<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Subcontractor</div><div class="val">${subName}</div></div>${scope?`<div><div class="lbl">Contract Scope</div><div class="val">${scope}</div></div>`:''}<div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div><div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
+<div class="amt-box"><div><div class="amt-lbl">Change Order Amount</div><div style="font-size:12px;color:#888;margin-top:4px">Requires signatures below</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+<div class="scope-box"><div class="lbl" style="margin-bottom:10px">Description of Change</div><div style="font-size:14px;line-height:1.7;color:#111">${co.description}</div></div>
+<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Subcontractor — ${subName}</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:18px"></div><div class="sig-field">Date</div></div></div>
+</div>
+<div class="footer">NV Construction &nbsp;·&nbsp; ${coNumStr} &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString()}</div>
 </body></html>`)
     w.document.close()
   }
@@ -4735,6 +4775,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                       </div>
                       {co.notes && <span style={{ fontSize: '13px', color: '#aaa' }}>{co.notes}</span>}
+                      {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
@@ -4857,9 +4898,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     )}
                   </div>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={s.label}>Attachment (optional)</label>
+                    <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setCoFile(e.target.files[0] || null)} style={{ ...s.input, padding: '6px 8px', cursor: 'pointer' }} />
+                    {coFile && <p style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>{coFile.name}</p>}
+                  </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: addingCO ? 0.6 : 1 }} disabled={addingCO} onClick={addCO}>{addingCO ? 'Saving...' : 'Save CO'}</button>
-                    <button style={s.btnGray} onClick={() => { setShowAddCO(false); setCoForm(emptyCO) }}>Cancel</button>
+                    <button style={s.btnGray} onClick={() => { setShowAddCO(false); setCoForm(emptyCO); setCoFile(null) }}>Cancel</button>
                   </div>
                 </div>
                 )
@@ -4888,6 +4934,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                         </div>
                         <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
+                        {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                         <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>

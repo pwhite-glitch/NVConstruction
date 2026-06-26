@@ -494,7 +494,19 @@ export default function Dashboard() {
   async function inviteSubs(bidId, pkg) {
     if (selectedEmails.length === 0) return
     setSendingInvites(true)
+    // Build full send list: selected sub_directory emails + estimator portal users for those companies
+    const allEmails = new Set(selectedEmails.map(e => e.toLowerCase()))
     for (const email of selectedEmails) {
+      const sub = directory.find(d => d.email?.toLowerCase() === email.toLowerCase())
+      if (!sub) continue
+      const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+      const estimators = subProfiles.filter(p =>
+        p.role === 'sub_estimator' &&
+        ((company && p.company_id === company.id) || p.company_name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+      )
+      estimators.forEach(p => { if (p.invite_email) allEmails.add(p.invite_email.toLowerCase()) })
+    }
+    for (const email of allEmails) {
       await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
       sendEmail(email, `You're invited to bid — ${pkg.title}`,
         emailWrap(`
@@ -713,6 +725,7 @@ export default function Dashboard() {
     const form = subTeamInviteForm[dirId] || {}
     const email = (form.email || '').trim().toLowerCase()
     const name = (form.name || '').trim()
+    const role = form.role || 'sub_estimator'
     if (!email) return
     setSubTeamInviteLoading(dirId)
     let company = companiesData.find(c => c.name?.toLowerCase().trim() === companyName?.toLowerCase().trim())
@@ -723,7 +736,7 @@ export default function Dashboard() {
     const res = await fetch('/api/invite-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, company_id: company?.id, company_name: companyName, full_name: name || undefined }),
+      body: JSON.stringify({ email, company_id: company?.id, company_name: companyName, full_name: name || undefined, role }),
     })
     const json = await res.json()
     setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
@@ -1887,10 +1900,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                         <div>
                                           <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Role</p>
                                           <select style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box' }}
-                                            value={editingSubUser.role || 'subcontractor'}
+                                            value={editingSubUser.role || 'sub_estimator'}
                                             onChange={e => setEditingSubUser(prev => ({ ...prev, role: e.target.value }))}>
-                                            <option value="subcontractor">Subcontractor</option>
-                                            <option value="admin">Admin</option>
+                                            <option value="sub_estimator">Estimator</option>
+                                            <option value="sub_pm">Project Manager</option>
+                                            <option value="sub_admin">Admin</option>
                                           </select>
                                         </div>
                                       </div>
@@ -1929,6 +1943,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
                                     {/* Status + actions */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                      {m.role && m.role !== 'subcontractor' && (
+                                        <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', fontWeight: '700', letterSpacing: '0.5px', background: '#0a1020', color: '#60a5fa', border: '1px solid #1a3050' }}>
+                                          {{ sub_estimator: 'ESTIMATOR', sub_pm: 'PM', sub_admin: 'ADMIN' }[m.role] || m.role.toUpperCase()}
+                                        </span>
+                                      )}
                                       <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#181800', color: isRegistered ? '#4ade80' : '#d4a017', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a3000'}` }}>
                                         {isRegistered ? '● Active' : '○ Pending'}
                                       </span>
@@ -1958,7 +1977,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               {isAddOpen && (
                                 <div style={{ padding: '16px', background: '#060606', borderTop: members.length > 0 ? '1px solid #131313' : 'none' }}>
                                   <p style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>New Member</p>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
                                     <div>
                                       <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Full Name</p>
                                       <input type="text" style={{ ...s.input, width: '100%', padding: '9px 11px', fontSize: '13px', boxSizing: 'border-box' }}
@@ -1972,6 +1991,16 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                         placeholder="email@company.com"
                                         value={invForm.email || ''}
                                         onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), email: e.target.value } }))} />
+                                    </div>
+                                    <div>
+                                      <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Role</p>
+                                      <select style={{ ...s.input, width: '100%', padding: '9px 11px', fontSize: '13px', boxSizing: 'border-box' }}
+                                        value={invForm.role || 'sub_estimator'}
+                                        onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), role: e.target.value } }))}>
+                                        <option value="sub_estimator">Estimator</option>
+                                        <option value="sub_pm">Project Manager</option>
+                                        <option value="sub_admin">Admin</option>
+                                      </select>
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

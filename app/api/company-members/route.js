@@ -13,7 +13,7 @@ export async function GET(request) {
   let query = adminSupabase
     .from('profiles')
     .select('id, full_name, phone, company_id, company_name, invite_email, role')
-    .eq('role', 'subcontractor')
+    .in('role', ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'])
 
   if (company_id) query = query.eq('company_id', company_id)
   if (email) query = query.eq('invite_email', email.toLowerCase())

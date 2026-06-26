@@ -632,17 +632,22 @@ export default function Submit() {
   const openRfis = rfis.filter(r => r.status === 'open').length
   const openPunch = myPunchItems.filter(p => p.status === 'open').length
 
-  const navItems = [
-    { tab: 'calendar',   label: 'Calendar',        icon: <IconCal /> },
-    { tab: 'billing',    label: 'Submit Billing',   icon: <IconDollar /> },
-    { tab: 'contracts',  label: 'My Contracts',     icon: <IconBriefcase />, badge: myContracts.length || null },
-    { tab: 'history',    label: 'Billing History',  icon: <IconHistory />, badge: submissions.length || null },
-    { tab: 'bids',       label: 'Bid Invites',      icon: <IconBid />, badge: pendingBids || null },
-    { tab: 'docs',       label: 'My Documents',     icon: <IconDoc /> },
-    { tab: 'rfis',       label: 'RFIs',             icon: <IconRfi />, badge: openRfis || null },
-    { tab: 'messages',   label: 'Messages',         icon: <IconMsg /> },
-    { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />, badge: openPunch || null },
+  const role = profile?.role || 'subcontractor'
+  // sub_admin: billing-focused only
+  // sub_pm: all except bids (they don't handle estimating)
+  // sub_estimator / subcontractor: full access
+  const allNavItems = [
+    { tab: 'calendar',   label: 'Calendar',        icon: <IconCal />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'] },
+    { tab: 'billing',    label: 'Submit Billing',   icon: <IconDollar />,    roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'] },
+    { tab: 'contracts',  label: 'My Contracts',     icon: <IconBriefcase />, roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: myContracts.length || null },
+    { tab: 'history',    label: 'Billing History',  icon: <IconHistory />,   roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'], badge: submissions.length || null },
+    { tab: 'bids',       label: 'Bid Invites',      icon: <IconBid />,       roles: ['subcontractor', 'sub_estimator'], badge: pendingBids || null },
+    { tab: 'docs',       label: 'My Documents',     icon: <IconDoc />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'] },
+    { tab: 'rfis',       label: 'RFIs',             icon: <IconRfi />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: openRfis || null },
+    { tab: 'messages',   label: 'Messages',         icon: <IconMsg />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'] },
+    { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />,     roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: openPunch || null },
   ]
+  const navItems = allNavItems.filter(item => item.roles.includes(role))
 
   return (
     <div style={s.page}>
@@ -651,7 +656,7 @@ export default function Submit() {
         <div style={s.sidebarTop}>
           <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
           <p style={s.sidebarBrand}>NV Construction</p>
-          <p style={s.sidebarRole}>Sub Portal</p>
+          <p style={s.sidebarRole}>{{ sub_estimator: 'Estimator', sub_pm: 'Project Manager', sub_admin: 'Admin' }[role] || 'Sub Portal'}</p>
           <p style={s.sidebarUser}>{profile?.company_name || profile?.full_name}</p>
         </div>
         <div style={s.sidebarNav}>

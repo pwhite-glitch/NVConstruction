@@ -4900,7 +4900,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <button style={s.btnSmallRed} onClick={() => reviewCO(co.id, 'rejected')}>Reject</button>
                           </div>
                         )}
-                        {co.direction === 'sub_to_pm' && (
+                        {(
                           <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')) } }}>
                             {isPushing ? '✕ Cancel' : '↑ Push to Prime'}
                           </button>

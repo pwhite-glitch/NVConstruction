@@ -772,6 +772,11 @@ export default function Dashboard() {
     setSubUserActionLoading(null)
   }
 
+  async function removeJobAssignment(assignmentId) {
+    await supabase.from('job_assignments').delete().eq('id', assignmentId)
+    setAssignments(prev => prev.filter(a => a.id !== assignmentId))
+  }
+
   async function assignToJob(sub) {
     const jobId = assignTarget[sub.id]
     if (!jobId) return
@@ -2078,8 +2083,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Currently assigned to</div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                   {assignments.filter(a => a.sub_email === sub.email).map(a => (
-                                    <span key={a.id} style={{ fontSize: '12px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '3px 10px' }}>
+                                    <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '3px 10px' }}>
                                       #{a.jobs?.job_number} — {a.jobs?.project_name}
+                                      <button
+                                        title="Remove from job"
+                                        onClick={() => removeJobAssignment(a.id)}
+                                        style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: '0 0 0 2px', display: 'flex', alignItems: 'center' }}>
+                                        ×
+                                      </button>
                                     </span>
                                   ))}
                                 </div>

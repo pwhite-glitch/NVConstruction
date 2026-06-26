@@ -601,7 +601,7 @@ export default function JobDetail() {
       cost_date: dcForm.cost_date, description: dcForm.description,
       category: dcForm.category, amount: parseFloat(dcForm.amount),
       notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
-      status: 'approved',
+      status: userRole === 'apm' ? 'pending' : 'approved',
     }
     if (dcFile) {
       const formData = new FormData()
@@ -6103,18 +6103,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: userRole === 'apm' ? '2fr 1fr' : '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
                       </div>
-                      <div>
-                        <label style={s.label}>Budget line</label>
-                        <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                          <option value="">— Unassigned —</option>
-                          {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
-                        </select>
-                      </div>
+                      {userRole === 'pm' && (
+                        <div>
+                          <label style={s.label}>Budget line</label>
+                          <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                            <option value="">— Unassigned —</option>
+                            {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                          </select>
+                        </div>
+                      )}
                       <div>
                         <label style={s.label}>Notes</label>
                         <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
@@ -6124,8 +6126,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <label style={s.label}>Receipt (photo / PDF)</label>
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
                     </div>
+                    {userRole === 'apm' && (
+                      <p style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>Your cost will be submitted for PM approval. Budget line assignment is done during review.</p>
+                    )}
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="submit" disabled={submittingDc} style={{ ...s.btn, opacity: submittingDc ? 0.6 : 1 }}>{submittingDc ? 'Saving...' : 'Save & approve'}</button>
+                      <button type="submit" disabled={submittingDc} style={{ ...s.btn, opacity: submittingDc ? 0.6 : 1 }}>{submittingDc ? 'Saving...' : userRole === 'apm' ? 'Submit for approval' : 'Save & approve'}</button>
                       <button type="button" style={s.btnGray} onClick={() => setShowDcForm(false)}>Cancel</button>
                     </div>
                   </form>

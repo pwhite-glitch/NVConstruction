@@ -157,6 +157,7 @@ export default function Dashboard() {
   const [addMemberOpenFor, setAddMemberOpenFor] = useState(null)
   const [editingSubUser, setEditingSubUser] = useState(null)
   const [subUserActionLoading, setSubUserActionLoading] = useState(null)
+  const [mergingDuplicates, setMergingDuplicates] = useState(false)
 
   // Bid invites state
   const [bidPackages, setBidPackages] = useState([])
@@ -770,6 +771,39 @@ export default function Dashboard() {
     })
     if (res.ok) await refreshSubProfiles()
     setSubUserActionLoading(null)
+  }
+
+  async function mergeAllDuplicates() {
+    setMergingDuplicates(true)
+    // Group directory entries by normalized company name
+    const groups = {}
+    directory.forEach(s => {
+      const k = s.company_name?.toLowerCase().trim() || ''
+      if (!groups[k]) groups[k] = []
+      groups[k].push(s)
+    })
+    for (const entries of Object.values(groups)) {
+      if (entries.length < 2) continue
+      // Score each entry: approved status worth most, then count of non-empty fields
+      const scored = entries.map(e => ({
+        ...e,
+        _score: (e.status === 'approved' ? 100 : 0) +
+          [e.email, e.phone, e.contact_name, e.address, e.trade, e.license_number, e.coi_url, e.w9_url, e.scope_description].filter(Boolean).length
+      })).sort((a, b) => b._score - a._score)
+      const [primary, ...dups] = scored
+      for (const dup of dups) {
+        await fetch('/api/merge-sub-directory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ primaryId: primary.id, duplicateId: dup.id }),
+        })
+      }
+    }
+    // Reload directory and related data
+    const { data } = await supabase.from('sub_directory').select('*').order('company_name')
+    if (data) setDirectory(data)
+    await refreshSubProfiles()
+    setMergingDuplicates(false)
   }
 
   async function removeJobAssignment(assignmentId) {
@@ -1726,8 +1760,17 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 </div>
 
                 {duplicateNames.size > 0 && (
-                  <div style={{ background: '#1a0f00', border: '1px solid #4a3000', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', fontSize: '13px', color: '#e8590c' }}>
-                    ⚠ {duplicateNames.size} duplicate company name{duplicateNames.size > 1 ? 's' : ''} detected — expand the duplicate entry to delete it.
+                  <div style={{ background: '#1a0f00', border: '1px solid #4a3000', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>⚠ {duplicateNames.size} duplicate company name{duplicateNames.size > 1 ? 's' : ''} detected</p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#7a4a00' }}>Auto-merge combines all info into the best record and removes the extras.</p>
+                    </div>
+                    <button
+                      style={{ flexShrink: 0, padding: '8px 16px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: mergingDuplicates ? 'not-allowed' : 'pointer', opacity: mergingDuplicates ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                      disabled={mergingDuplicates}
+                      onClick={mergeAllDuplicates}>
+                      {mergingDuplicates ? 'Merging…' : 'Auto-merge'}
+                    </button>
                   </div>
                 )}
 

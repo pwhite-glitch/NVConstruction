@@ -154,6 +154,9 @@ export default function Dashboard() {
   const [subTeamInviteForm, setSubTeamInviteForm] = useState({})
   const [subTeamInviteLoading, setSubTeamInviteLoading] = useState(null)
   const [subTeamInviteResult, setSubTeamInviteResult] = useState({})
+  const [addMemberOpenFor, setAddMemberOpenFor] = useState(null)
+  const [editingSubUser, setEditingSubUser] = useState(null)
+  const [subUserActionLoading, setSubUserActionLoading] = useState(null)
 
   // Bid invites state
   const [bidPackages, setBidPackages] = useState([])
@@ -698,8 +701,17 @@ export default function Dashboard() {
     }
   }
 
+  async function refreshSubProfiles() {
+    try {
+      const result = await fetch('/api/company-members').then(r => r.json())
+      if (Array.isArray(result?.members)) setSubProfiles(result.members)
+    } catch (_) {}
+  }
+
   async function inviteSubTeamMember(dirId, companyName) {
-    const email = (subTeamInviteForm[dirId] || '').trim().toLowerCase()
+    const form = subTeamInviteForm[dirId] || {}
+    const email = (form.email || '').trim().toLowerCase()
+    const name = (form.name || '').trim()
     if (!email) return
     setSubTeamInviteLoading(dirId)
     let company = companiesData.find(c => c.name?.toLowerCase().trim() === companyName?.toLowerCase().trim())
@@ -710,16 +722,54 @@ export default function Dashboard() {
     const res = await fetch('/api/invite-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, company_id: company?.id, company_name: companyName }),
+      body: JSON.stringify({ email, company_id: company?.id, company_name: companyName, full_name: name || undefined }),
     })
     const json = await res.json()
     setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
-    setSubTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
+    if (res.ok) {
+      setSubTeamInviteForm(prev => ({ ...prev, [dirId]: { name: '', email: '' } }))
+      setAddMemberOpenFor(null)
+    }
     setSubTeamInviteLoading(null)
-    try {
-      const result = await fetch('/api/company-members').then(r => r.json())
-      if (Array.isArray(result?.members)) setSubProfiles(result.members)
-    } catch (_) {}
+    await refreshSubProfiles()
+  }
+
+  async function resendSubInvite(userId, email, companyId, companyName) {
+    setSubUserActionLoading(userId)
+    await fetch('/api/invite-sub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, company_id: companyId, company_name: companyName }),
+    })
+    setSubUserActionLoading(null)
+  }
+
+  async function saveSubUserEdit() {
+    if (!editingSubUser) return
+    setSubUserActionLoading(editingSubUser.id)
+    const { id, full_name, phone, role, company_name, company_id } = editingSubUser
+    const res = await fetch('/api/manage-sub-user', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: id, full_name, phone, role, company_name, company_id }),
+    })
+    if (res.ok) {
+      setEditingSubUser(null)
+      await refreshSubProfiles()
+    }
+    setSubUserActionLoading(null)
+  }
+
+  async function revokeSubUser(userId, email, companyName) {
+    if (!confirm(`Remove ${email} from ${companyName}?\n\nThey will immediately lose portal access and any pending invite links will be invalidated.`)) return
+    setSubUserActionLoading(userId)
+    const res = await fetch('/api/manage-sub-user', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    })
+    if (res.ok) await refreshSubProfiles()
+    setSubUserActionLoading(null)
   }
 
   async function assignToJob(sub) {
@@ -1707,7 +1757,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     {expandedDir === sub.id && (
                       <div style={s.detail}>
 
-                        {/* ── Users (subcategory) ── */}
+                        {/* ── Portal Users ── */}
                         {(() => {
                           const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
                           const subNameKey = sub.company_name?.toLowerCase().trim()
@@ -1715,50 +1765,179 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             (company && p.company_id === company.id) ||
                             (subNameKey && p.company_name?.toLowerCase().trim() === subNameKey)
                           ).filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
+                          const activeCount = members.filter(m => !!m.last_sign_in_at).length
+                          const pendingCount = members.filter(m => !m.last_sign_in_at).length
+                          const isAddOpen = addMemberOpenFor === sub.id
+                          const invForm = subTeamInviteForm[sub.id] || { name: '', email: '' }
                           const isInviting = subTeamInviteLoading === sub.id
                           const invResult = subTeamInviteResult[sub.id]
+
                           return (
-                            <div style={{ background: '#080808', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                              <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Users ({members.length})</p>
-                              {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 12px' }}>No portal users yet — invite someone below.</p>}
-                              {members.map(m => {
+                            <div style={{ background: '#080808', border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '1.25rem', overflow: 'hidden' }}>
+
+                              {/* Header */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: (members.length > 0 || isAddOpen) ? '1px solid #131313' : 'none' }}>
+                                <div>
+                                  <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Portal Access</p>
+                                  <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#3a3a3a' }}>
+                                    {members.length === 0
+                                      ? 'No users yet — add someone to get started'
+                                      : [activeCount > 0 && `${activeCount} active`, pendingCount > 0 && `${pendingCount} pending`].filter(Boolean).join(' · ')}
+                                  </p>
+                                </div>
+                                <button
+                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: isAddOpen ? '#141414' : '#1a0d00', border: `1px solid ${isAddOpen ? '#252525' : '#3a1a00'}`, borderRadius: '7px', color: isAddOpen ? '#555' : '#e8590c', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s' }}
+                                  onClick={() => {
+                                    setAddMemberOpenFor(isAddOpen ? null : sub.id)
+                                    setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { name: '', email: '' } }))
+                                    setSubTeamInviteResult(prev => ({ ...prev, [sub.id]: null }))
+                                  }}>
+                                  {isAddOpen ? '✕ Cancel' : '+ Add Member'}
+                                </button>
+                              </div>
+
+                              {/* User rows */}
+                              {members.map((m, idx) => {
                                 const isRegistered = !!m.last_sign_in_at
+                                const isEditing = editingSubUser?.id === m.id
+                                const isActioning = subUserActionLoading === m.id
                                 const initials = m.full_name
                                   ? m.full_name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
                                   : (m.invite_email?.[0] || '?').toUpperCase()
+                                const lastSeen = m.last_sign_in_at
+                                  ? new Date(m.last_sign_in_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                  : null
+                                const invitedOn = m.invited_at
+                                  ? new Date(m.invited_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                  : null
+                                const isLast = idx === members.length - 1
+
+                                if (isEditing) {
+                                  return (
+                                    <div key={m.id} style={{ padding: '16px', background: '#0c0c0c', borderBottom: isLast && !isAddOpen ? 'none' : '1px solid #131313' }}>
+                                      <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit User</p>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                                        <div>
+                                          <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Full Name</p>
+                                          <input style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                                            value={editingSubUser.full_name || ''}
+                                            onChange={e => setEditingSubUser(prev => ({ ...prev, full_name: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                          <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Phone</p>
+                                          <input style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                                            value={editingSubUser.phone || ''}
+                                            onChange={e => setEditingSubUser(prev => ({ ...prev, phone: e.target.value }))} />
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                                        <div>
+                                          <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Email (read-only)</p>
+                                          <input style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box', opacity: 0.5, cursor: 'not-allowed' }}
+                                            value={editingSubUser.invite_email || ''} readOnly />
+                                        </div>
+                                        <div>
+                                          <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Role</p>
+                                          <select style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                                            value={editingSubUser.role || 'subcontractor'}
+                                            onChange={e => setEditingSubUser(prev => ({ ...prev, role: e.target.value }))}>
+                                            <option value="subcontractor">Subcontractor</option>
+                                            <option value="admin">Admin</option>
+                                          </select>
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button style={{ ...s.btnSm('orange'), opacity: isActioning ? 0.6 : 1 }} disabled={isActioning} onClick={saveSubUserEdit}>
+                                          {isActioning ? 'Saving…' : 'Save Changes'}
+                                        </button>
+                                        <button style={s.btnSm('gray')} onClick={() => setEditingSubUser(null)}>Cancel</button>
+                                      </div>
+                                    </div>
+                                  )
+                                }
+
                                 return (
-                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0', borderBottom: '1px solid #111' }}>
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', background: isRegistered ? '#152515' : '#181818', border: `2px solid ${isRegistered ? '#2a4a2a' : '#252525'}`, color: isRegistered ? '#4ade80' : '#444' }}>
+                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 16px', borderBottom: isLast && !isAddOpen ? 'none' : '1px solid #0f0f0f', opacity: isActioning ? 0.5 : 1 }}>
+                                    {/* Avatar */}
+                                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', background: isRegistered ? '#0d2010' : '#141414', border: `2px solid ${isRegistered ? '#1e4a22' : '#222'}`, color: isRegistered ? '#4ade80' : '#444' }}>
                                       {initials}
                                     </div>
+
+                                    {/* Info */}
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666', marginBottom: '3px' }}>
+                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666', marginBottom: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {m.full_name || m.invite_email}
                                       </div>
-                                      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
-                                        {m.full_name && m.invite_email && <span>{m.invite_email}</span>}
-                                        {m.phone && <span>{m.phone}</span>}
+                                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {m.full_name && m.invite_email && <span style={{ fontSize: '12px', color: '#4a4a4a' }}>{m.invite_email}</span>}
+                                        {m.phone && <span style={{ fontSize: '12px', color: '#3a3a3a' }}>{m.phone}</span>}
+                                        {lastSeen
+                                          ? <span style={{ fontSize: '11px', color: '#333' }}>Last seen {lastSeen}</span>
+                                          : invitedOn
+                                          ? <span style={{ fontSize: '11px', color: '#333' }}>Invited {invitedOn}</span>
+                                          : <span style={{ fontSize: '11px', color: '#333' }}>Awaiting first login</span>}
                                       </div>
                                     </div>
-                                    <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', flexShrink: 0, background: isRegistered ? '#0a2a0a' : '#181800', color: isRegistered ? '#4ade80' : '#d4a017', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a3000'}` }}>
-                                      {isRegistered ? '● Active' : '○ Pending'}
-                                    </span>
+
+                                    {/* Status + actions */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                                      <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#181800', color: isRegistered ? '#4ade80' : '#d4a017', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a3000'}` }}>
+                                        {isRegistered ? '● Active' : '○ Pending'}
+                                      </span>
+                                      {!isRegistered && (
+                                        <button title="Resend invite email" disabled={isActioning}
+                                          style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #1e1e1e', borderRadius: '6px', color: '#4a4a4a', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                                          onClick={() => resendSubInvite(m.id, m.invite_email, company?.id, sub.company_name)}>
+                                          ↩ Resend
+                                        </button>
+                                      )}
+                                      <button title="Edit user" disabled={isActioning}
+                                        style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #1e1e1e', borderRadius: '6px', color: '#4a4a4a', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                                        onClick={() => setEditingSubUser({ id: m.id, full_name: m.full_name || '', phone: m.phone || '', invite_email: m.invite_email || '', role: m.role || 'subcontractor', company_name: m.company_name || sub.company_name || '', company_id: m.company_id || company?.id || null })}>
+                                        Edit
+                                      </button>
+                                      <button title="Revoke portal access" disabled={isActioning}
+                                        style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #1e1010', borderRadius: '6px', color: '#7a3030', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                                        onClick={() => revokeSubUser(m.id, m.invite_email, sub.company_name)}>
+                                        {isActioning ? '…' : 'Revoke'}
+                                      </button>
+                                    </div>
                                   </div>
                                 )
                               })}
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '12px' }}>
-                                <input type="email" style={{ ...s.input, flex: 1, padding: '7px 10px', fontSize: '12px' }}
-                                  placeholder="Invite user by email…"
-                                  value={subTeamInviteForm[sub.id] || ''}
-                                  onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: e.target.value }))} />
-                                <button style={{ ...s.btnSm('orange'), opacity: isInviting ? 0.6 : 1 }}
-                                  disabled={isInviting || !subTeamInviteForm[sub.id]}
-                                  onClick={() => inviteSubTeamMember(sub.id, sub.company_name)}>
-                                  {isInviting ? '…' : 'Invite'}
-                                </button>
-                                {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}
-                                {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
-                              </div>
+
+                              {/* Add member form */}
+                              {isAddOpen && (
+                                <div style={{ padding: '16px', background: '#060606', borderTop: members.length > 0 ? '1px solid #131313' : 'none' }}>
+                                  <p style={{ margin: '0 0 14px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>New Member</p>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                                    <div>
+                                      <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Full Name</p>
+                                      <input type="text" style={{ ...s.input, width: '100%', padding: '9px 11px', fontSize: '13px', boxSizing: 'border-box' }}
+                                        placeholder="e.g. John Smith"
+                                        value={invForm.name || ''}
+                                        onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), name: e.target.value } }))} />
+                                    </div>
+                                    <div>
+                                      <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Email Address</p>
+                                      <input type="email" style={{ ...s.input, width: '100%', padding: '9px 11px', fontSize: '13px', boxSizing: 'border-box' }}
+                                        placeholder="email@company.com"
+                                        value={invForm.email || ''}
+                                        onChange={e => setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { ...(prev[sub.id] || {}), email: e.target.value } }))} />
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <button style={{ padding: '9px 20px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: isInviting || !invForm.email ? 0.5 : 1 }}
+                                      disabled={isInviting || !invForm.email}
+                                      onClick={() => inviteSubTeamMember(sub.id, sub.company_name)}>
+                                      {isInviting ? 'Sending…' : 'Send Invite'}
+                                    </button>
+                                    {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80', fontWeight: '600' }}>✓ Invite sent</span>}
+                                    {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
+                                  </div>
+                                </div>
+                              )}
+
                             </div>
                           )
                         })()}

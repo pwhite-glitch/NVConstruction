@@ -12,7 +12,7 @@ export async function GET(request) {
 
   let query = adminSupabase
     .from('profiles')
-    .select('id, full_name, phone, company_id, invite_email')
+    .select('id, full_name, phone, company_id, company_name, invite_email, role')
     .eq('role', 'subcontractor')
 
   if (company_id) query = query.eq('company_id', company_id)
@@ -26,11 +26,12 @@ export async function GET(request) {
   if (members.length > 0) {
     try {
       const { data: authData } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
-      const signInByEmail = {}
-      authData?.users?.forEach(u => { if (u.email) signInByEmail[u.email.toLowerCase()] = u.last_sign_in_at })
+      const byEmail = {}
+      authData?.users?.forEach(u => { if (u.email) byEmail[u.email.toLowerCase()] = { last_sign_in_at: u.last_sign_in_at, created_at: u.created_at } })
       members = members.map(m => ({
         ...m,
-        last_sign_in_at: signInByEmail[m.invite_email?.toLowerCase()] || null,
+        last_sign_in_at: byEmail[m.invite_email?.toLowerCase()]?.last_sign_in_at || null,
+        invited_at: byEmail[m.invite_email?.toLowerCase()]?.created_at || null,
       }))
     } catch (_) {
       // listUsers failed — members still returned, just without sign-in status

@@ -126,6 +126,8 @@ export default function JobDetail() {
   const [addingContract, setAddingContract] = useState(false)
   const [editingContract, setEditingContract] = useState(null)
   const [editContractForm, setEditContractForm] = useState({})
+  const [contractBidFile, setContractBidFile] = useState(null)
+  const [editContractBidFile, setEditContractBidFile] = useState(null)
   const [showContractGen, setShowContractGen] = useState(false)
   const [contractGenForm, setContractGenForm] = useState({ contract_id: '', date: '', sub_name: '', sub_address: '', entity_type: 'sole proprietorship', trade: '', project_name: '', project_address: '', owner_name: '', owner_address: '', contract_amount: '', pay_pct: '100', scope_of_work: '', job_number: '', subcontract_number: '', pm_name: 'Peyton White', superintendent: 'Landon Moore' })
 
@@ -581,6 +583,11 @@ export default function JobDetail() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function openBidProposalUrl(path) {
+    const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(path, 300)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   async function openSubmittalDocUrl(path) {
     const res = await fetch(`/api/submittals?file_path=${encodeURIComponent(path)}`)
     const { url } = await res.json()
@@ -596,26 +603,33 @@ export default function JobDetail() {
   async function submitDirectCostPM(e) {
     e.preventDefault()
     setSubmittingDc(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    const rowData = {
-      job_id: id, submitted_by: session.user.id,
-      cost_date: dcForm.cost_date, description: dcForm.description,
-      category: dcForm.category, amount: parseFloat(dcForm.amount),
-      notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
-      status: userRole === 'apm' ? 'pending' : 'approved',
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const rowData = {
+        job_id: id, submitted_by: session.user.id,
+        cost_date: dcForm.cost_date, description: dcForm.description,
+        category: dcForm.category, amount: parseFloat(dcForm.amount),
+        notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
+        status: userRole === 'apm' ? 'pending' : 'approved',
+      }
+      let res, json
+      if (dcFile) {
+        const formData = new FormData()
+        formData.append('file', dcFile)
+        formData.append('data', JSON.stringify(rowData))
+        res = await fetch('/api/direct-costs', { method: 'POST', body: formData })
+      } else {
+        res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+      }
+      json = await res.json()
+      if (json.error) { setErrMsg('Failed to save: ' + json.error); setTimeout(() => setErrMsg(''), 6000); setSubmittingDc(false); return }
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+      setDcFile(null)
+      setShowDcForm(false)
+      await loadDirectCosts()
+    } catch (err) {
+      setErrMsg('Error submitting cost: ' + err.message); setTimeout(() => setErrMsg(''), 6000)
     }
-    if (dcFile) {
-      const formData = new FormData()
-      formData.append('file', dcFile)
-      formData.append('data', JSON.stringify(rowData))
-      await fetch('/api/direct-costs', { method: 'POST', body: formData })
-    } else {
-      await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
-    }
-    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
-    setDcFile(null)
-    setShowDcForm(false)
-    await loadDirectCosts()
     setSubmittingDc(false)
   }
 
@@ -1809,17 +1823,25 @@ ${sovLines.length > 0 ? `
     }
     const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
+    let bidProposalUrl = null
+    if (contractBidFile) {
+      const ext = contractBidFile.name.split('.').pop()
+      const path = `bid-proposals/${id}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('prime-contracts').upload(path, contractBidFile)
+      if (!upErr) bidProposalUrl = path
+    }
     const scRes = await fetch('/api/subcontracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       job_id: id, sub_id: subUserId, company_id: companyId, vendor_name: dirEntry?.company_name || '',
       contract_value: parseFloat(contractForm.contract_value),
       description: contractForm.description || null, onedrive_url: contractForm.onedrive_url || null,
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
       retainage_pct: parseFloat(contractForm.retainage_pct) || 0, created_by: session.user.id, status: 'active',
+      bid_proposal_url: bidProposalUrl,
     }) })
     const scJson = await scRes.json()
     if (!scRes.ok) { setErrMsg(scJson.error || 'Failed to save contract'); setTimeout(() => setErrMsg(''), 4000) }
     else {
-      setShowAddContract(false); setContractForm(emptyContract); await loadContracts()
+      setShowAddContract(false); setContractForm(emptyContract); setContractBidFile(null); await loadContracts()
       // Auto-assign sub to job if not already assigned
       if (dirEntry?.email) {
         const alreadyAssigned = subs.some(s => s.sub_email?.toLowerCase() === dirEntry.email.toLowerCase())
@@ -1860,14 +1882,21 @@ ${sovLines.length > 0 ? `
   async function updateContract() {
     const validAllocs = (editContractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (editContractForm.budget_item_id || null)
+    let bidProposalUrl = editContractForm.bid_proposal_url || null
+    if (editContractBidFile) {
+      const ext = editContractBidFile.name.split('.').pop()
+      const path = `bid-proposals/${id}/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('prime-contracts').upload(path, editContractBidFile)
+      if (!upErr) bidProposalUrl = path
+    }
     const scUpRes = await fetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       id: editingContract, contract_value: parseFloat(editContractForm.contract_value),
       description: editContractForm.description || null, onedrive_url: editContractForm.onedrive_url || null,
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
-      retainage_pct: parseFloat(editContractForm.retainage_pct) || 0,
+      retainage_pct: parseFloat(editContractForm.retainage_pct) || 0, bid_proposal_url: bidProposalUrl,
     }) })
     if (!scUpRes.ok) { const j = await scUpRes.json(); setErrMsg('Save failed: ' + j.error); setTimeout(() => setErrMsg(''), 5000); return }
-    setEditingContract(null)
+    setEditingContract(null); setEditContractBidFile(null)
     await loadContracts()
   }
 
@@ -4285,9 +4314,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <label style={s.label}>OneDrive link (optional)</label>
                     <input style={s.input} placeholder="https://onedrive.live.com/..." value={contractForm.onedrive_url} onChange={e => setContractForm(f => ({ ...f, onedrive_url: e.target.value }))} />
                   </div>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={s.label}>Bid proposal PDF (optional)</label>
+                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#ccc' }} />
+                  </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: addingContract ? 0.6 : 1 }} disabled={addingContract} onClick={addContract}>{addingContract ? 'Saving...' : 'Save contract'}</button>
-                    <button style={s.btnGray} onClick={() => { setShowAddContract(false); setContractForm(emptyContract) }}>Cancel</button>
+                    <button style={s.btnGray} onClick={() => { setShowAddContract(false); setContractForm(emptyContract); setContractBidFile(null) }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -4354,7 +4387,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
                           </button>
                           <button style={{ ...s.btnSmall, background: '#1a3a1a', color: '#4ade80', border: '1px solid #1a3a1a' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
-                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10) }) }}>
+                          {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#1a2a3a', color: '#60a5fa', border: '1px solid #1a2a3a' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
+                          <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10), bid_proposal_url: c.bid_proposal_url || '' }); setEditContractBidFile(null) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
                           <button style={s.btnSmallRed} onClick={() => deleteContract(c.id)}>Delete</button>
@@ -4425,6 +4459,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <label style={s.label}>OneDrive link</label>
                             <input style={s.input} value={editContractForm.onedrive_url} onChange={e => setEditContractForm(f => ({ ...f, onedrive_url: e.target.value }))} placeholder="https://onedrive.live.com/..." />
                           </div>
+                        </div>
+                        <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
+                          <label style={s.label}>Replace bid proposal PDF (optional)</label>
+                          {editContractForm.bid_proposal_url && <p style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>Current file on record — upload a new one to replace it</p>}
+                          <input type="file" accept=".pdf,.doc,.docx" onChange={e => setEditContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#ccc' }} />
                         </div>
                         <button style={s.btnSmallOrange} onClick={updateContract}>Save changes</button>
                       </div>

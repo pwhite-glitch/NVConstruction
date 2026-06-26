@@ -13,6 +13,10 @@
 /* Mobile section nav dropdown (jobdetail) — hidden on desktop */
 .rx-mobile-nav-select { display: none !important; }
 
+/* Hide scrollbar on sticky sidebars while keeping scroll functionality */
+.rx-sidebar::-webkit-scrollbar { display: none; }
+.rx-sidebar { scrollbar-width: none; -ms-overflow-style: none; }
+
 /* Bottom nav: hidden on desktop, shown on mobile */
 .rx-bottom-nav {
   display: none;

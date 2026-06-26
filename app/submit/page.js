@@ -112,6 +112,9 @@ export default function Submit() {
   const [noContract, setNoContract] = useState(false)
   const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
   const [savingSov, setSavingSov] = useState(false)
+  const [sovSaved, setSovSaved] = useState(false)
+  const [rfiSuccess, setRfiSuccess] = useState(false)
+  const [hasSigned, setHasSigned] = useState(false)
 
   // RFI state
   const [rfis, setRfis] = useState([])
@@ -205,6 +208,8 @@ export default function Submit() {
     await supabase.from('rfis').insert({ job_id: rfiForm.job_id, sub_id: user.id, title: rfiForm.title, question: rfiForm.question, status: 'open', number: nextNum })
     setRfiForm({ job_id: rfiForm.job_id, question: '', title: '' })
     setSubmittingRfi(false)
+    setRfiSuccess(true)
+    setTimeout(() => setRfiSuccess(false), 5000)
     await loadMyRfis(user.id)
   }
 
@@ -451,6 +456,8 @@ export default function Submit() {
     }
     setSavingSov(false)
     await loadJobSov(form.job_id)
+    setSovSaved(true)
+    setTimeout(() => setSovSaved(false), 5000)
   }
 
   function printLienWaiver(sub) {
@@ -521,6 +528,7 @@ export default function Submit() {
 
   async function submitLienWaiver() {
     if (!signerName.trim()) return
+    if (!hasSigned) { setWaiverMsg('Please draw your signature above before submitting.'); return }
     const canvas = canvasRef.current
     let signature = null
     if (canvas) {
@@ -663,7 +671,10 @@ export default function Submit() {
           {navItems.map(({ tab, label, icon, badge }) => (
             <button key={tab} style={s.navItem(activeTab === tab)} onClick={() => {
               setActiveTab(tab)
-              if (tab === 'messages' && jobs.length > 0 && !selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) }
+              if (tab === 'messages' && jobs.length > 0) {
+                if (!selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) }
+                else loadMessages(selectedMessageJob)
+              }
               if (tab === 'punch' && user) loadMyPunchItems(user.id)
             }}>
               {icon}
@@ -679,7 +690,7 @@ export default function Submit() {
 
       {/* ── Content ── */}
       <div style={s.content}>
-        {success && <div style={s.success}>Billing submitted successfully. Peyton will be notified.</div>}
+        {success && <div style={s.success}>Billing submitted successfully. Your project manager will be notified.</div>}
 
         {/* ── CALENDAR ── */}
         {activeTab === 'calendar' && (() => {
@@ -1054,6 +1065,7 @@ export default function Submit() {
                 {/* ── Billing form: SOV exists ── */}
                 {!noContract && sovForm.length > 0 && (
                   <>
+                    {sovSaved && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#4ade80', marginBottom: '1rem' }}>✓ Schedule of values saved — fill in the fields below to submit your billing.</div>}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }} className="rx-grid-3">
                       <div>
                         <label style={s.label}>Amount billed</label>
@@ -1271,7 +1283,7 @@ export default function Submit() {
                       )}
                       {s2.status === 'approved' && !s2.lien_waiver_signed_at && (
                         <button
-                          onClick={() => { setLienWaiverSub(s2); setSignerName(profile?.full_name || '') }}
+                          onClick={() => { setLienWaiverSub(s2); setSignerName(profile?.full_name || ''); setHasSigned(false) }}
                           style={{ padding: '5px 12px', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '6px', color: '#e8590c', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
                         >✍ Sign Waiver</button>
                       )}
@@ -1484,6 +1496,7 @@ export default function Submit() {
                 disabled={submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question}
                 onClick={submitRfi}
               >{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
+              {rfiSuccess && <p style={{ fontSize: '13px', color: '#4ade80', marginTop: '10px', marginBottom: 0 }}>✓ RFI submitted — NV Construction will respond within 1–2 business days.</p>}
             </div>
 
             {/* RFI list */}
@@ -1680,6 +1693,7 @@ export default function Submit() {
           if (!canvas) return
           isDrawing.current = true
           lastPos.current = getPos(e, canvas)
+          setHasSigned(true)
         }
 
         function draw(e) {
@@ -1710,6 +1724,7 @@ export default function Submit() {
           const ctx = canvas.getContext('2d')
           ctx.fillStyle = '#ffffff'
           ctx.fillRect(0, 0, canvas.width, canvas.height)
+          setHasSigned(false)
         }
 
         return (
@@ -1721,7 +1736,7 @@ export default function Submit() {
                     <p style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>Sign Lien Waiver</p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Conditional Waiver and Release on Progress Payment</p>
                   </div>
-                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg('') }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg(''); setHasSigned(false) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
                 </div>
               </div>
 
@@ -1790,9 +1805,9 @@ export default function Submit() {
                   >🖨 Print blank form</button>
                   <button
                     type="button"
-                    disabled={savingWaiver || !signerName.trim()}
+                    disabled={savingWaiver || !signerName.trim() || !hasSigned}
                     onClick={submitLienWaiver}
-                    style={{ padding: '10px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: savingWaiver || !signerName.trim() ? 'not-allowed' : 'pointer', opacity: savingWaiver || !signerName.trim() ? 0.5 : 1, letterSpacing: '1px', textTransform: 'uppercase' }}
+                    style={{ padding: '10px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: savingWaiver || !signerName.trim() || !hasSigned ? 'not-allowed' : 'pointer', opacity: savingWaiver || !signerName.trim() || !hasSigned ? 0.5 : 1, letterSpacing: '1px', textTransform: 'uppercase' }}
                   >{savingWaiver ? 'Submitting...' : 'Submit signed waiver'}</button>
                 </div>
               </div>

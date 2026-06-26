@@ -9,19 +9,19 @@ const DOW_LABELS = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 
 const TRADES = ['Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing', 'Roofing', 'Drywall', 'Painting', 'Flooring', 'Doors & Windows', 'Mechanical / HVAC', 'Electrical', 'Plumbing', 'Fire Protection', 'Site Work / Grading', 'Landscaping', 'Insulation', 'Waterproofing', 'Signage', 'Cleaning', 'Other']
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a' },
-  header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
-  headerInner: { maxWidth: '1100px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
-  logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
-  logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
-  logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
-  logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
-  signOut: { padding: '7px 16px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' },
-  main: { maxWidth: '1100px', margin: '0 auto', padding: '2rem 1.5rem' },
-  card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', overflow: 'hidden', marginBottom: '1.5rem' },
-  tabs: { display: 'flex', borderBottom: '1px solid #222', overflowX: 'auto' },
-  tab: (a) => ({ padding: '14px 20px', border: 'none', borderBottom: a ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: a ? '700' : '500', color: a ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }),
-  cardBody: { padding: '1.5rem' },
+  page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex' },
+  sidebar: { width: '220px', flexShrink: 0, background: '#0d0d0d', borderRight: '1px solid #1a1a1a', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid #1a1a1a' },
+  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px' },
+  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#f1f1f1', letterSpacing: '0.5px', margin: '0 0 2px' },
+  sidebarRole: { fontSize: '10px', color: '#333', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
+  sidebarUser: { fontSize: '12px', color: '#3a3a3a', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', margin: '12px 0 0' },
+  sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
+  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(232,89,12,0.08)' : 'transparent', color: active ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: active ? '600' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 #e8590c' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
+  navBadge: { background: '#e8590c', color: 'white', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
+  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' },
+  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'transparent', border: '1px solid #222', borderRadius: '8px', color: '#444', cursor: 'pointer', fontSize: '12px' },
+  content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
   label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
   input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
@@ -38,11 +38,19 @@ const s = {
   emptyMsg: { textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' },
 }
 
+const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+const IconCost     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+const IconBilling  = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+const IconPayment  = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+const IconUsers    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+const IconLien     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 12 18 15 15"/><line x1="12" y1="12" x2="12" y2="18"/></svg>
+
 export default function AdminPortal() {
   const router = useRouter()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('costs')
+  const [activeTab, setActiveTab] = useState('calendar')
+  const [calMonth, setCalMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() })
 
   // Data
   const [jobs, setJobs] = useState([])
@@ -139,7 +147,7 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (activeTab === 'costs') loadCosts()
-    if (activeTab === 'billing' || activeTab === 'payments') loadBilling()
+    if (activeTab === 'calendar' || activeTab === 'billing' || activeTab === 'payments') loadBilling()
   }, [activeTab])
 
   async function loadCosts() {
@@ -547,34 +555,189 @@ export default function AdminPortal() {
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#f1f1f1' }}>Loading...</div>
 
+  const pendingBillingCount = billing.filter(b => !b.paid_at).length
+  const navItems = [
+    { tab: 'calendar',  label: 'Calendar',      icon: <IconCal /> },
+    { tab: 'costs',     label: 'Direct Costs',  icon: <IconCost /> },
+    { tab: 'billing',   label: 'Billing',       icon: <IconBilling />, badge: pendingBillingCount || null },
+    { tab: 'payments',  label: 'Payments',      icon: <IconPayment /> },
+    { tab: 'coi',       label: 'Companies',     icon: <IconUsers /> },
+    { tab: 'liens',     label: 'Lien Waivers',  icon: <IconLien /> },
+  ]
+
   return (
     <div style={s.page}>
-      <header style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logoRow}>
-            <img src="/logo.png" alt="NV" style={s.logoImg} />
-            <div>
-              <div style={s.logoName}>NV Construction</div>
-              <div style={s.logoSub}>Office Admin</div>
-            </div>
-          </div>
-          <button style={s.signOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+      {/* ── Sidebar ── */}
+      <nav style={s.sidebar}>
+        <div style={s.sidebarTop}>
+          <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
+          <p style={s.sidebarBrand}>NV Construction</p>
+          <p style={s.sidebarRole}>Office Admin</p>
+          <p style={s.sidebarUser}>{profile?.full_name}</p>
         </div>
-      </header>
+        <div style={s.sidebarNav}>
+          {navItems.map(({ tab, label, icon, badge }) => (
+            <button key={tab} style={s.navItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
+              {icon}
+              <span style={{ flex: 1 }}>{label}</span>
+              {badge ? <span style={s.navBadge}>{badge}</span> : null}
+            </button>
+          ))}
+        </div>
+        <div style={s.sidebarBottom}>
+          <button style={s.sidebarSignOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+        </div>
+      </nav>
 
-      <main style={s.main} className="rx-main">
-        <div style={s.card}>
-          <div style={s.tabs}>
-            <button style={s.tab(activeTab === 'costs')} onClick={() => setActiveTab('costs')}>Direct Costs</button>
-            <button style={s.tab(activeTab === 'billing')} onClick={() => setActiveTab('billing')}>Billing</button>
-            <button style={s.tab(activeTab === 'payments')} onClick={() => setActiveTab('payments')}>Payments</button>
-            <button style={s.tab(activeTab === 'coi')} onClick={() => setActiveTab('coi')}>Companies</button>
-            <button style={s.tab(activeTab === 'liens')} onClick={() => setActiveTab('liens')}>Lien Waivers</button>
-          </div>
+      {/* ── Content ── */}
+      <div style={s.content}>
 
-          <div style={s.cardBody} className="rx-card-body">
+        {/* ── CALENDAR ── */}
+        {activeTab === 'calendar' && (() => {
+          const { year, month } = calMonth
+          const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+          const firstDay = new Date(year, month, 1).getDay()
+          const daysInMonth = new Date(year, month + 1, 0).getDate()
+          const cells = []
+          for (let i = 0; i < firstDay; i++) cells.push(null)
+          for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+          while (cells.length % 7 !== 0) cells.push(null)
 
-            {/* ── DIRECT COSTS ── */}
+          // Group billing submissions by submitted_at day
+          const billByDay = {}
+          for (const b of billing) {
+            if (!b.submitted_at) continue
+            const d = new Date(b.submitted_at)
+            if (d.getFullYear() === year && d.getMonth() === month) {
+              const day = d.getDate()
+              if (!billByDay[day]) billByDay[day] = []
+              billByDay[day].push(b)
+            }
+          }
+
+          // Group payments by paid_at day
+          const paidByDay = {}
+          for (const b of billing) {
+            if (!b.paid_at) continue
+            const d = new Date(b.paid_at)
+            if (d.getFullYear() === year && d.getMonth() === month) {
+              const day = d.getDate()
+              if (!paidByDay[day]) paidByDay[day] = []
+              paidByDay[day].push(b)
+            }
+          }
+
+          // COI expirations this month
+          const coiByDay = {}
+          for (const sub of directory) {
+            if (!sub.coi_expiration) continue
+            const d = new Date(sub.coi_expiration)
+            if (d.getFullYear() === year && d.getMonth() === month) {
+              const day = d.getDate()
+              if (!coiByDay[day]) coiByDay[day] = []
+              coiByDay[day].push(sub)
+            }
+          }
+
+          const today = new Date()
+          const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
+
+          // Summary stats
+          const monthBilling = billing.filter(b => {
+            if (!b.submitted_at) return false
+            const d = new Date(b.submitted_at)
+            return d.getFullYear() === year && d.getMonth() === month
+          })
+          const monthPaid = billing.filter(b => {
+            if (!b.paid_at) return false
+            const d = new Date(b.paid_at)
+            return d.getFullYear() === year && d.getMonth() === month
+          })
+
+          return (
+            <div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <p style={{ margin: '0 0 2px', fontSize: '20px', fontWeight: '700', color: '#f1f1f1' }}>{monthNames[month]} {year}</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#444' }}>{jobs.length} jobs tracked</p>
+              </div>
+
+              {/* Stats row */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
+                {[
+                  { label: 'Submitted this month', value: `$${monthBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()}`, count: monthBilling.length, accent: '#60a5fa' },
+                  { label: 'Paid this month', value: `$${monthPaid.reduce((a, b) => a + Number(b.payment_amount || b.amount_billed || 0), 0).toLocaleString()}`, count: monthPaid.length, accent: '#4ade80' },
+                  { label: 'Unpaid approved', value: `${billing.filter(b => !b.paid_at).length}`, count: null, accent: billing.filter(b => !b.paid_at).length > 0 ? '#e8590c' : '#555' },
+                ].map(stat => (
+                  <div key={stat.label} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                    <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase' }}>{stat.label}</p>
+                    <p style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: stat.accent }}>{stat.value}</p>
+                    {stat.count !== null && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#555' }}>{stat.count} submission{stat.count !== 1 ? 's' : ''}</p>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Nav + legend */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#1a3a5a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Billing submitted</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0a2a0a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Payment made</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#3a1a00' }} /><span style={{ fontSize: '11px', color: '#666' }}>COI expiration</span></div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
+                </div>
+              </div>
+
+              <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #1e1e1e' }}>
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', padding: '10px 0', textTransform: 'uppercase' }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                  {cells.map((day, i) => {
+                    const bills = day ? (billByDay[day] || []) : []
+                    const paids = day ? (paidByDay[day] || []) : []
+                    const cois  = day ? (coiByDay[day] || []) : []
+                    const isToday = isCurrentMonth && day === today.getDate()
+                    const col = i % 7
+                    const row = Math.floor(i / 7)
+                    const totalRows = cells.length / 7
+                    return (
+                      <div key={i} style={{ minHeight: '88px', padding: '6px', borderRight: col < 6 ? '1px solid #1a1a1a' : 'none', borderBottom: row < totalRows - 1 ? '1px solid #1a1a1a' : 'none', background: isToday ? 'rgba(232,89,12,0.04)' : 'transparent' }}>
+                        {day && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>
+                            {bills.map((b, idx) => (
+                              <div key={`bill-${idx}`} onClick={() => setActiveTab('billing')} style={{ background: '#0a1a3a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                                #{b.jobs?.job_number}
+                              </div>
+                            ))}
+                            {paids.map((b, idx) => (
+                              <div key={`paid-${idx}`} onClick={() => setActiveTab('payments')} style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#86efac', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                                paid #{b.jobs?.job_number}
+                              </div>
+                            ))}
+                            {cois.map((c, idx) => (
+                              <div key={`coi-${idx}`} onClick={() => setActiveTab('coi')} style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#e8590c', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                                COI {c.company_name?.split(' ')[0]}
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* existing tab content sections — kept exactly as-is */}
+        {/* ── DIRECT COSTS ── */}
             {activeTab === 'costs' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
@@ -1232,9 +1395,7 @@ export default function AdminPortal() {
               </>
             )}
 
-          </div>
-        </div>
-      </main>
-    </div>
+      </div>  {/* end content */}
+    </div>  {/* end page */}
   )
 }

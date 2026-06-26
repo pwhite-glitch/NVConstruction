@@ -710,14 +710,16 @@ export default function Dashboard() {
     const res = await fetch('/api/invite-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, company_id: company?.id }),
+      body: JSON.stringify({ email, company_id: company?.id, company_name: companyName }),
     })
     const json = await res.json()
     setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
     setSubTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
     setSubTeamInviteLoading(null)
-    const { members } = await fetch('/api/company-members').then(r => r.json())
-    setSubProfiles(members || [])
+    try {
+      const result = await fetch('/api/company-members').then(r => r.json())
+      if (Array.isArray(result?.members)) setSubProfiles(result.members)
+    } catch (_) {}
   }
 
   async function assignToJob(sub) {
@@ -1708,7 +1710,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         {/* ── Users (subcategory) ── */}
                         {(() => {
                           const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
-                          const members = company ? subProfiles.filter(p => p.company_id === company.id) : []
+                          const subNameKey = sub.company_name?.toLowerCase().trim()
+                          const members = subProfiles.filter(p =>
+                            (company && p.company_id === company.id) ||
+                            (subNameKey && p.company_name?.toLowerCase().trim() === subNameKey)
+                          ).filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i)
                           const isInviting = subTeamInviteLoading === sub.id
                           const invResult = subTeamInviteResult[sub.id]
                           return (

@@ -11,7 +11,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
   try {
-    const { directory_id, email: rawEmail, company_id } = await request.json()
+    const { directory_id, email: rawEmail, company_id, company_name: reqCompanyName } = await request.json()
     if (!directory_id && !rawEmail) return Response.json({ error: 'directory_id or email required' }, { status: 400 })
 
     let dir = { email: null, company_name: null, contact_name: null }
@@ -66,7 +66,7 @@ export async function POST(request) {
     }
 
     if (userId) {
-      const profileData = { id: userId, full_name: dir.contact_name || null, role: 'subcontractor', company_name: dir.company_name || null, invite_email: dir.email }
+      const profileData = { id: userId, full_name: dir.contact_name || null, role: 'subcontractor', company_name: dir.company_name || reqCompanyName || null, invite_email: dir.email }
       if (company_id) profileData.company_id = company_id
       await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
     }

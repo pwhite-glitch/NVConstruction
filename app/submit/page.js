@@ -7,7 +7,7 @@ import { sendEmail, emailWrap } from '../../lib/email'
 const PM_EMAIL = 'pwhite@nvim.co'
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a' },
+  page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex' },
   header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem' },
   headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
   logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
@@ -50,7 +50,29 @@ const s = {
   statCard: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem' },
   statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' },
   statValue: (accent) => ({ fontSize: '22px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
+  sidebar: { width: '220px', flexShrink: 0, background: '#0d0d0d', borderRight: '1px solid #1a1a1a', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid #1a1a1a' },
+  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px' },
+  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#f1f1f1', letterSpacing: '0.5px', margin: '0 0 2px' },
+  sidebarRole: { fontSize: '10px', color: '#333', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
+  sidebarUser: { fontSize: '12px', color: '#3a3a3a', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', margin: '12px 0 0' },
+  sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
+  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(232,89,12,0.08)' : 'transparent', color: active ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: active ? '600' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 #e8590c' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
+  navBadge: { background: '#e8590c', color: 'white', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
+  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' },
+  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'transparent', border: '1px solid #222', borderRadius: '8px', color: '#444', cursor: 'pointer', fontSize: '12px' },
+  content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
 }
+
+const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+const IconDollar   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+const IconBriefcase= () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+const IconHistory  = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.87"/></svg>
+const IconBid      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+const IconDoc      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+const IconRfi      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+const IconMsg      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+const IconPunch    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
 
 export default function Submit() {
   const router = useRouter()
@@ -65,7 +87,8 @@ export default function Submit() {
   const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
-  const [activeTab, setActiveTab] = useState('')
+  const [activeTab, setActiveTab] = useState('calendar')
+  const [calMonth, setCalMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() })
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   // Bid invitations state
@@ -139,13 +162,13 @@ export default function Submit() {
       }
       const companyId = prof?.company_id
       const jobQueries = [
-        supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id),
-        supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('sub_id', session.user.id),
+        supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('sub_id', session.user.id),
+        supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('sub_id', session.user.id),
       ]
       if (companyId) {
         jobQueries.push(
-          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('company_id', companyId),
-          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email)').eq('company_id', companyId),
+          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('company_id', companyId),
+          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('company_id', companyId),
         )
       }
       const jobResults = await Promise.all(jobQueries)
@@ -605,60 +628,215 @@ export default function Submit() {
   const totalRevised = myContracts.reduce((a, c) => a + Number(c.adjusted_contract_value || 0), 0)
   const totalApprovedBilling = submissions.filter(sub => sub.status === 'approved').reduce((a, sub) => a + (sub.amount_billed || 0), 0)
 
+  const pendingBids = bidInvitations.filter(b => !b.bid_submissions?.length && b.bid_packages?.status === 'open').length
+  const openRfis = rfis.filter(r => r.status === 'open').length
+  const openPunch = myPunchItems.filter(p => p.status === 'open').length
+
+  const navItems = [
+    { tab: 'calendar',   label: 'Calendar',        icon: <IconCal /> },
+    { tab: 'billing',    label: 'Submit Billing',   icon: <IconDollar /> },
+    { tab: 'contracts',  label: 'My Contracts',     icon: <IconBriefcase />, badge: myContracts.length || null },
+    { tab: 'history',    label: 'Billing History',  icon: <IconHistory />, badge: submissions.length || null },
+    { tab: 'bids',       label: 'Bid Invites',      icon: <IconBid />, badge: pendingBids || null },
+    { tab: 'docs',       label: 'My Documents',     icon: <IconDoc /> },
+    { tab: 'rfis',       label: 'RFIs',             icon: <IconRfi />, badge: openRfis || null },
+    { tab: 'messages',   label: 'Messages',         icon: <IconMsg /> },
+    { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />, badge: openPunch || null },
+  ]
+
   return (
     <div style={s.page}>
-      <header style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logoRow}>
-            <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
-            <div>
-              <div style={s.logoName}>NV Construction</div>
-              <div style={s.logoSub}>{profile?.company_name || 'Subcontractor Portal'}</div>
-            </div>
-          </div>
-          <button style={s.signOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+      {/* ── Sidebar ── */}
+      <nav style={s.sidebar}>
+        <div style={s.sidebarTop}>
+          <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
+          <p style={s.sidebarBrand}>NV Construction</p>
+          <p style={s.sidebarRole}>Sub Portal</p>
+          <p style={s.sidebarUser}>{profile?.company_name || profile?.full_name}</p>
         </div>
-      </header>
+        <div style={s.sidebarNav}>
+          {navItems.map(({ tab, label, icon, badge }) => (
+            <button key={tab} style={s.navItem(activeTab === tab)} onClick={() => {
+              setActiveTab(tab)
+              if (tab === 'messages' && jobs.length > 0 && !selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) }
+              if (tab === 'punch' && user) loadMyPunchItems(user.id)
+            }}>
+              {icon}
+              <span style={{ flex: 1 }}>{label}</span>
+              {badge ? <span style={s.navBadge}>{badge}</span> : null}
+            </button>
+          ))}
+        </div>
+        <div style={s.sidebarBottom}>
+          <button style={s.sidebarSignOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+        </div>
+      </nav>
 
-      <main style={s.main} className="rx-main">
+      {/* ── Content ── */}
+      <div style={s.content}>
         {success && <div style={s.success}>Billing submitted successfully. Peyton will be notified.</div>}
 
-        {!activeTab && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
-            {[
-              { key: 'billing', label: 'Submit Billing', count: null },
-              { key: 'contracts', label: 'My Contracts', count: myContracts.length || null },
-              { key: 'history', label: 'Billing History', count: submissions.length || null },
-              { key: 'bids', label: 'Bid Invites', count: bidInvitations.length || null, alert: bidInvitations.filter(b => b.status === 'pending').length > 0, alertLabel: `${bidInvitations.filter(b => b.status === 'pending').length} pending` },
-              { key: 'docs', label: 'My Documents', count: null },
-              { key: 'rfis', label: 'RFIs', count: rfis.length || null, alert: rfis.filter(r => r.status === 'answered').length > 0, alertLabel: `${rfis.filter(r => r.status === 'answered').length} answered` },
-              { key: 'messages', label: 'Messages', count: null },
-              { key: 'punch', label: 'Punch List', count: myPunchItems.filter(p => p.status === 'open').length || null, alert: myPunchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${myPunchItems.filter(p => p.status === 'open').length} open` },
-            ].map(item => (
-              <button key={item.key} onClick={() => {
-                setActiveTab(item.key)
-                if (item.key === 'messages' && jobs.length > 0 && !selectedMessageJob) { const j = jobs[0]; setSelectedMessageJob(j.id); loadMessages(j.id) }
-                if (item.key === 'punch' && user) loadMyPunchItems(user.id)
-              }} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
-                {(item.count || item.alert) ? (
-                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#555', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
-                    {item.alert && item.alertLabel ? item.alertLabel : item.count}
-                  </span>
-                ) : <span style={{ fontSize: '11px', color: '#333' }}>Tap to open</span>}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* ── CALENDAR ── */}
+        {activeTab === 'calendar' && (() => {
+          const { year, month } = calMonth
+          const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+          const firstDay = new Date(year, month, 1).getDay()
+          const daysInMonth = new Date(year, month + 1, 0).getDate()
+          const cells = []
+          for (let i = 0; i < firstDay; i++) cells.push(null)
+          for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+          while (cells.length % 7 !== 0) cells.push(null)
 
-        {activeTab && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.5rem' }}>
-            <button style={{ padding: '8px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }} onClick={() => setActiveTab('')}>← Back</button>
-            <span style={{ fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>
-              {{ billing: 'Submit Billing', contracts: 'My Contracts', history: 'Billing History', bids: 'Bid Invites', docs: 'My Documents', rfis: 'RFIs', messages: 'Messages', punch: 'Punch List' }[activeTab]}
-            </span>
-          </div>
-        )}
+          // Billing submission dots (by submitted_at date)
+          const subByDay = {}
+          for (const sub of submissions) {
+            if (!sub.submitted_at) continue
+            const d = new Date(sub.submitted_at)
+            if (d.getFullYear() === year && d.getMonth() === month) {
+              const day = d.getDate()
+              if (!subByDay[day]) subByDay[day] = []
+              subByDay[day].push(sub)
+            }
+          }
+
+          // Recurring billing due dates from jobs
+          const dueByDay = {}
+          for (const j of jobs) {
+            const freq = j.sub_billing_frequency || 'monthly'
+            const due = j.sub_billing_due
+            if (due === null || due === undefined || due === '') continue
+            if (freq === 'monthly') {
+              const d = parseInt(due)
+              if (d >= 1 && d <= daysInMonth) {
+                const start = j.sub_billing_start ? new Date(j.sub_billing_start) : null
+                if (!start || start <= new Date(year, month, d)) {
+                  if (!dueByDay[d]) dueByDay[d] = []
+                  dueByDay[d].push(j)
+                }
+              }
+            } else if (freq === 'weekly') {
+              const dow = parseInt(due)
+              for (let d = 1; d <= daysInMonth; d++) {
+                const cellDate = new Date(year, month, d)
+                const start = j.sub_billing_start ? new Date(j.sub_billing_start) : null
+                if (cellDate.getDay() === dow && (!start || start <= cellDate)) {
+                  if (!dueByDay[d]) dueByDay[d] = []
+                  dueByDay[d].push(j)
+                }
+              }
+            }
+          }
+
+          // Bid deadlines
+          const bidsByDay = {}
+          for (const inv of bidInvitations) {
+            const due = inv.bid_packages?.due_date
+            if (!due) continue
+            const d = new Date(due + 'T00:00:00')
+            if (d.getFullYear() === year && d.getMonth() === month) {
+              const day = d.getDate()
+              if (!bidsByDay[day]) bidsByDay[day] = []
+              bidsByDay[day].push(inv)
+            }
+          }
+
+          const today = new Date()
+          const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
+
+          return (
+            <div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <p style={{ margin: '0 0 2px', fontSize: '20px', fontWeight: '700', color: '#f1f1f1' }}>
+                  {monthNames[month]} {year}
+                </p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#444' }}>
+                  {jobs.length} active job{jobs.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+
+              {/* Nav + legend */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#1a4a2a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Billing due</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#1a3a5a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Submitted</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#2a1a4a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Bid deadline</span></div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
+                </div>
+              </div>
+
+              <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', overflow: 'hidden' }}>
+                {/* Day headers */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #1e1e1e' }}>
+                  {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', padding: '10px 0', textTransform: 'uppercase' }}>{d}</div>
+                  ))}
+                </div>
+                {/* Cells */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                  {cells.map((day, i) => {
+                    const subs = day ? (subByDay[day] || []) : []
+                    const dues = day ? (dueByDay[day] || []) : []
+                    const bids = day ? (bidsByDay[day] || []) : []
+                    const isToday = isCurrentMonth && day === today.getDate()
+                    const col = i % 7
+                    const borderRight = col < 6 ? '1px solid #1a1a1a' : 'none'
+                    const row = Math.floor(i / 7)
+                    const totalRows = cells.length / 7
+                    const borderBottom = row < totalRows - 1 ? '1px solid #1a1a1a' : 'none'
+                    return (
+                      <div key={i} style={{ minHeight: '88px', padding: '6px', borderRight, borderBottom, background: isToday ? 'rgba(232,89,12,0.04)' : 'transparent' }}>
+                        {day && (
+                          <>
+                            <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>
+                            {dues.map((j, idx) => (
+                              <div key={`due-${idx}`} style={{ background: '#0a2a14', border: '1px solid #1a4a2a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#4ade80', lineHeight: '1.3', fontWeight: '600' }}>
+                                #{j.job_number} due
+                              </div>
+                            ))}
+                            {subs.map((sub, idx) => (
+                              <div key={`sub-${idx}`} style={{ background: '#0a1a3a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', lineHeight: '1.3', fontWeight: '600' }}>
+                                #{sub.jobs?.job_number} submitted
+                              </div>
+                            ))}
+                            {bids.map((inv, idx) => (
+                              <div key={`bid-${idx}`} onClick={() => setActiveTab('bids')} style={{ background: '#1a0a3a', border: '1px solid #3a1a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#c084fc', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                                Bid due
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Upcoming summary */}
+              {submissions.length > 0 && (
+                <div style={{ marginTop: '1.5rem', background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase' }}>Recent submissions</p>
+                  {submissions.slice(0, 3).map(sub => (
+                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                      <div>
+                        <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#ccc', fontWeight: '600' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}</p>
+                        <p style={{ margin: 0, fontSize: '11px', color: '#555' }}>{new Date(sub.submitted_at).toLocaleDateString()}</p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${Number(sub.amount_billed).toLocaleString()}</span>
+                        <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', background: sub.status === 'approved' ? '#0a2a0a' : sub.status === 'rejected' ? '#2a0a0a' : '#2a1200', color: sub.status === 'approved' ? '#4ade80' : sub.status === 'rejected' ? '#ff6b6b' : '#e8590c', border: `1px solid ${sub.status === 'approved' ? '#1a4a1a' : sub.status === 'rejected' ? '#5a1a1a' : '#4a2200'}` }}>{sub.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => setActiveTab('history')} style={{ marginTop: '10px', fontSize: '12px', color: '#555', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View all history →</button>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* ── SUBMIT BILLING TAB ── */}
         {activeTab === 'billing' && (
@@ -1472,7 +1650,7 @@ export default function Submit() {
           </div>
         )}
 
-      </main>
+      </div>
 
       {/* ── LIEN WAIVER SIGNATURE MODAL ── */}
       {lienWaiverSub && (() => {

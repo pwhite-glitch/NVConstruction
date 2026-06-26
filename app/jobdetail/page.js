@@ -563,8 +563,9 @@ export default function JobDetail() {
   }
 
   async function loadDirectCosts() {
-    const { data } = await supabase.from('direct_costs').select('*').eq('job_id', id).order('cost_date', { ascending: false })
-    const costs = data || []
+    const res = await fetch(`/api/direct-costs?job_id=${id}`)
+    const json = await res.json()
+    const costs = json.data || []
     const userIds = [...new Set(costs.map(c => c.submitted_by).filter(Boolean))]
     if (userIds.length > 0) {
       const { data: profiles } = await supabase.from('profiles').select('id, email, full_name').in('id', userIds)

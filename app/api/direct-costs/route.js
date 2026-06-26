@@ -5,6 +5,20 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// GET: fetch all direct costs for a job (bypasses RLS)
+export async function GET(request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const job_id = searchParams.get('job_id')
+    if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+    const { data, error } = await adminSupabase.from('direct_costs').select('*').eq('job_id', job_id).order('cost_date', { ascending: false })
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ data })
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
+}
+
 // POST: insert a direct cost, optionally uploading a receipt file
 // Accepts multipart FormData: file (optional) + "data" JSON string
 // OR plain JSON body (no file)

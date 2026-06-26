@@ -409,26 +409,24 @@ export default function Field() {
     e.preventDefault()
     setSubmittingDc(true)
     setDcError('')
-    let receipt_url = null
-    if (dcFile) {
-      const ext = dcFile.name.split('.').pop().toLowerCase()
-      const path = `${selectedJobId}/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('receipts').upload(path, dcFile)
-      if (uploadError) {
-        setDcError('Receipt upload failed: ' + uploadError.message + '. Please try again or remove the file and save without it.')
-        setSubmittingDc(false)
-        return
-      }
-      receipt_url = path
-    }
-    const { error } = await supabase.from('direct_costs').insert({
+    const rowData = {
       job_id: selectedJobId, submitted_by: user.id,
       cost_date: dcForm.cost_date, description: dcForm.description,
       category: dcForm.category, amount: parseFloat(dcForm.amount),
-      receipt_url, notes: dcForm.notes || null,
-    })
-    if (error) {
-      setDcError('Failed to save cost: ' + error.message)
+      notes: dcForm.notes || null, status: 'pending',
+    }
+    let res, json
+    if (dcFile) {
+      const fd = new FormData()
+      fd.append('file', dcFile)
+      fd.append('data', JSON.stringify(rowData))
+      res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
+    } else {
+      res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    }
+    json = await res.json()
+    if (json.error) {
+      setDcError('Failed to save cost: ' + json.error)
       setSubmittingDc(false)
       return
     }

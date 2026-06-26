@@ -136,6 +136,8 @@ export default function JobDetail() {
   const [editingPrimeCOId, setEditingPrimeCOId] = useState(null)
   const [editPrimeCOForm, setEditPrimeCOForm] = useState(emptyPrimeCO)
   const [savingPrimeCO, setSavingPrimeCO] = useState(false)
+  const [sendingOwnerCO, setSendingOwnerCO] = useState(null)
+  const [sentOwnerCOIds, setSentOwnerCOIds] = useState(new Set())
   const [expandedSubCOId, setExpandedSubCOId] = useState(null)
 
   // Budget state
@@ -2227,6 +2229,39 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     if (error) { alert('Error: ' + error.message) }
     else { setPushCOId(null); setPushMarkup(''); await loadPrimeCOs() }
     setPushingToPrime(false)
+  }
+
+  async function sendPrimeCOToOwner(co, coNum) {
+    const ownerEmail = job?.owner_email
+    if (!ownerEmail) { alert('No owner email on file. Add it in the Details tab first.'); return }
+    setSendingOwnerCO(co.id)
+    const coNumber = `PCO-${String(coNum).padStart(3, '0')}`
+    const amount = Number(co.amount)
+    const amtStr = `${amount >= 0 ? '+' : ''}$${Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    const sovRows = co.sov?.length > 0
+      ? co.sov.map(item => `<tr style="border-bottom:1px solid #222"><td style="padding:8px 0;color:#ccc;font-size:13px">${item.description || '—'}</td><td style="text-align:right;padding:8px 0;font-weight:700;font-size:13px;color:${Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b'}">${Number(item.amount) >= 0 ? '+' : ''}$${Math.abs(Number(item.amount)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`).join('')
+      : ''
+    await sendEmail(
+      ownerEmail,
+      `Change Order ${coNumber} for Review — ${job.project_name}`,
+      emailWrap(`
+        <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Change Order for Your Approval</h2>
+        <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
+          NV Construction has prepared change order <strong style="color:#f1f1f1">${coNumber}</strong> on project <strong style="color:#f1f1f1">#${job.job_number} — ${job.project_name}</strong> for your review.
+        </p>
+        <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px 20px;margin:0 0 16px">
+          <p style="margin:0 0 6px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Description</p>
+          <p style="margin:0;font-size:14px;color:#f1f1f1;line-height:1.6">${co.description}</p>
+          ${co.notes ? `<p style="margin:8px 0 0;font-size:12px;color:#888;line-height:1.5">${co.notes}</p>` : ''}
+        </div>
+        ${sovRows ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px"><tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:0 0 8px;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Line Item</th><th style="text-align:right;padding:0 0 8px;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Amount</th></tr>${sovRows}</table>` : ''}
+        <p style="font-size:24px;font-weight:800;color:#e8590c;margin:12px 0 20px">${amtStr}</p>
+        <p style="color:#888;font-size:13px;margin:0 0 6px">To approve or request modifications, please reply to this email or contact your project manager.</p>
+        <p style="color:#555;font-size:12px;margin:0">Job #${job.job_number} · ${job.project_name}${job.location ? ` · ${job.location}` : ''}</p>
+      `)
+    ).catch(() => {})
+    setSentOwnerCOIds(prev => new Set([...prev, co.id]))
+    setSendingOwnerCO(null)
   }
 
   function printPrimeCO(co, coNum) {
@@ -4688,6 +4723,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         setEditPrimeCOForm({ description: co.description || '', notes: co.notes || '', amount: String(co.amount || ''), sov: co.sov?.length > 0 ? co.sov.map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || '', amount: String(r.amount || '') })) : [] })
                       }}>Edit</button>
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1) }}>Print CO</button>
+                      <button
+                        style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(sentOwnerCOIds.has(co.id) ? { background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' } : {}), opacity: (!job?.owner_email || sendingOwnerCO === co.id) ? 0.5 : 1 }}
+                        title={!job?.owner_email ? 'No owner email — add it in the Details tab' : 'Email this CO to the owner for approval'}
+                        disabled={!job?.owner_email || sendingOwnerCO === co.id}
+                        onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); sendPrimeCOToOwner(co, idx + 1) }}
+                      >{sendingOwnerCO === co.id ? 'Sending...' : sentOwnerCOIds.has(co.id) ? '✓ Sent to Owner' : '✉ Send to Owner'}</button>
                       <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px' }} onClick={() => deletePrimeCO(co.id)}>Delete</button>
                     </div>
                   </div>

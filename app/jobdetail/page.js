@@ -96,6 +96,7 @@ export default function JobDetail() {
   const [errMsg, setErrMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [activeTab, setActiveTab] = useState('details')
+  const [budgetView, setBudgetView] = useState('lines')
   const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
 
@@ -2990,7 +2991,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
 
           {/* Left sidebar nav */}
-          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
+          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
             {[
               {
                 group: 'Project',
@@ -3725,7 +3726,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
             </div>
 
-            <div style={s.card}>
+            {/* Budget sub-tabs */}
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '1.25rem', borderBottom: '1px solid #1e1e1e', paddingBottom: '0' }}>
+              {[
+                { key: 'lines',   label: 'Budget Lines' },
+                { key: 'eac',     label: 'EAC Forecast' },
+                { key: 'billing', label: 'Total Billed' },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => setBudgetView(key)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: `2px solid ${budgetView === key ? '#e8590c' : 'transparent'}`, color: budgetView === key ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: budgetView === key ? '700' : '500', cursor: 'pointer', marginBottom: '-1px' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {budgetView === 'lines' && <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Budget lines ({budgetItems.length})</p>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -3857,10 +3871,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   })})()}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Cost to Complete Forecast */}
-            {budgetItems.length > 0 && (() => {
+            {budgetView === 'eac' && budgetItems.length > 0 && (() => {
               const forecastRows = budgetItems.map(item => {
                 const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
                 const contracted = committedForItem(item.id)
@@ -3933,7 +3947,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             })()}
 
             {/* ── Owner Billing vs Budget ── */}
-            {budgetItems.length > 0 && (() => {
+            {budgetView === 'billing' && budgetItems.length > 0 && (() => {
               const hasBilling = Object.keys(billingByItem).length > 0
               const rows = budgetItems.map(item => {
                 const ownerSOV = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)

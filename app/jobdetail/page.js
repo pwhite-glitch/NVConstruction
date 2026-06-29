@@ -129,7 +129,8 @@ export default function JobDetail() {
   const [contractBidFile, setContractBidFile] = useState(null)
   const [editContractBidFile, setEditContractBidFile] = useState(null)
   const [showContractGen, setShowContractGen] = useState(false)
-  const [contractGenForm, setContractGenForm] = useState({ contract_id: '', date: '', sub_name: '', sub_address: '', entity_type: 'sole proprietorship', trade: '', project_name: '', project_address: '', owner_name: '', owner_address: '', contract_amount: '', pay_pct: '100', scope_of_work: '', job_number: '', subcontract_number: '', pm_name: 'Peyton White', superintendent: 'Landon Moore' })
+  const [showCustomText, setShowCustomText] = useState(false)
+  const [contractGenForm, setContractGenForm] = useState({ contract_id: '', date: '', sub_name: '', sub_address: '', entity_type: 'sole proprietorship', trade: '', project_name: '', project_address: '', owner_name: '', owner_address: '', contract_amount: '', pay_pct: '100', scope_of_work: '', job_number: '', subcontract_number: '', pm_name: 'Peyton White', superintendent: 'Landon Moore', cover_letter_body: 'Please carefully review paragraphs # 5 and #23 of the enclosed contract. All change orders must have written authorization (defined as a formal NV Construction change order or an email approval defining scope and cost) from the Project Manager before work is commenced in order to ensure you will be paid for the work. All payment requests including claims for additional work must include a formal signed NV Construction Change Order in order for your draw to be processed and paid.\n\nWhile I understand that in the heat of battle, a NV Construction employee may ask you to perform work with a verbal authorization; you must get that authorization in writing before proceeding. Any work done with only a verbal agreement will result in not being paid. Also, please note in paragraph #23 that the NV superintendent is not authorized to approve change orders for additional work. That approval must come from the Project Manager.\n\nI highlight these paragraphs to protect you as a subcontractor and to ensure that at the end of the job there are no surprises for any of us, including our client.\n\nWe appreciate your cooperation in this matter and look forward to working with you on this project. Please acknowledge your agreement and understanding of this requirement by signing this letter in the space provided below, and then return the signed copy with your contract.', contract_documents: 'Subcontractor Proposal\nLink to Current Plan Sheets\nExhibit A Attached\nExhibit B Attached\nSchedule', scope_notes: '* Change Orders: You must receive written authorization from the Project Manager before you begin the work.\n* Daily broom swept clean-up of all trash & debris\n* Comply with all OSHA regulations. *PPE will be required at all times for this job\n* Time is of the essence for this project. Complete work per schedule provided below.' })
 
   // Change orders state
   const [allCOs, setAllCOs] = useState([])
@@ -1943,6 +1944,9 @@ ${sovLines.length > 0 ? `
   function generateSubcontract() {
     const f = contractGenForm
     const fmt = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const coverParas = (f.cover_letter_body || '').split('\n\n').filter(Boolean).map(p => `<p class="indent">${p.replace(/\n/g, '<br>')}</p>`).join('\n  ')
+    const contractDocLines = (f.contract_documents || '').split('\n').filter(Boolean).join('<br>')
+    const scopeNoteLines = (f.scope_notes || '').split('\n').filter(Boolean).join('<br>')
     const subNoShort = f.subcontract_number.split('-').pop() || f.subcontract_number
     const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/logo.png'
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Subcontract — ${f.sub_name}</title>
@@ -1981,13 +1985,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <br>
   <p>Dear ${f.sub_name}:</p>
   <br>
-  <p class="indent">Please carefully review paragraphs # 5 and #23 of the enclosed contract. All change orders <span class="bu">must</span> have written authorization (defined as a formal NV Construction change order or an email approval defining scope and cost) from the Project Manager before work is commenced in order to ensure you will be paid for the work. All payment requests including claims for additional work must include a formal signed NV Construction Change Order in order for your draw to be processed and paid.</p>
-  <br>
-  <p class="indent">While I understand that in the heat of battle, a NV Construction employee may ask you to perform work with a verbal authorization; you must get that authorization in writing before proceeding. Any work done with only a verbal agreement will result in not being paid. Also, please note in paragraph #23 that the NV superintendent is <span class="bu">not</span> authorized to approve change orders for additional work. That approval must come from the Project Manager.</p>
-  <br>
-  <p class="indent">I highlight these paragraphs to protect you as a subcontractor and to ensure that at the end of the job there are no surprises for any of us, including our client.</p>
-  <br>
-  <p class="indent"><span class="ul">We appreciate your cooperation in this matter and look forward to working with you on this project. Please acknowledge your agreement and understanding of this requirement by signing this letter in the space provided below, and then return the signed copy with your contract.</span></p>
+  ${coverParas}
   <br><br>
   <p>Sincerely,</p>
   <br><br>
@@ -2007,7 +2005,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <div class="sub-num">Subcontract #: ${f.subcontract_number}</div>
   <div class="nv-hdr">NV Construction</div>
   <div class="agreement-title">SUBCONTRACT AGREEMENT</div>
-  <p>THIS AGREEMENT is made and entered into on ${f.date} (the "Subcontract"), by and between <strong>NV Construction</strong>, a Texas limited partnership, 2000 N. Eastman Road Longview, Texas 75601 ("Contractor"), and ${f.sub_name}, a (sole proprietorship / partnership / corporation) of the State of Texas whose principal address is ${f.sub_address} ("Subcontractor").</p>
+  <p>THIS AGREEMENT is made and entered into on ${f.date} (the "Subcontract"), by and between <strong>NV Construction</strong>, a Texas limited partnership, 2000 N. Eastman Road Longview, Texas 75601 ("Contractor"), and ${f.sub_name}, a ${f.entity_type || 'sole proprietorship'} of the State of Texas whose principal address is ${f.sub_address} ("Subcontractor").</p>
   <p class="indent">IN CONSIDERATION of the mutual covenants made by Contractor and Subcontractor, the parties mutually agree as follows:</p>
   <div class="num-item"><strong>1.</strong>&nbsp;&nbsp;Subcontractor agrees to furnish all labor, material, equipment, services, supplies and scaffolding and to pay all applicable federal, state, and local taxes required for the completion of the ${f.trade} work (the "Subcontract Work") for the following project (the "Project"):</div>
   <div style="text-align:center;margin:14px 0"><strong>${f.project_name}</strong><br>${f.project_address}</div>
@@ -2043,7 +2041,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 <div class="np">
   <div class="sub-num">Subcontract #: ${f.subcontract_number}</div>
   <p class="section-lg">CONTRACT DOCUMENTS:</p>
-  <p>Subcontractor Proposal<br>Link to Current Plan Sheets<br>Exhibit A Attached<br>Exhibit B Attached<br>Schedule</p>
+  <p>${contractDocLines}</p>
   <br>
   <p><strong>SUBMITTALS</strong><br>Provide materials and equipment per plans and specifications. No substitutions allowed. Subcontractor is responsible for any delay arising from substitution requests. Submittal documents for Owner's records to be provided via overnight delivery to NV Construction, 2000 N. Eastman Road Longview, Texas 75601 – Phone: 903-331-8895.</p>
   <p>Completion of submittal requirements in their entirety is required within one week of contract issuance. Approval of submittals within one week of receipt will be requested from Architect.</p>
@@ -2061,7 +2059,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <p class="section-lg">SCOPE OF WORK</p>
   <p style="white-space:pre-wrap">${f.scope_of_work}</p>
   <br>
-  <p>* Change Orders: You must receive written authorization from the Project Manager before you begin the work.<br>* Daily broom swept clean-up of all trash &amp; debris<br>* Comply with all OSHA regulations. *PPE will be required at all times for this job<br>* Time is of the essence for this project. Complete work per schedule provided below.</p>
+  <p>${scopeNoteLines}</p>
   <div class="initial">Initial</div>
 </div>
 
@@ -4228,6 +4226,35 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ marginBottom: '16px' }}>
                   <label style={s.label}>Scope of work</label>
                   <textarea style={{ ...s.input, minHeight: '140px', resize: 'vertical', fontFamily: 'inherit' }} value={contractGenForm.scope_of_work} onChange={e => setContractGenForm(f => ({ ...f, scope_of_work: e.target.value }))} placeholder="Provide all labor, equipment, and material to complete the [trade] scope per plans and specs to include but not limited to: ..." />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <button type="button" style={{ ...s.btnSmall, marginBottom: '8px' }} onClick={() => setShowCustomText(v => !v)}>
+                    {showCustomText ? '▲ Hide custom text' : '▼ Edit cover letter & contract text'}
+                  </button>
+                  {showCustomText && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '14px', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px' }}>
+                      <div>
+                        <label style={s.label}>Subcontractor entity type</label>
+                        <input style={s.input} value={contractGenForm.entity_type} onChange={e => setContractGenForm(f => ({ ...f, entity_type: e.target.value }))} placeholder="sole proprietorship" />
+                        <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Appears in agreement as: "…{contractGenForm.sub_name || 'Sub Name'}, a [entity type] of the State of Texas…"</p>
+                      </div>
+                      <div>
+                        <label style={s.label}>Cover letter body</label>
+                        <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>Separate paragraphs with a blank line.</p>
+                        <textarea style={{ ...s.input, minHeight: '200px', resize: 'vertical', fontFamily: 'inherit', fontSize: '12px' }} value={contractGenForm.cover_letter_body} onChange={e => setContractGenForm(f => ({ ...f, cover_letter_body: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Contract documents list</label>
+                        <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>One item per line.</p>
+                        <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', fontSize: '12px' }} value={contractGenForm.contract_documents} onChange={e => setContractGenForm(f => ({ ...f, contract_documents: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Scope page footnotes</label>
+                        <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>Bullet points shown below scope of work. One per line.</p>
+                        <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', fontSize: '12px' }} value={contractGenForm.scope_notes} onChange={e => setContractGenForm(f => ({ ...f, scope_notes: e.target.value }))} />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Print / Generate PDF</button>
               </div>

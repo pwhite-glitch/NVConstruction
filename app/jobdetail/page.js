@@ -2134,8 +2134,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 </body></html>`
     const key = `sc_print_${Date.now()}`
     localStorage.setItem(key, html)
-    window.open(`/print-subcontract.html?key=${key}`, '_blank')
+    window.open(`/print-subcontract.html?key=${key}&edit=true`, '_blank')
   }
+
 
   // ── Change Orders ───────────────────────────────────────────
   async function addCO() {
@@ -4259,7 +4260,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   )}
                 </div>
-                <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Print / Generate PDF</button>
+                <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Edit & Print Contract</button>
               </div>
             )}
 

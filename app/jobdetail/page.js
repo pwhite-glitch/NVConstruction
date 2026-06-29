@@ -2132,9 +2132,42 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 </div>
 
 </body></html>`
-    const key = `sc_print_${Date.now()}`
-    localStorage.setItem(key, html)
-    window.open(`/print-subcontract.html?key=${key}&edit=true`, '_blank')
+    const toolbar = [
+      '<style id="nv-edit-style">',
+      '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a1a1a;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
+      '#nv-bar button{border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;background:#e8590c;color:#fff}',
+      '#nv-bar button:hover{background:#d44d00}',
+      '@media print{#nv-bar{display:none!important}body{margin-top:0!important}}',
+      '</style>',
+      '<div id="nv-bar" contenteditable="false">',
+      '<span style="font-weight:700;color:#e8590c;font-size:15px;">&#9998; Editing Mode</span>',
+      '<span style="color:#888;font-size:12px;">Click anywhere on the contract to edit — every word is changeable.</span>',
+      '<div style="flex:1"></div>',
+      '<button id="nv-print-btn">Print / Save PDF</button>',
+      '</div>',
+      '<script>',
+      'document.designMode="on";',
+      'document.body.style.marginTop="50px";',
+      'document.getElementById("nv-print-btn").addEventListener("click",function(){',
+      '  document.designMode="off";',
+      '  document.getElementById("nv-bar").style.display="none";',
+      '  document.body.style.marginTop="";',
+      '  window.print();',
+      '  setTimeout(function(){',
+      '    document.designMode="on";',
+      '    document.getElementById("nv-bar").style.display="flex";',
+      '    document.body.style.marginTop="50px";',
+      '  },1500);',
+      '});',
+      '<\/script>',
+    ].join('\n')
+    const editHtml = html.replace('</body>', toolbar + '\n</body>')
+    const win = window.open('', '_blank')
+    if (win) {
+      win.document.open()
+      win.document.write(editHtml)
+      win.document.close()
+    }
   }
 
 

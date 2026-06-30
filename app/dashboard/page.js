@@ -203,6 +203,9 @@ export default function Dashboard() {
   const [teamInviteForm, setTeamInviteForm] = useState({ email: '', full_name: '', role: 'apm', phone: '' })
   const [teamInviting, setTeamInviting] = useState(false)
   const [teamInviteMsg, setTeamInviteMsg] = useState(null)
+  const [fixProfileForm, setFixProfileForm] = useState({ email: '', role: 'super' })
+  const [fixingProfile, setFixingProfile] = useState(false)
+  const [fixProfileMsg, setFixProfileMsg] = useState(null)
 
   // Estimates state
   const [estimates, setEstimates] = useState([])
@@ -963,6 +966,26 @@ export default function Dashboard() {
       await loadTeamData()
     }
     setTeamInviting(false)
+  }
+
+  async function fixProfile() {
+    if (!fixProfileForm.email) return
+    setFixingProfile(true)
+    setFixProfileMsg(null)
+    const res = await fetch('/api/fix-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fixProfileForm),
+    })
+    const json = await res.json()
+    if (json.error) {
+      setFixProfileMsg({ ok: false, text: json.error })
+    } else {
+      setFixProfileMsg({ ok: true, text: `Done — ${fixProfileForm.email} is now set as ${fixProfileForm.role.toUpperCase()}.` })
+      setFixProfileForm({ email: '', role: 'super' })
+      await loadTeamData()
+    }
+    setFixingProfile(false)
   }
 
   async function deleteTeamMember(member) {
@@ -2843,6 +2866,30 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     <p style={{ fontSize: '12px', color: '#444', marginTop: '10px', marginBottom: 0 }}>They'll receive an email to set their password and access the system.</p>
                   </div>
                 )}
+                <div style={{ marginBottom: '1.25rem', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #2a1a00', borderRadius: '8px' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#888', letterSpacing: '1px', textTransform: 'uppercase' }}>Fix existing user access</p>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#555' }}>If a team member can log in but doesn't appear in the list above, use this to repair their profile.</p>
+                  {fixProfileMsg && <p style={{ fontSize: '13px', color: fixProfileMsg.ok ? '#4ade80' : '#ff6b6b', margin: '0 0 10px' }}>{fixProfileMsg.text}</p>}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1', minWidth: '180px' }}>
+                      <label style={s.label}>Email</label>
+                      <input style={s.input} type="email" placeholder="zane@email.com" value={fixProfileForm.email} onChange={e => setFixProfileForm(f => ({ ...f, email: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Role</label>
+                      <select style={s.input} value={fixProfileForm.role} onChange={e => setFixProfileForm(f => ({ ...f, role: e.target.value }))}>
+                        <option value="pm">PM</option>
+                        <option value="apm">Assistant PM</option>
+                        <option value="super">Superintendent</option>
+                        <option value="admin">Office Admin</option>
+                      </select>
+                    </div>
+                    <button style={{ ...s.btnSm('orange'), opacity: fixingProfile || !fixProfileForm.email ? 0.6 : 1 }} disabled={fixingProfile || !fixProfileForm.email} onClick={fixProfile}>
+                      {fixingProfile ? 'Fixing...' : 'Fix access'}
+                    </button>
+                  </div>
+                </div>
+
                 {teamMembers.length === 0 ? (
                   <div style={s.emptyMsg}>No team members yet. Create accounts in Supabase and assign a role.</div>
                 ) : teamMembers.map(member => {

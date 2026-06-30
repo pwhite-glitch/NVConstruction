@@ -176,6 +176,9 @@ export default function Dashboard() {
   const [showInviteFor, setShowInviteFor] = useState(null)
   const [selectedEmails, setSelectedEmails] = useState([])
   const [sendingInvites, setSendingInvites] = useState(false)
+  const [quickInviteEmail, setQuickInviteEmail] = useState({})
+  const [quickInviteSending, setQuickInviteSending] = useState(null)
+  const [quickInviteMsg, setQuickInviteMsg] = useState({})
   const [showManualBidFor, setShowManualBidFor] = useState(null)
   const [manualBidForm, setManualBidForm] = useState({ company_name: '', amount: '', notes: '' })
   const [manualBidFile, setManualBidFile] = useState(null)
@@ -526,6 +529,30 @@ export default function Dashboard() {
     setSelectedEmails([])
     await loadBidDetail(bidId)
     setSendingInvites(false)
+  }
+
+  async function sendQuickInvite(bidId, pkg) {
+    const email = (quickInviteEmail[bidId] || '').trim().toLowerCase()
+    if (!email || !email.includes('@')) return
+    setQuickInviteSending(bidId)
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+    await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
+    sendEmail(email, `You're invited to bid — ${pkg.title}`,
+      emailWrap(`
+        <h2 style="color:#f1f1f1;margin:0 0 1rem">Bid invitation</h2>
+        <p style="color:#aaa">NV Construction has invited you to submit a bid for <strong style="color:#f1f1f1">${pkg.title}</strong>.</p>
+        ${pkg.due_date ? `<p style="color:#888;font-size:13px">Bids due: <strong style="color:#f1f1f1">${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}</strong></p>` : ''}
+        ${pkg.scope_of_work ? `<div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0"><p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Scope of work</p><p style="color:#aaa;font-size:13px;line-height:1.6;margin:0">${pkg.scope_of_work}</p></div>` : ''}
+        <p style="color:#aaa;margin:1rem 0">To view the plans and submit your bid, you'll need to add yourself to our subcontractor directory first. It only takes a minute:</p>
+        <a href="${siteUrl}/apply" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">Register &amp; View Plans</a>
+        <p style="color:#555;font-size:12px;margin-top:1.25rem">Once you're registered and approved you'll have access to the plans and can submit your bid through our sub portal.</p>
+      `)
+    )
+    setQuickInviteMsg(prev => ({ ...prev, [bidId]: `Invite sent to ${email}` }))
+    setQuickInviteEmail(prev => ({ ...prev, [bidId]: '' }))
+    setTimeout(() => setQuickInviteMsg(prev => { const n = { ...prev }; delete n[bidId]; return n }), 5000)
+    await loadBidDetail(bidId)
+    setQuickInviteSending(null)
   }
 
   async function awardBid(submission, bidId) {
@@ -2677,6 +2704,26 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   </button>
                                   <button style={s.btnSm('gray')} onClick={() => setShowInviteFor(null)}>Cancel</button>
                                 </div>
+                              </div>
+                            )}
+
+                            {pkg.status === 'open' && (
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                                <input
+                                  type="email"
+                                  placeholder="Invite by email — they'll be sent a link to register"
+                                  style={{ ...s.input, flex: 1, minWidth: '220px', fontSize: '13px', padding: '8px 12px' }}
+                                  value={quickInviteEmail[pkg.id] || ''}
+                                  onChange={e => setQuickInviteEmail(prev => ({ ...prev, [pkg.id]: e.target.value }))}
+                                  onKeyDown={e => e.key === 'Enter' && sendQuickInvite(pkg.id, pkg)}
+                                />
+                                <button
+                                  style={{ ...s.btnSm('orange'), opacity: quickInviteSending === pkg.id || !(quickInviteEmail[pkg.id] || '').includes('@') ? 0.6 : 1 }}
+                                  disabled={quickInviteSending === pkg.id || !(quickInviteEmail[pkg.id] || '').includes('@')}
+                                  onClick={() => sendQuickInvite(pkg.id, pkg)}>
+                                  {quickInviteSending === pkg.id ? 'Sending...' : 'Send invite'}
+                                </button>
+                                {quickInviteMsg[pkg.id] && <span style={{ fontSize: '12px', color: '#4ade80' }}>{quickInviteMsg[pkg.id]}</span>}
                               </div>
                             )}
 

@@ -383,7 +383,7 @@ export default function Dashboard() {
     setAddingSubManual(true)
     const { error } = await supabase.from('sub_directory').insert({
       company_name: newSubManual.company_name,
-      contact_name: newSubManual.contact_name || null,
+      contact_name: newSubManual.contact_name || newSubManual.company_name,
       email: newSubManual.email || null,
       phone: newSubManual.phone || null,
       address: newSubManual.address || null,

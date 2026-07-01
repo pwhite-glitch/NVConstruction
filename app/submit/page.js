@@ -73,6 +73,7 @@ const IconDoc      = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconRfi      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 const IconMsg      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
 const IconPunch    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+const IconTeam     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 
 export default function Submit() {
   const router = useRouter()
@@ -131,6 +132,13 @@ export default function Submit() {
   // Punch list (sub view)
   const [myPunchItems, setMyPunchItems] = useState([])
 
+  // Team state
+  const [teamMembers, setTeamMembers] = useState([])
+  const [teamCompanyId, setTeamCompanyId] = useState(null)
+  const [teamInviteForm, setTeamInviteForm] = useState({ name: '', email: '' })
+  const [teamInviting, setTeamInviting] = useState(false)
+  const [teamInviteMsg, setTeamInviteMsg] = useState('')
+
   // Change order approval state
   const [respondingCO, setRespondingCO] = useState(null)
   const [coDisputeReason, setCoDisputeReason] = useState('')
@@ -186,6 +194,12 @@ export default function Submit() {
       await loadMyRfis(session.user.id)
       const { data: dir } = await supabase.from('sub_directory').select('*').ilike('email', session.user.email).maybeSingle()
       if (dir) { setDirEntry(dir); setDocsCoiExpiry(dir.coi_expiration?.split('T')[0] || '') }
+      const teamRes = await fetch(`/api/sub-team?user_id=${session.user.id}`)
+      if (teamRes.ok) {
+        const teamData = await teamRes.json()
+        setTeamMembers(teamData.members || [])
+        setTeamCompanyId(teamData.company_id || null)
+      }
     }
     load()
   }, [router])
@@ -632,6 +646,28 @@ export default function Submit() {
     setLoading(false)
   }
 
+  async function sendTeamInvite(e) {
+    e.preventDefault()
+    if (!teamInviteForm.email.trim() || !teamCompanyId) return
+    setTeamInviting(true)
+    setTeamInviteMsg('')
+    const res = await fetch('/api/invite-team-member', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviter_id: user?.id, company_id: teamCompanyId, email: teamInviteForm.email.trim(), full_name: teamInviteForm.name.trim() || undefined }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      setTeamInviteMsg('Invite sent to ' + teamInviteForm.email.trim())
+      setTeamInviteForm({ name: '', email: '' })
+      const teamRes = await fetch(`/api/sub-team?user_id=${user?.id}`)
+      if (teamRes.ok) { const d = await teamRes.json(); setTeamMembers(d.members || []) }
+    } else {
+      setTeamInviteMsg('Error: ' + (data.error || 'Failed to send'))
+    }
+    setTeamInviting(false)
+  }
+
   const totalContractValue = myContracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
   const totalRevised = myContracts.reduce((a, c) => a + Number(c.adjusted_contract_value || 0), 0)
   const totalApprovedBilling = submissions.filter(sub => sub.status === 'approved').reduce((a, sub) => a + (sub.amount_billed || 0), 0)
@@ -654,6 +690,7 @@ export default function Submit() {
     { tab: 'rfis',       label: 'RFIs',             icon: <IconRfi />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: openRfis || null },
     { tab: 'messages',   label: 'Messages',         icon: <IconMsg />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'] },
     { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />,     roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: openPunch || null },
+    { tab: 'team',       label: 'My Team',          icon: <IconTeam />,      roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'] },
   ]
   const navItems = allNavItems.filter(item => item.roles.includes(role))
 
@@ -1665,6 +1702,76 @@ export default function Submit() {
                 })}
               </>
             )}
+          </div>
+        )}
+
+        {/* ── My Team ── */}
+        {activeTab === 'team' && (
+          <div style={s.card}>
+            <h2 style={s.cardTitle}>My Team — {profile?.company_name || 'Your Company'}</h2>
+
+            {/* Current members */}
+            <div style={{ marginBottom: '2rem' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
+                {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+              </p>
+              {teamMembers.length === 0 ? (
+                <p style={{ fontSize: '14px', color: '#555' }}>No other team members yet. Invite someone below.</p>
+              ) : teamMembers.map(m => {
+                const initials = m.full_name
+                  ? m.full_name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+                  : (m.email?.[0] || '?').toUpperCase()
+                const hasLoggedIn = !!m.last_sign_in_at
+                return (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '8px' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: '#e8590c', flexShrink: 0 }}>{initials}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{m.full_name || m.email || 'Unnamed'}</div>
+                      <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{m.email}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', background: hasLoggedIn ? '#0a2a0a' : '#1a1a0a', color: hasLoggedIn ? '#4ade80' : '#888', border: `1px solid ${hasLoggedIn ? '#1a4a1a' : '#2a2a1a'}` }}>
+                        {hasLoggedIn ? 'Active' : 'Invite pending'}
+                      </div>
+                      {m.role && m.role !== 'subcontractor' && (
+                        <div style={{ fontSize: '10px', color: '#444', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.role.replace('sub_', '')}</div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Invite form */}
+            <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '1.5rem' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>Invite a team member</p>
+              {!teamCompanyId ? (
+                <p style={{ fontSize: '13px', color: '#555' }}>Your account isn't linked to a company yet. Contact your project manager.</p>
+              ) : (
+                <form onSubmit={sendTeamInvite}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Their name</label>
+                      <input style={{ width: '100%', padding: '10px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }}
+                        value={teamInviteForm.name} onChange={e => setTeamInviteForm(f => ({ ...f, name: e.target.value }))} placeholder="Jane Smith" />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Their email *</label>
+                      <input type="email" style={{ width: '100%', padding: '10px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }}
+                        value={teamInviteForm.email} onChange={e => setTeamInviteForm(f => ({ ...f, email: e.target.value }))} required placeholder="jane@yourcompany.com" />
+                    </div>
+                  </div>
+                  {teamInviteMsg && (
+                    <div style={{ padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '12px', background: teamInviteMsg.startsWith('Error') ? '#2a0a0a' : '#0a2a0a', border: `1px solid ${teamInviteMsg.startsWith('Error') ? '#5a1a1a' : '#1a4a1a'}`, color: teamInviteMsg.startsWith('Error') ? '#ff6b6b' : '#4ade80' }}>
+                      {teamInviteMsg}
+                    </div>
+                  )}
+                  <button type="submit" disabled={teamInviting || !teamInviteForm.email.trim()} style={{ padding: '11px 24px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: teamInviting ? 'not-allowed' : 'pointer', opacity: teamInviting || !teamInviteForm.email.trim() ? 0.6 : 1, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                    {teamInviting ? 'Sending...' : 'Send invite'}
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         )}
 

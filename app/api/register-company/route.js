@@ -33,7 +33,7 @@ export async function POST(request) {
     // Insert sub_directory entry
     const { error: dirErr } = await adminSupabase.from('sub_directory').insert({
       company_name: company_name.trim(),
-      contact_name: contact_name || null,
+      contact_name: contact_name || company_name.trim(),
       email: email?.toLowerCase().trim() || null,
       phone: phone || null,
       address: address || null,

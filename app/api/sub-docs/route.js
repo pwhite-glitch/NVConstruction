@@ -38,6 +38,7 @@ export async function POST(request) {
       }
       const { data, error } = await adminSupabase.from('sub_directory').insert({
         ...fields,
+        contact_name: fields.contact_name || fields.company_name || '',
         status: 'approved',
         applied_at: new Date().toISOString(),
       }).select().single()

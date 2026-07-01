@@ -130,7 +130,7 @@ export default function Apply() {
         license_number: docs.license_number || null,
         w9_url,
         coi_url,
-        status: 'pending',
+        status: 'approved',
       })
       if (dirError) throw dirError
 

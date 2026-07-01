@@ -143,6 +143,7 @@ export default function Dashboard() {
   const [notifyResult, setNotifyResult] = useState({})
   const [newSubManual, setNewSubManual] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
   const [addingSubManual, setAddingSubManual] = useState(false)
+  const [addSubManualError, setAddSubManualError] = useState('')
 
   // Sub directory edit state
   const [editingSubId, setEditingSubId] = useState(null)
@@ -381,21 +382,29 @@ export default function Dashboard() {
   async function addSubManually(e) {
     e.preventDefault()
     setAddingSubManual(true)
-    const { error } = await supabase.from('sub_directory').insert({
-      company_name: newSubManual.company_name,
-      contact_name: newSubManual.contact_name || newSubManual.company_name,
-      email: newSubManual.email || null,
-      phone: newSubManual.phone || null,
-      address: newSubManual.address || null,
-      trade: newSubManual.trade || null,
-      license_number: newSubManual.license_number || null,
-      coi_expiration: newSubManual.coi_expiration || null,
-      status: 'approved',
-      applied_at: new Date().toISOString(),
+    setAddSubManualError('')
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'insert', ...newSubManual }),
     })
-    if (error) { setInviteMsg('Error: ' + error.message); setAddingSubManual(false); return }
+    const data = await res.json()
+    if (!data.ok) {
+      setAddSubManualError(data.error || 'Failed to add company')
+      setAddingSubManual(false)
+      return
+    }
+    // Send invite if email provided
+    if (newSubManual.email) {
+      fetch('/api/invite-sub', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory_id: data.id, company_id: data.company_id }),
+      })
+    }
     setShowAddSubManual(false)
     setNewSubManual({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
+    setAddSubManualError('')
     await loadAll()
     setAddingSubManual(false)
   }
@@ -1751,12 +1760,18 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Add company to directory</p>
                     <form onSubmit={addSubManually}>
+                      {addSubManualError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', marginBottom: '12px' }}>{addSubManualError}</div>}
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                         <div><label style={s.label}>Company name *</label><input style={s.input} value={newSubManual.company_name} onChange={e => setNewSubManual(f => ({ ...f, company_name: e.target.value }))} required placeholder="ABC Framing LLC" /></div>
+                        <div><label style={s.label}>Contact name</label><input style={s.input} value={newSubManual.contact_name} onChange={e => setNewSubManual(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div><label style={s.label}>Email *</label><input type="email" style={s.input} value={newSubManual.email} onChange={e => setNewSubManual(f => ({ ...f, email: e.target.value }))} required placeholder="john@company.com" /></div>
                         <div><label style={s.label}>Phone</label><input style={s.input} value={newSubManual.phone} onChange={e => setNewSubManual(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                       </div>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
-                        <div><label style={s.label}>Address</label><input style={s.input} value={newSubManual.address} onChange={e => setNewSubManual(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, TX" /></div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Address</label>
+                        <input style={s.input} value={newSubManual.address} onChange={e => setNewSubManual(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, TX" />
                       </div>
                       <div style={{ ...s.grid3, marginBottom: '1.25rem' }} className="rx-grid-3">
                         <div>
@@ -1773,7 +1788,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         <button type="submit" style={{ ...s.btn, opacity: addingSubManual ? 0.6 : 1 }} disabled={addingSubManual}>
                           {addingSubManual ? 'Saving...' : 'Add to directory'}
                         </button>
-                        <button type="button" style={s.btnGray} onClick={() => setShowAddSubManual(false)}>Cancel</button>
+                        <button type="button" style={s.btnGray} onClick={() => { setShowAddSubManual(false); setAddSubManualError('') }}>Cancel</button>
                       </div>
                     </form>
                   </div>

@@ -184,14 +184,14 @@ export default function Submit() {
       await loadMyContracts(session.user.id)
       await loadBidInvitations(session.user.email)
       await loadMyRfis(session.user.id)
-      const { data: dir } = await supabase.from('sub_directory').select('*').eq('email', session.user.email).maybeSingle()
+      const { data: dir } = await supabase.from('sub_directory').select('*').ilike('email', session.user.email).maybeSingle()
       if (dir) { setDirEntry(dir); setDocsCoiExpiry(dir.coi_expiration?.split('T')[0] || '') }
     }
     load()
   }, [router])
 
   async function loadBidInvitations(email) {
-    const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*)').eq('sub_email', email).order('sent_at', { ascending: false })
+    const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*)').ilike('sub_email', email).order('sent_at', { ascending: false })
     setBidInvitations(data || [])
   }
 
@@ -287,7 +287,7 @@ export default function Submit() {
     const { data: myBid } = await supabase.from('bid_submissions').select('*').eq('bid_package_id', bidPackageId).eq('sub_id', user.id).maybeSingle()
     setBidPackageDetails(prev => ({ ...prev, [bidPackageId]: { plans: plans || [], myBid } }))
     // mark as viewed if still 'invited'
-    await supabase.from('bid_invitations').update({ status: 'viewed' }).eq('bid_package_id', bidPackageId).eq('sub_email', user.email).eq('status', 'invited')
+    await supabase.from('bid_invitations').update({ status: 'viewed' }).eq('bid_package_id', bidPackageId).ilike('sub_email', user.email).eq('status', 'invited')
   }
 
   async function openPlan(storagePath) {
@@ -322,14 +322,14 @@ export default function Submit() {
     const { error } = await supabase.from('bid_submissions').insert({
       bid_package_id: bidPackageId,
       sub_id: user.id,
-      sub_email: user.email,
+      sub_email: user.email.toLowerCase(),
       company_name: profile?.company_name || 'Unknown',
       amount: parseFloat(bidSubmitForm.amount),
       notes: bidSubmitForm.notes || null,
       doc_url,
     })
     if (!error) {
-      await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).eq('sub_email', user.email)
+      await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).ilike('sub_email', user.email)
       const inv = bidInvitations.find(i => i.bid_packages?.id === bidPackageId)
       const pkgTitle = inv?.bid_packages?.title || 'Bid Package'
       sendEmail(PM_EMAIL, `Bid received — ${profile?.company_name || user.email}`,
@@ -587,7 +587,7 @@ export default function Submit() {
       : 0
     const { data: newSub, error } = await supabase.from('billing_submissions').insert({
       sub_id: user.id, job_id: form.job_id,
-      sub_email: user.email,
+      sub_email: user.email.toLowerCase(),
       company_name: profile?.company_name || 'Unknown',
       contact_name: profile?.full_name, contact_info: profile?.phone,
       amount_billed: totalAmtBilled,

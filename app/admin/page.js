@@ -322,7 +322,7 @@ export default function AdminPortal() {
       setAddDirForm({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '', scope_description: '' })
       await reloadDirectory()
       if (addDirForm.email) {
-        const newDir = (await supabase.from('sub_directory').select('id').eq('email', addDirForm.email).maybeSingle()).data
+        const newDir = (await supabase.from('sub_directory').select('id').ilike('email', addDirForm.email).maybeSingle()).data
         if (newDir?.id) {
           fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: newDir.id }) })
           setDirMsg('✓ Subcontractor added and invite emailed to ' + addDirForm.email)

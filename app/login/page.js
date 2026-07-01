@@ -90,7 +90,7 @@ export default function Login() {
         </div>
         <div style={{ ...s.divider, marginTop: '1rem' }} />
         <div style={s.footer}>
-          New subcontractor? <a href="/register" style={s.link}>Create account</a>
+          New subcontractor? <a href="/apply" style={s.link}>Create account</a>
         </div>
       </div>
     </div>

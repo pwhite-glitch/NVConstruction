@@ -118,25 +118,32 @@ export default function Apply() {
       })
       if (authError) throw authError
 
-      const { error: dirError } = await supabase.from('sub_directory').insert({
-        company_name: company.company_name.trim(),
-        contact_name: account.full_name.trim(),
-        email,
-        phone: company.phone || null,
-        address: company.address || null,
-        trade: company.trade,
-        scope_description: company.scope_description || null,
-        coi_expiration: docs.coi_expiration || null,
-        license_number: docs.license_number || null,
-        w9_url,
-        coi_url,
-        status: 'approved',
+      // Server-side: create companies entry, sub_directory row, and link profile
+      const regRes = await fetch('/api/register-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: authData.user?.id,
+          company_name: company.company_name.trim(),
+          contact_name: account.full_name.trim(),
+          email,
+          phone: company.phone || null,
+          address: company.address || null,
+          trade: company.trade || null,
+          scope_description: company.scope_description || null,
+          coi_expiration: docs.coi_expiration || null,
+          license_number: docs.license_number || null,
+          w9_url,
+          coi_url,
+        }),
       })
-      if (dirError) throw dirError
+      const regData = await regRes.json()
+      if (!regData.ok) throw new Error(regData.error || 'Registration failed')
 
+      // Also update profile with phone and full_name
       if (authData.user) {
         await supabase.from('profiles').update({
-          company_name: company.company_name.trim(),
+          full_name: account.full_name.trim(),
           phone: company.phone || null,
         }).eq('id', authData.user.id)
       }

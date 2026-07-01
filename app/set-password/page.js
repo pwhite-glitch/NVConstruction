@@ -10,30 +10,31 @@ const s = {
   logoImg: { width: '80px', height: '80px', objectFit: 'contain', marginBottom: '12px' },
   logoText: { fontSize: '11px', fontWeight: '600', letterSpacing: '4px', color: '#666', textTransform: 'uppercase' },
   title: { fontSize: '20px', fontWeight: '800', color: '#f1f1f1', marginBottom: '8px', textAlign: 'center' },
-  sub: { fontSize: '13px', color: '#555', textAlign: 'center', marginBottom: '2rem' },
+  sub: { fontSize: '13px', color: '#555', textAlign: 'center', marginBottom: '2rem', lineHeight: 1.5 },
   label: { display: 'block', fontSize: '12px', fontWeight: '600', color: '#888', marginBottom: '6px', letterSpacing: '1px', textTransform: 'uppercase' },
   input: { width: '100%', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
   btn: { width: '100%', padding: '13px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase', marginTop: '8px' },
   err: { background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' },
-  success: { background: '#0a2a0a', border: '1px solid #1a4a1a', color: '#4ade80', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' },
 }
 
 export default function SetPassword() {
   const router = useRouter()
+  const [step, setStep] = useState('loading') // loading | password | profile | done
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [companyName, setCompanyName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session) {
-        setReady(true)
+        setStep('password')
       }
     })
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
+      if (session) setStep('password')
     })
   }, [])
 
@@ -45,20 +46,79 @@ export default function SetPassword() {
     setError('')
     const { error } = await supabase.auth.updateUser({ password })
     if (error) { setError(error.message); setLoading(false); return }
+
+    // Check if profile is complete
     const { data: { session } } = await supabase.auth.getSession()
-    const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+    const { data: prof } = await supabase.from('profiles').select('role, full_name, company_name').eq('id', session.user.id).single()
     const role = prof?.role
-    router.push(role === 'pm' || role === 'apm' || role === 'super' || role === 'admin' ? '/dashboard' : '/submit')
+
+    // Internal users go straight to dashboard
+    if (role === 'pm' || role === 'apm' || role === 'super' || role === 'admin') {
+      router.push('/dashboard')
+      return
+    }
+
+    // Subs: if name or company is missing, collect it before proceeding
+    if (!prof?.full_name || !prof?.company_name) {
+      if (prof?.full_name) setFullName(prof.full_name)
+      if (prof?.company_name) setCompanyName(prof.company_name)
+      setLoading(false)
+      setStep('profile')
+      return
+    }
+
+    router.push('/submit')
   }
 
-  if (!ready) {
+  async function handleProfileSave(e) {
+    e.preventDefault()
+    if (!fullName.trim()) { setError('Please enter your name.'); return }
+    setLoading(true)
+    setError('')
+    const { data: { session } } = await supabase.auth.getSession()
+    const updates = { full_name: fullName.trim() }
+    if (companyName.trim()) updates.company_name = companyName.trim()
+    await supabase.from('profiles').update(updates).eq('id', session.user.id)
+    router.push('/submit')
+  }
+
+  if (step === 'loading') {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <div style={s.logo}><img src="/logo.png" alt="NV Construction" style={s.logoImg} /></div>
+          <p style={{ textAlign: 'center', color: '#555', fontSize: '14px' }}>Loading your account...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'profile') {
     return (
       <div style={s.page}>
         <div style={s.card}>
           <div style={s.logo}>
             <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
+            <span style={s.logoText}>NV Construction</span>
           </div>
-          <p style={{ textAlign: 'center', color: '#555', fontSize: '14px' }}>Loading your account...</p>
+          <p style={s.title}>Almost done</p>
+          <p style={s.sub}>Tell us your name so we know who to contact on your account.</p>
+          {error && <div style={s.err}>{error}</div>}
+          <form onSubmit={handleProfileSave}>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={s.label}>Your full name *</label>
+              <input style={s.input} value={fullName} onChange={e => setFullName(e.target.value)} required placeholder="John Smith" />
+            </div>
+            {!companyName && (
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={s.label}>Company name</label>
+                <input style={s.input} value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="ABC Framing LLC" />
+              </div>
+            )}
+            <button style={{ ...s.btn, opacity: loading ? 0.6 : 1 }} type="submit" disabled={loading}>
+              {loading ? 'Saving...' : 'Go to my portal →'}
+            </button>
+          </form>
         </div>
       </div>
     )

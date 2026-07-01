@@ -42,7 +42,28 @@ export async function POST(request) {
         applied_at: new Date().toISOString(),
       }).select().single()
       if (error) return Response.json({ error: error.message }, { status: 500 })
-      return Response.json({ ok: true, id: data.id })
+
+      // Ensure a companies entry exists so profiles.company_id can be set
+      let company_id = null
+      if (fields.company_name) {
+        const { data: existingCo } = await adminSupabase
+          .from('companies')
+          .select('id')
+          .ilike('name', fields.company_name.trim())
+          .maybeSingle()
+        if (existingCo) {
+          company_id = existingCo.id
+        } else {
+          const { data: newCo } = await adminSupabase
+            .from('companies')
+            .insert({ name: fields.company_name.trim(), email: fields.email || null, phone: fields.phone || null })
+            .select('id')
+            .single()
+          company_id = newCo?.id || null
+        }
+      }
+
+      return Response.json({ ok: true, id: data.id, company_id })
     }
 
     if (action === 'delete') {

@@ -318,17 +318,19 @@ export default function AdminPortal() {
     const data = await res.json()
     setSavingDir(false)
     if (data?.ok) {
+      const savedEmail = addDirForm.email
+      const savedCompanyId = data.company_id || null
       setShowAddDir(false)
       setAddDirForm({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '', scope_description: '' })
       await reloadDirectory()
-      if (addDirForm.email) {
-        const newDir = (await supabase.from('sub_directory').select('id').ilike('email', addDirForm.email).maybeSingle()).data
-        if (newDir?.id) {
-          fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: newDir.id }) })
-          setDirMsg('✓ Subcontractor added and invite emailed to ' + addDirForm.email)
-          setTimeout(() => setDirMsg(''), 5000)
-        }
-      }
+      // Send invite — company_id is passed so the profile gets linked correctly
+      fetch('/api/invite-sub', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory_id: data.id, company_id: savedCompanyId }),
+      })
+      setDirMsg('✓ Company added and invite emailed to ' + savedEmail)
+      setTimeout(() => setDirMsg(''), 6000)
     } else {
       setDirMsg('Error: ' + (data?.error || 'Unknown'))
     }
@@ -1097,7 +1099,7 @@ export default function AdminPortal() {
                           <div><label style={s.label}>Contact name</label><input style={s.input} value={addDirForm.contact_name} onChange={e => setAddDirForm(f => ({ ...f, contact_name: e.target.value }))} placeholder="John Smith" /></div>
                         </div>
                         <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
-                          <div><label style={s.label}>Email</label><input type="email" style={s.input} value={addDirForm.email} onChange={e => setAddDirForm(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
+                          <div><label style={s.label}>Email *</label><input type="email" style={s.input} required value={addDirForm.email} onChange={e => setAddDirForm(f => ({ ...f, email: e.target.value }))} placeholder="john@abcframing.com" /></div>
                           <div><label style={s.label}>Phone</label><input style={s.input} value={addDirForm.phone} onChange={e => setAddDirForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>
                           <div><label style={s.label}>Address</label><input style={s.input} value={addDirForm.address} onChange={e => setAddDirForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Main St" /></div>
                         </div>

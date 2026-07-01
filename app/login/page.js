@@ -30,7 +30,18 @@ export default function Login() {
   async function handleReset() {
     if (!email) { setError('Enter your email above first.'); return }
     setResetting(true)
-    await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/set-password` })
+    setError('')
+    const res = await fetch('/api/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    const json = await res.json()
+    if (json.error) {
+      setError(json.error)
+      setResetting(false)
+      return
+    }
     setResetSent(true)
     setResetting(false)
   }

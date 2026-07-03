@@ -97,16 +97,16 @@ export default function Apply() {
     setLoading(true)
     setError('')
     try {
+      // Documents are uploaded after auth — silently skip if storage rejects
+      // (sub can upload them later from the portal)
       let w9_url = null, coi_url = null
       if (w9File) {
-        const { data, error } = await supabase.storage.from('documents').upload(`w9/${Date.now()}_${w9File.name}`, w9File, { upsert: true })
-        if (error) throw error
-        w9_url = data.path
+        const { data } = await supabase.storage.from('documents').upload(`w9/${Date.now()}_${w9File.name}`, w9File, { upsert: true })
+        if (data) w9_url = data.path
       }
       if (coiFile) {
-        const { data, error } = await supabase.storage.from('documents').upload(`coi/${Date.now()}_${coiFile.name}`, coiFile, { upsert: true })
-        if (error) throw error
-        coi_url = data.path
+        const { data } = await supabase.storage.from('documents').upload(`coi/${Date.now()}_${coiFile.name}`, coiFile, { upsert: true })
+        if (data) coi_url = data.path
       }
 
       const email = account.email.toLowerCase().trim()
@@ -126,6 +126,7 @@ export default function Apply() {
           user_id: authData.user?.id,
           company_name: company.company_name.trim(),
           contact_name: account.full_name.trim(),
+          full_name: account.full_name.trim(),
           email,
           phone: company.phone || null,
           address: company.address || null,
@@ -139,14 +140,6 @@ export default function Apply() {
       })
       const regData = await regRes.json()
       if (!regData.ok) throw new Error(regData.error || 'Registration failed')
-
-      // Also update profile with phone and full_name
-      if (authData.user) {
-        await supabase.from('profiles').update({
-          full_name: account.full_name.trim(),
-          phone: company.phone || null,
-        }).eq('id', authData.user.id)
-      }
 
       setDone(true)
     } catch (err) {

@@ -7,7 +7,7 @@ const adminSupabase = createClient(
 
 export async function POST(request) {
   try {
-    const { user_id, company_name, contact_name, email, phone, address, trade, scope_description, coi_expiration, license_number, w9_url, coi_url } = await request.json()
+    const { user_id, company_name, contact_name, full_name, email, phone, address, trade, scope_description, coi_expiration, license_number, w9_url, coi_url } = await request.json()
     if (!user_id || !company_name) return Response.json({ error: 'user_id and company_name required' }, { status: 400 })
 
     // Find or create companies entry
@@ -48,11 +48,19 @@ export async function POST(request) {
     })
     if (dirErr && dirErr.code !== '23505') return Response.json({ error: dirErr.message }, { status: 500 })
 
-    // Update profile with company_id
-    await adminSupabase
+    // Upsert profile — works whether or not a row exists yet
+    const { error: profErr } = await adminSupabase
       .from('profiles')
-      .update({ company_id, company_name: company_name.trim() })
-      .eq('id', user_id)
+      .upsert({
+        id: user_id,
+        company_id,
+        company_name: company_name.trim(),
+        full_name: full_name || contact_name || null,
+        phone: phone || null,
+        role: 'subcontractor',
+        invite_email: email?.toLowerCase().trim() || null,
+      }, { onConflict: 'id', ignoreDuplicates: false })
+    if (profErr) return Response.json({ error: profErr.message }, { status: 500 })
 
     return Response.json({ ok: true, company_id })
   } catch (e) {

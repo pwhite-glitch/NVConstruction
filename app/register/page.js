@@ -44,25 +44,22 @@ export default function Register() {
     })
     if (error) { setError(error.message); setLoading(false); return }
     if (data.user) {
-      const normalEmail = form.email.toLowerCase().trim()
-      const { data: existing } = await supabase.from('sub_directory').select('id').eq('email', normalEmail).maybeSingle()
-      // Try to match company_name to existing companies table for multi-user company support
-      const { data: matchedCompany } = await supabase.from('companies').select('id').eq('name', form.company_name).maybeSingle()
-      const profileUpdate = { company_name: form.company_name, phone: form.phone }
-      if (matchedCompany) profileUpdate.company_id = matchedCompany.id
-      await supabase.from('profiles').update(profileUpdate).eq('id', data.user.id)
-      if (!existing) {
-        await supabase.from('sub_directory').insert({
+      const regRes = await fetch('/api/register-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: data.user.id,
           company_name: form.company_name,
           contact_name: form.full_name,
-          email: normalEmail,
+          full_name: form.full_name,
+          email: form.email.toLowerCase().trim(),
           phone: form.phone || null,
           trade: form.trade || null,
           coi_expiration: form.coi_expiration || null,
-          status: 'pending',
-          applied_at: new Date().toISOString(),
-        })
-      }
+        }),
+      })
+      const regData = await regRes.json()
+      if (!regData.ok) { setError(regData.error || 'Account created but profile setup failed'); setLoading(false); return }
     }
     router.push('/submit')
   }

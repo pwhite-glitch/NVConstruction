@@ -105,6 +105,7 @@ export default function JobDetail() {
   const [errMsg, setErrMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [activeTab, setActiveTab] = useState('details')
+  const [aiaBalanceWarning, setAiaBalanceWarning] = useState(null)
   const [budgetView, setBudgetView] = useState('lines')
   const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
@@ -1109,7 +1110,7 @@ export default function JobDetail() {
     setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: null, drawn_at: null } : c))
   }
 
-  function generateAIAFromApp() {
+  function generateAIAFromApp(override = false) {
     if (!activeAia) return
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
@@ -1149,12 +1150,12 @@ export default function JobDetail() {
     const balanceToFinish = contractSumToDate - totalCompleted
     const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
 
-    if (Math.abs(totalScheduled - contractSumToDate) > 0.01) {
+    if (!override && Math.abs(totalScheduled - contractSumToDate) > 0.01) {
       const diff = contractSumToDate - totalScheduled
-      const coMsg = approvedCOsVal !== 0 ? `\n\nOriginal contract: ${fmt(origContract)}\nApproved change orders: ${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}\nContract sum to date: ${fmt(contractSumToDate)}` : ''
-      window.alert(`Cannot generate AIA — SOV total doesn't match contract sum to date.\n\nSOV total: ${fmt(totalScheduled)}\nContract sum to date: ${fmt(contractSumToDate)}\nDifference: ${diff > 0 ? '+' : ''}${fmtSigned(diff)}${coMsg}\n\nGo to the Budget tab and ${diff > 0 ? `add ${fmt(Math.abs(diff))} to one or more owner amounts` : `reduce owner amounts by ${fmt(Math.abs(diff))}`} so the totals match.`)
+      setAiaBalanceWarning({ diff, totalScheduled, contractSumToDate, origContract, approvedCOsVal })
       return
     }
+    setAiaBalanceWarning(null)
 
     const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head>
@@ -7097,6 +7098,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   )
                                 })()}
 
+                                {aiaBalanceWarning && (() => {
+                                  const { diff, totalScheduled, contractSumToDate, origContract, approvedCOsVal } = aiaBalanceWarning
+                                  const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                  const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
+                                  return (
+                                    <div style={{ background: '#2a1500', border: '1px solid #8b4513', borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
+                                      <div style={{ color: '#ff9944', fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>SOV total doesn't match contract sum</div>
+                                      <div style={{ color: '#ccc', fontSize: '12px', lineHeight: '1.7' }}>
+                                        <span>SOV total: <strong style={{ color: '#fff' }}>{fmt(totalScheduled)}</strong></span><br />
+                                        <span>Contract sum to date: <strong style={{ color: '#fff' }}>{fmt(contractSumToDate)}</strong></span><br />
+                                        <span>Difference: <strong style={{ color: '#ff6644' }}>{diff > 0 ? '+' : ''}{fmtSigned(diff)}</strong></span>
+                                        {approvedCOsVal !== 0 && <><br /><span style={{ color: '#888', fontSize: '11px' }}>Includes {approvedCOsVal >= 0 ? '+' : ''}{fmtSigned(approvedCOsVal)} in approved change orders</span></>}
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                        <button style={{ ...s.btnGray, fontSize: '12px', padding: '7px 14px' }} onClick={() => setAiaBalanceWarning(null)}>Dismiss</button>
+                                        <button style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', padding: '7px 14px', cursor: 'pointer', fontWeight: '700' }} onClick={() => generateAIAFromApp(true)}>Override — Generate Anyway</button>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button style={{ ...s.btn, opacity: savingAia ? 0.6 : 1 }} disabled={savingAia} onClick={saveAiaLines}>{savingAia ? 'Saving...' : 'Save application'}</button>
                                   <button style={s.btnGray} onClick={generateAIAFromApp}>Generate AIA G702/G703</button>

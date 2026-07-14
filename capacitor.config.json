@@ -3,7 +3,7 @@
   "appName": "NV Construction",
   "webDir": "out",
   "server": {
-    "url": "https://nv-construction-doym.vercel.app",
+    "url": "https://portal.nv.construction",
     "cleartext": false
   },
   "ios": {

@@ -160,9 +160,14 @@ export default function Submit() {
       if (!session) { router.push('/login'); return }
       setUser(session.user)
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
-      if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
-      if (prof?.role === 'super') { router.push('/field'); return }
-      setProfile(prof)
+      const devRole = localStorage.getItem('nvc_dev_role')
+      const subRoles = ['subcontractor', 'sub_pm', 'sub_admin', 'sub_estimator']
+      const devIsSubOverride = devRole && subRoles.includes(devRole) && (prof?.role === 'pm' || prof?.role === 'apm')
+      if (!devIsSubOverride) {
+        if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
+        if (prof?.role === 'super') { router.push('/field'); return }
+      }
+      setProfile(devIsSubOverride ? { ...prof, role: devRole } : prof)
       // Link any unmatched contracts where vendor_name matches this sub's company
       if (prof?.company_name) {
         await fetch('/api/link-sub-contracts', {

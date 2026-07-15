@@ -267,7 +267,10 @@ export default function Dashboard() {
       if (!prof) { router.push('/login'); return }
       if (prof.role === 'super') { router.push('/field'); return }
       if (prof.role !== 'pm' && prof.role !== 'apm') { router.push('/submit'); return }
-      setProfile(prof)
+      if (prof.role === 'pm') localStorage.setItem('nvc_pm_session', '1')
+      const devRole = localStorage.getItem('nvc_dev_role')
+      const effectiveProf = (devRole && prof.role === 'pm') ? { ...prof, role: devRole } : prof
+      setProfile(effectiveProf)
       let jobIds = null
       if (prof.role === 'apm') {
         const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id').eq('user_id', session.user.id)

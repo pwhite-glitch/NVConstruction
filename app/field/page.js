@@ -161,8 +161,10 @@ export default function Field() {
       if (!session) { router.push('/login'); return }
       setUser(session.user)
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
-      if (!prof || prof.role !== 'super') { router.push('/login'); return }
-      setProfile(prof)
+      const devRole = localStorage.getItem('nvc_dev_role')
+      const devIsSuperOverride = devRole === 'super' && (prof?.role === 'pm' || prof?.role === 'apm')
+      if (!devIsSuperOverride && (!prof || prof.role !== 'super')) { router.push('/login'); return }
+      setProfile(devIsSuperOverride ? { ...prof, role: 'super' } : prof)
       const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id, jobs(*)').eq('user_id', session.user.id)
       const jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
       setAssignedJobs(jobs)

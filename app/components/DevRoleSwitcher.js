@@ -3,12 +3,13 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 const ROLES = [
-  { value: 'pm',            label: 'PM',         color: '#e8590c', portal: '/dashboard' },
-  { value: 'apm',           label: 'APM',         color: '#f59e0b', portal: '/dashboard' },
-  { value: 'super',         label: 'Super',       color: '#3b82f6', portal: '/field' },
-  { value: 'subcontractor', label: 'Sub',         color: '#22c55e', portal: '/submit' },
-  { value: 'sub_pm',        label: 'Sub PM',      color: '#a78bfa', portal: '/submit' },
-  { value: 'sub_admin',     label: 'Sub Admin',   color: '#ec4899', portal: '/submit' },
+  { value: 'pm',            label: 'PM',          color: '#e8590c', portal: '/dashboard' },
+  { value: 'apm',           label: 'APM',          color: '#f59e0b', portal: '/dashboard' },
+  { value: 'admin',         label: 'Admin',        color: '#06b6d4', portal: '/admin' },
+  { value: 'super',         label: 'Super',        color: '#3b82f6', portal: '/field' },
+  { value: 'subcontractor', label: 'Sub',          color: '#22c55e', portal: '/submit' },
+  { value: 'sub_pm',        label: 'Sub PM',       color: '#a78bfa', portal: '/submit' },
+  { value: 'sub_admin',     label: 'Sub Admin',    color: '#ec4899', portal: '/submit' },
 ]
 
 export default function DevRoleSwitcher() {

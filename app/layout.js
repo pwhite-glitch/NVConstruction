@@ -1,6 +1,12 @@
 // v2
 import './globals.css'
-export const metadata = { title: 'NV Construction' }
+export const metadata = {
+  title: 'NV Construction',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
+}
 export default function RootLayout({ children }) {
   return (
     <html lang="en">

@@ -114,7 +114,7 @@ export default function Field() {
   const [contactSuccess, setContactSuccess] = useState(false)
 
   const [directCosts, setDirectCosts] = useState([])
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '' })
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
   const [dcSuccess, setDcSuccess] = useState(false)
@@ -413,7 +413,10 @@ export default function Field() {
       job_id: selectedJobId, submitted_by: user.id,
       cost_date: dcForm.cost_date, description: dcForm.description,
       category: dcForm.category, amount: parseFloat(dcForm.amount),
-      notes: dcForm.notes || null, status: 'pending',
+      reason: dcForm.reason || null,
+      notes: dcForm.notes || null,
+      assigned_to: profile?.full_name || null,
+      status: 'pending',
     }
     let res, json
     if (dcFile) {
@@ -431,7 +434,7 @@ export default function Field() {
       return
     }
     setDcSuccess(true)
-    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '' })
     setDcFile(null)
     setShowDcForm(false)
     await loadDirectCosts()
@@ -1232,6 +1235,10 @@ export default function Field() {
                             <label style={s.label}>Description *</label>
                             <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber for framing, concrete delivery..." />
                           </div>
+                          <div style={{ marginBottom: '1rem' }}>
+                            <label style={s.label}>Reason *</label>
+                            <input style={s.input} required value={dcForm.reason} onChange={e => setDcForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why was this purchase made?" />
+                          </div>
                           <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                             <div>
                               <label style={s.label}>Notes</label>
@@ -1259,7 +1266,9 @@ export default function Field() {
                               <span style={s.badge(c.status)}>{c.status}</span>
                             </div>
                             <div style={{ fontSize: '12px', color: '#555' }}>
-                              {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()} {c.status !== 'rejected' && c.notes && `· ${c.notes}`}
+                              {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
+                              {c.reason && ` · ${c.reason}`}
+                              {c.status !== 'rejected' && c.notes && ` · ${c.notes}`}
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

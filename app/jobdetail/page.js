@@ -109,6 +109,7 @@ export default function JobDetail() {
   const [budgetView, setBudgetView] = useState('lines')
   const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
+  const [currentUserName, setCurrentUserName] = useState('')
 
   // Labor / employee state
   const [laborAllocations, setLaborAllocations] = useState([])
@@ -232,7 +233,7 @@ export default function JobDetail() {
   const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '' })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
   const [csvRows, setCsvRows] = useState([])
@@ -396,9 +397,10 @@ export default function JobDetail() {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      const { data: prof } = await supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
       if (prof?.role !== 'pm' && prof?.role !== 'apm') { router.push('/submit'); return }
       setUserRole(prof.role)
+      setCurrentUserName(prof.full_name || '')
       const { data: jobData } = await supabase.from('jobs').select('*').eq('id', id).single()
       if (!jobData) { router.push('/dashboard'); return }
       setJob(jobData)
@@ -616,7 +618,9 @@ export default function JobDetail() {
         job_id: id, submitted_by: session.user.id,
         cost_date: dcForm.cost_date, description: dcForm.description,
         category: dcForm.category, amount: parseFloat(dcForm.amount),
+        reason: dcForm.reason || null,
         notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
+        assigned_to: dcForm.assigned_to || currentUserName || null,
         status: userRole === 'apm' ? 'pending' : 'approved',
       }
       let res, json
@@ -630,7 +634,7 @@ export default function JobDetail() {
       }
       json = await res.json()
       if (json.error) { setErrMsg('Failed to save: ' + json.error); setTimeout(() => setErrMsg(''), 6000); setSubmittingDc(false); return }
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '' })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -6214,7 +6218,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: userRole === 'apm' ? '2fr 1fr' : '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: userRole === 'pm' ? '2fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
@@ -6232,6 +6236,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <label style={s.label}>Notes</label>
                         <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
                       </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: userRole === 'pm' ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={s.label}>Reason *</label>
+                        <input style={s.input} required value={dcForm.reason} onChange={e => setDcForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why was this purchase made?" />
+                      </div>
+                      {userRole === 'pm' && (
+                        <div>
+                          <label style={s.label}>Assigned To</label>
+                          <select style={s.input} value={dcForm.assigned_to} onChange={e => setDcForm(f => ({ ...f, assigned_to: e.target.value }))}>
+                            <option value="">— Select team member —</option>
+                            {teamMembers.map(m => <option key={m.id} value={m.full_name || m.email}>{m.full_name || m.email}</option>)}
+                          </select>
+                        </div>
+                      )}
                     </div>
                     <div style={{ marginBottom: '1.25rem' }}>
                       <label style={s.label}>Receipt (photo / PDF)</label>
@@ -6384,6 +6403,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
                           {budgetLine && ` · ${budgetLine.description}`}
+                          {c.assigned_to && <span style={{ color: '#e8590c' }}> · {c.assigned_to}</span>}
+                          {c.reason && ` · ${c.reason}`}
                           {c.notes && ` · ${c.notes}`}
                         </div>
                       </div>

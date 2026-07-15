@@ -93,6 +93,7 @@ const IconBuilding = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconCalc     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><circle cx="8" cy="11" r="1" fill="currentColor"/><circle cx="12" cy="11" r="1" fill="currentColor"/><circle cx="16" cy="11" r="1" fill="currentColor"/><circle cx="8" cy="15" r="1" fill="currentColor"/><circle cx="12" cy="15" r="1" fill="currentColor"/><circle cx="8" cy="19" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
 const IconTrend    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
 const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+const IconTruck    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
 const IconLogout   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 
 export default function Dashboard() {
@@ -248,6 +249,19 @@ export default function Dashboard() {
   const [bdLoaded, setBdLoaded] = useState(false)
   const [bdProfits, setBdProfits] = useState({})
 
+  // Vehicles state (PM-only)
+  const [vehicles, setVehicles] = useState([])
+  const [vehiclesLoaded, setVehiclesLoaded] = useState(false)
+  const [showAddVehicle, setShowAddVehicle] = useState(false)
+  const [vehicleForm, setVehicleForm] = useState({ name: '', make: '', model: '', year: '', vin: '', license_plate: '', color: '', assigned_to: '', notes: '' })
+  const [savingVehicle, setSavingVehicle] = useState(false)
+  const [vehicleMsg, setVehicleMsg] = useState(null)
+  const [expandedVehicleId, setExpandedVehicleId] = useState(null)
+  const [vehicleLogs, setVehicleLogs] = useState({})
+  const [editingVehicleId, setEditingVehicleId] = useState(null)
+  const [editVehicleForm, setEditVehicleForm] = useState({})
+  const [savingVehicleEdit, setSavingVehicleEdit] = useState(false)
+
   // Employees state (PM-only)
   const [employees, setEmployees] = useState([])
   const [empLoaded, setEmpLoaded] = useState(false)
@@ -304,6 +318,7 @@ export default function Dashboard() {
     if (activeTab === 'nv-directory') loadTeamData()
     if (activeTab === 'bd' && !bdLoaded) loadBD()
     if (activeTab === 'employees' && !empLoaded) loadEmployees()
+    if (activeTab === 'vehicles' && !vehiclesLoaded) loadVehicles()
     if (activeTab === 'directory') loadDirRatings()
   }, [activeTab])
 
@@ -1334,6 +1349,58 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     setBdLoaded(true)
   }
 
+  async function loadVehicles() {
+    const res = await fetch('/api/vehicles')
+    const json = await res.json()
+    setVehicles(json.data || [])
+    setVehiclesLoaded(true)
+  }
+
+  async function loadVehicleLogs(vehicleId) {
+    const res = await fetch(`/api/vehicle-logs?vehicle_id=${vehicleId}`)
+    const json = await res.json()
+    setVehicleLogs(prev => ({ ...prev, [vehicleId]: json.data || [] }))
+  }
+
+  async function addVehicle(e) {
+    e.preventDefault()
+    setSavingVehicle(true)
+    const body = { ...vehicleForm, year: vehicleForm.year ? parseInt(vehicleForm.year) : null, assigned_to: vehicleForm.assigned_to || null }
+    const res = await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const json = await res.json()
+    setSavingVehicle(false)
+    if (json.error) { setVehicleMsg({ type: 'err', text: json.error }); return }
+    setVehicles(prev => [...prev, json.data])
+    setVehicleForm({ name: '', make: '', model: '', year: '', vin: '', license_plate: '', color: '', assigned_to: '', notes: '' })
+    setShowAddVehicle(false)
+    setVehicleMsg({ type: 'ok', text: 'Vehicle added.' })
+    setTimeout(() => setVehicleMsg(null), 3000)
+  }
+
+  async function saveVehicleEdit() {
+    setSavingVehicleEdit(true)
+    const body = { id: editingVehicleId, ...editVehicleForm, year: editVehicleForm.year ? parseInt(editVehicleForm.year) : null, assigned_to: editVehicleForm.assigned_to || null }
+    const res = await fetch('/api/vehicles', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const json = await res.json()
+    setSavingVehicleEdit(false)
+    if (json.error) { setVehicleMsg({ type: 'err', text: json.error }); return }
+    setVehicles(prev => prev.map(v => v.id === editingVehicleId ? json.data : v))
+    setEditingVehicleId(null)
+  }
+
+  async function deleteVehicle(vehicleId) {
+    if (!window.confirm('Delete this vehicle and all its logs?')) return
+    await fetch('/api/vehicles', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: vehicleId }) })
+    setVehicles(prev => prev.filter(v => v.id !== vehicleId))
+    if (expandedVehicleId === vehicleId) setExpandedVehicleId(null)
+  }
+
+  function openVehiclePhoto(path) {
+    if (!path) return
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/vehicle-photos/${path}`
+    window.open(url, '_blank')
+  }
+
   async function loadEmployees() {
     const res = await fetch('/api/employees')
     const data = await res.json()
@@ -1527,6 +1594,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     { tab: 'directory',     label: 'Companies',      icon: <IconUsers />,    badge: dirBadge },
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
+    ...(profile?.role === 'pm' ? [{ tab: 'vehicles',  label: 'Fleet',      icon: <IconTruck /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
     ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
     { tab: 'calendar',      label: 'Calendar',       icon: <IconCal /> },
@@ -3819,6 +3887,151 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                     </div>
                   )}
+                </>
+              )
+            })()}
+
+            {activeTab === 'vehicles' && profile?.role === 'pm' && (() => {
+              const supers = teamMembers.filter(m => m.role === 'super')
+              const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
+              const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#555'
+              return (
+                <>
+                  {vehicleMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: vehicleMsg.type === 'err' ? '#2a0a0a' : '#0a2a0a', color: vehicleMsg.type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${vehicleMsg.type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>{vehicleMsg.text}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                    <div>
+                      <h2 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: '700', color: '#f1f1f1' }}>Fleet</h2>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''}</p>
+                    </div>
+                    <button style={s.btn} onClick={() => setShowAddVehicle(v => !v)}>{showAddVehicle ? 'Cancel' : '+ Add Vehicle'}</button>
+                  </div>
+
+                  {showAddVehicle && (
+                    <div style={s.formBox}>
+                      <p style={s.formTitle}>New Vehicle</p>
+                      <form onSubmit={addVehicle}>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div><label style={s.label}>Name / Identifier *</label><input style={s.input} required value={vehicleForm.name} onChange={e => setVehicleForm(f => ({ ...f, name: e.target.value }))} placeholder="F-250 #1, Truck Red..." /></div>
+                          <div><label style={s.label}>Make</label><input style={s.input} value={vehicleForm.make} onChange={e => setVehicleForm(f => ({ ...f, make: e.target.value }))} placeholder="Ford" /></div>
+                          <div><label style={s.label}>Model</label><input style={s.input} value={vehicleForm.model} onChange={e => setVehicleForm(f => ({ ...f, model: e.target.value }))} placeholder="F-250" /></div>
+                        </div>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div><label style={s.label}>Year</label><input type="number" style={s.input} value={vehicleForm.year} onChange={e => setVehicleForm(f => ({ ...f, year: e.target.value }))} placeholder="2023" /></div>
+                          <div><label style={s.label}>License Plate</label><input style={s.input} value={vehicleForm.license_plate} onChange={e => setVehicleForm(f => ({ ...f, license_plate: e.target.value }))} placeholder="ABC-1234" /></div>
+                          <div><label style={s.label}>Color</label><input style={s.input} value={vehicleForm.color} onChange={e => setVehicleForm(f => ({ ...f, color: e.target.value }))} placeholder="White" /></div>
+                        </div>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                          <div><label style={s.label}>VIN</label><input style={s.input} value={vehicleForm.vin} onChange={e => setVehicleForm(f => ({ ...f, vin: e.target.value }))} placeholder="1FTFW1ET..." /></div>
+                          <div>
+                            <label style={s.label}>Assign to Superintendent</label>
+                            <select style={s.input} value={vehicleForm.assigned_to} onChange={e => setVehicleForm(f => ({ ...f, assigned_to: e.target.value }))}>
+                              <option value="">— Unassigned —</option>
+                              {supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><input style={s.input} value={vehicleForm.notes} onChange={e => setVehicleForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." /></div>
+                        <button type="submit" style={{ ...s.btn, opacity: savingVehicle ? 0.6 : 1 }} disabled={savingVehicle}>{savingVehicle ? 'Saving...' : 'Add Vehicle'}</button>
+                      </form>
+                    </div>
+                  )}
+
+                  {vehicles.length === 0 && !showAddVehicle && <div style={s.emptyMsg}>No vehicles added yet. Click + Add Vehicle to get started.</div>}
+
+                  {vehicles.map(v => {
+                    const isExpanded = expandedVehicleId === v.id
+                    const isEditing = editingVehicleId === v.id
+                    const logs = vehicleLogs[v.id] || []
+                    const lastLog = logs[0]
+                    const lastMileage = logs.find(l => l.mileage)?.mileage
+                    const lastOilChange = logs.find(l => l.log_type === 'Oil Change')
+                    return (
+                      <div key={v.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', marginBottom: '12px', overflow: 'hidden' }}>
+                        {isEditing ? (
+                          <div style={{ padding: '1.25rem' }}>
+                            <p style={s.formTitle}>Edit Vehicle</p>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Name *</label><input style={s.input} required value={editVehicleForm.name || ''} onChange={e => setEditVehicleForm(f => ({ ...f, name: e.target.value }))} /></div>
+                              <div><label style={s.label}>Make</label><input style={s.input} value={editVehicleForm.make || ''} onChange={e => setEditVehicleForm(f => ({ ...f, make: e.target.value }))} /></div>
+                              <div><label style={s.label}>Model</label><input style={s.input} value={editVehicleForm.model || ''} onChange={e => setEditVehicleForm(f => ({ ...f, model: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Year</label><input type="number" style={s.input} value={editVehicleForm.year || ''} onChange={e => setEditVehicleForm(f => ({ ...f, year: e.target.value }))} /></div>
+                              <div><label style={s.label}>License Plate</label><input style={s.input} value={editVehicleForm.license_plate || ''} onChange={e => setEditVehicleForm(f => ({ ...f, license_plate: e.target.value }))} /></div>
+                              <div><label style={s.label}>Color</label><input style={s.input} value={editVehicleForm.color || ''} onChange={e => setEditVehicleForm(f => ({ ...f, color: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                              <div><label style={s.label}>VIN</label><input style={s.input} value={editVehicleForm.vin || ''} onChange={e => setEditVehicleForm(f => ({ ...f, vin: e.target.value }))} /></div>
+                              <div>
+                                <label style={s.label}>Assign to Superintendent</label>
+                                <select style={s.input} value={editVehicleForm.assigned_to || ''} onChange={e => setEditVehicleForm(f => ({ ...f, assigned_to: e.target.value }))}>
+                                  <option value="">— Unassigned —</option>
+                                  {supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><input style={s.input} value={editVehicleForm.notes || ''} onChange={e => setEditVehicleForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button style={s.btnSm('orange')} onClick={saveVehicleEdit} disabled={savingVehicleEdit}>{savingVehicleEdit ? 'Saving...' : 'Save'}</button>
+                              <button style={s.btnSm('gray')} onClick={() => setEditingVehicleId(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ padding: '1rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => { setExpandedVehicleId(x => x === v.id ? null : v.id); if (!vehicleLogs[v.id]) loadVehicleLogs(v.id) }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{v.name}</span>
+                                  {v.year && <span style={{ fontSize: '12px', color: '#555' }}>{v.year}</span>}
+                                  {(v.make || v.model) && <span style={{ fontSize: '12px', color: '#555' }}>{[v.make, v.model].filter(Boolean).join(' ')}</span>}
+                                  {v.color && <span style={{ fontSize: '12px', color: '#555' }}>{v.color}</span>}
+                                  {v.license_plate && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', fontFamily: 'monospace' }}>{v.license_plate}</span>}
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#555' }}>
+                                  {v.assigned_profile ? <span style={{ color: '#e8590c' }}>{v.assigned_profile.full_name}</span> : <span>Unassigned</span>}
+                                  {lastMileage && <span> · {Number(lastMileage).toLocaleString()} mi</span>}
+                                  {lastOilChange && <span> · Last oil change {new Date(lastOilChange.log_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button style={s.btnSm('gray')} onClick={e => { e.stopPropagation(); setEditingVehicleId(v.id); setEditVehicleForm({ name: v.name, make: v.make || '', model: v.model || '', year: v.year || '', vin: v.vin || '', license_plate: v.license_plate || '', color: v.color || '', assigned_to: v.assigned_to || '', notes: v.notes || '' }) }}>Edit</button>
+                                <button style={s.btnSm('red')} onClick={e => { e.stopPropagation(); deleteVehicle(v.id) }}>Delete</button>
+                                <span style={{ color: '#555', fontSize: '12px' }}>{isExpanded ? '▲' : '▼'}</span>
+                              </div>
+                            </div>
+
+                            {isExpanded && (
+                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem' }}>
+                                {logs.length === 0 ? (
+                                  <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No logs yet. The assigned superintendent logs from the field portal.</p>
+                                ) : (
+                                  logs.map(l => (
+                                    <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                          <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: logTypeBadgeColor(l.log_type), border: '1px solid #2a2a2a' }}>{l.log_type}</span>
+                                          {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
+                                          {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#888' }}>{l.fuel_gallons} gal{l.fuel_cost ? ` · $${Number(l.fuel_cost).toFixed(2)}` : ''}</span>}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: '#555' }}>
+                                          {new Date(l.log_date + 'T12:00:00').toLocaleDateString()}
+                                          {l.logged_by_profile?.full_name && ` · ${l.logged_by_profile.full_name}`}
+                                          {l.notes && ` · ${l.notes}`}
+                                        </div>
+                                      </div>
+                                      {l.photo_url && (
+                                        <button style={s.btnSm('gray')} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>
+                                      )}
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
                 </>
               )
             })()}

@@ -121,6 +121,17 @@ export default function Field() {
   const [dcError, setDcError] = useState('')
   const [showDcForm, setShowDcForm] = useState(false)
 
+  // Vehicle log state
+  const [assignedVehicles, setAssignedVehicles] = useState([])
+  const [vehicleLogs, setVehicleLogs] = useState({})
+  const [expandedVehicleId, setExpandedVehicleId] = useState(null)
+  const [showVehicleLogForm, setShowVehicleLogForm] = useState(null)
+  const [vehicleLogForm, setVehicleLogForm] = useState({ log_type: 'Mileage Update', log_date: new Date().toISOString().split('T')[0], mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+  const [vehicleLogFile, setVehicleLogFile] = useState(null)
+  const [submittingVehicleLog, setSubmittingVehicleLog] = useState(false)
+  const [vehicleLogMsg, setVehicleLogMsg] = useState('')
+  const [vehicleLogError, setVehicleLogError] = useState('')
+
   const [jobDocs, setJobDocs] = useState([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const [docCategory, setDocCategory] = useState('plans')
@@ -169,6 +180,7 @@ export default function Field() {
       const jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
       setAssignedJobs(jobs)
       if (jobs.length === 1) setSelectedJobId(jobs[0].id)
+      loadAssignedVehicles(session.user.id)
     }
     load()
   }, [router])
@@ -449,6 +461,58 @@ export default function Field() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function loadAssignedVehicles(userId) {
+    const res = await fetch('/api/vehicles')
+    const json = await res.json()
+    const mine = (json.data || []).filter(v => v.assigned_to === userId)
+    setAssignedVehicles(mine)
+  }
+
+  async function loadVehicleLogsForVehicle(vehicleId) {
+    const res = await fetch(`/api/vehicle-logs?vehicle_id=${vehicleId}`)
+    const json = await res.json()
+    setVehicleLogs(prev => ({ ...prev, [vehicleId]: json.data || [] }))
+  }
+
+  async function submitVehicleLog(e, vehicleId) {
+    e.preventDefault()
+    setSubmittingVehicleLog(true)
+    setVehicleLogError('')
+    const rowData = {
+      vehicle_id: vehicleId,
+      logged_by: user?.id,
+      log_type: vehicleLogForm.log_type,
+      log_date: vehicleLogForm.log_date,
+      mileage: vehicleLogForm.mileage ? parseInt(vehicleLogForm.mileage) : null,
+      notes: vehicleLogForm.notes || null,
+      fuel_gallons: vehicleLogForm.fuel_gallons ? parseFloat(vehicleLogForm.fuel_gallons) : null,
+      fuel_cost: vehicleLogForm.fuel_cost ? parseFloat(vehicleLogForm.fuel_cost) : null,
+    }
+    let res, json
+    if (vehicleLogFile) {
+      const fd = new FormData()
+      fd.append('file', vehicleLogFile)
+      fd.append('data', JSON.stringify(rowData))
+      res = await fetch('/api/vehicle-logs', { method: 'POST', body: fd })
+    } else {
+      res = await fetch('/api/vehicle-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    }
+    json = await res.json()
+    if (json.error) { setVehicleLogError(json.error); setSubmittingVehicleLog(false); return }
+    setVehicleLogs(prev => ({ ...prev, [vehicleId]: [json.data, ...(prev[vehicleId] || [])] }))
+    setVehicleLogForm({ log_type: 'Mileage Update', log_date: new Date().toISOString().split('T')[0], mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+    setVehicleLogFile(null)
+    setShowVehicleLogForm(null)
+    setVehicleLogMsg('Log saved.')
+    setTimeout(() => setVehicleLogMsg(''), 3000)
+    setSubmittingVehicleLog(false)
+  }
+
+  function openVehiclePhoto(path) {
+    if (!path) return
+    window.open(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/vehicle-photos/${path}`, '_blank')
+  }
+
   async function uploadReportPhoto(file) {
     setUploadingPhoto(true)
     const ts = Date.now()
@@ -644,6 +708,7 @@ export default function Field() {
                       { key: 'docs', icon: IC.docs, label: 'Documents', count: jobDocs.length || null },
                       { key: 'punch', icon: IC.punch, label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
                       { key: 'photos', icon: IC.photos, label: 'Site Photos', count: totalGalleryPhotos || null },
+                      { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: item.alert ? '#e8590c' : '#555', display: 'flex', lineHeight: 1 }}>{item.icon}</span>
@@ -685,7 +750,7 @@ export default function Field() {
                   <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
                     <button style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>← Back</button>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos' }[activeTab]}
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle' }[activeTab]}
                     </span>
                   </div>
                 )}
@@ -1706,6 +1771,125 @@ export default function Field() {
                           </div>
                         </div>
                       ))}
+                    </>
+                  )
+                })()}
+
+                {/* ── VEHICLES ── */}
+                {activeTab === 'vehicles' && (() => {
+                  const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
+                  const needsPhoto = ['Monthly Photo', 'Damage Report'].includes(vehicleLogForm.log_type)
+                  const needsFuel = vehicleLogForm.log_type === 'Fuel Fill-up'
+                  return (
+                    <>
+                      {vehicleLogMsg && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#4ade80' }}>{vehicleLogMsg}</div>}
+                      {vehicleLogError && <div style={{ background: '#1a0000', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b' }}>{vehicleLogError}</div>}
+
+                      {assignedVehicles.length === 0 && (
+                        <div style={s.empty}>No vehicles assigned to you yet. Contact your PM.</div>
+                      )}
+
+                      {assignedVehicles.map(v => {
+                        const logs = vehicleLogs[v.id] || []
+                        const isExpanded = expandedVehicleId === v.id
+                        const showForm = showVehicleLogForm === v.id
+                        const lastMileage = logs.find(l => l.mileage)?.mileage
+                        const lastOilChange = logs.find(l => l.log_type === 'Oil Change')
+                        const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#888'
+                        return (
+                          <div key={v.id} style={s.card}>
+                            {/* Vehicle header */}
+                            <div style={{ marginBottom: '1rem' }}>
+                              <h2 style={{ ...s.cardTitle, marginBottom: '4px' }}>{v.name}</h2>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>
+                                {[v.year, v.make, v.model].filter(Boolean).join(' ')}
+                                {v.color && ` · ${v.color}`}
+                                {v.license_plate && ` · ${v.license_plate}`}
+                              </p>
+                              {(lastMileage || lastOilChange) && (
+                                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#555' }}>
+                                  {lastMileage && <span>{Number(lastMileage).toLocaleString()} mi last logged</span>}
+                                  {lastMileage && lastOilChange && ' · '}
+                                  {lastOilChange && <span>Last oil change {new Date(lastOilChange.log_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Log form */}
+                            {showForm ? (
+                              <form onSubmit={e => submitVehicleLog(e, v.id)} style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
+                                <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                  <div>
+                                    <label style={s.label}>Log Type *</label>
+                                    <select style={s.input} required value={vehicleLogForm.log_type} onChange={e => setVehicleLogForm(f => ({ ...f, log_type: e.target.value }))}>
+                                      {LOG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label style={s.label}>Date *</label>
+                                    <input type="date" style={s.input} required value={vehicleLogForm.log_date} onChange={e => setVehicleLogForm(f => ({ ...f, log_date: e.target.value }))} />
+                                  </div>
+                                </div>
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={s.label}>Odometer Reading (miles)</label>
+                                  <input type="number" style={s.input} value={vehicleLogForm.mileage} onChange={e => setVehicleLogForm(f => ({ ...f, mileage: e.target.value }))} placeholder="e.g. 54200" />
+                                </div>
+                                {needsFuel && (
+                                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                                    <div>
+                                      <label style={s.label}>Gallons</label>
+                                      <input type="number" step="0.01" style={s.input} value={vehicleLogForm.fuel_gallons} onChange={e => setVehicleLogForm(f => ({ ...f, fuel_gallons: e.target.value }))} placeholder="0.00" />
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Total Cost ($)</label>
+                                      <input type="number" step="0.01" style={s.input} value={vehicleLogForm.fuel_cost} onChange={e => setVehicleLogForm(f => ({ ...f, fuel_cost: e.target.value }))} placeholder="0.00" />
+                                    </div>
+                                  </div>
+                                )}
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={s.label}>Notes {vehicleLogForm.log_type === 'Inspection' ? '(condition, anything to flag)' : ''}</label>
+                                  <input style={s.input} value={vehicleLogForm.notes} onChange={e => setVehicleLogForm(f => ({ ...f, notes: e.target.value }))} placeholder={vehicleLogForm.log_type === 'Damage Report' ? 'Describe the damage...' : 'Optional notes...'} />
+                                </div>
+                                {(needsPhoto || vehicleLogForm.log_type === 'Damage Report') && (
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <label style={s.label}>Photo {needsPhoto ? '*' : ''}</label>
+                                    <input type="file" accept="image/*" capture="environment" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setVehicleLogFile(e.target.files[0])} required={needsPhoto} />
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button type="submit" disabled={submittingVehicleLog} style={{ ...s.btn, opacity: submittingVehicleLog ? 0.6 : 1 }}>{submittingVehicleLog ? 'Saving...' : 'Save Log'}</button>
+                                  <button type="button" style={s.btnSm('gray')} onClick={() => setShowVehicleLogForm(null)}>Cancel</button>
+                                </div>
+                              </form>
+                            ) : (
+                              <button style={{ ...s.btn, marginBottom: '1rem' }} onClick={() => { setShowVehicleLogForm(v.id); if (!vehicleLogs[v.id]) loadVehicleLogsForVehicle(v.id) }}>+ Log Entry</button>
+                            )}
+
+                            {/* Log history toggle */}
+                            <button style={{ ...s.btnSm('gray'), marginBottom: '0.75rem' }} onClick={() => { setExpandedVehicleId(x => x === v.id ? null : v.id); if (!vehicleLogs[v.id]) loadVehicleLogsForVehicle(v.id) }}>
+                              {isExpanded ? 'Hide History' : `View History (${logs.length})`}
+                            </button>
+
+                            {isExpanded && (
+                              <div>
+                                {logs.length === 0 && <p style={{ fontSize: '13px', color: '#444', margin: 0 }}>No logs yet.</p>}
+                                {logs.map(l => (
+                                  <div key={l.id} style={{ padding: '10px 0', borderTop: '1px solid #1a1a1a' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: logTypeBadgeColor(l.log_type), border: '1px solid #2a2a2a' }}>{l.log_type}</span>
+                                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
+                                      {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#888' }}>{l.fuel_gallons} gal · ${Number(l.fuel_cost || 0).toFixed(2)}</span>}
+                                    </div>
+                                    {l.notes && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#777' }}>{l.notes}</p>}
+                                    {l.photo_url && <button style={{ ...s.btnSm('gray'), marginTop: '6px' }} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </>
                   )
                 })()}

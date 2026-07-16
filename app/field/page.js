@@ -132,6 +132,16 @@ export default function Field() {
   const [vehicleLogMsg, setVehicleLogMsg] = useState('')
   const [vehicleLogError, setVehicleLogError] = useState('')
 
+  // Tool state
+  const [myTools, setMyTools] = useState([])
+  const [toolLogsField, setToolLogsField] = useState({})
+  const [expandedToolFieldId, setExpandedToolFieldId] = useState(null)
+  const [showToolLogForm, setShowToolLogForm] = useState(null)
+  const [toolLogForm, setToolLogForm] = useState({ log_type: 'checkin', log_date: new Date().toISOString().split('T')[0], notes: '' })
+  const [submittingToolLog, setSubmittingToolLog] = useState(false)
+  const [toolLogMsg, setToolLogMsg] = useState('')
+  const [toolLogError, setToolLogError] = useState('')
+
   const [jobDocs, setJobDocs] = useState([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const [docCategory, setDocCategory] = useState('plans')
@@ -181,6 +191,7 @@ export default function Field() {
       setAssignedJobs(jobs)
       if (jobs.length === 1) setSelectedJobId(jobs[0].id)
       loadAssignedVehicles(session.user.id)
+      loadMyTools(session.user.id)
     }
     load()
   }, [router])
@@ -468,6 +479,45 @@ export default function Field() {
     setAssignedVehicles(mine)
   }
 
+  async function loadMyTools(userId) {
+    const res = await fetch('/api/tools')
+    const json = await res.json()
+    const mine = (json.data || []).filter(t => t.assigned_to === userId)
+    setMyTools(mine)
+  }
+
+  async function loadToolLogsForTool(toolId) {
+    const res = await fetch(`/api/tool-logs?tool_id=${toolId}`)
+    const json = await res.json()
+    setToolLogsField(prev => ({ ...prev, [toolId]: json.data || [] }))
+  }
+
+  async function submitToolLog(e, tool) {
+    e.preventDefault()
+    setSubmittingToolLog(true)
+    setToolLogError('')
+    const rowData = {
+      tool_id: tool.id,
+      logged_by: user?.id,
+      assigned_to: tool.assigned_to || null,
+      log_type: toolLogForm.log_type,
+      log_date: toolLogForm.log_date,
+      notes: toolLogForm.notes || null,
+    }
+    const res = await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    const json = await res.json()
+    if (json.error) { setToolLogError(json.error); setSubmittingToolLog(false); return }
+    setToolLogsField(prev => ({ ...prev, [tool.id]: [json.data, ...(prev[tool.id] || [])] }))
+    if (toolLogForm.log_type === 'checkin') {
+      setMyTools(prev => prev.filter(t => t.id !== tool.id))
+    }
+    setToolLogForm({ log_type: 'checkin', log_date: new Date().toISOString().split('T')[0], notes: '' })
+    setShowToolLogForm(null)
+    setToolLogMsg('Saved.')
+    setTimeout(() => setToolLogMsg(''), 3000)
+    setSubmittingToolLog(false)
+  }
+
   async function loadVehicleLogsForVehicle(vehicleId) {
     const res = await fetch(`/api/vehicle-logs?vehicle_id=${vehicleId}`)
     const json = await res.json()
@@ -709,6 +759,7 @@ export default function Field() {
                       { key: 'punch', icon: IC.punch, label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
                       { key: 'photos', icon: IC.photos, label: 'Site Photos', count: totalGalleryPhotos || null },
                       { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
+                      { key: 'tools', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>, label: 'My Tools', count: myTools.length || null },
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: item.alert ? '#e8590c' : '#555', display: 'flex', lineHeight: 1 }}>{item.icon}</span>
@@ -750,7 +801,7 @@ export default function Field() {
                   <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
                     <button style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>← Back</button>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle' }[activeTab]}
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools' }[activeTab]}
                     </span>
                   </div>
                 )}
@@ -1883,6 +1934,90 @@ export default function Field() {
                                     </div>
                                     {l.notes && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#777' }}>{l.notes}</p>}
                                     {l.photo_url && <button style={{ ...s.btnSm('gray'), marginTop: '6px' }} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </>
+                  )
+                })()}
+
+                {/* ── TOOLS ── */}
+                {activeTab === 'tools' && (() => {
+                  const LOG_TYPE_LABELS = { checkin: 'Check In', checkout: 'Checked Out', damage: 'Damage Report', lost: 'Report Lost', maintenance: 'Needs Maintenance' }
+                  return (
+                    <>
+                      {toolLogMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{toolLogMsg}</div>}
+                      {toolLogError && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a' }}>{toolLogError}</div>}
+
+                      {myTools.length === 0 && (
+                        <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' }}>
+                          No tools are currently checked out to you. Your PM assigns tools from the dashboard.
+                        </div>
+                      )}
+
+                      {myTools.map(tool => {
+                        const isExpanded = expandedToolFieldId === tool.id
+                        const logs = toolLogsField[tool.id] || []
+                        const isLogging = showToolLogForm === tool.id
+                        return (
+                          <div key={tool.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden' }}>
+                            <div style={{ padding: '14px 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{tool.name}</p>
+                                <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>
+                                  {[tool.brand, tool.model].filter(Boolean).join(' ')}
+                                  {tool.serial_number && ` · SN: ${tool.serial_number}`}
+                                  {tool.job_site && ` · ${tool.job_site}`}
+                                </p>
+                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#888' }}>{tool.category} · Condition: <span style={{ color: tool.condition === 'good' ? '#4ade80' : tool.condition === 'fair' ? '#f59e0b' : '#ef4444' }}>{tool.condition}</span></p>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
+                                <button style={s.btnSm('orange')} onClick={() => { setShowToolLogForm(isLogging ? null : tool.id); setExpandedToolFieldId(null) }}>Log</button>
+                                <button style={s.btnSm('gray')} onClick={() => { setExpandedToolFieldId(isExpanded ? null : tool.id); if (!toolLogsField[tool.id]) loadToolLogsForTool(tool.id); setShowToolLogForm(null) }}>{isExpanded ? 'Hide' : 'History'}</button>
+                              </div>
+                            </div>
+
+                            {isLogging && (
+                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#0f0f0f' }}>
+                                <form onSubmit={e => submitToolLog(e, tool)}>
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <label style={s.label}>Action</label>
+                                    <select style={s.input} value={toolLogForm.log_type} onChange={e => setToolLogForm(f => ({ ...f, log_type: e.target.value }))}>
+                                      <option value="checkin">Check In (returning tool)</option>
+                                      <option value="damage">Damage Report</option>
+                                      <option value="lost">Report Lost</option>
+                                      <option value="maintenance">Needs Maintenance</option>
+                                    </select>
+                                  </div>
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <label style={s.label}>Date</label>
+                                    <input type="date" style={s.input} value={toolLogForm.log_date} onChange={e => setToolLogForm(f => ({ ...f, log_date: e.target.value }))} />
+                                  </div>
+                                  <div style={{ marginBottom: '12px' }}>
+                                    <label style={s.label}>{toolLogForm.log_type === 'checkin' ? 'Notes (optional)' : 'Description *'}</label>
+                                    <textarea required={toolLogForm.log_type !== 'checkin'} style={{ ...s.input, height: '80px', resize: 'vertical' }} value={toolLogForm.notes} onChange={e => setToolLogForm(f => ({ ...f, notes: e.target.value }))} placeholder={toolLogForm.log_type === 'damage' ? 'Describe the damage...' : toolLogForm.log_type === 'lost' ? 'Where/when was it last seen...' : ''} />
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button type="submit" style={{ ...s.btn, opacity: submittingToolLog ? 0.6 : 1 }} disabled={submittingToolLog}>{submittingToolLog ? 'Saving...' : 'Submit'}</button>
+                                    <button type="button" style={s.btnSm('gray')} onClick={() => setShowToolLogForm(null)}>Cancel</button>
+                                  </div>
+                                </form>
+                              </div>
+                            )}
+
+                            {isExpanded && (
+                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#0f0f0f' }}>
+                                {logs.length === 0 ? <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No history yet.</p> : logs.map(l => (
+                                  <div key={l.id} style={{ padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #2a2a2a' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
+                                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      {l.notes && <span style={{ fontSize: '12px', color: '#777' }}>· {l.notes}</span>}
+                                    </div>
                                   </div>
                                 ))}
                               </div>

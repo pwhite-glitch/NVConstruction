@@ -94,6 +94,7 @@ const IconCalc     = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconTrend    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
 const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
 const IconTruck    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+const IconWrench   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
 const IconLogout   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 
 export default function Dashboard() {
@@ -262,6 +263,21 @@ export default function Dashboard() {
   const [editVehicleForm, setEditVehicleForm] = useState({})
   const [savingVehicleEdit, setSavingVehicleEdit] = useState(false)
 
+  // Tools state (PM-only)
+  const [tools, setTools] = useState([])
+  const [toolsLoaded, setToolsLoaded] = useState(false)
+  const [toolLogs, setToolLogs] = useState({})
+  const [expandedToolId, setExpandedToolId] = useState(null)
+  const [showAddTool, setShowAddTool] = useState(false)
+  const [toolForm, setToolForm] = useState({ name: '', brand: '', model: '', serial_number: '', category: 'Power Tools', purchase_date: '', purchase_cost: '', condition: 'good', assigned_to: '', job_site: '', notes: '' })
+  const [savingTool, setSavingTool] = useState(false)
+  const [toolMsg, setToolMsg] = useState(null)
+  const [editingToolId, setEditingToolId] = useState(null)
+  const [editToolForm, setEditToolForm] = useState({})
+  const [savingToolEdit, setSavingToolEdit] = useState(false)
+  const [toolStatusFilter, setToolStatusFilter] = useState('all')
+  const [toolCategoryFilter, setToolCategoryFilter] = useState('all')
+
   // Employees state (PM-only)
   const [employees, setEmployees] = useState([])
   const [empLoaded, setEmpLoaded] = useState(false)
@@ -319,6 +335,7 @@ export default function Dashboard() {
     if (activeTab === 'bd' && !bdLoaded) loadBD()
     if (activeTab === 'employees' && !empLoaded) loadEmployees()
     if (activeTab === 'vehicles' && !vehiclesLoaded) loadVehicles()
+    if (activeTab === 'tools' && !toolsLoaded) loadTools()
     if (activeTab === 'directory') loadDirRatings()
   }, [activeTab])
 
@@ -1401,6 +1418,64 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     window.open(url, '_blank')
   }
 
+  async function loadTools() {
+    const res = await fetch('/api/tools')
+    const json = await res.json()
+    setTools(json.data || [])
+    setToolsLoaded(true)
+  }
+
+  async function loadToolLogs(toolId) {
+    const res = await fetch(`/api/tool-logs?tool_id=${toolId}`)
+    const json = await res.json()
+    setToolLogs(prev => ({ ...prev, [toolId]: json.data || [] }))
+  }
+
+  async function addTool(e) {
+    e.preventDefault()
+    setSavingTool(true)
+    const body = { ...toolForm, purchase_cost: toolForm.purchase_cost ? parseFloat(toolForm.purchase_cost) : null, assigned_to: toolForm.assigned_to || null, purchase_date: toolForm.purchase_date || null }
+    const res = await fetch('/api/tools', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const json = await res.json()
+    setSavingTool(false)
+    if (json.error) { setToolMsg({ type: 'err', text: json.error }); return }
+    // log checkout if assigned
+    if (json.data.assigned_to) {
+      await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: json.data.id, log_type: 'checkout', log_date: new Date().toISOString().split('T')[0], assigned_to: json.data.assigned_to, notes: 'Initial assignment' }) })
+    }
+    setTools(prev => [...prev, json.data].sort((a, b) => a.name.localeCompare(b.name)))
+    setToolForm({ name: '', brand: '', model: '', serial_number: '', category: 'Power Tools', purchase_date: '', purchase_cost: '', condition: 'good', assigned_to: '', job_site: '', notes: '' })
+    setShowAddTool(false)
+    setToolMsg({ type: 'ok', text: 'Tool added.' })
+    setTimeout(() => setToolMsg(null), 3000)
+  }
+
+  async function saveToolEdit() {
+    setSavingToolEdit(true)
+    const orig = tools.find(t => t.id === editingToolId)
+    const body = { id: editingToolId, ...editToolForm, purchase_cost: editToolForm.purchase_cost ? parseFloat(editToolForm.purchase_cost) : null, assigned_to: editToolForm.assigned_to || null, purchase_date: editToolForm.purchase_date || null }
+    const res = await fetch('/api/tools', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const json = await res.json()
+    setSavingToolEdit(false)
+    if (json.error) { setToolMsg({ type: 'err', text: json.error }); return }
+    // log reassignment if assigned_to changed
+    const newAssignee = editToolForm.assigned_to || null
+    if (orig?.assigned_to !== newAssignee) {
+      if (orig?.assigned_to) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkin', log_date: new Date().toISOString().split('T')[0], assigned_to: orig.assigned_to, notes: 'Returned / reassigned' }) })
+      if (newAssignee) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkout', log_date: new Date().toISOString().split('T')[0], assigned_to: newAssignee, notes: 'Assigned by PM' }) })
+      if (toolLogs[editingToolId]) loadToolLogs(editingToolId)
+    }
+    setTools(prev => prev.map(t => t.id === editingToolId ? json.data : t))
+    setEditingToolId(null)
+  }
+
+  async function deleteTool(toolId) {
+    if (!window.confirm('Delete this tool and all its history?')) return
+    await fetch('/api/tools', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: toolId }) })
+    setTools(prev => prev.filter(t => t.id !== toolId))
+    if (expandedToolId === toolId) setExpandedToolId(null)
+  }
+
   async function loadEmployees() {
     const res = await fetch('/api/employees')
     const data = await res.json()
@@ -1595,6 +1670,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'vehicles',  label: 'Fleet',      icon: <IconTruck /> }] : []),
+    ...(profile?.role === 'pm' ? [{ tab: 'tools',     label: 'Tools',      icon: <IconWrench /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
     ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
     { tab: 'calendar',      label: 'Calendar',       icon: <IconCal /> },
@@ -4025,6 +4101,182 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                     </div>
                                   ))
                                 )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              )
+            })()}
+
+            {activeTab === 'tools' && profile?.role === 'pm' && (() => {
+              const CATEGORIES = ['Power Tools', 'Hand Tools', 'Measuring', 'Safety', 'Equipment', 'Other']
+              const STATUS_COLORS = { available: '#4ade80', checked_out: '#f59e0b', repair: '#3b82f6', lost: '#ef4444' }
+              const COND_COLORS = { good: '#4ade80', fair: '#f59e0b', poor: '#ef4444' }
+              const supers = teamMembers.filter(m => m.role === 'super')
+              const LOG_TYPE_LABELS = { checkout: 'Checked Out', checkin: 'Checked In', repair: 'Sent for Repair', damage: 'Damage Reported', lost: 'Reported Lost', found: 'Found / Recovered', maintenance: 'Maintenance' }
+
+              const filtered = tools.filter(t => {
+                if (toolStatusFilter !== 'all' && t.status !== toolStatusFilter) return false
+                if (toolCategoryFilter !== 'all' && t.category !== toolCategoryFilter) return false
+                return true
+              })
+              const totalValue = tools.reduce((a, t) => a + Number(t.purchase_cost || 0), 0)
+              const checkedOut = tools.filter(t => t.status === 'checked_out').length
+              const inRepair = tools.filter(t => t.status === 'repair').length
+              const lost = tools.filter(t => t.status === 'lost').length
+
+              return (
+                <>
+                  {toolMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: toolMsg.type === 'err' ? '#2a0a0a' : '#0a2a0a', color: toolMsg.type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${toolMsg.type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>{toolMsg.text}</div>}
+
+                  {/* Stats row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '1.5rem' }}>
+                    {[
+                      { label: 'Total Tools', value: tools.length, color: '#f1f1f1' },
+                      { label: 'Checked Out', value: checkedOut, color: '#f59e0b' },
+                      { label: 'In Repair', value: inRepair, color: '#3b82f6' },
+                      { label: 'Fleet Value', value: '$' + totalValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }), color: '#4ade80' },
+                    ].map(stat => (
+                      <div key={stat.label} style={s.ovCard}>
+                        <p style={s.ovLabel}>{stat.label}</p>
+                        <p style={{ ...s.ovValue(stat.color), fontSize: '24px' }}>{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <select style={s.filterSelect} value={toolStatusFilter} onChange={e => setToolStatusFilter(e.target.value)}>
+                        <option value="all">All statuses</option>
+                        <option value="available">Available</option>
+                        <option value="checked_out">Checked Out</option>
+                        <option value="repair">In Repair</option>
+                        <option value="lost">Lost</option>
+                      </select>
+                      <select style={s.filterSelect} value={toolCategoryFilter} onChange={e => setToolCategoryFilter(e.target.value)}>
+                        <option value="all">All categories</option>
+                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <button style={s.btn} onClick={() => setShowAddTool(v => !v)}>{showAddTool ? 'Cancel' : '+ Add Tool'}</button>
+                  </div>
+
+                  {showAddTool && (
+                    <div style={s.formBox}>
+                      <p style={s.formTitle}>New Tool</p>
+                      <form onSubmit={addTool}>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div><label style={s.label}>Tool Name *</label><input style={s.input} required value={toolForm.name} onChange={e => setToolForm(f => ({ ...f, name: e.target.value }))} placeholder="Dewalt Drill, Circular Saw..." /></div>
+                          <div><label style={s.label}>Brand</label><input style={s.input} value={toolForm.brand} onChange={e => setToolForm(f => ({ ...f, brand: e.target.value }))} placeholder="Dewalt, Milwaukee..." /></div>
+                          <div><label style={s.label}>Model</label><input style={s.input} value={toolForm.model} onChange={e => setToolForm(f => ({ ...f, model: e.target.value }))} placeholder="DCD996B..." /></div>
+                        </div>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div>
+                            <label style={s.label}>Category</label>
+                            <select style={s.input} value={toolForm.category} onChange={e => setToolForm(f => ({ ...f, category: e.target.value }))}>
+                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div><label style={s.label}>Serial Number</label><input style={s.input} value={toolForm.serial_number} onChange={e => setToolForm(f => ({ ...f, serial_number: e.target.value }))} placeholder="SN-12345..." /></div>
+                          <div>
+                            <label style={s.label}>Condition</label>
+                            <select style={s.input} value={toolForm.condition} onChange={e => setToolForm(f => ({ ...f, condition: e.target.value }))}>
+                              <option value="good">Good</option>
+                              <option value="fair">Fair</option>
+                              <option value="poor">Poor</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                          <div><label style={s.label}>Purchase Date</label><input type="date" style={s.input} value={toolForm.purchase_date} onChange={e => setToolForm(f => ({ ...f, purchase_date: e.target.value }))} /></div>
+                          <div><label style={s.label}>Purchase Cost ($)</label><input type="number" step="0.01" style={s.input} value={toolForm.purchase_cost} onChange={e => setToolForm(f => ({ ...f, purchase_cost: e.target.value }))} placeholder="0.00" /></div>
+                          <div>
+                            <label style={s.label}>Assign to Superintendent</label>
+                            <select style={s.input} value={toolForm.assigned_to} onChange={e => setToolForm(f => ({ ...f, assigned_to: e.target.value }))}>
+                              <option value="">— Available / Unassigned —</option>
+                              {supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '12px' }}><label style={s.label}>Job Site</label><input style={s.input} value={toolForm.job_site} onChange={e => setToolForm(f => ({ ...f, job_site: e.target.value }))} placeholder="Site location..." /></div>
+                        <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><input style={s.input} value={toolForm.notes} onChange={e => setToolForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." /></div>
+                        <button type="submit" style={{ ...s.btn, opacity: savingTool ? 0.6 : 1 }} disabled={savingTool}>{savingTool ? 'Saving...' : 'Add Tool'}</button>
+                      </form>
+                    </div>
+                  )}
+
+                  {filtered.length === 0 && !showAddTool && <div style={s.emptyMsg}>No tools found. Add your first tool above.</div>}
+
+                  {filtered.map(t => {
+                    const isExpanded = expandedToolId === t.id
+                    const isEditing = editingToolId === t.id
+                    const logs = toolLogs[t.id] || []
+                    return (
+                      <div key={t.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden' }}>
+                        {isEditing ? (
+                          <div style={{ padding: '1.25rem' }}>
+                            <p style={s.formTitle}>Edit Tool</p>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Name *</label><input style={s.input} required value={editToolForm.name || ''} onChange={e => setEditToolForm(f => ({ ...f, name: e.target.value }))} /></div>
+                              <div><label style={s.label}>Brand</label><input style={s.input} value={editToolForm.brand || ''} onChange={e => setEditToolForm(f => ({ ...f, brand: e.target.value }))} /></div>
+                              <div><label style={s.label}>Model</label><input style={s.input} value={editToolForm.model || ''} onChange={e => setEditToolForm(f => ({ ...f, model: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Category</label><select style={s.input} value={editToolForm.category || 'Other'} onChange={e => setEditToolForm(f => ({ ...f, category: e.target.value }))}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                              <div><label style={s.label}>Serial Number</label><input style={s.input} value={editToolForm.serial_number || ''} onChange={e => setEditToolForm(f => ({ ...f, serial_number: e.target.value }))} /></div>
+                              <div><label style={s.label}>Condition</label><select style={s.input} value={editToolForm.condition || 'good'} onChange={e => setEditToolForm(f => ({ ...f, condition: e.target.value }))}><option value="good">Good</option><option value="fair">Fair</option><option value="poor">Poor</option></select></div>
+                            </div>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div><label style={s.label}>Status</label><select style={s.input} value={editToolForm.status || 'available'} onChange={e => setEditToolForm(f => ({ ...f, status: e.target.value }))}><option value="available">Available</option><option value="checked_out">Checked Out</option><option value="repair">In Repair</option><option value="lost">Lost</option></select></div>
+                              <div><label style={s.label}>Assign to Super</label><select style={s.input} value={editToolForm.assigned_to || ''} onChange={e => setEditToolForm(f => ({ ...f, assigned_to: e.target.value, status: e.target.value ? 'checked_out' : 'available' }))}><option value="">— Available —</option>{supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select></div>
+                              <div><label style={s.label}>Job Site</label><input style={s.input} value={editToolForm.job_site || ''} onChange={e => setEditToolForm(f => ({ ...f, job_site: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><input style={s.input} value={editToolForm.notes || ''} onChange={e => setEditToolForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button style={s.btnSm('orange')} onClick={saveToolEdit} disabled={savingToolEdit}>{savingToolEdit ? 'Saving...' : 'Save'}</button>
+                              <button style={s.btnSm('gray')} onClick={() => setEditingToolId(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ padding: '12px 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => { setExpandedToolId(x => x === t.id ? null : t.id); if (!toolLogs[t.id]) loadToolLogs(t.id) }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{t.name}</span>
+                                  <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: STATUS_COLORS[t.status] || '#888', border: '1px solid #2a2a2a' }}>{t.status?.replace('_', ' ').toUpperCase()}</span>
+                                  <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: '#555', border: '1px solid #2a2a2a' }}>{t.category}</span>
+                                  <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: COND_COLORS[t.condition] || '#888', border: '1px solid #2a2a2a' }}>{t.condition}</span>
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#555' }}>
+                                  {[t.brand, t.model].filter(Boolean).join(' ')}
+                                  {t.serial_number && ` · SN: ${t.serial_number}`}
+                                  {t.assigned_profile && <span style={{ color: '#e8590c' }}> · {t.assigned_profile.full_name}</span>}
+                                  {t.job_site && ` · ${t.job_site}`}
+                                  {t.purchase_cost && <span style={{ color: '#4ade80' }}> · ${Number(t.purchase_cost).toLocaleString()}</span>}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button style={s.btnSm('gray')} onClick={e => { e.stopPropagation(); setEditingToolId(t.id); setEditToolForm({ name: t.name, brand: t.brand || '', model: t.model || '', serial_number: t.serial_number || '', category: t.category || 'Other', purchase_date: t.purchase_date || '', purchase_cost: t.purchase_cost || '', condition: t.condition || 'good', status: t.status || 'available', assigned_to: t.assigned_to || '', job_site: t.job_site || '', notes: t.notes || '' }) }}>Edit</button>
+                                <button style={s.btnSm('red')} onClick={e => { e.stopPropagation(); deleteTool(t.id) }}>Delete</button>
+                                <span style={{ color: '#555', fontSize: '12px' }}>{isExpanded ? '▲' : '▼'}</span>
+                              </div>
+                            </div>
+                            {isExpanded && (
+                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem' }}>
+                                {logs.length === 0 ? <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No history yet.</p> : logs.map(l => (
+                                  <div key={l.id} style={{ padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #2a2a2a' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
+                                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      {l.assigned_profile?.full_name && <span style={{ fontSize: '12px', color: '#e8590c' }}>{l.assigned_profile.full_name}</span>}
+                                      {l.notes && <span style={{ fontSize: '12px', color: '#555' }}>· {l.notes}</span>}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </>

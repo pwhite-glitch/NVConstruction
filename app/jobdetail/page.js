@@ -355,6 +355,10 @@ export default function JobDetail() {
   const [editingNvSubId, setEditingNvSubId] = useState(null)
   const [editNvSubForm, setEditNvSubForm] = useState({})
   const [savingNvSub, setSavingNvSub] = useState(false)
+  const [expandedNvSubCOId, setExpandedNvSubCOId] = useState(null)
+  const [showNvSubCOFormFor, setShowNvSubCOFormFor] = useState(null)
+  const [nvSubCOForm, setNvSubCOForm] = useState({ description: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '' })
+  const [savingNvSubCO, setSavingNvSubCO] = useState(false)
 
   // Warranty state
   const [warrantySetting, setWarrantySetting] = useState(null)
@@ -1122,7 +1126,10 @@ export default function JobDetail() {
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-    const subNvTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+    const subNvTotal = nvSubcontracts.reduce((a, s) => {
+      const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+      return a + Number(s.contract_value || 0) + coAdj
+    }, 0)
     const baseContract = Number(job.contract_value || 0)
     const contractSumToDate = job.nv_role === 'sub'
       ? (subNvTotal > 0 ? subNvTotal : baseContract)
@@ -1361,6 +1368,41 @@ ${sovLines.length > 0 ? `
   async function deleteNvSubcontract(subId) {
     if (!confirm('Delete this subcontract?')) return
     await supabase.from('nv_subcontracts').delete().eq('id', subId)
+    await loadNvSubcontracts()
+  }
+
+  async function addNvSubCO(e, sc) {
+    e.preventDefault()
+    if (!nvSubCOForm.description.trim() || !nvSubCOForm.amount) return
+    setSavingNvSubCO(true)
+    const newCO = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+      description: nvSubCOForm.description.trim(),
+      amount: parseFloat(nvSubCOForm.amount),
+      date: nvSubCOForm.date,
+      notes: nvSubCOForm.notes.trim() || null,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    }
+    const existing = sc.change_orders || []
+    const { error } = await supabase.from('nv_subcontracts').update({ change_orders: [...existing, newCO] }).eq('id', sc.id)
+    setSavingNvSubCO(false)
+    if (error) { setErrMsg('Error saving CO: ' + error.message); setTimeout(() => setErrMsg(''), 4000); return }
+    setShowNvSubCOFormFor(null)
+    setNvSubCOForm({ description: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '' })
+    await loadNvSubcontracts()
+  }
+
+  async function updateNvSubCOStatus(sc, coId, status) {
+    const updated = (sc.change_orders || []).map(co => co.id === coId ? { ...co, status } : co)
+    await supabase.from('nv_subcontracts').update({ change_orders: updated }).eq('id', sc.id)
+    await loadNvSubcontracts()
+  }
+
+  async function deleteNvSubCO(sc, coId) {
+    if (!confirm('Delete this change order?')) return
+    const updated = (sc.change_orders || []).filter(co => co.id !== coId)
+    await supabase.from('nv_subcontracts').update({ change_orders: updated }).eq('id', sc.id)
     await loadNvSubcontracts()
   }
 
@@ -2747,7 +2789,10 @@ ${sovHtml}
       const genDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
       const approvedCOsTotal = (primeCOData || []).reduce((a, co) => a + Number(co.amount || 0), 0)
-      const subNvTotalReport = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+      const subNvTotalReport = nvSubcontracts.reduce((a, s) => {
+        const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+        return a + Number(s.contract_value || 0) + coAdj
+      }, 0)
       const baseContractReport = Number(job.contract_value || 0)
       const contractSumToDate = job.nv_role === 'sub'
         ? (subNvTotalReport > 0 ? subNvTotalReport : baseContractReport)
@@ -3173,7 +3218,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <div style={s.statLabel}>Contract sum to date</div>
             {(() => {
               const isSub = job.nv_role === 'sub'
-              const subTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+              const subTotal = nvSubcontracts.reduce((a, s) => {
+                const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+                return a + Number(s.contract_value || 0) + coAdj
+              }, 0)
               const approvedCOs = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
               const baseVal = parseFloat(job.contract_value || 0)
               const total = isSub ? (subTotal > 0 ? subTotal : baseVal) : baseVal + approvedCOs
@@ -3670,19 +3718,87 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sc.scope_description}</span>
                                 <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', color: statusColor, border: `1px solid ${statusColor}33`, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{sc.status}</span>
                               </div>
-                              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
                                 {sc.gc_name && <span style={{ fontSize: '12px', color: '#888' }}>{sc.gc_name}</span>}
                                 {sc.contract_number && <span style={{ fontSize: '12px', color: '#666' }}>#{sc.contract_number}</span>}
-                                {sc.contract_value && <span style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>${Number(sc.contract_value).toLocaleString()}</span>}
+                                {sc.contract_value != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>${Number(sc.contract_value).toLocaleString()} base</span>}
+                                {(() => {
+                                  const cos = sc.change_orders || []
+                                  const approvedAmt = cos.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+                                  const pendingCount = cos.filter(co => co.status === 'pending').length
+                                  return <>
+                                    {approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: approvedAmt >= 0 ? '#4ade80' : '#ff6b6b' }}>{approvedAmt >= 0 ? '+' : ''}${approvedAmt.toLocaleString()} COs</span>}
+                                    {sc.contract_value != null && approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${(Number(sc.contract_value) + approvedAmt).toLocaleString()} revised</span>}
+                                    {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>⏳ {pendingCount} pending CO{pendingCount !== 1 ? 's' : ''}</span>}
+                                  </>
+                                })()}
                                 {sc.signed_date && <span style={{ fontSize: '12px', color: '#555' }}>Signed {new Date(sc.signed_date + 'T12:00:00').toLocaleDateString()}</span>}
                               </div>
                               {sc.notes && <p style={{ fontSize: '12px', color: '#555', margin: '6px 0 0' }}>{sc.notes}</p>}
                             </div>
                             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                              <button style={s.btnSmall} type="button" onClick={() => setExpandedNvSubCOId(expandedNvSubCOId === sc.id ? null : sc.id)}>
+                                {expandedNvSubCOId === sc.id ? 'Hide COs' : `COs (${(sc.change_orders || []).length})`}
+                              </button>
                               <button style={s.btnSmall} type="button" onClick={() => { setEditingNvSubId(sc.id); setEditNvSubForm({ gc_name: sc.gc_name || '', contract_number: sc.contract_number || '', scope_description: sc.scope_description || '', contract_value: sc.contract_value || '', status: sc.status || 'active', signed_date: sc.signed_date || '', notes: sc.notes || '' }) }}>Edit</button>
                               <button style={s.btnSmallRed} type="button" onClick={() => deleteNvSubcontract(sc.id)}>Delete</button>
                             </div>
                           </div>
+
+                          {/* Change Orders panel */}
+                          {expandedNvSubCOId === sc.id && (
+                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1e1e1e' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Change Orders</span>
+                                <button style={s.btnSmallOrange} type="button" onClick={() => setShowNvSubCOFormFor(showNvSubCOFormFor === sc.id ? null : sc.id)}>
+                                  {showNvSubCOFormFor === sc.id ? 'Cancel' : '+ Add CO'}
+                                </button>
+                              </div>
+
+                              {showNvSubCOFormFor === sc.id && (
+                                <form onSubmit={e => addNvSubCO(e, sc)} style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                                  <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                                    <div><label style={s.label}>Description *</label><input style={s.input} required value={nvSubCOForm.description} onChange={e => setNvSubCOForm(f => ({ ...f, description: e.target.value }))} placeholder="GC issued CO for added scope..." /></div>
+                                    <div><label style={s.label}>Amount ($) *</label><input type="number" step="0.01" style={s.input} required value={nvSubCOForm.amount} onChange={e => setNvSubCOForm(f => ({ ...f, amount: e.target.value }))} placeholder="Positive or negative" /></div>
+                                  </div>
+                                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                                    <div><label style={s.label}>Date</label><input type="date" style={s.input} value={nvSubCOForm.date} onChange={e => setNvSubCOForm(f => ({ ...f, date: e.target.value }))} /></div>
+                                    <div><label style={s.label}>Notes</label><input style={s.input} value={nvSubCOForm.notes} onChange={e => setNvSubCOForm(f => ({ ...f, notes: e.target.value }))} placeholder="CO #, email ref, etc." /></div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <button type="submit" style={s.btn} disabled={savingNvSubCO}>{savingNvSubCO ? 'Saving...' : 'Add CO'}</button>
+                                    <span style={{ fontSize: '11px', color: '#555' }}>Status defaults to Pending — approve below once confirmed with GC</span>
+                                  </div>
+                                </form>
+                              )}
+
+                              {(sc.change_orders || []).length === 0 && !showNvSubCOFormFor && (
+                                <p style={{ fontSize: '13px', color: '#444', margin: 0 }}>No change orders yet.</p>
+                              )}
+
+                              {(sc.change_orders || []).map(co => (
+                                <div key={co.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid #1a1a1a', gap: '10px' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                                      <span style={{ fontSize: '13px', color: '#ccc' }}>{co.description}</span>
+                                      <span style={{ fontSize: '13px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', color: co.status === 'approved' ? '#4ade80' : co.status === 'rejected' ? '#ff6b6b' : '#f59e0b', border: '1px solid #2a2a2a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{co.status}</span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#555' }}>
+                                      {co.date && new Date(co.date + 'T12:00:00').toLocaleDateString()}
+                                      {co.notes && <span style={{ marginLeft: '8px' }}>· {co.notes}</span>}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                    {co.status !== 'approved' && <button style={s.btnSmallGreen} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'approved')}>Approve</button>}
+                                    {co.status !== 'pending' && <button style={s.btnSmall} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'pending')}>Pending</button>}
+                                    {co.status !== 'rejected' && <button style={s.btnSmallRed} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'rejected')}>Reject</button>}
+                                    <button style={s.btnSmallRed} type="button" onClick={() => deleteNvSubCO(sc, co.id)}>✕</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -3693,7 +3809,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '12px', color: '#555' }}>{nvSubcontracts.length} scope{nvSubcontracts.length !== 1 ? 's' : ''}</span>
                     <span style={{ fontSize: '14px', fontWeight: '700', color: '#4ade80' }}>
-                      Total: ${nvSubcontracts.filter(s => s.contract_value).reduce((a, s) => a + Number(s.contract_value), 0).toLocaleString()}
+                      Total: ${nvSubcontracts.reduce((a, s) => {
+                        const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+                        return a + Number(s.contract_value || 0) + coAdj
+                      }, 0).toLocaleString()}
                     </span>
                   </div>
                 )}
@@ -6528,7 +6647,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {job.nv_role === 'sub' ? (
                 nvSubcontracts.length > 0 && (
                   <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
-                    GC contract total: <strong style={{ color: '#f1f1f1' }}>${nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0).toLocaleString()}</strong>
+                    GC contract total: <strong style={{ color: '#f1f1f1' }}>${nvSubcontracts.reduce((a, s) => {
+                      const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+                      return a + Number(s.contract_value || 0) + coAdj
+                    }, 0).toLocaleString()}</strong>
                     <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— {nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}, manage in the Details tab</span>
                   </p>
                 )
@@ -6545,7 +6667,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             {(() => {
               const isSub = job.nv_role === 'sub'
               const approvedCOsTotal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-              const subContractsTotal = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+              const subContractsTotal = nvSubcontracts.reduce((a, s) => {
+                const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+                return a + Number(s.contract_value || 0) + coAdj
+              }, 0)
               const baseContractBanner = Number(job.contract_value || 0)
               const contractSumToDate = isSub ? (subContractsTotal > 0 ? subContractsTotal : baseContractBanner) : baseContractBanner + approvedCOsTotal
               const subUsingJobValue = isSub && subContractsTotal === 0
@@ -7061,7 +7186,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {(() => {
                                   const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(activeAia.retainage_pct)) ? 10 : parseFloat(activeAia.retainage_pct))) / 100
                                   const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-                                  const subNvTotalAia = nvSubcontracts.reduce((a, s) => a + Number(s.contract_value || 0), 0)
+                                  const subNvTotalAia = nvSubcontracts.reduce((a, s) => {
+                                    const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+                                    return a + Number(s.contract_value || 0) + coAdj
+                                  }, 0)
                                   const isSubAia = job.nv_role === 'sub'
                                   const baseContractAia = Number(job.contract_value || 0)
                                   const contractSumToDate = isSubAia ? (subNvTotalAia > 0 ? subNvTotalAia : baseContractAia) : baseContractAia + approvedCOsVal

@@ -145,6 +145,12 @@ export default function Submit() {
   const [savingCOResponse, setSavingCOResponse] = useState(false)
   const [coResponseMsg, setCoResponseMsg] = useState({})
 
+  // Sub-initiated CO request state
+  const [showCORequestFor, setShowCORequestFor] = useState(null)
+  const [coRequestForm, setCoRequestForm] = useState({ description: '', amount: '', notes: '' })
+  const [submittingCORequest, setSubmittingCORequest] = useState(false)
+  const [coRequestMsg, setCoRequestMsg] = useState({})
+
   // Lien waiver state
   const [lienWaiverSub, setLienWaiverSub] = useState(null)
   const [signerName, setSignerName] = useState('')
@@ -413,6 +419,34 @@ export default function Submit() {
       await loadMyCOs(co.subcontract_id)
     } else {
       alert(data.error || 'Failed to submit response')
+    }
+  }
+
+  async function submitCORequest(e, contractId) {
+    e.preventDefault()
+    if (!coRequestForm.description.trim() || !coRequestForm.amount) return
+    setSubmittingCORequest(true)
+    const res = await fetch('/api/sub-co-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subcontract_id: contractId,
+        sub_user_id: user.id,
+        description: coRequestForm.description,
+        amount: coRequestForm.amount,
+        notes: coRequestForm.notes,
+      }),
+    })
+    const data = await res.json()
+    setSubmittingCORequest(false)
+    if (data.ok) {
+      setShowCORequestFor(null)
+      setCoRequestForm({ description: '', amount: '', notes: '' })
+      setCoRequestMsg(prev => ({ ...prev, [contractId]: 'CO request submitted — pending PM approval.' }))
+      setTimeout(() => setCoRequestMsg(prev => ({ ...prev, [contractId]: '' })), 5000)
+      await loadMyCOs(contractId)
+    } else {
+      alert(data.error || 'Failed to submit CO request')
     }
   }
 
@@ -1220,15 +1254,21 @@ export default function Submit() {
                         Change orders ({cos.length})
                       </p>
                       {cos.length === 0 ? (
-                        <p style={{ fontSize: '13px', color: '#444' }}>No change orders.</p>
+                        <p style={{ fontSize: '13px', color: '#444' }}>No change orders yet.</p>
                       ) : cos.map(co => (
                         <div key={co.id}>
                           <div style={s.coRow}>
                             <div style={{ flex: 1 }}>
                               <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
                               <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
-                                {co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'} · {new Date(co.created_at).toLocaleDateString()}
+                                {co.direction === 'pm_to_sub' ? 'NV → You' : 'Your request'} · {new Date(co.created_at).toLocaleDateString()}
                               </span>
+                              {co.direction === 'sub_to_pm' && co.status === 'pending' && (
+                                <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px', fontWeight: '700' }}>⏳ Awaiting PM approval</span>
+                              )}
+                              {co.direction === 'sub_to_pm' && co.status === 'approved' && (
+                                <span style={{ fontSize: '11px', color: '#4ade80', marginLeft: '8px', fontWeight: '700' }}>✓ Approved — added to your SOV</span>
+                              )}
                               {co.dispute_reason && (
                                 <div style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px' }}>Dispute: {co.dispute_reason}</div>
                               )}
@@ -1278,6 +1318,72 @@ export default function Submit() {
                           )}
                         </div>
                       ))}
+
+                      {/* Sub-initiated CO request section */}
+                      {coRequestMsg[c.id] && (
+                        <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#4ade80', marginTop: '1rem' }}>
+                          {coRequestMsg[c.id]}
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #1e1e1e' }}>
+                        {showCORequestFor !== c.id ? (
+                          <button
+                            style={{ padding: '8px 18px', background: '#1a1200', border: '1px solid #4a2a00', borderRadius: '7px', color: '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                            onClick={() => { setShowCORequestFor(c.id); setCoRequestForm({ description: '', amount: '', notes: '' }) }}
+                          >+ Request Change Order</button>
+                        ) : (
+                          <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem' }}>
+                            <p style={{ margin: '0 0 1rem', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>New CO Request — Sub → PM</p>
+                            <form onSubmit={e => submitCORequest(e, c.id)}>
+                              <div style={{ marginBottom: '12px' }}>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Description *</label>
+                                <input
+                                  required
+                                  style={s.input}
+                                  value={coRequestForm.description}
+                                  onChange={e => setCoRequestForm(f => ({ ...f, description: e.target.value }))}
+                                  placeholder="Describe the additional scope or change..."
+                                />
+                              </div>
+                              <div style={{ marginBottom: '12px' }}>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Amount ($) *</label>
+                                <input
+                                  required
+                                  type="number"
+                                  step="0.01"
+                                  style={s.input}
+                                  value={coRequestForm.amount}
+                                  onChange={e => setCoRequestForm(f => ({ ...f, amount: e.target.value }))}
+                                  placeholder="Enter positive or negative amount..."
+                                />
+                              </div>
+                              <div style={{ marginBottom: '14px' }}>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Supporting notes</label>
+                                <textarea
+                                  rows={3}
+                                  style={{ ...s.input, resize: 'vertical' }}
+                                  value={coRequestForm.notes}
+                                  onChange={e => setCoRequestForm(f => ({ ...f, notes: e.target.value }))}
+                                  placeholder="Justification, reference to RFI, email thread, etc..."
+                                />
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                  type="submit"
+                                  disabled={submittingCORequest}
+                                  style={{ padding: '9px 20px', background: '#e8590c', border: 'none', borderRadius: '7px', color: 'white', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: submittingCORequest ? 0.6 : 1 }}
+                                >{submittingCORequest ? 'Submitting...' : 'Submit Request'}</button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCORequestFor(null)}
+                                  style={{ padding: '9px 18px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '7px', color: '#888', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+                                >Cancel</button>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

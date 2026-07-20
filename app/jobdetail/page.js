@@ -2244,12 +2244,24 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await supabase.from('change_orders').update({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq('id', coId)
     if (status === 'approved') {
       const co = allCOs.find(c => c.id === coId)
+      // Update budget items for PM-to-sub COs with linked SOV items
       for (const sovItem of co?.sov || []) {
         if (!sovItem.budget_item_id || !sovItem.amount) continue
         const { data: item } = await supabase.from('budget_items').select('budget_amount').eq('id', sovItem.budget_item_id).single()
         if (item) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) } }) })
       }
       await loadBudgetItems()
+      // For sub-initiated COs, auto-create a subcontract SOV line so billing picks it up
+      if (co?.direction === 'sub_to_pm' && co?.subcontract_id && co?.amount) {
+        const { data: existingLines } = await supabase.from('subcontract_sov_lines').select('sort_order').eq('subcontract_id', co.subcontract_id).order('sort_order', { ascending: false }).limit(1)
+        const nextSort = (existingLines?.[0]?.sort_order || 0) + 1
+        await supabase.from('subcontract_sov_lines').insert({
+          subcontract_id: co.subcontract_id,
+          description: `CO: ${co.description}`,
+          scheduled_value: parseFloat(co.amount),
+          sort_order: nextSort,
+        })
+      }
     }
     await loadAllCOs()
     await loadContracts()

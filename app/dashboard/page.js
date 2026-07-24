@@ -357,7 +357,7 @@ export default function Dashboard() {
   async function loadAll(jobIds = null) {
     const ids = jobIds !== undefined ? jobIds : assignedJobIds
     let billingQ = supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').order('submitted_at', { ascending: false })
-    let jobsQ = supabase.from('jobs').select('*').order('created_at', { ascending: false })
+    let jobsQ = supabase.from('jobs').select('*').order('project_name', { ascending: true })
     let asgnQ = supabase.from('job_assignments').select('*, jobs(job_number, project_name)').order('invited_at', { ascending: false })
     if (ids !== null && ids.length > 0) {
       billingQ = billingQ.in('job_id', ids)
@@ -984,21 +984,35 @@ export default function Dashboard() {
     const jobId = teamAssignTarget[member.id]
     if (!jobId) return
     setTeamAssigningId(member.id)
-    const { data: { session } } = await supabase.auth.getSession()
-    const { error } = await supabase.from('pm_job_assignments').insert({ job_id: jobId, user_id: member.id, assigned_by: session.user.id })
-    if (error) {
-      setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: error.code === '23505' ? 'Already assigned.' : 'Error: ' + error.message, ok: false } }))
-    } else {
-      await loadTeamData()
-      setTeamAssignTarget(prev => ({ ...prev, [member.id]: '' }))
-      setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: 'Assigned.', ok: true } }))
-      setTimeout(() => setTeamAssignMsg(prev => { const n = { ...prev }; delete n[member.id]; return n }), 3000)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/pm-job-assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, user_id: member.id, assigned_by: session?.user?.id }),
+      })
+      const json = await res.json()
+      if (json.error) {
+        setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: json.error === 'already_assigned' ? 'Already assigned.' : 'Error: ' + json.error, ok: false } }))
+      } else {
+        await loadTeamData()
+        setTeamAssignTarget(prev => ({ ...prev, [member.id]: '' }))
+        setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: 'Assigned.', ok: true } }))
+        setTimeout(() => setTeamAssignMsg(prev => { const n = { ...prev }; delete n[member.id]; return n }), 3000)
+      }
+    } catch (e) {
+      setTeamAssignMsg(prev => ({ ...prev, [member.id]: { text: 'Error: ' + e.message, ok: false } }))
+    } finally {
+      setTeamAssigningId(null)
     }
-    setTeamAssigningId(null)
   }
 
   async function removeApmFromJob(assignId) {
-    await supabase.from('pm_job_assignments').delete().eq('id', assignId)
+    await fetch('/api/pm-job-assignments', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: assignId }),
+    })
     await loadTeamData()
   }
 

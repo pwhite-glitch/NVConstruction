@@ -255,6 +255,10 @@ export default function JobDetail() {
   const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
+  // Per-subcontract AIA (nv_role === 'sub')
+  const [showNewNvSubAia, setShowNewNvSubAia] = useState(null) // nv_subcontract_id | null
+  const [newNvSubAiaForm, setNewNvSubAiaForm] = useState({ period_from: '', period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
+  const [savingNvSubAia, setSavingNvSubAia] = useState(false)
   const [paymentForm, setPaymentForm] = useState({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
   const [savingPayment, setSavingPayment] = useState(false)
   const [periodDirectCosts, setPeriodDirectCosts] = useState([])
@@ -808,6 +812,51 @@ export default function JobDetail() {
     setAiaLoading(true)
     setActiveAia(app)
     setAppliedBillings(new Set())
+
+    if (app.nv_subcontract_id) {
+      const { data: prevAppsData } = await supabase.from('aia_applications')
+        .select('id, app_number')
+        .eq('nv_subcontract_id', app.nv_subcontract_id)
+        .lt('app_number', app.app_number)
+        .order('app_number', { ascending: true })
+      const prevApps = prevAppsData || []
+      const [{ data: lines }, { data: prevAppLines }] = await Promise.all([
+        supabase.from('aia_application_lines').select('*').eq('application_id', app.id),
+        prevApps.length > 0
+          ? supabase.from('aia_application_lines').select('*').in('application_id', prevApps.map(a => a.id))
+          : Promise.resolve({ data: [] }),
+      ])
+      const dollarPrevByDesc = {}
+      for (const pa of prevApps) {
+        for (const l of (prevAppLines || []).filter(x => x.application_id === pa.id)) {
+          if (!l.line_description) continue
+          dollarPrevByDesc[l.line_description] = (dollarPrevByDesc[l.line_description] || 0) + (l.dollar_this_period != null ? Number(l.dollar_this_period) : 0)
+        }
+      }
+      setAiaLines((lines || []).map(l => {
+        const sched = Number(l.scheduled_value || 0)
+        const dollarPrev = prevApps.length > 0 ? (dollarPrevByDesc[l.line_description] || 0) : (l.dollar_prev != null ? Number(l.dollar_prev) : 0)
+        const dollarThis = l.dollar_this_period != null ? Number(l.dollar_this_period) : 0
+        return {
+          id: l.id,
+          nv_sub_mode: true,
+          line_description: l.line_description,
+          scheduled_value: sched,
+          budget_amount: sched,
+          description: l.line_description,
+          cost_code: null,
+          pct_prev: String(sched > 0 ? dollarPrev / sched * 100 : 0),
+          dollar_prev: dollarPrev,
+          pct_this: String(sched > 0 ? dollarThis / sched * 100 : 0),
+          dollar_this: dollarThis,
+        }
+      }))
+      setPeriodBilling([])
+      setPeriodDirectCosts([])
+      setAiaLoading(false)
+      return
+    }
+
     const monthPrefix = app.period_to ? app.period_to.slice(0, 7) + '-01' : null
     const linkedDrawId = app.linked_draw_request_id || null
     const prevApps = aiaApplications
@@ -1032,6 +1081,64 @@ export default function JobDetail() {
     setSavingAia(false)
   }
 
+  async function createNvSubAiaApplication(e, sc) {
+    e.preventDefault()
+    if (!newNvSubAiaForm.period_to) return
+    setSavingNvSubAia(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const { data: scAppsData } = await supabase.from('aia_applications')
+      .select('id, app_number')
+      .eq('nv_subcontract_id', sc.id)
+      .order('app_number', { ascending: false })
+    const scApps = scAppsData || []
+    const appNum = (scApps[0]?.app_number || 0) + 1
+    const [year, month] = newNvSubAiaForm.period_to.split('-').map(Number)
+    const periodTo = new Date(year, month, 0).toISOString().split('T')[0]
+    const periodFrom = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
+    const { data: newApp, error } = await supabase.from('aia_applications').insert({
+      job_id: id,
+      nv_subcontract_id: sc.id,
+      app_number: appNum,
+      period_from: periodFrom,
+      period_to: periodTo,
+      retainage_pct: isNaN(parseFloat(newNvSubAiaForm.retainage_pct)) ? 10 : parseFloat(newNvSubAiaForm.retainage_pct),
+      markup_pct: parseFloat(newNvSubAiaForm.markup_pct) || 0,
+      created_by: session.user.id,
+    }).select().single()
+    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setSavingNvSubAia(false); return }
+    // Carry dollar_prev from previous app lines (matched by line_description)
+    const prevDollarByDesc = {}
+    if (scApps.length > 0) {
+      const { data: prevLines } = await supabase.from('aia_application_lines').select('*').eq('application_id', scApps[0].id)
+      for (const l of (prevLines || [])) {
+        if (l.line_description) {
+          prevDollarByDesc[l.line_description] = (l.dollar_prev != null ? Number(l.dollar_prev) : 0) + (l.dollar_this_period != null ? Number(l.dollar_this_period) : 0)
+        }
+      }
+    }
+    const approvedCOs = (sc.change_orders || []).filter(co => co.status === 'approved')
+    const lineDescriptions = [
+      { description: sc.scope_description || sc.gc_name || 'Base Contract', amount: Number(sc.contract_value || 0) },
+      ...approvedCOs.map(co => ({ description: `CO: ${co.description}`, amount: Number(co.amount || 0) })),
+    ]
+    await supabase.from('aia_application_lines').insert(
+      lineDescriptions.map(ln => ({
+        application_id: newApp.id,
+        line_description: ln.description,
+        scheduled_value: ln.amount,
+        dollar_prev: prevDollarByDesc[ln.description] || 0,
+        pct_prev: 0,
+        pct_this_period: 0,
+        dollar_this_period: 0,
+      }))
+    )
+    const updatedApps = await loadAiaApplications()
+    setShowNewNvSubAia(null)
+    const created = updatedApps.find(a => a.id === newApp.id) || newApp
+    await openAiaApp(created)
+    setSavingNvSubAia(false)
+  }
+
   async function saveAiaLines() {
     if (!activeAia) return
     setSavingAia(true)
@@ -1048,11 +1155,12 @@ export default function JobDetail() {
       const pctToSave = scheduled > 0 && dollarToSave != null
         ? dollarToSave / scheduled * 100
         : parseFloat(line.pct_this) || 0
-      await supabase.from('aia_application_lines').update({
-        pct_this_period: pctToSave,
-        dollar_this_period: dollarToSave,
-        dollar_prev: line.dollar_prev != null ? Number(line.dollar_prev) : null,
-      }).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
+      const updates = { pct_this_period: pctToSave, dollar_this_period: dollarToSave, dollar_prev: line.dollar_prev != null ? Number(line.dollar_prev) : null }
+      if (line.nv_sub_mode) {
+        await supabase.from('aia_application_lines').update(updates).eq('id', line.id)
+      } else {
+        await supabase.from('aia_application_lines').update(updates).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
+      }
     }
     await loadAiaApplications()
     setSavingAia(false)
@@ -1131,10 +1239,12 @@ export default function JobDetail() {
       return a + Number(s.contract_value || 0) + coAdj
     }, 0)
     const baseContract = Number(job.contract_value || 0)
-    const contractSumToDate = job.nv_role === 'sub'
-      ? (subNvTotal > 0 ? subNvTotal : baseContract)
-      : baseContract + approvedCOsVal
-    const origContract = job.nv_role === 'sub' ? contractSumToDate : baseContract
+    const contractSumToDate = app.nv_subcontract_id
+      ? aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
+      : job.nv_role === 'sub'
+        ? (subNvTotal > 0 ? subNvTotal : baseContract)
+        : baseContract + approvedCOsVal
+    const origContract = (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
     const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
     const genDate = new Date().toLocaleDateString()
     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -6719,148 +6829,247 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             })()}
 
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>
-                  {job.billing_type === 'draw_request' ? `Draw Requests (${aiaApplications.length})` : `AIA Applications (${aiaApplications.length})`}
-                </p>
-                {!showNewAia && (
-                  <button style={s.btnSmallOrange} onClick={() => {
-                    setShowNewAia(true)
-                    setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
-                  }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
-                )}
-              </div>
-
-              {showNewAia && (() => {
-                const isDrawType = job.billing_type === 'draw_request'
-                const isBiweekly = !isDrawType && (form.owner_billing_frequency || form.billing_frequency || 'monthly') === 'biweekly'
-                const canCreate = !savingAia && budgetItems.length > 0 && (isDrawType ? !!newAiaForm.linked_draw_request_id : newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from))
-                return (
-                <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
-                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{isDrawType ? 'New Draw Request' : 'New AIA Application'}</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
-                    <div>
-                      <label style={s.label}>Draw #</label>
-                      <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
-                    </div>
-                    {isDrawType ? (
-                      <div>
-                        <label style={s.label}>Link to sub draw request</label>
-                        <select style={s.input} value={newAiaForm.linked_draw_request_id} onChange={e => {
-                          const dr = drawRequests.find(d => d.id === e.target.value)
-                          setNewAiaForm(f => ({ ...f, linked_draw_request_id: e.target.value, app_number: dr ? String(dr.draw_number) : f.app_number }))
-                        }}>
-                          <option value="">— Select sub draw request —</option>
-                          {drawRequests.filter(d => d.status === 'open').map(d => (
-                            <option key={d.id} value={d.id}>{d.title}</option>
-                          ))}
-                          {drawRequests.filter(d => d.status !== 'open').length > 0 && (
-                            <optgroup label="Closed">
-                              {drawRequests.filter(d => d.status !== 'open').map(d => (
-                                <option key={d.id} value={d.id}>{d.title} (closed)</option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                      </div>
-                    ) : isBiweekly ? (
-                      <>
-                        <div>
-                          <label style={s.label}>Period from</label>
-                          <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
-                        </div>
-                        <div>
-                          <label style={s.label}>Period to</label>
-                          <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
-                        </div>
-                      </>
-                    ) : (
-                      <div>
-                        <label style={s.label}>Billing period</label>
-                        <select style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))}>
-                          <option value="">Select month...</option>
-                          {(() => {
-                            const opts = []
-                            const now = new Date()
-                            for (let i = 24; i >= -6; i--) {
-                              const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-                              const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-                              const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                              opts.push(<option key={val} value={val}>{label}</option>)
-                            }
-                            return opts
-                          })()}
-                        </select>
-                      </div>
-                    )}
-                    <div>
-                      <label style={s.label}>Retainage %</label>
-                      <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
-                    </div>
-                    <div>
-                      <label style={s.label}>Markup %</label>
-                      <input type="number" min="0" step="0.5" style={s.input} value={newAiaForm.markup_pct} onChange={e => setNewAiaForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
-                    </div>
-                  </div>
-                  {aiaApplications.length > 0 && (
-                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 12px' }}>
-                      % complete from App #{aiaApplications[0].app_number} will auto-carry forward as "Previous" on this application.
-                    </p>
-                  )}
-                  {budgetItems.length === 0 && (
-                    <p style={{ fontSize: '12px', color: '#e8590c', margin: '0 0 12px' }}>Add budget line items in the Budget tab first — they become the G703 schedule of values.</p>
-                  )}
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{ ...s.btn, opacity: canCreate ? 1 : 0.6 }}
-                      disabled={!canCreate}
-                      onClick={createAiaApplication}>
-                      {savingAia ? 'Creating...' : 'Create application'}
-                    </button>
-                    <button style={s.btnGray} onClick={() => setShowNewAia(false)}>Cancel</button>
-                  </div>
-                </div>
-                )
-              })()}
-
-              {aiaApplications.length === 0 && !showNewAia && (
-                <p style={{ color: '#444', fontSize: '14px' }}>
-                  {job.billing_type === 'draw_request' ? 'No draw requests yet. Create your first draw request above.' : 'No AIA applications yet. Create your first application above to get started.'}
-                </p>
-              )}
-
-              {aiaApplications.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '1rem' }}>
-                  {aiaApplications.map(app => {
-                    const isActivePill = activeAia?.id === app.id
-                    const isCert = app.status === 'certified'
-                    const isSub = app.status === 'submitted'
-                    const shortLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : ''
+              {job.nv_role === 'sub' && nvSubcontracts.length > 0 ? (
+                /* Per-subcontract AIA navigation — one section per GC contract */
+                <div>
+                  <p style={{ ...s.cardTitle, margin: '0 0 1.25rem' }}>AIA Applications by GC Contract</p>
+                  {nvSubcontracts.map((sc, scIdx) => {
+                    const scApps = aiaApplications.filter(a => a.nv_subcontract_id === sc.id).sort((a, b) => a.app_number - b.app_number)
+                    const scCOAdj = (sc.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+                    const scTotal = Number(sc.contract_value || 0) + scCOAdj
+                    const isShowingForm = showNewNvSubAia === sc.id
                     return (
-                      <button
-                        key={app.id}
-                        onClick={() => openAiaApp(app)}
-                        title={shortLabel}
-                        style={{
-                          padding: '5px 12px',
-                          background: isActivePill ? '#2a1200' : isCert ? '#0a1a0a' : isSub ? '#1a1400' : '#111',
-                          color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSub ? '#facc15' : '#666',
-                          border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#1a4a1a' : isSub ? '#4a3800' : '#2a2a2a'}`,
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          fontWeight: isActivePill ? '700' : '500',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
-                        {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
-                      </button>
+                      <div key={sc.id} style={{ borderTop: scIdx > 0 ? '1px solid #1a1a1a' : 'none', paddingTop: scIdx > 0 ? '1.25rem' : 0, marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                          <div>
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{sc.gc_name || 'GC Subcontract'}</span>
+                            {sc.scope_description && <span style={{ fontSize: '12px', color: '#555', marginLeft: '8px' }}>{sc.scope_description}</span>}
+                            <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px', fontFamily: 'monospace' }}>${scTotal.toLocaleString()}</span>
+                            {scCOAdj !== 0 && <span style={{ fontSize: '11px', color: '#facc15', marginLeft: '4px' }}>({scCOAdj >= 0 ? '+' : ''}{scCOAdj.toLocaleString()} COs)</span>}
+                          </div>
+                          {!isShowingForm && (
+                            <button style={s.btnSmallOrange} onClick={() => {
+                              setShowNewNvSubAia(sc.id)
+                              setNewNvSubAiaForm({ period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
+                            }}>+ New application</button>
+                          )}
+                        </div>
+                        {isShowingForm && (
+                          <form onSubmit={e => createNvSubAiaApplication(e, sc)} style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
+                            <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application — {sc.gc_name}</p>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
+                              <div>
+                                <label style={s.label}>Billing period</label>
+                                <select style={s.input} value={newNvSubAiaForm.period_to} onChange={e => setNewNvSubAiaForm(f => ({ ...f, period_to: e.target.value }))}>
+                                  <option value="">Select month...</option>
+                                  {(() => {
+                                    const opts = []; const now = new Date()
+                                    for (let i = 24; i >= -6; i--) {
+                                      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                                      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                                      opts.push(<option key={val} value={val}>{d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</option>)
+                                    }
+                                    return opts
+                                  })()}
+                                </select>
+                              </div>
+                              <div>
+                                <label style={s.label}>Retainage %</label>
+                                <input type="number" min="0" max="100" step="0.5" style={s.input} value={newNvSubAiaForm.retainage_pct} onChange={e => setNewNvSubAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                              </div>
+                              <div>
+                                <label style={s.label}>Markup %</label>
+                                <input type="number" min="0" step="0.5" style={s.input} value={newNvSubAiaForm.markup_pct} onChange={e => setNewNvSubAiaForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
+                              </div>
+                            </div>
+                            <p style={{ fontSize: '11px', color: '#555', margin: '0 0 12px' }}>
+                              G703 lines: {sc.scope_description || 'Base Contract'} + {(sc.change_orders || []).filter(co => co.status === 'approved').length} approved CO{(sc.change_orders || []).filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button type="submit" style={{ ...s.btn, opacity: !savingNvSubAia && newNvSubAiaForm.period_to ? 1 : 0.6 }} disabled={savingNvSubAia || !newNvSubAiaForm.period_to}>
+                                {savingNvSubAia ? 'Creating...' : 'Create application'}
+                              </button>
+                              <button type="button" style={s.btnGray} onClick={() => setShowNewNvSubAia(null)}>Cancel</button>
+                            </div>
+                          </form>
+                        )}
+                        {scApps.length === 0 && !isShowingForm && (
+                          <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No applications yet.</p>
+                        )}
+                        {scApps.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {scApps.map(app => {
+                              const isActivePill = activeAia?.id === app.id
+                              const isCert = app.status === 'certified'
+                              const isSubStatus = app.status === 'submitted'
+                              const shortLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : `App #${app.app_number}`
+                              return (
+                                <button key={app.id} onClick={() => openAiaApp(app)} title={shortLabel} style={{
+                                  padding: '5px 12px', background: isActivePill ? '#2a1200' : isCert ? '#0a1a0a' : isSubStatus ? '#1a1400' : '#111',
+                                  color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSubStatus ? '#facc15' : '#666',
+                                  border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#1a4a1a' : isSubStatus ? '#4a3800' : '#2a2a2a'}`,
+                                  borderRadius: '6px', fontSize: '12px', fontWeight: isActivePill ? '700' : '500',
+                                  cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
+                                }}>
+                                  App #{app.app_number}
+                                  <span style={{ fontSize: '10px', color: isActivePill ? '#e8590c88' : '#444' }}>{shortLabel}</span>
+                                  {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
+                  {aiaApplications.filter(a => a.nv_subcontract_id).length === 0 && nvSubcontracts.length > 0 && (
+                    <p style={{ color: '#555', fontSize: '12px', marginTop: '0.5rem' }}>Click "+ New application" next to a contract above to create your first billing application.</p>
+                  )}
                 </div>
+              ) : (
+                /* Standard flat list for GC jobs */
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <p style={{ ...s.cardTitle, margin: 0 }}>
+                      {job.billing_type === 'draw_request' ? `Draw Requests (${aiaApplications.length})` : `AIA Applications (${aiaApplications.length})`}
+                    </p>
+                    {!showNewAia && (
+                      <button style={s.btnSmallOrange} onClick={() => {
+                        setShowNewAia(true)
+                        setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
+                      }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
+                    )}
+                  </div>
+                  {showNewAia && (() => {
+                    const isDrawType = job.billing_type === 'draw_request'
+                    const isBiweekly = !isDrawType && (form.owner_billing_frequency || form.billing_frequency || 'monthly') === 'biweekly'
+                    const canCreate = !savingAia && budgetItems.length > 0 && (isDrawType ? !!newAiaForm.linked_draw_request_id : newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from))
+                    return (
+                    <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
+                      <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{isDrawType ? 'New Draw Request' : 'New AIA Application'}</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
+                        <div>
+                          <label style={s.label}>Draw #</label>
+                          <input type="number" min="1" style={s.input} value={newAiaForm.app_number} onChange={e => setNewAiaForm(f => ({ ...f, app_number: e.target.value }))} />
+                        </div>
+                        {isDrawType ? (
+                          <div>
+                            <label style={s.label}>Link to sub draw request</label>
+                            <select style={s.input} value={newAiaForm.linked_draw_request_id} onChange={e => {
+                              const dr = drawRequests.find(d => d.id === e.target.value)
+                              setNewAiaForm(f => ({ ...f, linked_draw_request_id: e.target.value, app_number: dr ? String(dr.draw_number) : f.app_number }))
+                            }}>
+                              <option value="">— Select sub draw request —</option>
+                              {drawRequests.filter(d => d.status === 'open').map(d => (
+                                <option key={d.id} value={d.id}>{d.title}</option>
+                              ))}
+                              {drawRequests.filter(d => d.status !== 'open').length > 0 && (
+                                <optgroup label="Closed">
+                                  {drawRequests.filter(d => d.status !== 'open').map(d => (
+                                    <option key={d.id} value={d.id}>{d.title} (closed)</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                          </div>
+                        ) : isBiweekly ? (
+                          <>
+                            <div>
+                              <label style={s.label}>Period from</label>
+                              <input type="date" style={s.input} value={newAiaForm.period_from} onChange={e => setNewAiaForm(f => ({ ...f, period_from: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label style={s.label}>Period to</label>
+                              <input type="date" style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))} />
+                            </div>
+                          </>
+                        ) : (
+                          <div>
+                            <label style={s.label}>Billing period</label>
+                            <select style={s.input} value={newAiaForm.period_to} onChange={e => setNewAiaForm(f => ({ ...f, period_to: e.target.value }))}>
+                              <option value="">Select month...</option>
+                              {(() => {
+                                const opts = []
+                                const now = new Date()
+                                for (let i = 24; i >= -6; i--) {
+                                  const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+                                  const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                                  const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                                  opts.push(<option key={val} value={val}>{label}</option>)
+                                }
+                                return opts
+                              })()}
+                            </select>
+                          </div>
+                        )}
+                        <div>
+                          <label style={s.label}>Retainage %</label>
+                          <input type="number" min="0" max="100" step="0.5" style={s.input} value={newAiaForm.retainage_pct} onChange={e => setNewAiaForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Markup %</label>
+                          <input type="number" min="0" step="0.5" style={s.input} value={newAiaForm.markup_pct} onChange={e => setNewAiaForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
+                        </div>
+                      </div>
+                      {aiaApplications.length > 0 && (
+                        <p style={{ fontSize: '11px', color: '#555', margin: '0 0 12px' }}>
+                          % complete from App #{aiaApplications[0].app_number} will auto-carry forward as "Previous" on this application.
+                        </p>
+                      )}
+                      {budgetItems.length === 0 && (
+                        <p style={{ fontSize: '12px', color: '#e8590c', margin: '0 0 12px' }}>Add budget line items in the Budget tab first — they become the G703 schedule of values.</p>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button style={{ ...s.btn, opacity: canCreate ? 1 : 0.6 }}
+                          disabled={!canCreate}
+                          onClick={createAiaApplication}>
+                          {savingAia ? 'Creating...' : 'Create application'}
+                        </button>
+                        <button style={s.btnGray} onClick={() => setShowNewAia(false)}>Cancel</button>
+                      </div>
+                    </div>
+                    )
+                  })()}
+                  {aiaApplications.length === 0 && !showNewAia && (
+                    <p style={{ color: '#444', fontSize: '14px' }}>
+                      {job.billing_type === 'draw_request' ? 'No draw requests yet. Create your first draw request above.' : 'No AIA applications yet. Create your first application above to get started.'}
+                    </p>
+                  )}
+                  {aiaApplications.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '1rem' }}>
+                      {aiaApplications.map(app => {
+                        const isActivePill = activeAia?.id === app.id
+                        const isCert = app.status === 'certified'
+                        const isSub = app.status === 'submitted'
+                        const shortLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : ''
+                        return (
+                          <button
+                            key={app.id}
+                            onClick={() => openAiaApp(app)}
+                            title={shortLabel}
+                            style={{
+                              padding: '5px 12px',
+                              background: isActivePill ? '#2a1200' : isCert ? '#0a1a0a' : isSub ? '#1a1400' : '#111',
+                              color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSub ? '#facc15' : '#666',
+                              border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#1a4a1a' : isSub ? '#4a3800' : '#2a2a2a'}`,
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: isActivePill ? '700' : '500',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
+                            {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
               )}
 
               {activeAia && (() => {
@@ -7107,9 +7316,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           : Math.round(scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
                                         const total = prevAmt + thisAmt
                                         const balance = scheduled - total
-                                        const isPinnedRow = pinnedLineIds.has(line.budget_item_id)
+                                        const isPinnedRow = !line.nv_sub_mode && pinnedLineIds.has(line.budget_item_id)
+                                        const lineKey = line.nv_sub_mode ? line.id : line.budget_item_id
                                         return (
-                                          <tr key={line.budget_item_id} style={{ borderBottom: '1px solid #111', background: isPinnedRow ? '#1a0e00' : 'transparent' }}>
+                                          <tr key={lineKey} style={{ borderBottom: '1px solid #111', background: isPinnedRow ? '#1a0e00' : 'transparent' }}>
                                             <td style={{ padding: '10px', color: '#ccc' }}>
                                               {line.cost_code && <span style={{ fontSize: '10px', color: '#555', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
                                               {line.description}
@@ -7121,7 +7331,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             </td>
                                             <td style={{ padding: '6px 8px' }}>
                                               {(() => {
-                                                const isPinned = pinnedLineIds.has(line.budget_item_id)
+                                                const isPinned = !line.nv_sub_mode && pinnedLineIds.has(line.budget_item_id)
                                                 const dollarVal = line.dollar_this !== undefined ? Number(line.dollar_this) : (scheduled > 0 ? scheduled * (parseFloat(line.pct_this) || 0) / 100 : 0)
                                                 const pctDisplay = scheduled > 0 && dollarVal ? Number((dollarVal / scheduled * 100).toFixed(6)) : (parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(6)) : '')
                                                 return (
@@ -7139,7 +7349,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                           const newPct = newDollar / scheduled * 100
                                                           setAiaLines(v => {
                                                             const updated = v.map((l, idx) => idx === i ? { ...l, dollar_this: newDollar, pct_this: String(newPct) } : l)
-                                                            return recalcPinnedLines(updated, pinnedLineIds)
+                                                            return line.nv_sub_mode ? updated : recalcPinnedLines(updated, pinnedLineIds)
                                                           })
                                                         }} />
                                                       <span style={{ padding: '0 6px', fontSize: '11px', color: '#333', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a' }}>%</span>
@@ -7155,21 +7365,23 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                             const sched = Number(l.budget_amount || 0)
                                                             return { ...l, pct_this: e.target.value, dollar_this: Math.round(sched * pct) / 100 }
                                                           })
-                                                          return recalcPinnedLines(updated, pinnedLineIds)
+                                                          return line.nv_sub_mode ? updated : recalcPinnedLines(updated, pinnedLineIds)
                                                         })} />
                                                     </div>
-                                                    {!isPinned && (
+                                                    {!line.nv_sub_mode && !isPinned && (
                                                       <button
                                                         title="One-time: set to weighted average % of all other lines"
                                                         onClick={() => autoCalcProRataLine(i)}
                                                         style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
                                                       >≈%</button>
                                                     )}
-                                                    <button
-                                                      title={isPinned ? 'Pinned — auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
-                                                      onClick={() => togglePinLine(line.budget_item_id)}
-                                                      style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}
-                                                    >📌</button>
+                                                    {!line.nv_sub_mode && (
+                                                      <button
+                                                        title={isPinned ? 'Pinned — auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
+                                                        onClick={() => togglePinLine(line.budget_item_id)}
+                                                        style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}
+                                                      >📌</button>
+                                                    )}
                                                   </div>
                                                 )
                                               })()}
@@ -7191,9 +7403,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     return a + Number(s.contract_value || 0) + coAdj
                                   }, 0)
                                   const isSubAia = job.nv_role === 'sub'
+                                  const isNvSubApp = !!activeAia?.nv_subcontract_id
                                   const baseContractAia = Number(job.contract_value || 0)
-                                  const contractSumToDate = isSubAia ? (subNvTotalAia > 0 ? subNvTotalAia : baseContractAia) : baseContractAia + approvedCOsVal
                                   const totalSov = aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
+                                  const contractSumToDate = isNvSubApp ? totalSov : isSubAia ? (subNvTotalAia > 0 ? subNvTotalAia : baseContractAia) : baseContractAia + approvedCOsVal
                                   const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01
                                   const r2 = n => Math.round(n * 100) / 100
                                   const totalCompleted = aiaLines.reduce((a, line) => {

@@ -1516,6 +1516,134 @@ ${sovLines.length > 0 ? `
     await loadNvSubcontracts()
   }
 
+  function printNvSubCO(sc, co) {
+    const fmt = n => '$' + Math.abs(Number(n)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const fmtSigned = n => (Number(n) < 0 ? '-' : '+') + fmt(n)
+    const baseValue = Number(sc.contract_value || 0)
+    const approvedCOsBeforeThis = (sc.change_orders || []).filter(c => c.id !== co.id && c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+    const revisedContractValue = baseValue + approvedCOsBeforeThis + Number(co.amount || 0)
+    const dateStr = co.date ? new Date(co.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const coNumber = (sc.change_orders || []).filter(c => c.status !== 'rejected').findIndex(c => c.id === co.id) + 1
+
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head>
+<title>Change Order — ${sc.gc_name || 'GC'} — ${job.project_name}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 32px; max-width: 760px; margin: 0 auto; line-height: 1.6; }
+.btn { padding: 8px 20px; background: #111; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; margin-bottom: 24px; margin-right: 8px; }
+@media print { .btn { display: none; } }
+.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 3px solid #111; }
+.co-title { font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; }
+.co-sub { font-size: 11px; color: #777; margin-top: 4px; }
+.co-number { font-size: 28px; font-weight: 800; color: #111; text-align: right; }
+.co-number-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #999; text-align: right; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+.block { border: 1px solid #ddd; border-radius: 4px; padding: 12px 14px; }
+.block-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 4px; }
+.block-val { font-size: 13px; font-weight: 700; }
+.block-sub { font-size: 10px; color: #666; margin-top: 2px; }
+.section-title { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #888; font-weight: 700; border-bottom: 1px solid #eee; padding-bottom: 5px; margin: 20px 0 10px; }
+.scope-box { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 14px 16px; margin-bottom: 20px; font-size: 12px; line-height: 1.7; }
+.amount-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+.amount-table td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
+.amount-table td:last-child { text-align: right; font-family: monospace; font-weight: 600; }
+.amount-table tr.total td { font-weight: 800; font-size: 14px; border-top: 2px solid #111; background: #f5f5f5; }
+.amount-table tr.co-line td { font-weight: 700; color: ${Number(co.amount) >= 0 ? '#1a7a3a' : '#cc2200'}; }
+.sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 40px; }
+.sig-block { border-top: 1px solid #111; padding-top: 8px; }
+.sig-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #777; margin-bottom: 32px; }
+.sig-line { border-top: 1px solid #bbb; margin-top: 40px; }
+.sig-name { font-size: 10px; color: #555; margin-top: 4px; }
+.foot { margin-top: 32px; font-size: 9px; color: #bbb; border-top: 1px solid #eee; padding-top: 8px; }
+</style></head><body>
+<button class="btn" onclick="window.print()">Print / Save as PDF</button>
+<button class="btn" style="background:#666" onclick="window.close()">Close</button>
+
+<div class="header">
+  <div>
+    <div class="co-title">Change Order</div>
+    <div class="co-sub">NV Construction, Inc. &nbsp;·&nbsp; Subcontract Change Order</div>
+  </div>
+  <div>
+    <div class="co-number-label">Change Order No.</div>
+    <div class="co-number">${String(coNumber).padStart(3, '0')}</div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="block">
+      <div class="block-label">To (General Contractor)</div>
+      <div class="block-val">${sc.gc_name || '—'}</div>
+    </div>
+  </div>
+  <div>
+    <div class="block" style="margin-bottom:10px">
+      <div class="block-label">From (Subcontractor)</div>
+      <div class="block-val">NV Construction, Inc.</div>
+    </div>
+    <div class="block">
+      <div class="block-label">Project</div>
+      <div class="block-val">${job.project_name || '—'}</div>
+      <div class="block-sub">Job #${job.job_number || '—'}${job.location ? ' &nbsp;·&nbsp; ' + job.location : ''}</div>
+    </div>
+  </div>
+</div>
+
+${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class="block-label">Subcontract / Contract Number</div><div class="block-val">${sc.contract_number}</div></div>` : ''}
+
+<div class="section-title">Change Order Description</div>
+<div class="scope-box">
+  <strong>${co.description}</strong>
+  ${co.notes ? `<br><span style="color:#555">${co.notes}</span>` : ''}
+  <div style="margin-top:8px;font-size:10px;color:#888">Date: ${dateStr}</div>
+</div>
+
+<div class="section-title">Contract Value Summary</div>
+<table class="amount-table">
+  <tr>
+    <td>Original Subcontract Value</td>
+    <td>${fmt(baseValue)}</td>
+  </tr>
+  ${approvedCOsBeforeThis !== 0 ? `<tr><td>Previous Approved Change Orders</td><td>${fmtSigned(approvedCOsBeforeThis)}</td></tr>` : ''}
+  <tr class="co-line">
+    <td>This Change Order</td>
+    <td>${fmtSigned(co.amount)}</td>
+  </tr>
+  <tr class="total">
+    <td>Revised Subcontract Value</td>
+    <td>${fmt(revisedContractValue)}</td>
+  </tr>
+</table>
+
+<div class="section-title">Agreement</div>
+<div style="font-size:11px;color:#333;line-height:1.7;margin-bottom:16px;">
+  The Subcontractor and General Contractor agree to the modification of the Subcontract Agreement by the terms set forth above. All other terms and conditions of the Subcontract Agreement remain in full force and effect.
+</div>
+
+<div class="sig-grid">
+  <div class="sig-block">
+    <div class="sig-label">Subcontractor — NV Construction, Inc.</div>
+    <div class="sig-line"></div>
+    <div class="sig-name">Authorized Signature &nbsp;·&nbsp; Date</div>
+    <div style="margin-top:16px;height:28px;border-top:none;"></div>
+    <div class="sig-name" style="border-top:1px solid #bbb;margin-top:12px;padding-top:4px;">Print Name &amp; Title</div>
+  </div>
+  <div class="sig-block">
+    <div class="sig-label">General Contractor — ${sc.gc_name || '________________'}</div>
+    <div class="sig-line"></div>
+    <div class="sig-name">Authorized Signature &nbsp;·&nbsp; Date</div>
+    <div style="margin-top:16px;height:28px;border-top:none;"></div>
+    <div class="sig-name" style="border-top:1px solid #bbb;margin-top:12px;padding-top:4px;">Print Name &amp; Title</div>
+  </div>
+</div>
+
+<div class="foot">Generated ${new Date().toLocaleDateString()} &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; ${job.project_name}</div>
+</body></html>`)
+    w.document.close()
+  }
+
   async function loadWarranty() {
     const [settingsRes, ordersRes] = await Promise.all([
       fetch(`/api/warranty-settings?job_id=${id}`),
@@ -3900,6 +4028,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                    <button style={s.btnSmall} type="button" onClick={() => printNvSubCO(sc, co)}>Print</button>
                                     {co.status !== 'approved' && <button style={s.btnSmallGreen} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'approved')}>Approve</button>}
                                     {co.status !== 'pending' && <button style={s.btnSmall} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'pending')}>Pending</button>}
                                     {co.status !== 'rejected' && <button style={s.btnSmallRed} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'rejected')}>Reject</button>}

@@ -160,6 +160,10 @@ export default function Submit() {
   const isDrawing = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
 
+  // Signing requests for contracts
+  const [mySigningRequests, setMySigningRequests] = useState([])
+  const [initiatingSignFor, setInitiatingSignFor] = useState(null)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -201,6 +205,8 @@ export default function Submit() {
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
       await loadMyContracts(session.user.id)
+      const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
+      if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
       await loadBidInvitations(session.user.email)
       await loadMyRfis(session.user.id)
       const { data: dir } = await supabase.from('sub_directory').select('*').ilike('email', session.user.email).maybeSingle()
@@ -396,6 +402,24 @@ export default function Submit() {
     if (expandedContract === id) { setExpandedContract(null); return }
     setExpandedContract(id)
     loadMyCOs(id)
+  }
+
+  async function initiateSign(subcontractId) {
+    setInitiatingSignFor(subcontractId)
+    try {
+      const res = await fetch('/api/sub-initiate-sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subcontract_id: subcontractId, sub_user_id: user.id }),
+      })
+      const { token, error: signErr } = await res.json()
+      if (signErr) { alert('Error: ' + signErr); return }
+      window.open(`/sign?token=${token}`, '_blank')
+      const srRes = await fetch(`/api/signing-requests?sub_id=${user.id}`)
+      if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
+    } finally {
+      setInitiatingSignFor(null)
+    }
   }
 
   async function respondCO(co, response) {
@@ -1237,12 +1261,59 @@ export default function Submit() {
                           ${Number(c.remaining_balance).toLocaleString()}
                         </div>
                       </div>
+                      {(() => {
+                        const sr = mySigningRequests.find(r => r.subcontract_id === c.id)
+                        if (sr?.status === 'signed') return (
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '3px 10px' }}>✓ Signed</span>
+                        )
+                        if (sr) return (
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '3px 10px' }}>⏳ Awaiting Signature</span>
+                        )
+                        return (
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '99px', padding: '3px 10px' }}>Unsigned</span>
+                        )
+                      })()}
                       <span style={{ color: '#555', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </div>
 
                   {isExpanded && (
                     <div style={s.contractRowExpanded}>
+                      {(() => {
+                        const sr = mySigningRequests.find(r => r.subcontract_id === c.id)
+                        return (
+                          <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                            {sr?.status === 'signed' ? (
+                              <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>
+                                ✓ Contract signed{sr.signed_at ? ` on ${new Date(sr.signed_at).toLocaleDateString()}` : ''}
+                              </span>
+                            ) : sr ? (
+                              <>
+                                <span style={{ fontSize: '12px', color: '#aaa' }}>Contract pending your signature</span>
+                                <a
+                                  href={`/sign?token=${sr.token}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ padding: '7px 18px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '7px', color: '#4ade80', fontSize: '12px', fontWeight: '700', textDecoration: 'none' }}
+                                >
+                                  Sign Contract
+                                </a>
+                              </>
+                            ) : (
+                              <>
+                                <span style={{ fontSize: '12px', color: '#aaa' }}>No signature on file</span>
+                                <button
+                                  onClick={() => initiateSign(c.id)}
+                                  disabled={initiatingSignFor === c.id}
+                                  style={{ padding: '7px 18px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '7px', color: '#4ade80', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: initiatingSignFor === c.id ? 0.6 : 1 }}
+                                >
+                                  {initiatingSignFor === c.id ? 'Preparing…' : 'Sign Contract'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })()}
                       {c.onedrive_url && (
                         <div style={{ marginBottom: '1rem' }}>
                           <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>

@@ -94,7 +94,22 @@ export async function POST(request) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
-  if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const sub_id = searchParams.get('sub_id')
+
+  if (sub_id) {
+    const { data: subs } = await adminSupabase.from('subcontracts').select('id').eq('sub_id', sub_id)
+    const subIds = (subs || []).map(s => s.id)
+    if (subIds.length === 0) return Response.json({ data: [] })
+    const { data, error } = await adminSupabase
+      .from('signing_requests')
+      .select('id, token, job_id, subcontract_id, signer_email, signer_name, document_title, status, signed_at, created_at')
+      .in('subcontract_id', subIds)
+      .order('created_at', { ascending: false })
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ data: data || [] })
+  }
+
+  if (!job_id) return Response.json({ error: 'job_id or sub_id required' }, { status: 400 })
 
   const { data, error } = await adminSupabase
     .from('signing_requests')

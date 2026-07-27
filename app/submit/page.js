@@ -163,6 +163,7 @@ export default function Submit() {
   // Signing requests for contracts
   const [mySigningRequests, setMySigningRequests] = useState([])
   const [initiatingSignFor, setInitiatingSignFor] = useState(null)
+  const [printingContractFor, setPrintingContractFor] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -402,6 +403,31 @@ export default function Submit() {
     if (expandedContract === id) { setExpandedContract(null); return }
     setExpandedContract(id)
     loadMyCOs(id)
+  }
+
+  async function printContract(subcontractId) {
+    setPrintingContractFor(subcontractId)
+    try {
+      const res = await fetch('/api/sub-initiate-sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subcontract_id: subcontractId, sub_user_id: user.id }),
+      })
+      const { token, error: signErr } = await res.json()
+      if (signErr) { alert('Error: ' + signErr); return }
+      const srRes = await fetch(`/api/signing-requests?sub_id=${user.id}`)
+      if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
+      const htmlRes = await fetch(`/api/signing-requests/${token}?html=1`)
+      const { data: reqData } = await htmlRes.json()
+      if (!reqData?.document_html) return
+      const win = window.open('', '_blank')
+      win.document.write(reqData.document_html)
+      win.document.close()
+      win.focus()
+      setTimeout(() => win.print(), 600)
+    } finally {
+      setPrintingContractFor(null)
+    }
   }
 
   async function initiateSign(subcontractId) {
@@ -1282,7 +1308,7 @@ export default function Submit() {
                       {(() => {
                         const sr = mySigningRequests.find(r => r.subcontract_id === c.id)
                         return (
-                          <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             {sr?.status === 'signed' ? (
                               <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>
                                 ✓ Contract signed{sr.signed_at ? ` on ${new Date(sr.signed_at).toLocaleDateString()}` : ''}
@@ -1311,6 +1337,13 @@ export default function Submit() {
                                 </button>
                               </>
                             )}
+                            <button
+                              onClick={() => printContract(c.id)}
+                              disabled={printingContractFor === c.id}
+                              style={{ padding: '7px 18px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '7px', color: '#60a5fa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: printingContractFor === c.id ? 0.6 : 1 }}
+                            >
+                              {printingContractFor === c.id ? 'Loading…' : 'Print Contract'}
+                            </button>
                           </div>
                         )
                       })()}

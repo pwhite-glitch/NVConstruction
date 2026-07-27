@@ -65,8 +65,7 @@ export async function POST(request) {
         initiated_by: sub_user_id,
         direction: 'sub_to_pm',
         amount: parseFloat(amount),
-        description: description.trim(),
-        notes: notes?.trim() || null,
+        description: notes?.trim() ? `${description.trim()}\n\n${notes.trim()}` : description.trim(),
         status: 'pending',
       })
       .select('id')

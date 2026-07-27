@@ -203,9 +203,19 @@ export default function Submit() {
       const seenJobIds = new Set()
       const mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
       setJobs(mergedJobs)
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', session.user.id).order('submitted_at', { ascending: false })
+      // Fetch billing for this user AND all teammates in the same company
+      let billingQuery = supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').order('submitted_at', { ascending: false })
+      if (companyId) {
+        const { data: companyMembers } = await supabase.from('profiles').select('id').eq('company_id', companyId)
+        const memberIds = (companyMembers || []).map(m => m.id)
+        if (!memberIds.includes(session.user.id)) memberIds.push(session.user.id)
+        billingQuery = billingQuery.in('sub_id', memberIds)
+      } else {
+        billingQuery = billingQuery.eq('sub_id', session.user.id)
+      }
+      const { data: subs } = await billingQuery
       setSubmissions(subs || [])
-      await loadMyContracts(session.user.id)
+      await loadMyContracts(session.user.id, prof?.company_id)
       const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
       if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
       await loadBidInvitations(session.user.email)
@@ -381,13 +391,20 @@ export default function Submit() {
     setSubmittingBidFor(null)
   }
 
-  async function loadMyContracts(userId) {
-    const { data: contractData } = await supabase
-      .from('subcontract_summary')
-      .select('*')
-      .eq('sub_id', userId)
-      .order('created_at', { ascending: false })
-    if (!contractData || contractData.length === 0) { setMyContracts([]); return }
+  async function loadMyContracts(userId, companyId) {
+    const queries = [
+      supabase.from('subcontract_summary').select('*').eq('sub_id', userId).order('created_at', { ascending: false })
+    ]
+    if (companyId) {
+      queries.push(
+        supabase.from('subcontract_summary').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
+      )
+    }
+    const results = await Promise.all(queries)
+    const allContracts = results.flatMap(r => r.data || [])
+    const seen = new Set()
+    const contractData = allContracts.filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true })
+    if (contractData.length === 0) { setMyContracts([]); return }
     const jobIds = [...new Set(contractData.map(c => c.job_id))]
     const { data: jobData } = await supabase.from('jobs').select('id, job_number, project_name').in('id', jobIds)
     const jobMap = Object.fromEntries((jobData || []).map(j => [j.id, j]))

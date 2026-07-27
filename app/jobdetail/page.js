@@ -376,6 +376,13 @@ export default function JobDetail() {
   const [resolvingOrder, setResolvingOrder] = useState(null)
   const [uploadingWarrantyPhoto, setUploadingWarrantyPhoto] = useState(false)
 
+  // E-signature state
+  const [signerEmail, setSignerEmail] = useState('')
+  const [showSignPanel, setShowSignPanel] = useState(false)
+  const [sendingSign, setSendingSign] = useState(false)
+  const [signMsg, setSignMsg] = useState('')
+  const [signingRequests, setSigningRequests] = useState([])
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -1409,7 +1416,7 @@ ${sovLines.length > 0 ? `
   useEffect(() => {
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
-    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory() }
+    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem(); loadPrimeCOs() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
@@ -2232,8 +2239,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setShowContractGen(true)
   }
 
-  function generateSubcontract() {
-    const f = contractGenForm
+  function buildSubcontractHtml(f) {
     const fmt = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const coverParas = (f.cover_letter_body || '').split('\n\n').filter(Boolean).map(p => `<p class="indent">${p.replace(/\n/g, '<br>')}</p>`).join('\n  ')
     const contractDocLines = (f.contract_documents || '').split('\n').filter(Boolean).join('<br>')
@@ -2420,6 +2426,11 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 </div>
 
 </body></html>`
+    return html
+  }
+
+  function generateSubcontract() {
+    const html = buildSubcontractHtml(contractGenForm)
     const toolbar = [
       '<style id="nv-edit-style">',
       '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a1a1a;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
@@ -2458,6 +2469,44 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
   }
 
+  async function loadSigningRequests() {
+    const res = await fetch(`/api/signing-requests?job_id=${id}`)
+    const json = await res.json()
+    setSigningRequests(json.data || [])
+  }
+
+  async function sendForESign() {
+    if (!signerEmail.trim()) return
+    setSendingSign(true)
+    setSignMsg('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const html = buildSubcontractHtml(contractGenForm)
+      const res = await fetch('/api/signing-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_id: id,
+          subcontract_id: contractGenForm.contract_id || null,
+          signer_email: signerEmail.trim().toLowerCase(),
+          signer_name: contractGenForm.sub_name,
+          document_html: html,
+          document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
+          created_by: session?.user?.id,
+        }),
+      })
+      const json = await res.json()
+      if (json.error) { setSignMsg('Error: ' + json.error); return }
+      setSignMsg('Sent! The subcontractor will receive an email link to sign.')
+      setShowSignPanel(false)
+      setSignerEmail('')
+      await loadSigningRequests()
+    } catch (e) {
+      setSignMsg('Error: ' + e.message)
+    } finally {
+      setSendingSign(false)
+    }
+  }
 
   // ── Change Orders ───────────────────────────────────────────
   async function addCO() {
@@ -4671,7 +4720,51 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   )}
                 </div>
-                <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Edit & Print Contract</button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
+                  <button style={{ ...s.btn, background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a' }} onClick={() => { setShowSignPanel(v => !v); setSignMsg('') }}>
+                    {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
+                  </button>
+                </div>
+
+                {showSignPanel && (
+                  <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '1rem', marginTop: '12px' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '700', color: '#60a5fa', marginBottom: '10px' }}>Send for e-Signature</p>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        type="email"
+                        style={{ ...s.input, flex: 1, minWidth: '220px' }}
+                        placeholder="Subcontractor email address"
+                        value={signerEmail}
+                        onChange={e => setSignerEmail(e.target.value)}
+                      />
+                      <button
+                        style={{ ...s.btn, opacity: !signerEmail.trim() || sendingSign ? 0.6 : 1 }}
+                        disabled={!signerEmail.trim() || sendingSign}
+                        onClick={sendForESign}
+                      >
+                        {sendingSign ? 'Sending...' : 'Send Link'}
+                      </button>
+                    </div>
+                    {signMsg && (
+                      <p style={{ fontSize: '12px', color: signMsg.startsWith('Error') ? '#ff6b6b' : '#4ade80', marginTop: '8px' }}>{signMsg}</p>
+                    )}
+                  </div>
+                )}
+
+                {signingRequests.filter(r => r.subcontract_id === contractGenForm.contract_id).length > 0 && (
+                  <div style={{ marginTop: '12px' }}>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Signing Requests</p>
+                    {signingRequests.filter(r => r.subcontract_id === contractGenForm.contract_id).map(r => (
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #1a1a1a', fontSize: '12px' }}>
+                        <span style={{ color: '#aaa' }}>{r.signer_email}</span>
+                        <span style={{ color: r.status === 'signed' ? '#4ade80' : '#f59e0b', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
+                          {r.status === 'signed' ? `✓ Signed ${new Date(r.signed_at).toLocaleDateString()}` : '⏳ Awaiting signature'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -4836,6 +4929,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </button>
                           <button style={{ ...s.btnSmall, background: '#1a3a1a', color: '#4ade80', border: '1px solid #1a3a1a' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
                           {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#1a2a3a', color: '#60a5fa', border: '1px solid #1a2a3a' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
+                          {(() => {
+                            const req = signingRequests.find(r => r.subcontract_id === c.id)
+                            if (!req) return null
+                            return (
+                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#0a2a0a' : '#1a1400', color: req.status === 'signed' ? '#4ade80' : '#f59e0b', border: `1px solid ${req.status === 'signed' ? '#1a4a1a' : '#4a3800'}`, whiteSpace: 'nowrap' }}>
+                                {req.status === 'signed' ? '✓ Signed' : '⏳ Awaiting sign'}
+                              </span>
+                            )
+                          })()}
                           <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10), bid_proposal_url: c.bid_proposal_url || '' }); setEditContractBidFile(null) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>

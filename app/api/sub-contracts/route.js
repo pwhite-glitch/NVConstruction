@@ -20,19 +20,27 @@ export async function GET(request) {
 
   // All-contracts mode: load subcontract_summary for the sub portal contracts tab
   if (all && user_id) {
-    const queries = [
-      adminSupabase.from('subcontract_summary').select('*').eq('sub_id', user_id).order('created_at', { ascending: false }),
+    // Collect all subcontract IDs this user can access
+    const idQueries = [
+      adminSupabase.from('subcontracts').select('id').eq('sub_id', user_id),
     ]
     if (company_id) {
-      queries.push(
-        adminSupabase.from('subcontract_summary').select('*').eq('company_id', company_id).order('created_at', { ascending: false })
+      idQueries.push(
+        adminSupabase.from('subcontracts').select('id').eq('company_id', company_id)
       )
     }
-    const results = await Promise.all(queries)
-    const all_contracts = results.flatMap(r => r.data || [])
-    const seen = new Set()
-    const contracts = all_contracts.filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true })
-    if (contracts.length === 0) return Response.json({ all_contracts: [] })
+    const idResults = await Promise.all(idQueries)
+    const allIds = [...new Set(idResults.flatMap(r => (r.data || []).map(c => c.id)))]
+
+    if (allIds.length === 0) return Response.json({ all_contracts: [] })
+
+    const { data: summaries } = await adminSupabase
+      .from('subcontract_summary')
+      .select('*')
+      .in('id', allIds)
+      .order('created_at', { ascending: false })
+
+    const contracts = summaries || []
     const jobIds = [...new Set(contracts.map(c => c.job_id))]
     const { data: jobs } = await adminSupabase.from('jobs').select('id, job_number, project_name').in('id', jobIds)
     const jobMap = Object.fromEntries((jobs || []).map(j => [j.id, j]))

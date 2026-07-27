@@ -96,6 +96,7 @@ const IconCal      = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconTruck    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
 const IconWrench   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
 const IconLogout   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+const IconBox      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
 
 export default function Dashboard() {
   const router = useRouter()
@@ -118,6 +119,20 @@ export default function Dashboard() {
   const [rejectionReasonDraft, setRejectionReasonDraft] = useState('')
   const [billingPage, setBillingPage] = useState(1)
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() } })
+  const [orders, setOrders] = useState([])
+  const [orderTemplates, setOrderTemplates] = useState([])
+  const [ordersLoaded, setOrdersLoaded] = useState(false)
+  const [showNewOrder, setShowNewOrder] = useState(false)
+  const [newOrderForm, setNewOrderForm] = useState({ job_id: '', vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '' })
+  const [savingOrder, setSavingOrder] = useState(false)
+  const [showNewTemplate, setShowNewTemplate] = useState(false)
+  const [newTplForm, setNewTplForm] = useState({ name: '', description: '' })
+  const [newTplItems, setNewTplItems] = useState([{ item_name: '', category: '', default_qty: '1', unit: 'each' }])
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [expandedTpl, setExpandedTpl] = useState(null)
+  const [ordersJobFilter, setOrdersJobFilter] = useState('')
+  const [ordersStatusFilter, setOrdersStatusFilter] = useState('')
+  const [updatingOrderId, setUpdatingOrderId] = useState(null)
   const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [showCompletedJobs, setShowCompletedJobs] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -156,6 +171,13 @@ export default function Dashboard() {
   const [subProfiles, setSubProfiles] = useState([])
   const [subTeamInviteForm, setSubTeamInviteForm] = useState({})
   const [subTeamInviteLoading, setSubTeamInviteLoading] = useState(null)
+  const [mergeSearchA, setMergeSearchA] = useState('')
+  const [mergeSearchB, setMergeSearchB] = useState('')
+  const [mergePersonA, setMergePersonA] = useState(null)
+  const [mergePersonB, setMergePersonB] = useState(null)
+  const [mergeKeep, setMergeKeep] = useState('a')
+  const [mergingCompanies, setMergingCompanies] = useState(false)
+  const [mergeResult, setMergeResult] = useState(null)
   const [subTeamInviteResult, setSubTeamInviteResult] = useState({})
   const [addMemberOpenFor, setAddMemberOpenFor] = useState(null)
   const [editingSubUser, setEditingSubUser] = useState(null)
@@ -337,6 +359,7 @@ export default function Dashboard() {
     if (activeTab === 'vehicles' && !vehiclesLoaded) loadVehicles()
     if (activeTab === 'tools' && !toolsLoaded) loadTools()
     if (activeTab === 'directory') loadDirRatings()
+    if (activeTab === 'orders' && !ordersLoaded) loadOrders()
   }, [activeTab])
 
   async function loadDirRatings() {
@@ -353,6 +376,69 @@ export default function Dashboard() {
     setDirRatings(map)
   }
 
+  async function loadOrders() {
+    const [ordersRes, tplRes] = await Promise.all([
+      fetch('/api/orders?all=1'),
+      fetch('/api/order-templates'),
+    ])
+    const { data: ords } = await ordersRes.json()
+    const { data: tpls } = await tplRes.json()
+    setOrders(ords || [])
+    setOrderTemplates(tpls || [])
+    setOrdersLoaded(true)
+  }
+
+  async function saveOrder(e) {
+    e.preventDefault()
+    setSavingOrder(true)
+    try {
+      const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newOrderForm) })
+      const { data, error: err } = await res.json()
+      if (err) { alert(err); return }
+      setOrders(prev => [data, ...prev])
+      setNewOrderForm({ job_id: '', vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '' })
+      setShowNewOrder(false)
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  async function updateOrderStatus(id, status) {
+    setUpdatingOrderId(id)
+    const res = await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, status }) })
+    const { data } = await res.json()
+    if (data) setOrders(prev => prev.map(o => o.id === id ? { ...o, ...data } : o))
+    setUpdatingOrderId(null)
+  }
+
+  async function deleteOrder(id) {
+    if (!confirm('Delete this order?')) return
+    await fetch('/api/orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setOrders(prev => prev.filter(o => o.id !== id))
+  }
+
+  async function saveTemplate(e) {
+    e.preventDefault()
+    setSavingTemplate(true)
+    try {
+      const res = await fetch('/api/order-templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...newTplForm, items: newTplItems, created_by: profile?.id }) })
+      const { data, error: err } = await res.json()
+      if (err) { alert(err); return }
+      setOrderTemplates(prev => [...prev, data])
+      setNewTplForm({ name: '', description: '' })
+      setNewTplItems([{ item_name: '', category: '', default_qty: '1', unit: 'each' }])
+      setShowNewTemplate(false)
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  async function deleteTemplate(id) {
+    if (!confirm('Delete this template and all its items?')) return
+    await fetch('/api/order-templates', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setOrderTemplates(prev => prev.filter(t => t.id !== id))
+    if (expandedTpl === id) setExpandedTpl(null)
+  }
 
   async function loadAll(jobIds = null) {
     const ids = jobIds !== undefined ? jobIds : assignedJobIds
@@ -1680,6 +1766,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
     { tab: 'jobs',          label: 'Jobs',           icon: <IconBriefcase /> },
     { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: billingBadge },
+    { tab: 'orders', label: 'Orders', icon: <IconBox /> },
     { tab: 'directory',     label: 'Companies',      icon: <IconUsers />,    badge: dirBadge },
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
@@ -2446,6 +2533,106 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 ))}
               </>
             )}
+
+            {/* ── MERGE ACCOUNTS ── */}
+            {activeTab === 'directory' && (() => {
+              const doMerge = async () => {
+                if (!mergePersonA || !mergePersonB) return
+                if (mergePersonA.company_id === mergePersonB.company_id) { setMergeResult({ error: 'These accounts are already on the same company.' }); return }
+                if (!confirm(`Merge "${mergePersonB.company_name}" into "${mergePersonA.company_name}"? This cannot be undone.`)) return
+                setMergingCompanies(true)
+                setMergeResult(null)
+                const keepId = mergeKeep === 'a' ? mergePersonA.company_id : mergePersonB.company_id
+                const removeId = mergeKeep === 'a' ? mergePersonB.company_id : mergePersonA.company_id
+                const res = await fetch('/api/merge-companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keep_company_id: keepId, remove_company_id: removeId }) })
+                const data = await res.json()
+                setMergingCompanies(false)
+                if (data.error) { setMergeResult({ error: data.error }); return }
+                setMergeResult({ ok: true, msg: `Done — ${data.profiles_moved} account${data.profiles_moved !== 1 ? 's' : ''} moved to "${data.kept}"` })
+                setMergePersonA(null); setMergePersonB(null); setMergeSearchA(''); setMergeSearchB(''); setMergeKeep('a')
+                refreshSubProfiles()
+              }
+              const filteredA = subProfiles.filter(p => !mergePersonA && mergeSearchA.length > 1 && (p.full_name?.toLowerCase().includes(mergeSearchA.toLowerCase()) || p.invite_email?.toLowerCase().includes(mergeSearchA.toLowerCase()) || p.company_name?.toLowerCase().includes(mergeSearchA.toLowerCase())))
+              const filteredB = subProfiles.filter(p => !mergePersonB && mergeSearchB.length > 1 && (p.full_name?.toLowerCase().includes(mergeSearchB.toLowerCase()) || p.invite_email?.toLowerCase().includes(mergeSearchB.toLowerCase()) || p.company_name?.toLowerCase().includes(mergeSearchB.toLowerCase())))
+              return (
+                <div style={{ marginTop: '3rem', borderTop: '1px solid #1e1e1e', paddingTop: '2rem' }}>
+                  <h3 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: '800', color: '#f1f1f1', letterSpacing: '1px' }}>Merge Sub Accounts</h3>
+                  <p style={{ margin: '0 0 1.5rem', fontSize: '13px', color: '#555' }}>Use this when two people from the same company were invited separately and need to share contracts and billing.</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    {[
+                      { label: 'Person A', search: mergeSearchA, setSearch: setMergeSearchA, person: mergePersonA, setPerson: setMergePersonA, filtered: filteredA, key: 'a' },
+                      { label: 'Person B', search: mergeSearchB, setSearch: setMergeSearchB, person: mergePersonB, setPerson: setMergePersonB, filtered: filteredB, key: 'b' },
+                    ].map(({ label, search, setSearch, person, setPerson, filtered, key }) => (
+                      <div key={key}>
+                        <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>{label}</p>
+                        {person ? (
+                          <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{person.full_name || person.invite_email}</div>
+                              <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{person.company_name} · {person.invite_email}</div>
+                            </div>
+                            <button onClick={() => { setPerson(null); setSearch('') }} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '18px' }}>×</button>
+                          </div>
+                        ) : (
+                          <div style={{ position: 'relative' }}>
+                            <input
+                              value={search}
+                              onChange={e => setSearch(e.target.value)}
+                              placeholder="Search by name, email, or company…"
+                              style={s.input}
+                            />
+                            {filtered.length > 0 && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '0 0 8px 8px', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                {filtered.slice(0, 8).map(p => (
+                                  <div key={p.id} onClick={() => { setPerson(p); setSearch(p.full_name || p.invite_email) }} style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #222' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#222'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{p.full_name || '(no name)'}</div>
+                                    <div style={{ fontSize: '11px', color: '#555' }}>{p.company_name} · {p.invite_email}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {mergePersonA && mergePersonB && mergePersonA.company_id !== mergePersonB.company_id && (
+                    <div style={{ marginTop: '1.5rem', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem' }}>
+                      <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Which company name to keep?</p>
+                      {[
+                        { val: 'a', name: mergePersonA.company_name, sub: `Keep this — move ${mergePersonB.company_name} into it` },
+                        { val: 'b', name: mergePersonB.company_name, sub: `Keep this — move ${mergePersonA.company_name} into it` },
+                      ].map(opt => (
+                        <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '7px', background: mergeKeep === opt.val ? '#1a1a1a' : 'transparent', cursor: 'pointer', marginBottom: '4px' }}>
+                          <input type="radio" name="mergeKeep" value={opt.val} checked={mergeKeep === opt.val} onChange={() => setMergeKeep(opt.val)} style={{ accentColor: '#e8590c' }} />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{opt.name}</div>
+                            <div style={{ fontSize: '11px', color: '#555' }}>{opt.sub}</div>
+                          </div>
+                        </label>
+                      ))}
+                      <button onClick={doMerge} disabled={mergingCompanies} style={{ ...s.btn, marginTop: '1rem' }}>
+                        {mergingCompanies ? 'Merging…' : 'Merge Accounts'}
+                      </button>
+                    </div>
+                  )}
+
+                  {mergePersonA && mergePersonB && mergePersonA.company_id === mergePersonB.company_id && (
+                    <p style={{ marginTop: '1rem', fontSize: '13px', color: '#4ade80' }}>These accounts are already on the same company.</p>
+                  )}
+
+                  {mergeResult && (
+                    <p style={{ marginTop: '1rem', fontSize: '13px', color: mergeResult.error ? '#ff6b6b' : '#4ade80', fontWeight: '600' }}>
+                      {mergeResult.error || mergeResult.msg}
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* ── CALENDAR ── */}
             {(activeTab === 'calendar' || activeTab === 'overview') && (() => {
@@ -4298,6 +4485,258 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       </div>
                     )
                   })}
+                </>
+              )
+            })()}
+
+            {/* ── ORDERS ── */}
+            {activeTab === 'orders' && (() => {
+              const STATUS_COLORS = {
+                ordered:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
+                shipped:   { color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' },
+                delivered: { color: '#4ade80', bg: '#0a2a0a', border: '#1a4a1a' },
+                installed: { color: '#a78bfa', bg: '#1a0a2a', border: '#3a1a5a' },
+                canceled:  { color: '#ff6b6b', bg: '#2a0a0a', border: '#5a1a1a' },
+              }
+              const STATUSES = ['ordered', 'shipped', 'delivered', 'installed', 'canceled']
+              const CARRIERS = ['UPS', 'FedEx', 'USPS', 'Amazon', 'Other']
+              const trackingUrl = (carrier, num) => {
+                if (!num) return null
+                if (carrier === 'UPS') return `https://www.ups.com/track?tracknum=${num}`
+                if (carrier === 'FedEx') return `https://www.fedex.com/fedextrack/?trknbr=${num}`
+                if (carrier === 'USPS') return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${num}`
+                if (carrier === 'Amazon') return `https://www.amazon.com/progress-tracker/package/?orderId=${num}`
+                return null
+              }
+              const statusBadge = (status) => {
+                const c = STATUS_COLORS[status] || STATUS_COLORS.ordered
+                return { padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }
+              }
+              const filtered = orders.filter(o =>
+                (!ordersJobFilter || o.job_id === ordersJobFilter) &&
+                (!ordersStatusFilter || o.status === ordersStatusFilter)
+              )
+              const openCount = orders.filter(o => o.status === 'ordered' || o.status === 'shipped').length
+              const deliveredThisWeek = orders.filter(o => {
+                if (o.status !== 'delivered') return false
+                const d = new Date(o.created_at)
+                const now = new Date()
+                return (now - d) < 7 * 24 * 60 * 60 * 1000
+              }).length
+              return (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '12px' }}>
+                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#f1f1f1' }}>Orders</h2>
+                    <button style={s.btn} onClick={() => setShowNewOrder(v => !v)}>{showNewOrder ? 'Cancel' : '+ New Order'}</button>
+                  </div>
+
+                  {/* Stats */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                    {[
+                      { label: 'Open Orders', value: openCount, color: '#facc15' },
+                      { label: 'Delivered This Week', value: deliveredThisWeek, color: '#4ade80' },
+                      { label: 'Total Orders', value: orders.length, color: '#f1f1f1' },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '1.25rem 1.5rem' }}>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#3a3a3a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>{label}</div>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* New Order Form */}
+                  {showNewOrder && (
+                    <form onSubmit={saveOrder} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+                      <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase' }}>New Order</p>
+                      <div style={s.grid2}>
+                        <div>
+                          <label style={s.label}>Job *</label>
+                          <select value={newOrderForm.job_id} onChange={e => setNewOrderForm(f => ({ ...f, job_id: e.target.value }))} required style={{ ...s.input, color: '#f1f1f1' }}>
+                            <option value="">Select job…</option>
+                            {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={s.label}>Vendor</label>
+                          <input value={newOrderForm.vendor} onChange={e => setNewOrderForm(f => ({ ...f, vendor: e.target.value }))} style={s.input} placeholder="Home Depot, Amazon…" />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '12px' }}>
+                        <label style={s.label}>Description *</label>
+                        <input value={newOrderForm.description} onChange={e => setNewOrderForm(f => ({ ...f, description: e.target.value }))} required style={s.input} placeholder="What was ordered…" />
+                      </div>
+                      <div style={{ ...s.grid3, marginTop: '12px' }}>
+                        <div>
+                          <label style={s.label}>Amount ($)</label>
+                          <input type="number" value={newOrderForm.amount} onChange={e => setNewOrderForm(f => ({ ...f, amount: e.target.value }))} style={s.input} placeholder="0.00" />
+                        </div>
+                        <div>
+                          <label style={s.label}>PO Number</label>
+                          <input value={newOrderForm.po_number} onChange={e => setNewOrderForm(f => ({ ...f, po_number: e.target.value }))} style={s.input} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Order Date</label>
+                          <input type="date" value={newOrderForm.ordered_at} onChange={e => setNewOrderForm(f => ({ ...f, ordered_at: e.target.value }))} style={s.input} />
+                        </div>
+                      </div>
+                      <div style={{ ...s.grid3, marginTop: '12px' }}>
+                        <div>
+                          <label style={s.label}>Carrier</label>
+                          <select value={newOrderForm.carrier} onChange={e => setNewOrderForm(f => ({ ...f, carrier: e.target.value }))} style={{ ...s.input, color: '#f1f1f1' }}>
+                            {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={s.label}>Tracking #</label>
+                          <input value={newOrderForm.tracking_number} onChange={e => setNewOrderForm(f => ({ ...f, tracking_number: e.target.value }))} style={s.input} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Status</label>
+                          <select value={newOrderForm.status} onChange={e => setNewOrderForm(f => ({ ...f, status: e.target.value }))} style={{ ...s.input, color: '#f1f1f1' }}>
+                            {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '12px' }}>
+                        <label style={s.label}>Notes</label>
+                        <input value={newOrderForm.notes} onChange={e => setNewOrderForm(f => ({ ...f, notes: e.target.value }))} style={s.input} />
+                      </div>
+                      <div style={{ marginTop: '1rem', display: 'flex', gap: '12px' }}>
+                        <button type="submit" disabled={savingOrder} style={s.btn}>{savingOrder ? 'Saving…' : 'Save Order'}</button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Filters */}
+                  <div style={s.filterRow}>
+                    <select value={ordersJobFilter} onChange={e => setOrdersJobFilter(e.target.value)} style={s.filterSelect}>
+                      <option value="">All jobs</option>
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    </select>
+                    <select value={ordersStatusFilter} onChange={e => setOrdersStatusFilter(e.target.value)} style={s.filterSelect}>
+                      <option value="">All statuses</option>
+                      {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Orders List */}
+                  <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', overflow: 'hidden', marginBottom: '2rem' }}>
+                    {filtered.length === 0 ? (
+                      <div style={s.emptyMsg}>No orders yet. Click "+ New Order" to add one.</div>
+                    ) : filtered.map((o, idx) => {
+                      const tUrl = trackingUrl(o.carrier, o.tracking_number)
+                      return (
+                        <div key={o.id} style={{ padding: '14px 20px', borderBottom: idx < filtered.length - 1 ? '1px solid #1a1a1a' : 'none', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1', marginBottom: '2px' }}>{o.description}</div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>
+                              {o.jobs?.job_number ? `#${o.jobs.job_number} — ${o.jobs.project_name}` : ''}{o.vendor ? ` · ${o.vendor}` : ''}{o.po_number ? ` · PO ${o.po_number}` : ''}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flexShrink: 0 }}>
+                            {o.amount != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${Number(o.amount).toLocaleString()}</span>}
+                            {tUrl ? (
+                              <a href={tUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#60a5fa', textDecoration: 'none' }}>
+                                {o.carrier} {o.tracking_number?.slice(-6)} ↗
+                              </a>
+                            ) : o.tracking_number ? (
+                              <span style={{ fontSize: '12px', color: '#555' }}>{o.tracking_number}</span>
+                            ) : null}
+                            <select
+                              value={o.status}
+                              disabled={updatingOrderId === o.id}
+                              onChange={e => updateOrderStatus(o.id, e.target.value)}
+                              style={{ ...statusBadge(o.status), border: `1px solid ${(STATUS_COLORS[o.status] || STATUS_COLORS.ordered).border}`, cursor: 'pointer', outline: 'none' }}
+                            >
+                              {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                            </select>
+                            <button onClick={() => deleteOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }} title="Delete">×</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Templates Section */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase' }}>Order Templates</h3>
+                    <button style={s.btnSm('orange')} onClick={() => setShowNewTemplate(v => !v)}>{showNewTemplate ? 'Cancel' : '+ New Template'}</button>
+                  </div>
+
+                  {showNewTemplate && (
+                    <form onSubmit={saveTemplate} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
+                      <div style={s.grid2}>
+                        <div>
+                          <label style={s.label}>Template Name *</label>
+                          <input value={newTplForm.name} onChange={e => setNewTplForm(f => ({ ...f, name: e.target.value }))} required style={s.input} placeholder="Braum's Standard, Hotel Reno…" />
+                        </div>
+                        <div>
+                          <label style={s.label}>Description</label>
+                          <input value={newTplForm.description} onChange={e => setNewTplForm(f => ({ ...f, description: e.target.value }))} style={s.input} />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '1rem' }}>
+                        <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Items</p>
+                        {newTplItems.map((item, idx) => (
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 80px auto', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                            <input value={item.item_name} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, item_name: e.target.value } : x))} style={s.input} placeholder="Item name" />
+                            <input value={item.category} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, category: e.target.value } : x))} style={s.input} placeholder="Category" />
+                            <input type="number" value={item.default_qty} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, default_qty: e.target.value } : x))} style={s.input} placeholder="Qty" />
+                            <input value={item.unit} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))} style={s.input} placeholder="Unit" />
+                            <button type="button" onClick={() => setNewTplItems(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '18px' }}>×</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setNewTplItems(prev => [...prev, { item_name: '', category: '', default_qty: '1', unit: 'each' }])} style={s.btnSm(null)}>+ Add Item</button>
+                      </div>
+                      <div style={{ marginTop: '1rem' }}>
+                        <button type="submit" disabled={savingTemplate} style={s.btn}>{savingTemplate ? 'Saving…' : 'Save Template'}</button>
+                      </div>
+                    </form>
+                  )}
+
+                  {orderTemplates.length === 0 ? (
+                    <div style={s.emptyMsg}>No templates yet.</div>
+                  ) : orderTemplates.map(tpl => (
+                    <div key={tpl.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', marginBottom: '8px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', cursor: 'pointer' }} onClick={() => setExpandedTpl(v => v === tpl.id ? null : tpl.id)}>
+                        <div>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{tpl.name}</span>
+                          {tpl.description && <span style={{ fontSize: '12px', color: '#555', marginLeft: '10px' }}>{tpl.description}</span>}
+                          <span style={{ fontSize: '12px', color: '#444', marginLeft: '10px' }}>{tpl.order_template_items?.length || 0} items</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <button onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} style={s.btnSm('red')}>Delete</button>
+                          <span style={{ color: '#555' }}>{expandedTpl === tpl.id ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+                      {expandedTpl === tpl.id && (
+                        <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 20px' }}>
+                          {(!tpl.order_template_items || tpl.order_template_items.length === 0) ? (
+                            <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No items in this template.</p>
+                          ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: '#aaa' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                                  <th style={{ textAlign: 'left', padding: '4px 0', color: '#555', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>ITEM</th>
+                                  <th style={{ textAlign: 'left', padding: '4px 8px', color: '#555', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>CATEGORY</th>
+                                  <th style={{ textAlign: 'right', padding: '4px 0', color: '#555', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>QTY</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[...(tpl.order_template_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map(item => (
+                                  <tr key={item.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
+                                    <td style={{ padding: '8px 0', color: '#f1f1f1' }}>{item.item_name}</td>
+                                    <td style={{ padding: '8px 8px', color: '#555' }}>{item.category || '—'}</td>
+                                    <td style={{ padding: '8px 0', textAlign: 'right' }}>{item.default_qty} {item.unit}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </>
               )
             })()}

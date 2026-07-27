@@ -2776,13 +2776,11 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const markupPct = parseFloat(pushMarkup) || 0
     const additionalAmt = parseFloat(pushAdditional) || 0
     const subAmt = Number(co.amount)
-    const afterMarkup = Math.round(subAmt * (1 + markupPct / 100) * 100) / 100
-    const finalAmt = Math.round((afterMarkup + additionalAmt) * 100) / 100
-    const markupProfit = Math.round((afterMarkup - subAmt) * 100) / 100
+    const base = subAmt + additionalAmt
+    const finalAmt = Math.round(base * (1 + markupPct / 100) * 100) / 100
     const fmt = n => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
     const noteParts = []
-    if (markupPct > 0) noteParts.push(`Sub: $${fmt(subAmt)} + Markup: $${fmt(markupProfit)} (${markupPct}%)`)
-    if (additionalAmt !== 0) noteParts.push(`Additional: $${fmt(additionalAmt)}`)
+    if (markupPct > 0) noteParts.push(`Markup: ${markupPct}%`)
     noteParts.push(`Total: $${fmt(finalAmt)}`)
     const { data: { session } } = await supabase.auth.getSession()
     const pushedSOV = co.sov?.length > 0
@@ -5616,7 +5614,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const subName = matchedContract?.vendor_name || registeredSubs.find(s => s.sub_id === subId)?.profiles?.company_name || 'Unknown sub'
                 const scope = co.subcontracts?.description
                 const isPushing = pushCOId === co.id
-                const markedUpPreview = (pushMarkup !== '' || pushAdditional !== '') ? Math.round((Number(co.amount) * (1 + parseFloat(pushMarkup || 0) / 100) + (parseFloat(pushAdditional) || 0)) * 100) / 100 : null
+                const markedUpPreview = (pushMarkup !== '' || pushAdditional !== '') ? Math.round(((Number(co.amount) + (parseFloat(pushAdditional) || 0)) * (1 + parseFloat(pushMarkup || 0) / 100)) * 100) / 100 : null
                 const hasSov = co.sov?.length > 0
                 const isSOVExpanded = expandedSubCOId === co.id
                 return (

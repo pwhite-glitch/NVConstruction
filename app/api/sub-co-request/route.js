@@ -7,6 +7,29 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+export async function GET(request) {
+  const { searchParams } = new URL(request.url)
+  const subcontract_id = searchParams.get('subcontract_id')
+  const user_id = searchParams.get('user_id')
+  if (!subcontract_id || !user_id) return Response.json({ data: [] })
+
+  // Verify access: sub_id match OR same company
+  const { data: sc } = await adminSupabase.from('subcontracts').select('sub_id, company_id').eq('id', subcontract_id).single()
+  if (!sc) return Response.json({ data: [] })
+  if (sc.sub_id !== user_id) {
+    const { data: prof } = await adminSupabase.from('profiles').select('company_id').eq('id', user_id).single()
+    const sameCompany = prof?.company_id && sc.company_id && sc.company_id === prof.company_id
+    const subIsTeammate = prof?.company_id && !sc.company_id && await (async () => {
+      const { data: subProf } = await adminSupabase.from('profiles').select('company_id').eq('id', sc.sub_id).single()
+      return subProf?.company_id === prof.company_id
+    })()
+    if (!sameCompany && !subIsTeammate) return Response.json({ data: [] })
+  }
+
+  const { data } = await adminSupabase.from('change_orders').select('*').eq('subcontract_id', subcontract_id).order('created_at', { ascending: false })
+  return Response.json({ data: data || [] })
+}
+
 export async function POST(request) {
   try {
     const { subcontract_id, sub_user_id, description, amount, notes } = await request.json()
@@ -23,8 +46,14 @@ export async function POST(request) {
 
     if (!subcontract) return Response.json({ error: 'Subcontract not found' }, { status: 404 })
     if (subcontract.sub_id !== sub_user_id) {
-      const { data: userProfile } = await adminSupabase.from('profiles').select('company_id').eq('id', sub_user_id).single()
-      if (!userProfile?.company_id || subcontract.company_id !== userProfile.company_id) {
+      const [{ data: userProfile }, { data: subProfile }] = await Promise.all([
+        adminSupabase.from('profiles').select('company_id').eq('id', sub_user_id).single(),
+        adminSupabase.from('profiles').select('company_id').eq('id', subcontract.sub_id).single(),
+      ])
+      const userCompany = userProfile?.company_id
+      const sameViaSubcontract = userCompany && subcontract.company_id && subcontract.company_id === userCompany
+      const sameViaSubProfile = userCompany && subProfile?.company_id && subProfile.company_id === userCompany
+      if (!sameViaSubcontract && !sameViaSubProfile) {
         return Response.json({ error: 'Not authorized' }, { status: 403 })
       }
     }

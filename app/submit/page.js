@@ -401,7 +401,9 @@ export default function Submit() {
   }
 
   async function loadMyCOs(subcontractId) {
-    const { data } = await supabase.from('change_orders').select('*').eq('subcontract_id', subcontractId).order('created_at', { ascending: false })
+    const res = await fetch(`/api/sub-co-request?subcontract_id=${subcontractId}&user_id=${user?.id}`)
+    if (!res.ok) return
+    const { data } = await res.json()
     setMyCOs(prev => ({ ...prev, [subcontractId]: data || [] }))
   }
 

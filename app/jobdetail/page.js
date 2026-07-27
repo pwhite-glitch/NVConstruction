@@ -146,6 +146,7 @@ export default function JobDetail() {
   const [addingPrimeCO, setAddingPrimeCO] = useState(false)
   const [pushCOId, setPushCOId] = useState(null)
   const [pushMarkup, setPushMarkup] = useState('')
+  const [pushAdditional, setPushAdditional] = useState('')
   const [pushingToPrime, setPushingToPrime] = useState(false)
   const [expandedPrimeCOId, setExpandedPrimeCOId] = useState(null)
   const [editingPrimeCOId, setEditingPrimeCOId] = useState(null)
@@ -368,6 +369,21 @@ export default function JobDetail() {
   const [warrantySetting, setWarrantySetting] = useState(null)
   const [warrantyOrders, setWarrantyOrders] = useState([])
   const [warrantySettingForm, setWarrantySettingForm] = useState({ start_date: '', end_date: '', coverage_notes: '' })
+
+  // Orders state
+  const [jobOrders, setJobOrders] = useState([])
+  const [jobAssignedTemplates, setJobAssignedTemplates] = useState([])
+  const [allOrderTemplates, setAllOrderTemplates] = useState([])
+  const [jobOrdersLoaded, setJobOrdersLoaded] = useState(false)
+  const [showAddOrder, setShowAddOrder] = useState(false)
+  const [addOrderForm, setAddOrderForm] = useState({ vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '', template_item_id: '' })
+  const [savingJobOrder, setSavingJobOrder] = useState(false)
+  const [orderingItemId, setOrderingItemId] = useState(null)
+  const [orderingItemForm, setOrderingItemForm] = useState({ vendor: '', amount: '', tracking_number: '', carrier: 'UPS', notes: '' })
+  const [savingItemOrder, setSavingItemOrder] = useState(false)
+  const [assigningTemplate, setAssigningTemplate] = useState(false)
+  const [selectedTplId, setSelectedTplId] = useState('')
+  const [updatingJobOrderId, setUpdatingJobOrderId] = useState(null)
   const [editingWarrantySetting, setEditingWarrantySetting] = useState(false)
   const [savingWarrantySetting, setSavingWarrantySetting] = useState(false)
   const [warrantyOrderForm, setWarrantyOrderForm] = useState({ title: '', description: '', due_date: '', assigned_employee_id: '', assigned_employee_name: '', assigned_sub_id: '', assigned_company: '' })
@@ -1437,6 +1453,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
+    if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
   }, [activeTab, id])
 
   async function loadNvSubcontracts() {
@@ -1521,6 +1538,78 @@ ${sovLines.length > 0 ? `
     const updated = (sc.change_orders || []).filter(co => co.id !== coId)
     await supabase.from('nv_subcontracts').update({ change_orders: updated }).eq('id', sc.id)
     await loadNvSubcontracts()
+  }
+
+  async function loadJobOrders() {
+    const [ordersRes, tplRes] = await Promise.all([
+      fetch(`/api/orders?job_id=${id}`),
+      fetch('/api/order-templates'),
+    ])
+    const ordersData = await ordersRes.json()
+    const { data: tpls } = await tplRes.json()
+    setJobOrders(ordersData.orders || [])
+    setJobAssignedTemplates(ordersData.assigned_templates || [])
+    setAllOrderTemplates(tpls || [])
+    setJobOrdersLoaded(true)
+  }
+
+  async function saveJobOrder(e) {
+    e.preventDefault()
+    setSavingJobOrder(true)
+    try {
+      const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...addOrderForm, job_id: id, ordered_by: null }) })
+      const { data, error: err } = await res.json()
+      if (err) { alert(err); return }
+      setJobOrders(prev => [data, ...prev])
+      setAddOrderForm({ vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '', template_item_id: '' })
+      setShowAddOrder(false)
+    } finally {
+      setSavingJobOrder(false)
+    }
+  }
+
+  async function saveItemOrder(templateItemId) {
+    setSavingItemOrder(true)
+    try {
+      const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...orderingItemForm, job_id: id, template_item_id: templateItemId, description: allOrderTemplates.flatMap(t => t.order_template_items || []).find(i => i.id === templateItemId)?.item_name || 'Order', ordered_by: null }) })
+      const { data, error: err } = await res.json()
+      if (err) { alert(err); return }
+      setJobOrders(prev => [data, ...prev])
+      setOrderingItemId(null)
+      setOrderingItemForm({ vendor: '', amount: '', tracking_number: '', carrier: 'UPS', notes: '' })
+    } finally {
+      setSavingItemOrder(false)
+    }
+  }
+
+  async function updateJobOrderStatus(orderId, status) {
+    setUpdatingJobOrderId(orderId)
+    const res = await fetch('/api/orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: orderId, status }) })
+    const { data } = await res.json()
+    if (data) setJobOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...data } : o))
+    setUpdatingJobOrderId(null)
+  }
+
+  async function deleteJobOrder(orderId) {
+    if (!confirm('Delete this order?')) return
+    await fetch('/api/orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: orderId }) })
+    setJobOrders(prev => prev.filter(o => o.id !== orderId))
+  }
+
+  async function assignTemplate(templateId) {
+    setAssigningTemplate(true)
+    const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assign_template: true, job_id: id, template_id: templateId }) })
+    const { data, error: err } = await res.json()
+    if (err && err !== 'already_assigned') { alert(err) }
+    else if (data) setJobAssignedTemplates(prev => [...prev, data])
+    setAssigningTemplate(false)
+    setSelectedTplId('')
+  }
+
+  async function removeTemplateAssignment(assignmentId) {
+    if (!confirm('Remove this template from the job?')) return
+    await fetch('/api/orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignment_id: assignmentId }) })
+    setJobAssignedTemplates(prev => prev.filter(a => a.id !== assignmentId))
   }
 
   function printNvSubCO(sc, co) {
@@ -2685,9 +2774,16 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   async function pushSubCOToPrime(co, subName) {
     setPushingToPrime(true)
     const markupPct = parseFloat(pushMarkup) || 0
+    const additionalAmt = parseFloat(pushAdditional) || 0
     const subAmt = Number(co.amount)
-    const markedUpAmt = Math.round(subAmt * (1 + markupPct / 100) * 100) / 100
-    const profit = Math.round((markedUpAmt - subAmt) * 100) / 100
+    const afterMarkup = Math.round(subAmt * (1 + markupPct / 100) * 100) / 100
+    const finalAmt = Math.round((afterMarkup + additionalAmt) * 100) / 100
+    const markupProfit = Math.round((afterMarkup - subAmt) * 100) / 100
+    const fmt = n => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
+    const noteParts = []
+    if (markupPct > 0) noteParts.push(`Sub: $${fmt(subAmt)} + Markup: $${fmt(markupProfit)} (${markupPct}%)`)
+    if (additionalAmt !== 0) noteParts.push(`Additional: $${fmt(additionalAmt)}`)
+    noteParts.push(`Total: $${fmt(finalAmt)}`)
     const { data: { session } } = await supabase.auth.getSession()
     const pushedSOV = co.sov?.length > 0
       ? co.sov.map(r => ({ ...r, amount: markupPct > 0 ? Math.round(Number(r.amount) * (1 + markupPct / 100) * 100) / 100 : Number(r.amount) }))
@@ -2695,17 +2791,15 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const { error } = await supabase.from('prime_change_orders').insert({
       job_id: id,
       description: `${subName} — ${co.description}`,
-      amount: markedUpAmt,
-      notes: markupPct > 0
-        ? `Sub: $${subAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })} + Markup: $${profit.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${markupPct}%) = Total: $${markedUpAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-        : `From sub CO: ${subName}`,
+      amount: finalAmt,
+      notes: noteParts.join(' · '),
       status: 'pending',
       created_by: session.user.id,
       sov: pushedSOV,
       attachment_url: co.attachment_url || null,
     })
     if (error) { alert('Error: ' + error.message) }
-    else { setPushCOId(null); setPushMarkup(''); await loadPrimeCOs() }
+    else { setPushCOId(null); setPushMarkup(''); setPushAdditional(''); await loadPrimeCOs() }
     setPushingToPrime(false)
   }
 
@@ -3568,6 +3662,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
                   { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
                   { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
+                  { key: 'orders', label: 'Orders', badge: jobOrders.length || null },
                 ],
               },
               {
@@ -5521,7 +5616,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const subName = matchedContract?.vendor_name || registeredSubs.find(s => s.sub_id === subId)?.profiles?.company_name || 'Unknown sub'
                 const scope = co.subcontracts?.description
                 const isPushing = pushCOId === co.id
-                const markedUpPreview = pushMarkup !== '' ? Math.round(Number(co.amount) * (1 + parseFloat(pushMarkup || 0) / 100) * 100) / 100 : null
+                const markedUpPreview = (pushMarkup !== '' || pushAdditional !== '') ? Math.round((Number(co.amount) * (1 + parseFloat(pushMarkup || 0) / 100) + (parseFloat(pushAdditional) || 0)) * 100) / 100 : null
                 const hasSov = co.sov?.length > 0
                 const isSOVExpanded = expandedSubCOId === co.id
                 return (
@@ -5550,7 +5645,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )}
                         {(
-                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')) } }}>
+                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup(''); setPushAdditional('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')); setPushAdditional('') } }}>
                             {isPushing ? '✕ Cancel' : '↑ Push to Prime'}
                           </button>
                         )}
@@ -5569,9 +5664,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <label style={s.label}>Markup %</label>
                             <input type="number" style={{ ...s.input, width: '90px' }} placeholder="0" value={pushMarkup} onChange={e => setPushMarkup(e.target.value)} />
                           </div>
+                          <div>
+                            <label style={s.label}>Additional $</label>
+                            <input type="number" style={{ ...s.input, width: '110px' }} placeholder="0.00" value={pushAdditional} onChange={e => setPushAdditional(e.target.value)} />
+                          </div>
                           {markedUpPreview != null && (
                             <div>
-                              <label style={s.label}>Prime CO amount</label>
+                              <label style={s.label}>Prime CO total</label>
                               <div style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80', paddingTop: '6px' }}>${markedUpPreview.toLocaleString()}</div>
                             </div>
                           )}
@@ -9111,6 +9210,194 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </>
           )
         })()}
+
+              {/* ── ORDERS ── */}
+              {activeTab === 'orders' && (() => {
+                const STATUS_COLORS = {
+                  ordered:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
+                  shipped:   { color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' },
+                  delivered: { color: '#4ade80', bg: '#0a2a0a', border: '#1a4a1a' },
+                  installed: { color: '#a78bfa', bg: '#1a0a2a', border: '#3a1a5a' },
+                  canceled:  { color: '#ff6b6b', bg: '#2a0a0a', border: '#5a1a1a' },
+                }
+                const STATUSES = ['ordered', 'shipped', 'delivered', 'installed', 'canceled']
+                const CARRIERS = ['UPS', 'FedEx', 'USPS', 'Amazon', 'Other']
+                const trackingUrl = (carrier, num) => {
+                  if (!num) return null
+                  if (carrier === 'UPS') return `https://www.ups.com/track?tracknum=${num}`
+                  if (carrier === 'FedEx') return `https://www.fedex.com/fedextrack/?trknbr=${num}`
+                  if (carrier === 'USPS') return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${num}`
+                  if (carrier === 'Amazon') return `https://www.amazon.com/progress-tracker/package/?orderId=${num}`
+                  return null
+                }
+                const statusBadge = (status) => {
+                  const c = STATUS_COLORS[status] || STATUS_COLORS.ordered
+                  return { padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}`, cursor: 'pointer', outline: 'none' }
+                }
+                const inputStyle = { width: '100%', padding: '9px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '7px', fontSize: '13px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }
+                const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '5px', letterSpacing: '1.5px', textTransform: 'uppercase' }
+                const btnStyle = { padding: '8px 18px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '7px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px' }
+                const btnSmStyle = (color) => ({ padding: '5px 12px', background: color === 'green' ? '#0a2a0a' : color === 'blue' ? '#0a1a2a' : '#2a1a00', border: `1px solid ${color === 'green' ? '#1a4a1a' : color === 'blue' ? '#1a3a5a' : '#4a2a00'}`, borderRadius: '6px', color: color === 'green' ? '#4ade80' : color === 'blue' ? '#60a5fa' : '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' })
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '12px' }}>
+                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#f1f1f1' }}>Orders</h2>
+                      <button style={btnStyle} onClick={() => setShowAddOrder(v => !v)}>{showAddOrder ? 'Cancel' : '+ Add Order'}</button>
+                    </div>
+
+                    {/* Add Order Form */}
+                    {showAddOrder && (
+                      <form onSubmit={saveJobOrder} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <div>
+                            <label style={labelStyle}>Vendor</label>
+                            <input value={addOrderForm.vendor} onChange={e => setAddOrderForm(f => ({ ...f, vendor: e.target.value }))} style={inputStyle} placeholder="Home Depot, Amazon…" />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Description *</label>
+                            <input value={addOrderForm.description} onChange={e => setAddOrderForm(f => ({ ...f, description: e.target.value }))} required style={inputStyle} />
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                          <div>
+                            <label style={labelStyle}>Amount ($)</label>
+                            <input type="number" value={addOrderForm.amount} onChange={e => setAddOrderForm(f => ({ ...f, amount: e.target.value }))} style={inputStyle} placeholder="0.00" />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>PO Number</label>
+                            <input value={addOrderForm.po_number} onChange={e => setAddOrderForm(f => ({ ...f, po_number: e.target.value }))} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Order Date</label>
+                            <input type="date" value={addOrderForm.ordered_at} onChange={e => setAddOrderForm(f => ({ ...f, ordered_at: e.target.value }))} style={inputStyle} />
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                          <div>
+                            <label style={labelStyle}>Carrier</label>
+                            <select value={addOrderForm.carrier} onChange={e => setAddOrderForm(f => ({ ...f, carrier: e.target.value }))} style={{ ...inputStyle, color: '#f1f1f1' }}>
+                              {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Tracking #</label>
+                            <input value={addOrderForm.tracking_number} onChange={e => setAddOrderForm(f => ({ ...f, tracking_number: e.target.value }))} style={inputStyle} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Status</label>
+                            <select value={addOrderForm.status} onChange={e => setAddOrderForm(f => ({ ...f, status: e.target.value }))} style={{ ...inputStyle, color: '#f1f1f1' }}>
+                              {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '10px' }}>
+                          <label style={labelStyle}>Notes</label>
+                          <input value={addOrderForm.notes} onChange={e => setAddOrderForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} />
+                        </div>
+                        <div style={{ marginTop: '1rem' }}>
+                          <button type="submit" disabled={savingJobOrder} style={btnStyle}>{savingJobOrder ? 'Saving…' : 'Save Order'}</button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Template Assignment */}
+                    <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: jobAssignedTemplates.length > 0 ? '1rem' : 0 }}>
+                        <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Procurement Templates</p>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <select value={selectedTplId} onChange={e => setSelectedTplId(e.target.value)} style={{ padding: '6px 10px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', color: '#888' }}>
+                            <option value="">Apply template…</option>
+                            {allOrderTemplates.filter(t => !jobAssignedTemplates.some(a => a.template_id === t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                          {selectedTplId && <button onClick={() => assignTemplate(selectedTplId)} disabled={assigningTemplate} style={btnSmStyle('orange')}>{assigningTemplate ? '…' : 'Apply'}</button>}
+                        </div>
+                      </div>
+
+                      {jobAssignedTemplates.length === 0 ? (
+                        <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#444' }}>No templates applied yet. Select one above to add a procurement checklist.</p>
+                      ) : jobAssignedTemplates.map(assignment => {
+                        const tpl = assignment.order_templates
+                        const items = [...(tpl?.order_template_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                        const categories = [...new Set(items.map(i => i.category || 'General'))]
+                        return (
+                          <div key={assignment.id} style={{ marginBottom: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{tpl?.name}</span>
+                              <button onClick={() => removeTemplateAssignment(assignment.id)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
+                            </div>
+                            {categories.map(cat => {
+                              const catItems = items.filter(i => (i.category || 'General') === cat)
+                              return (
+                                <div key={cat} style={{ marginBottom: '8px' }}>
+                                  {categories.length > 1 && <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>{cat}</p>}
+                                  {catItems.map(item => {
+                                    const existingOrder = jobOrders.find(o => o.template_item_id === item.id)
+                                    return (
+                                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: '#0f0f0f', marginBottom: '4px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '20px' }}>{existingOrder ? '✅' : '⬜'}</span>
+                                        <span style={{ flex: 1, fontSize: '13px', color: existingOrder ? '#555' : '#f1f1f1', textDecoration: existingOrder ? 'line-through' : 'none' }}>{item.item_name}</span>
+                                        <span style={{ fontSize: '12px', color: '#444' }}>{item.default_qty} {item.unit}</span>
+                                        {existingOrder ? (
+                                          <span style={statusBadge(existingOrder.status)}>{existingOrder.status}</span>
+                                        ) : orderingItemId === item.id ? (
+                                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <input value={orderingItemForm.vendor} onChange={e => setOrderingItemForm(f => ({ ...f, vendor: e.target.value }))} style={{ ...inputStyle, width: '110px' }} placeholder="Vendor" />
+                                            <input type="number" value={orderingItemForm.amount} onChange={e => setOrderingItemForm(f => ({ ...f, amount: e.target.value }))} style={{ ...inputStyle, width: '80px' }} placeholder="$" />
+                                            <input value={orderingItemForm.tracking_number} onChange={e => setOrderingItemForm(f => ({ ...f, tracking_number: e.target.value }))} style={{ ...inputStyle, width: '120px' }} placeholder="Tracking #" />
+                                            <button onClick={() => saveItemOrder(item.id)} disabled={savingItemOrder} style={btnSmStyle('green')}>{savingItemOrder ? '…' : 'Save'}</button>
+                                            <button onClick={() => setOrderingItemId(null)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer' }}>✕</button>
+                                          </div>
+                                        ) : (
+                                          <button onClick={() => { setOrderingItemId(item.id); setOrderingItemForm({ vendor: '', amount: '', tracking_number: '', carrier: 'UPS', notes: '' }) }} style={btnSmStyle('orange')}>Order This</button>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* All Orders List */}
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>All Orders ({jobOrders.length})</p>
+                    {jobOrders.length === 0 ? (
+                      <p style={{ color: '#444', fontSize: '13px' }}>No orders yet.</p>
+                    ) : jobOrders.map(o => {
+                      const tUrl = trackingUrl(o.carrier, o.tracking_number)
+                      return (
+                        <div key={o.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 16px', marginBottom: '6px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{o.description}</div>
+                            <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{o.vendor ? `${o.vendor}` : ''}{o.po_number ? ` · PO ${o.po_number}` : ''}{o.ordered_at ? ` · ${o.ordered_at}` : ''}</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+                            {o.amount != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${Number(o.amount).toLocaleString()}</span>}
+                            {tUrl ? (
+                              <a href={tUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#60a5fa', textDecoration: 'none' }}>
+                                {o.carrier} ↗
+                              </a>
+                            ) : o.tracking_number ? (
+                              <span style={{ fontSize: '12px', color: '#555' }}>{o.tracking_number}</span>
+                            ) : null}
+                            <select
+                              value={o.status}
+                              disabled={updatingJobOrderId === o.id}
+                              onChange={e => updateJobOrderStatus(o.id, e.target.value)}
+                              style={statusBadge(o.status)}
+                            >
+                              {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                            </select>
+                            <button onClick={() => deleteJobOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px' }}>×</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </>
+                )
+              })()}
 
           </div>{/* end content area */}
         </div>{/* end sidebar + content flex */}

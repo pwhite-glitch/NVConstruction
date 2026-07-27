@@ -56,11 +56,16 @@ export async function POST(request) {
       }).catch(() => {})
     }
   } else {
-    // Sub sent — notify PM
-    const pmEmail = process.env.PM_EMAIL || 'management@nvim.co'
+    // Sub sent — notify all PMs/APMs
+    const { data: pmProfiles } = await adminSupabase
+      .from('profiles')
+      .select('email')
+      .in('role', ['pm', 'apm'])
+    const pmEmails = (pmProfiles || []).map(p => p.email).filter(Boolean)
+    if (pmEmails.length === 0) pmEmails.push(process.env.PM_EMAIL || 'management@nvim.co')
     await resend.emails.send({
       from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
-      to: pmEmail,
+      to: pmEmails,
       subject: `Message from ${sender_name || 'Subcontractor'} — #${jobRow?.job_number} ${jobRow?.project_name}`,
       html: `<div style="font-family:sans-serif;background:#0a0a0a;color:#f1f1f1;padding:32px;max-width:500px;margin:0 auto;border-radius:12px;">
         <p style="color:#60a5fa;font-size:16px;font-weight:700;margin:0 0 8px">New message from ${sender_name || 'sub'}</p>

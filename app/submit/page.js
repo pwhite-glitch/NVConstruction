@@ -392,23 +392,12 @@ export default function Submit() {
   }
 
   async function loadMyContracts(userId, companyId) {
-    const queries = [
-      supabase.from('subcontract_summary').select('*').eq('sub_id', userId).order('created_at', { ascending: false })
-    ]
-    if (companyId) {
-      queries.push(
-        supabase.from('subcontract_summary').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
-      )
-    }
-    const results = await Promise.all(queries)
-    const allContracts = results.flatMap(r => r.data || [])
-    const seen = new Set()
-    const contractData = allContracts.filter(c => { if (seen.has(c.id)) return false; seen.add(c.id); return true })
-    if (contractData.length === 0) { setMyContracts([]); return }
-    const jobIds = [...new Set(contractData.map(c => c.job_id))]
-    const { data: jobData } = await supabase.from('jobs').select('id, job_number, project_name').in('id', jobIds)
-    const jobMap = Object.fromEntries((jobData || []).map(j => [j.id, j]))
-    setMyContracts(contractData.map(c => ({ ...c, job: jobMap[c.job_id] })))
+    const params = new URLSearchParams({ user_id: userId, all: '1' })
+    if (companyId) params.set('company_id', companyId)
+    const res = await fetch(`/api/sub-contracts?${params}`)
+    if (!res.ok) { setMyContracts([]); return }
+    const { all_contracts } = await res.json()
+    setMyContracts(all_contracts || [])
   }
 
   async function loadMyCOs(subcontractId) {

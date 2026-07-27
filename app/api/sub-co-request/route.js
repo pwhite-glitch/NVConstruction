@@ -23,7 +23,10 @@ export async function POST(request) {
 
     if (!subcontract) return Response.json({ error: 'Subcontract not found' }, { status: 404 })
     if (subcontract.sub_id !== sub_user_id) {
-      return Response.json({ error: 'Not authorized' }, { status: 403 })
+      const { data: userProfile } = await adminSupabase.from('profiles').select('company_id').eq('id', sub_user_id).single()
+      if (!userProfile?.company_id || subcontract.company_id !== userProfile.company_id) {
+        return Response.json({ error: 'Not authorized' }, { status: 403 })
+      }
     }
 
     const { data: co, error } = await adminSupabase

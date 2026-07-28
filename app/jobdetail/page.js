@@ -2962,8 +2962,15 @@ ${sovHtml}
   }
 
   function laborCostForItem(budgetItemId) {
+    const budgetItem = budgetItems.find(b => b.id === budgetItemId)
+    const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' — ' : ''}${budgetItem.description}` : null
     return jobAllocations
-      .filter(a => a.allocation_type === 'pm_allocation' && a.budget_item_id === budgetItemId)
+      .filter(a => {
+        if (a.allocation_type !== 'pm_allocation') return false
+        if (a.budget_item_id) return a.budget_item_id === budgetItemId
+        if (itemText && a.budget_line) return a.budget_line === itemText
+        return false
+      })
       .reduce((sum, a) => {
         const emp = a.employees
         if (!emp) return sum

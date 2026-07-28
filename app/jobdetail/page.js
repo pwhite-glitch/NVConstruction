@@ -2811,6 +2811,27 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await loadPrimeCOs()
   }
 
+  async function applyPrimeCOToBudget(co) {
+    const linked = (co.sov || []).filter(r => r.budget_item_id && r.amount)
+    if (linked.length === 0) { alert('This CO has no budget lines assigned. Edit the CO first to add budget line assignments.'); return }
+    const lines = linked.map(r => {
+      const bi = budgetItems.find(b => b.id === r.budget_item_id)
+      return `  ${bi ? (bi.cost_code ? bi.cost_code + ' · ' : '') + bi.description : 'Unknown'}: +$${Number(r.amount).toLocaleString()}`
+    }).join('\n')
+    if (!window.confirm(`Apply CO "${co.description}" to budget items?\n\n${lines}\n\nOnly do this if the budget does NOT already reflect this CO — clicking twice will double-count.`)) return
+    for (const sovItem of linked) {
+      const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
+      if (item) {
+        await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: {
+          budget_amount: Number(item.budget_amount) + Number(sovItem.amount),
+          owner_amount: Number(item.owner_amount ?? item.budget_amount) + Number(sovItem.amount),
+        } }) })
+      }
+    }
+    await loadBudgetItems()
+    alert('Budget updated.')
+  }
+
   async function deletePrimeCO(coId) {
     if (!window.confirm('Delete this prime contract change order?')) return
     const co = primeCOs.find(c => c.id === coId)
@@ -5657,6 +5678,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmallGreen} onClick={() => openPrimeCOAssignPanel(co)}>Approve</button>
                           <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
                         </div>
+                      )}
+                      {co.status === 'approved' && hasSov && (
+                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#0a1a2a', border: '1px solid #1a3a5a', color: '#60a5fa' }} onClick={() => applyPrimeCOToBudget(co)}>Apply to Budget</button>
                       )}
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
                         loadBudgetItems()

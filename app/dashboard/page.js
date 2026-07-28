@@ -179,6 +179,8 @@ export default function Dashboard() {
   const [mergingCompanies, setMergingCompanies] = useState(false)
   const [mergeResult, setMergeResult] = useState(null)
   const [subTeamInviteResult, setSubTeamInviteResult] = useState({})
+  const [repairingCompanyFor, setRepairingCompanyFor] = useState(null)
+  const [repairMsg, setRepairMsg] = useState({})
   const [addMemberOpenFor, setAddMemberOpenFor] = useState(null)
   const [editingSubUser, setEditingSubUser] = useState(null)
   const [subUserActionLoading, setSubUserActionLoading] = useState(null)
@@ -889,6 +891,37 @@ export default function Dashboard() {
       const result = await fetch('/api/company-members').then(r => r.json())
       if (Array.isArray(result?.members)) setSubProfiles(result.members)
     } catch (_) {}
+  }
+
+  async function refreshDirectoryData() {
+    const [dirRes, cosRes, membersRes] = await Promise.all([
+      supabase.from('sub_directory').select('*').order('company_name'),
+      supabase.from('companies').select('*'),
+      fetch('/api/company-members').then(r => r.json()),
+    ])
+    if (dirRes.data) setDirectory(dirRes.data)
+    if (cosRes.data) setCompaniesData(cosRes.data)
+    if (membersRes?.members) setSubProfiles(membersRes.members)
+  }
+
+  async function repairCompanyLinks(dirId, companyName) {
+    setRepairingCompanyFor(dirId)
+    setRepairMsg(prev => ({ ...prev, [dirId]: null }))
+    try {
+      const res = await fetch('/api/repair-company-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_name: companyName }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Repair failed')
+      setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'ok', text: `Linked ${json.profiles_linked} user${json.profiles_linked !== 1 ? 's' : ''} and ${json.contracts_linked} contract${json.contracts_linked !== 1 ? 's' : ''} to ${companyName}.` } }))
+      await refreshDirectoryData()
+    } catch (err) {
+      setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: err.message } }))
+    } finally {
+      setRepairingCompanyFor(null)
+    }
   }
 
   async function inviteSubTeamMember(dirId, companyName) {
@@ -2184,6 +2217,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                           const isInviting = subTeamInviteLoading === sub.id
                           const invResult = subTeamInviteResult[sub.id]
 
+                          const hasUnlinkedMembers = !company || members.some(m => !m.company_id)
                           return (
                             <div style={{ background: '#080808', border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '1.25rem', overflow: 'hidden' }}>
 
@@ -2197,16 +2231,31 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                       : [activeCount > 0 && `${activeCount} active`, pendingCount > 0 && `${pendingCount} pending`].filter(Boolean).join(' · ')}
                                   </p>
                                 </div>
-                                <button
-                                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: isAddOpen ? '#141414' : '#1a0d00', border: `1px solid ${isAddOpen ? '#252525' : '#3a1a00'}`, borderRadius: '7px', color: isAddOpen ? '#555' : '#e8590c', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s' }}
-                                  onClick={() => {
-                                    setAddMemberOpenFor(isAddOpen ? null : sub.id)
-                                    setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { name: '', email: '' } }))
-                                    setSubTeamInviteResult(prev => ({ ...prev, [sub.id]: null }))
-                                  }}>
-                                  {isAddOpen ? '✕ Cancel' : '+ Add Member'}
-                                </button>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  {hasUnlinkedMembers && (
+                                    <button
+                                      style={{ padding: '7px 14px', background: '#1a0a00', border: '1px solid #5a2200', borderRadius: '7px', color: '#f97316', fontSize: '12px', fontWeight: '600', cursor: repairingCompanyFor === sub.id ? 'not-allowed' : 'pointer', opacity: repairingCompanyFor === sub.id ? 0.6 : 1 }}
+                                      onClick={() => repairCompanyLinks(sub.id, sub.company_name)}
+                                      disabled={repairingCompanyFor === sub.id}>
+                                      {repairingCompanyFor === sub.id ? 'Fixing…' : '⚠ Fix Company Links'}
+                                    </button>
+                                  )}
+                                  <button
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: isAddOpen ? '#141414' : '#1a0d00', border: `1px solid ${isAddOpen ? '#252525' : '#3a1a00'}`, borderRadius: '7px', color: isAddOpen ? '#555' : '#e8590c', fontSize: '12px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s' }}
+                                    onClick={() => {
+                                      setAddMemberOpenFor(isAddOpen ? null : sub.id)
+                                      setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { name: '', email: '' } }))
+                                      setSubTeamInviteResult(prev => ({ ...prev, [sub.id]: null }))
+                                    }}>
+                                    {isAddOpen ? '✕ Cancel' : '+ Add Member'}
+                                  </button>
+                                </div>
                               </div>
+                              {repairMsg[sub.id] && (
+                                <div style={{ padding: '10px 16px', fontSize: '12px', background: repairMsg[sub.id].type === 'err' ? '#2a0a0a' : '#0a1a0a', color: repairMsg[sub.id].type === 'err' ? '#ff6b6b' : '#4ade80', borderBottom: '1px solid #131313' }}>
+                                  {repairMsg[sub.id].text}
+                                </div>
+                              )}
 
                               {/* User rows */}
                               {members.map((m, idx) => {

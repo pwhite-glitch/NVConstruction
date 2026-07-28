@@ -157,6 +157,8 @@ export default function JobDetail() {
   const [expandedSubCOId, setExpandedSubCOId] = useState(null)
   const [coAssignPanel, setCoAssignPanel] = useState(null)
   // shape: { coId, total, markupPct, profitAmount, netCost, lines: [{uid, description, budget_item_id, amount}] }
+  const [primeCOAssignPanel, setPrimeCOAssignPanel] = useState(null)
+  // shape: { coId, total, lines: [{uid, description, budget_item_id, amount}] }
 
   // Budget state
   const [budgetItems, setBudgetItems] = useState([])
@@ -2731,6 +2733,35 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await reviewCO(coId, 'approved', finalSOV)
   }
 
+  function openPrimeCOAssignPanel(co) {
+    const total = Number(co.amount) || 0
+    const existingLines = (co.sov || [])
+      .filter(s => s.budget_item_id)
+      .map((s, i) => ({ uid: i, description: s.description || '', budget_item_id: s.budget_item_id, amount: String(s.amount || '') }))
+    setPrimeCOAssignPanel({
+      coId: co.id,
+      total,
+      lines: existingLines.length > 0 ? existingLines : [{ uid: 0, description: '', budget_item_id: '', amount: '' }],
+    })
+    loadBudgetItems()
+  }
+
+  async function approvePrimeCOWithSOV() {
+    if (!primeCOAssignPanel) return
+    const { coId, lines } = primeCOAssignPanel
+    const finalSOV = lines
+      .filter(l => l.budget_item_id && l.amount && Number(l.amount) !== 0)
+      .map(l => ({
+        description: l.description || budgetItems.find(b => b.id === l.budget_item_id)?.description || '',
+        budget_item_id: l.budget_item_id,
+        amount: Number(l.amount),
+      }))
+    await supabase.from('prime_change_orders').update({ sov: finalSOV.length > 0 ? finalSOV : null }).eq('id', coId)
+    setPrimeCOAssignPanel(null)
+    const co = primeCOs.find(c => c.id === coId)
+    await reviewPrimeCO(coId, 'approved', co?.amount, finalSOV)
+  }
+
   // ── Prime Contract Change Orders ────────────────────────────
   async function loadPrimeCOs() {
     const { data } = await supabase.from('prime_change_orders').select('*, budget_items(description, cost_code)').eq('job_id', id).order('created_at', { ascending: false })
@@ -2758,12 +2789,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setAddingPrimeCO(false)
   }
 
-  async function reviewPrimeCO(coId, status, coAmount) {
+  async function reviewPrimeCO(coId, status, coAmount, sovOverride = null) {
     const { error } = await supabase.from('prime_change_orders').update({ status }).eq('id', coId)
     if (error) { alert('Error updating prime CO: ' + error.message); return }
     if (status === 'approved') {
       const co = primeCOs.find(c => c.id === coId)
-      const linkedSovItems = (co?.sov || []).filter(r => r.budget_item_id && r.amount)
+      const sov = sovOverride || co?.sov || []
+      const linkedSovItems = sov.filter(r => r.budget_item_id && r.amount)
       for (const sovItem of linkedSovItems) {
         const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
         if (item) {
@@ -2775,9 +2807,6 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         }
       }
       await loadBudgetItems()
-      if (linkedSovItems.length === 0 && coAmount) {
-        alert(`CO approved — contract value updated by $${Number(coAmount).toLocaleString()}.\n\nNo budget line items were linked to this CO, so your SOV total was NOT updated. Go to the Budget tab and add $${Number(coAmount).toLocaleString()} to the relevant owner amount(s) to keep the contract sum and SOV in sync.`)
-      }
     }
     await loadPrimeCOs()
   }
@@ -5623,9 +5652,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
                       </span>
                       <span style={s.coBadge(co.status)}>{co.status}</span>
-                      {co.status === 'pending' && (
+                      {co.status === 'pending' && primeCOAssignPanel?.coId !== co.id && (
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button style={s.btnSmallGreen} onClick={() => reviewPrimeCO(co.id, 'approved', co.amount)}>Approve</button>
+                          <button style={s.btnSmallGreen} onClick={() => openPrimeCOAssignPanel(co)}>Approve</button>
                           <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
                         </div>
                       )}
@@ -5667,6 +5696,106 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     </div>
                   )}
+
+                  {primeCOAssignPanel?.coId === co.id && (() => {
+                    const { total, lines } = primeCOAssignPanel
+                    const assigned = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+                    const remaining = Math.round((total - assigned) * 100) / 100
+                    const isBalanced = Math.abs(remaining) < 0.02
+                    const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    return (
+                      <div style={{ marginTop: '12px', background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '18px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign CO to Budget Lines</p>
+                          <button onClick={() => setPrimeCOAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
+                        </div>
+
+                        {/* Breakdown */}
+                        <div style={{ background: '#080808', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '6px', columnGap: '24px' }}>
+                          <span style={{ fontSize: '13px', color: '#777' }}>CO Total (Owner)</span>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#60a5fa', textAlign: 'right' }}>{fmt(total)}</span>
+                          <span style={{ fontSize: '11px', color: '#555' }}>Assign the full amount to budget lines below. Both Internal and Owner SOV will update.</span>
+                          <span />
+                        </div>
+
+                        {/* Assignment rows */}
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '6px', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget Line</span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Description</span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Amount</span>
+                            <span />
+                          </div>
+                          {lines.map((line, i) => (
+                            <div key={line.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
+                              <select style={{ ...s.input, padding: '7px 10px', fontSize: '12px' }}
+                                value={line.budget_item_id}
+                                onChange={e => {
+                                  const bi = budgetItems.find(b => b.id === e.target.value)
+                                  setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, budget_item_id: e.target.value, description: l.description || (bi ? bi.description : '') } : l) }))
+                                }}>
+                                <option value="">— Select line —</option>
+                                {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                              </select>
+                              <input style={{ ...s.input, padding: '7px 10px', fontSize: '12px' }} placeholder="Description"
+                                value={line.description}
+                                onChange={e => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, description: e.target.value } : l) }))} />
+                              <input type="number" style={{ ...s.input, padding: '7px 10px', fontSize: '12px' }} placeholder="0.00"
+                                value={line.amount}
+                                onChange={e => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, amount: e.target.value } : l) }))} />
+                              <button onClick={() => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.filter((_, j) => j !== i) }))}
+                                style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => setPrimeCOAssignPanel(prev => ({ ...prev, lines: [...prev.lines, { uid: Date.now(), description: '', budget_item_id: '', amount: '' }] }))}
+                            style={{ fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', marginTop: '2px' }}>
+                            + Add Line
+                          </button>
+                        </div>
+
+                        {/* Running total */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#080808', borderRadius: '7px', marginBottom: '14px' }}>
+                          <span style={{ fontSize: '12px', color: '#555' }}>Assigned:</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{fmt(assigned)}</span>
+                          <span style={{ fontSize: '12px', color: '#555' }}>Remaining:</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
+                            {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
+                          </span>
+                          {!isBalanced && remaining > 0 && (
+                            <button onClick={() => {
+                              if (lines.length === 0) return
+                              const lastIdx = lines.length - 1
+                              const lastAmt = (Number(lines[lastIdx].amount) || 0) + remaining
+                              setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === lastIdx ? { ...l, amount: String(Math.round(lastAmt * 100) / 100) } : l) }))
+                            }} style={{ fontSize: '11px', color: '#60a5fa', background: 'none', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer' }}>
+                              Fill last line
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={approvePrimeCOWithSOV}
+                            style={{ padding: '9px 20px', background: isBalanced ? '#0a2a0a' : '#111', border: `1px solid ${isBalanced ? '#1a5a1a' : '#2a2a2a'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
+                            disabled={!isBalanced}>
+                            Assign &amp; Approve
+                          </button>
+                          <button
+                            onClick={() => { setPrimeCOAssignPanel(null); reviewPrimeCO(co.id, 'approved', co.amount) }}
+                            style={{ padding: '9px 20px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '7px', color: '#888', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            Approve Without Assigning
+                          </button>
+                          <button
+                            onClick={() => { setPrimeCOAssignPanel(null); reviewPrimeCO(co.id, 'rejected', co.amount) }}
+                            style={{ padding: '9px 20px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '7px', color: '#ff6b6b', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
                 )
               })}

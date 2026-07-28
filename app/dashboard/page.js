@@ -2242,7 +2242,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                             onChange={e => setEditingSubUser(prev => ({ ...prev, phone: e.target.value }))} />
                                         </div>
                                       </div>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                                         <div>
                                           <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Email (read-only)</p>
                                           <input style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box', opacity: 0.5, cursor: 'not-allowed' }}
@@ -2256,8 +2256,23 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                             <option value="sub_estimator">Estimator</option>
                                             <option value="sub_pm">Project Manager</option>
                                             <option value="sub_admin">Admin</option>
+                                            <option value="subcontractor">Subcontractor</option>
                                           </select>
                                         </div>
+                                      </div>
+                                      <div style={{ marginBottom: '14px' }}>
+                                        <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: editingSubUser.company_id ? '#444' : '#c2410c', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                          Company{!editingSubUser.company_id && ' ⚠ not linked — select to fix'}
+                                        </p>
+                                        <select style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box', borderColor: editingSubUser.company_id ? '' : '#5a2a0a' }}
+                                          value={editingSubUser.company_id || ''}
+                                          onChange={e => {
+                                            const co = companiesData.find(c => c.id === e.target.value)
+                                            setEditingSubUser(prev => ({ ...prev, company_id: e.target.value || null, company_name: co?.name || prev.company_name }))
+                                          }}>
+                                          <option value="">— No company assigned —</option>
+                                          {companiesData.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
+                                        </select>
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px' }}>
                                         <button style={{ ...s.btnSm('orange'), opacity: isActioning ? 0.6 : 1 }} disabled={isActioning} onClick={saveSubUserEdit}>

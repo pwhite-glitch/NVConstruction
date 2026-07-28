@@ -29,22 +29,27 @@ export async function GET(request) {
         adminSupabase.from('subcontracts').select('id').eq('company_id', company_id)
       )
     }
+    if (company_name.trim()) {
+      idQueries.push(
+        adminSupabase.from('subcontracts').select('id').ilike('vendor_name', company_name.trim())
+      )
+    }
     const idResults = await Promise.all(idQueries)
     const allIds = [...new Set(idResults.flatMap(r => (r.data || []).map(c => c.id)))]
 
     if (allIds.length === 0) return Response.json({ all_contracts: [] })
 
-    const { data: summaries } = await adminSupabase
-      .from('subcontract_summary')
-      .select('*')
-      .in('id', allIds)
-      .order('created_at', { ascending: false })
+    const [{ data: summaries }, { data: rawContracts }] = await Promise.all([
+      adminSupabase.from('subcontract_summary').select('*').in('id', allIds).order('created_at', { ascending: false }),
+      adminSupabase.from('subcontracts').select('id, signed_contract_url').in('id', allIds),
+    ])
 
     const contracts = summaries || []
+    const signedUrlMap = Object.fromEntries((rawContracts || []).map(r => [r.id, r.signed_contract_url]))
     const jobIds = [...new Set(contracts.map(c => c.job_id))]
     const { data: jobs } = await adminSupabase.from('jobs').select('id, job_number, project_name').in('id', jobIds)
     const jobMap = Object.fromEntries((jobs || []).map(j => [j.id, j]))
-    return Response.json({ all_contracts: contracts.map(c => ({ ...c, job: jobMap[c.job_id] })) })
+    return Response.json({ all_contracts: contracts.map(c => ({ ...c, job: jobMap[c.job_id], signed_contract_url: signedUrlMap[c.id] || null })) })
   }
 
   if (!job_id || !user_id) return Response.json({ contracts: [] })

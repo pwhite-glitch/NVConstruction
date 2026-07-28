@@ -84,6 +84,8 @@ export default function Submit() {
   const [myContracts, setMyContracts] = useState([])
   const [myCOs, setMyCOs] = useState({})
   const [expandedContract, setExpandedContract] = useState(null)
+  const [uploadingSignedContract, setUploadingSignedContract] = useState(null)
+  const [contractUploadMsg, setContractUploadMsg] = useState({})
   const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
   const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
@@ -215,7 +217,7 @@ export default function Submit() {
       }
       const { data: subs } = await billingQuery
       setSubmissions(subs || [])
-      await loadMyContracts(session.user.id, prof?.company_id)
+      await loadMyContracts(session.user.id, prof?.company_id, prof?.company_name)
       const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
       if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
       await loadBidInvitations(session.user.email)
@@ -300,6 +302,47 @@ export default function Submit() {
     const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
     if (!up.ok) throw new Error('Upload failed')
     return path
+  }
+
+  async function uploadSignedContract(contractId, file) {
+    setUploadingSignedContract(contractId)
+    setContractUploadMsg(prev => ({ ...prev, [contractId]: null }))
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `contracts/${contractId}/${Date.now()}.${ext}`
+      const urlRes = await fetch('/api/sub-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload-url', path }),
+      })
+      const { signedUrl, error: urlErr } = await urlRes.json()
+      if (urlErr || !signedUrl) throw new Error(urlErr || 'Could not get upload URL')
+      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!up.ok) throw new Error('Upload failed')
+      const patchRes = await fetch('/api/subcontracts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: contractId, signed_contract_url: path }),
+      })
+      if (!patchRes.ok) throw new Error('Failed to save document link')
+      setMyContracts(prev => prev.map(c => c.id === contractId ? { ...c, signed_contract_url: path } : c))
+      setContractUploadMsg(prev => ({ ...prev, [contractId]: { type: 'ok', text: 'Signed contract uploaded.' } }))
+    } catch (err) {
+      setContractUploadMsg(prev => ({ ...prev, [contractId]: { type: 'err', text: err.message } }))
+    } finally {
+      setUploadingSignedContract(null)
+    }
+  }
+
+  async function viewSignedContract(filePath) {
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signed-url', file_path: filePath, download: true }),
+    })
+    const { url, error } = await res.json()
+    if (error || !url) return alert('Could not retrieve document.')
+    window.open(url, '_blank')
   }
 
   async function saveDocs() {
@@ -391,9 +434,10 @@ export default function Submit() {
     setSubmittingBidFor(null)
   }
 
-  async function loadMyContracts(userId, companyId) {
+  async function loadMyContracts(userId, companyId, companyName) {
     const params = new URLSearchParams({ user_id: userId, all: '1' })
     if (companyId) params.set('company_id', companyId)
+    if (companyName) params.set('company_name', companyName)
     const res = await fetch(`/api/sub-contracts?${params}`)
     if (!res.ok) { setMyContracts([]); return }
     const { all_contracts } = await res.json()
@@ -1363,6 +1407,36 @@ export default function Submit() {
                           </a>
                         </div>
                       )}
+
+                      <div style={{ marginBottom: '1.25rem', padding: '14px 16px', background: '#0c0c0c', borderRadius: '10px', border: '1px solid #1e1e1e' }}>
+                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Signed Contract</p>
+                        {contractUploadMsg[c.id] && (
+                          <div style={{ padding: '8px 12px', borderRadius: '6px', marginBottom: '10px', fontSize: '12px', background: contractUploadMsg[c.id].type === 'err' ? '#2a0a0a' : '#0a2a0a', color: contractUploadMsg[c.id].type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${contractUploadMsg[c.id].type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>
+                            {contractUploadMsg[c.id].text}
+                          </div>
+                        )}
+                        {c.signed_contract_url ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Signed document on file</span>
+                            <button onClick={() => viewSignedContract(c.signed_contract_url)} style={{ padding: '6px 14px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '6px', color: '#60a5fa', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                              View / Download
+                            </button>
+                            <label style={{ padding: '6px 14px', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                              Replace
+                              <input type="file" accept=".pdf,.doc,.docx,.png,.jpg" style={{ display: 'none' }} onChange={e => e.target.files[0] && uploadSignedContract(c.id, e.target.files[0])} disabled={uploadingSignedContract === c.id} />
+                            </label>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '13px', color: '#555' }}>No signed document uploaded yet</span>
+                            <label style={{ padding: '7px 16px', background: '#1a1a0a', border: '1px solid #3a3a1a', borderRadius: '6px', color: '#facc15', fontSize: '12px', fontWeight: '600', cursor: uploadingSignedContract === c.id ? 'not-allowed' : 'pointer', opacity: uploadingSignedContract === c.id ? 0.6 : 1 }}>
+                              {uploadingSignedContract === c.id ? 'Uploading…' : '↑ Upload Signed Contract'}
+                              <input type="file" accept=".pdf,.doc,.docx,.png,.jpg" style={{ display: 'none' }} onChange={e => e.target.files[0] && uploadSignedContract(c.id, e.target.files[0])} disabled={uploadingSignedContract === c.id} />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
                       <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '0.75rem' }}>
                         Change orders ({cos.length})
                       </p>

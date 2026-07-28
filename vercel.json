@@ -11,6 +11,10 @@
     {
       "path": "/api/notify-deliveries",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/mileage-reminder",
+      "schedule": "0 21 * * 5"
     }
   ]
 }

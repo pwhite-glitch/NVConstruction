@@ -1887,8 +1887,8 @@ export default function Field() {
                                   </div>
                                 </div>
                                 <div style={{ marginBottom: '12px' }}>
-                                  <label style={s.label}>{vehicleLogForm.log_type === 'Weekly Miles' ? 'Miles driven this week *' : 'Odometer Reading (miles)'}</label>
-                                  <input type="number" style={s.input} required={vehicleLogForm.log_type === 'Weekly Miles'} value={vehicleLogForm.mileage} onChange={e => setVehicleLogForm(f => ({ ...f, mileage: e.target.value }))} placeholder={vehicleLogForm.log_type === 'Weekly Miles' ? 'e.g. 320' : 'e.g. 54200'} />
+                                  <label style={s.label}>Odometer Reading (miles){vehicleLogForm.log_type === 'Weekly Miles' ? ' *' : ''}</label>
+                                  <input type="number" style={s.input} required={vehicleLogForm.log_type === 'Weekly Miles'} value={vehicleLogForm.mileage} onChange={e => setVehicleLogForm(f => ({ ...f, mileage: e.target.value }))} placeholder="e.g. 54200" />
                                 </div>
                                 {needsFuel && (
                                   <div style={{ ...s.grid2, marginBottom: '12px' }}>

@@ -309,6 +309,7 @@ export default function Dashboard() {
   const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_item_id: '', notes: '', percentage: 100 })
   const [savingAlloc, setSavingAlloc] = useState(false)
   const [allocBudgetItems, setAllocBudgetItems] = useState([])
+  const [editingAllocBudget, setEditingAllocBudget] = useState(null) // { allocId, jobId, items: [] }
   const [showAddEmp, setShowAddEmp] = useState(false)
   const [empForm, setEmpForm] = useState({ name: '', title: '', type: 'w2', weekly_salary: '', weekly_truck: '', weekly_healthcare: '', weekly_taxes: '' })
   const [savingEmp, setSavingEmp] = useState(false)
@@ -4296,7 +4297,37 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                         <tr key={a.id} style={{ borderBottom: '1px solid #141414' }}>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1' }}>
                                                             {a.jobs ? `#${a.jobs.job_number} ${a.jobs.project_name}` : '—'}
-                                                            {a.budget_line && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{a.budget_line}</div>}
+                                                            {isPM && (
+                                                              editingAllocBudget?.allocId === a.id ? (
+                                                                <select
+                                                                  autoFocus
+                                                                  style={{ marginTop: '4px', display: 'block', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#f1f1f1', fontSize: '11px', padding: '4px 8px', width: '100%' }}
+                                                                  defaultValue=""
+                                                                  onChange={async ev => {
+                                                                    const item = editingAllocBudget.items.find(b => b.id === ev.target.value)
+                                                                    if (!item) return
+                                                                    await fetch('/api/employee-allocations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` }) })
+                                                                    setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).map(x => x.id === a.id ? { ...x, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` } : x) }))
+                                                                    setEditingAllocBudget(null)
+                                                                  }}
+                                                                  onBlur={() => setEditingAllocBudget(null)}
+                                                                >
+                                                                  <option value="">Select budget line…</option>
+                                                                  {editingAllocBudget.items.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} — ` : ''}{b.description}</option>)}
+                                                                </select>
+                                                              ) : (
+                                                                <div
+                                                                  onClick={async () => {
+                                                                    const jobId = a.job_id
+                                                                    const { data } = await supabase.from('budget_items').select('id, cost_code, description').eq('job_id', jobId).order('cost_code')
+                                                                    setEditingAllocBudget({ allocId: a.id, jobId, items: data || [] })
+                                                                  }}
+                                                                  style={{ marginTop: '3px', fontSize: '11px', color: a.budget_line ? '#555' : '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
+                                                                >
+                                                                  {a.budget_line || 'Set budget line ▾'}
+                                                                </div>
+                                                              )
+                                                            )}
                                                           </td>
                                                           <td style={{ padding: '8px 8px 8px 0' }}>
                                                             <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isPM ? '#0a1a2a' : '#1a0a00', color: isPM ? '#60a5fa' : '#f97316', border: `1px solid ${isPM ? '#1a3a5a' : '#4a2a00'}` }}>

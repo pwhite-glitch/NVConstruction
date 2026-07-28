@@ -47,6 +47,14 @@ export async function POST(request) {
   return Response.json({ allocation: data, data })
 }
 
+export async function PUT(request) {
+  const { id, budget_item_id, budget_line } = await request.json()
+  if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  const { error } = await adminSupabase.from('employee_job_allocations').update({ budget_item_id, budget_line }).eq('id', id)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  return Response.json({ ok: true })
+}
+
 export async function DELETE(request) {
   const { searchParams } = new URL(request.url)
   let id = searchParams.get('id')

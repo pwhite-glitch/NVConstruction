@@ -2674,8 +2674,11 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       const sov = sovOverride || co?.sov || []
       for (const sovItem of sov) {
         if (!sovItem.budget_item_id || !sovItem.amount) continue
-        const { data: item } = await supabase.from('budget_items').select('budget_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) } }) })
+        const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
+        if (item) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: {
+          budget_amount: Number(item.budget_amount) + Number(sovItem.amount),
+          owner_amount: Number(item.owner_amount ?? item.budget_amount) + Number(sovItem.amount),
+        } }) })
       }
       await loadBudgetItems()
       if (co?.direction === 'sub_to_pm' && co?.subcontract_id && co?.amount) {
@@ -2764,8 +2767,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       for (const sovItem of linkedSovItems) {
         const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
         if (item) {
-          const updates = { budget_amount: Number(item.budget_amount) + Number(sovItem.amount) }
-          if (item.owner_amount != null) updates.owner_amount = Number(item.owner_amount) + Number(sovItem.amount)
+          const updates = {
+            budget_amount: Number(item.budget_amount) + Number(sovItem.amount),
+            owner_amount: Number(item.owner_amount ?? item.budget_amount) + Number(sovItem.amount),
+          }
           await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
         }
       }
@@ -2786,8 +2791,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         if (!sovItem.budget_item_id || !sovItem.amount) continue
         const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
         if (item) {
-          const updates = { budget_amount: Number(item.budget_amount) - Number(sovItem.amount) }
-          if (item.owner_amount != null) updates.owner_amount = Number(item.owner_amount) - Number(sovItem.amount)
+          const updates = {
+            budget_amount: Number(item.budget_amount) - Number(sovItem.amount),
+            owner_amount: Number(item.owner_amount ?? item.budget_amount) - Number(sovItem.amount),
+          }
           await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
         }
       }

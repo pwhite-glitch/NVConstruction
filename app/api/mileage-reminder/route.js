@@ -12,7 +12,7 @@ export async function GET() {
     // Get all vehicles with an assigned user + their email
     const { data: vehicles, error: vErr } = await adminSupabase
       .from('vehicles')
-      .select('id, name, year, make, model, assigned_to, profiles:assigned_to(full_name, email)')
+      .select('id, name, year, make, model, assigned_to, profiles:assigned_to(full_name, email, role)')
       .not('assigned_to', 'is', null)
 
     if (vErr) return Response.json({ error: vErr.message }, { status: 500 })
@@ -43,6 +43,8 @@ export async function GET() {
 
       const vehicleName = [v.year, v.make, v.model].filter(Boolean).join(' ') || v.name || 'your vehicle'
       const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
+      const portalPath = profile.role === 'apm' ? '/dashboard' : '/field'
+      const portalLabel = profile.role === 'apm' ? 'My Vehicle tab in the dashboard' : 'Vehicles → Weekly Miles in the field portal'
 
       await resend.emails.send({
         from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
@@ -55,9 +57,9 @@ export async function GET() {
             You haven't submitted your weekly odometer reading for <strong style="color:#f1f1f1">${vehicleName}</strong> yet this week. Please log it before the end of the day.
           </p>
           <table cellpadding="0" cellspacing="0"><tr><td style="background:#e8590c;border-radius:8px">
-            <a href="${baseUrl}/field" style="display:inline-block;padding:14px 32px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Log Mileage Now</a>
+            <a href="${baseUrl}${portalPath}" style="display:inline-block;padding:14px 32px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Log Mileage Now</a>
           </td></tr></table>
-          <p style="color:#555;font-size:12px;margin:20px 0 0">Go to Vehicles → Weekly Miles in the field portal.</p>
+          <p style="color:#555;font-size:12px;margin:20px 0 0">Go to ${portalLabel}.</p>
         </div>`,
       }).catch(() => {})
 

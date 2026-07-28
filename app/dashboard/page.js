@@ -284,6 +284,9 @@ export default function Dashboard() {
   const [editingVehicleId, setEditingVehicleId] = useState(null)
   const [editVehicleForm, setEditVehicleForm] = useState({})
   const [savingVehicleEdit, setSavingVehicleEdit] = useState(false)
+  const [apmVehicleLogForm, setApmVehicleLogForm] = useState({ log_type: 'Weekly Miles', mileage: '', notes: '', log_date: new Date().toISOString().split('T')[0] })
+  const [loggingApmVehicle, setLoggingApmVehicle] = useState(false)
+  const [apmVehicleLogMsg, setApmVehicleLogMsg] = useState(null)
 
   // Tools state (PM-only)
   const [tools, setTools] = useState([])
@@ -1486,6 +1489,28 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     setVehicleLogs(prev => ({ ...prev, [vehicleId]: json.data || [] }))
   }
 
+  async function submitApmVehicleLog(e, vehicleId) {
+    e.preventDefault()
+    setLoggingApmVehicle(true)
+    setApmVehicleLogMsg(null)
+    try {
+      const res = await fetch('/api/vehicle-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vehicle_id: vehicleId, logged_by: profile.id, ...apmVehicleLogForm, mileage: apmVehicleLogForm.mileage || null }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save')
+      setApmVehicleLogMsg({ type: 'ok', text: 'Log entry saved.' })
+      setApmVehicleLogForm(f => ({ ...f, mileage: '', notes: '', log_date: new Date().toISOString().split('T')[0] }))
+      loadVehicleLogs(vehicleId)
+    } catch (err) {
+      setApmVehicleLogMsg({ type: 'err', text: err.message })
+    } finally {
+      setLoggingApmVehicle(false)
+    }
+  }
+
   async function addVehicle(e) {
     e.preventDefault()
     setSavingVehicle(true)
@@ -1783,7 +1808,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     { tab: 'directory',     label: 'Companies',      icon: <IconUsers />,    badge: dirBadge },
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
-    ...(profile?.role === 'pm' ? [{ tab: 'vehicles',  label: 'Fleet',      icon: <IconTruck /> }] : []),
+    ...(['pm', 'apm'].includes(profile?.role) ? [{ tab: 'vehicles', label: profile?.role === 'apm' ? 'My Vehicle' : 'Fleet', icon: <IconTruck /> }] : []),
     ...(['pm', 'apm'].includes(profile?.role) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
     ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
@@ -4425,7 +4450,91 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               )
             })()}
 
-            {activeTab === 'vehicles' && profile?.role === 'pm' && (() => {
+            {activeTab === 'vehicles' && ['pm', 'apm'].includes(profile?.role) && (() => {
+              if (profile?.role === 'apm') {
+                const myVehicle = vehicles.find(v => v.assigned_to === profile?.id)
+                const LOG_TYPES_APM = ['Weekly Miles', 'Mileage Update', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Other']
+                const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#555'
+                return (
+                  <>
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <h2 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: '700', color: '#f1f1f1' }}>My Vehicle</h2>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>Log odometer readings and maintenance for your assigned vehicle.</p>
+                    </div>
+                    {!myVehicle ? (
+                      <div style={s.emptyMsg}>No vehicle assigned to you yet. Contact your PM to get one assigned.</div>
+                    ) : (
+                      <>
+                        <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '1.25rem', marginBottom: '1.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{myVehicle.name}</span>
+                            {myVehicle.year && <span style={{ fontSize: '13px', color: '#555' }}>{myVehicle.year}</span>}
+                            {(myVehicle.make || myVehicle.model) && <span style={{ fontSize: '13px', color: '#555' }}>{[myVehicle.make, myVehicle.model].filter(Boolean).join(' ')}</span>}
+                            {myVehicle.color && <span style={{ fontSize: '13px', color: '#555' }}>{myVehicle.color}</span>}
+                            {myVehicle.license_plate && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', fontFamily: 'monospace' }}>{myVehicle.license_plate}</span>}
+                          </div>
+                          {myVehicle.vin && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#555' }}>VIN: {myVehicle.vin}</p>}
+                          {myVehicle.notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#555' }}>{myVehicle.notes}</p>}
+                        </div>
+
+                        <div style={s.formBox}>
+                          <p style={s.formTitle}>Log Entry</p>
+                          {apmVehicleLogMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '12px', fontSize: '13px', background: apmVehicleLogMsg.type === 'err' ? '#2a0a0a' : '#0a2a0a', color: apmVehicleLogMsg.type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${apmVehicleLogMsg.type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>{apmVehicleLogMsg.text}</div>}
+                          <form onSubmit={e => submitApmVehicleLog(e, myVehicle.id)}>
+                            <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                              <div>
+                                <label style={s.label}>Log Type</label>
+                                <select style={s.input} value={apmVehicleLogForm.log_type} onChange={e => setApmVehicleLogForm(f => ({ ...f, log_type: e.target.value }))}>
+                                  {LOG_TYPES_APM.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label style={s.label}>Odometer Reading (miles){apmVehicleLogForm.log_type === 'Weekly Miles' ? ' *' : ''}</label>
+                                <input type="number" style={s.input} required={apmVehicleLogForm.log_type === 'Weekly Miles'} value={apmVehicleLogForm.mileage} onChange={e => setApmVehicleLogForm(f => ({ ...f, mileage: e.target.value }))} placeholder="e.g. 48250" />
+                              </div>
+                              <div>
+                                <label style={s.label}>Date</label>
+                                <input type="date" style={s.input} value={apmVehicleLogForm.log_date} onChange={e => setApmVehicleLogForm(f => ({ ...f, log_date: e.target.value }))} />
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={s.label}>Notes</label>
+                              <input style={s.input} value={apmVehicleLogForm.notes} onChange={e => setApmVehicleLogForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+                            </div>
+                            <button type="submit" style={{ ...s.btn, opacity: loggingApmVehicle ? 0.6 : 1 }} disabled={loggingApmVehicle}>{loggingApmVehicle ? 'Saving...' : 'Save Log Entry'}</button>
+                          </form>
+                        </div>
+
+                        <div style={{ marginTop: '1.5rem' }}>
+                          <p style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600', color: '#888' }}>Recent Logs</p>
+                          {!vehicleLogs[myVehicle.id] ? (
+                            <button style={{ ...s.btnSm('gray'), fontSize: '12px' }} onClick={() => loadVehicleLogs(myVehicle.id)}>Load logs</button>
+                          ) : vehicleLogs[myVehicle.id].length === 0 ? (
+                            <div style={s.emptyMsg}>No logs yet.</div>
+                          ) : (
+                            vehicleLogs[myVehicle.id].map(l => (
+                              <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: logTypeBadgeColor(l.log_type), border: '1px solid #2a2a2a' }}>{l.log_type}</span>
+                                    {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
+                                  </div>
+                                  <div style={{ fontSize: '12px', color: '#555' }}>
+                                    {new Date(l.log_date + 'T12:00:00').toLocaleDateString()}
+                                    {l.notes && ` · ${l.notes}`}
+                                  </div>
+                                </div>
+                                {l.photo_url && <button style={s.btnSm('gray')} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )
+              }
+
               const supers = teamMembers
               const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
               const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#555'

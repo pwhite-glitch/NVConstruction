@@ -141,6 +141,11 @@ export default function Field() {
   const [submittingToolLog, setSubmittingToolLog] = useState(false)
   const [toolLogMsg, setToolLogMsg] = useState('')
   const [toolLogError, setToolLogError] = useState('')
+  const [showPurchaseToolForm, setShowPurchaseToolForm] = useState(false)
+  const [purchaseToolForm, setPurchaseToolForm] = useState({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: new Date().toISOString().split('T')[0], notes: '' })
+  const [purchaseToolFile, setPurchaseToolFile] = useState(null)
+  const [purchasingTool, setPurchasingTool] = useState(false)
+  const [purchaseToolMsg, setPurchaseToolMsg] = useState('')
 
   const [jobDocs, setJobDocs] = useState([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
@@ -1341,7 +1346,7 @@ export default function Field() {
                             <div>
                               <label style={s.label}>Category *</label>
                               <select style={s.input} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
-                                {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                                {['Materials', 'Tools', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
                               </select>
                             </div>
                             <div>
@@ -1828,7 +1833,7 @@ export default function Field() {
 
                 {/* ── VEHICLES ── */}
                 {activeTab === 'vehicles' && (() => {
-                  const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
+                  const LOG_TYPES = ['Weekly Miles', 'Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
                   const needsPhoto = ['Monthly Photo', 'Damage Report'].includes(vehicleLogForm.log_type)
                   const needsFuel = vehicleLogForm.log_type === 'Fuel Fill-up'
                   return (
@@ -1882,8 +1887,8 @@ export default function Field() {
                                   </div>
                                 </div>
                                 <div style={{ marginBottom: '12px' }}>
-                                  <label style={s.label}>Odometer Reading (miles)</label>
-                                  <input type="number" style={s.input} value={vehicleLogForm.mileage} onChange={e => setVehicleLogForm(f => ({ ...f, mileage: e.target.value }))} placeholder="e.g. 54200" />
+                                  <label style={s.label}>{vehicleLogForm.log_type === 'Weekly Miles' ? 'Miles driven this week *' : 'Odometer Reading (miles)'}</label>
+                                  <input type="number" style={s.input} required={vehicleLogForm.log_type === 'Weekly Miles'} value={vehicleLogForm.mileage} onChange={e => setVehicleLogForm(f => ({ ...f, mileage: e.target.value }))} placeholder={vehicleLogForm.log_type === 'Weekly Miles' ? 'e.g. 320' : 'e.g. 54200'} />
                                 </div>
                                 {needsFuel && (
                                   <div style={{ ...s.grid2, marginBottom: '12px' }}>
@@ -1952,10 +1957,91 @@ export default function Field() {
                     <>
                       {toolLogMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{toolLogMsg}</div>}
                       {toolLogError && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a' }}>{toolLogError}</div>}
+                      {purchaseToolMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{purchaseToolMsg}</div>}
 
-                      {myTools.length === 0 && (
+                      {/* Purchase tool */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{myTools.length} tool{myTools.length !== 1 ? 's' : ''} assigned to you</p>
+                        <button style={s.btnSm('orange')} onClick={() => setShowPurchaseToolForm(v => !v)}>{showPurchaseToolForm ? 'Cancel' : '+ Log Tool Purchase'}</button>
+                      </div>
+
+                      {showPurchaseToolForm && (
+                        <div style={s.card}>
+                          <h2 style={s.cardTitle}>Log Tool Purchase</h2>
+                          <form onSubmit={async e => {
+                            e.preventDefault()
+                            if (!purchaseToolForm.name) return
+                            setPurchasingTool(true)
+                            try {
+                              const userId = (await supabase.auth.getSession()).data.session?.user.id
+                              // Add to tool inventory
+                              await fetch('/api/tools', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: purchaseToolForm.name, brand: purchaseToolForm.brand || null, category: purchaseToolForm.category, purchase_date: purchaseToolForm.purchase_date, purchase_cost: purchaseToolForm.purchase_cost ? parseFloat(purchaseToolForm.purchase_cost) : null, condition: 'good', assigned_to: userId, notes: purchaseToolForm.notes || null })
+                              })
+                              // Log as job expense if cost entered and job selected
+                              if (purchaseToolForm.purchase_cost && selectedJobId) {
+                                const fd = new FormData()
+                                fd.append('data', JSON.stringify({ job_id: selectedJobId, cost_date: purchaseToolForm.purchase_date, description: `Tool purchase: ${purchaseToolForm.name}${purchaseToolForm.brand ? ' (' + purchaseToolForm.brand + ')' : ''}`, category: 'Tools', amount: parseFloat(purchaseToolForm.purchase_cost), status: 'approved' }))
+                                if (purchaseToolFile) fd.append('file', purchaseToolFile)
+                                await fetch('/api/direct-costs', { method: 'POST', body: fd })
+                              }
+                              setPurchaseToolMsg(`${purchaseToolForm.name} logged.${purchaseToolForm.purchase_cost && selectedJobId ? ' Cost posted to job.' : ''}`)
+                              setPurchaseToolForm({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: new Date().toISOString().split('T')[0], notes: '' })
+                              setPurchaseToolFile(null)
+                              setShowPurchaseToolForm(false)
+                              setTimeout(() => setPurchaseToolMsg(''), 4000)
+                            } catch { }
+                            setPurchasingTool(false)
+                          }}>
+                            <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                              <div>
+                                <label style={s.label}>Tool Name *</label>
+                                <input style={s.input} required value={purchaseToolForm.name} onChange={e => setPurchaseToolForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Dewalt Drill" />
+                              </div>
+                              <div>
+                                <label style={s.label}>Category</label>
+                                <select style={s.input} value={purchaseToolForm.category} onChange={e => setPurchaseToolForm(f => ({ ...f, category: e.target.value }))}>
+                                  {['Power Tools', 'Hand Tools', 'Measuring & Layout', 'Safety Equipment', 'Fasteners & Hardware', 'Electrical', 'Plumbing', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                              <div>
+                                <label style={s.label}>Brand / Model</label>
+                                <input style={s.input} value={purchaseToolForm.brand} onChange={e => setPurchaseToolForm(f => ({ ...f, brand: e.target.value }))} placeholder="e.g. Dewalt DCD777" />
+                              </div>
+                              <div>
+                                <label style={s.label}>Purchase Date *</label>
+                                <input type="date" style={s.input} required value={purchaseToolForm.purchase_date} onChange={e => setPurchaseToolForm(f => ({ ...f, purchase_date: e.target.value }))} />
+                              </div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '1rem' }}>
+                              <div>
+                                <label style={s.label}>Cost ($){selectedJobId ? ' — will post to job' : ''}</label>
+                                <input type="number" step="0.01" min="0" style={s.input} value={purchaseToolForm.purchase_cost} onChange={e => setPurchaseToolForm(f => ({ ...f, purchase_cost: e.target.value }))} placeholder="0.00" />
+                              </div>
+                              <div>
+                                <label style={s.label}>Receipt (optional)</label>
+                                <input type="file" accept="image/*,application/pdf" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setPurchaseToolFile(e.target.files[0])} />
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: '1rem' }}>
+                              <label style={s.label}>Notes</label>
+                              <input style={s.input} value={purchaseToolForm.notes} onChange={e => setPurchaseToolForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button type="submit" disabled={purchasingTool} style={{ ...s.btn, opacity: purchasingTool ? 0.6 : 1 }}>{purchasingTool ? 'Saving...' : 'Save Purchase'}</button>
+                              <button type="button" style={s.btnSm('gray')} onClick={() => setShowPurchaseToolForm(false)}>Cancel</button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
+
+                      {myTools.length === 0 && !showPurchaseToolForm && (
                         <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' }}>
-                          No tools are currently checked out to you. Your PM assigns tools from the dashboard.
+                          No tools checked out to you. Use the button above to log a tool you purchased.
                         </div>
                       )}
 

@@ -4426,7 +4426,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             })()}
 
             {activeTab === 'vehicles' && profile?.role === 'pm' && (() => {
-              const supers = teamMembers.filter(m => m.role === 'super')
+              const supers = teamMembers
               const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
               const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#555'
               return (
@@ -4574,7 +4574,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               const CATEGORIES = ['Power Tools', 'Hand Tools', 'Measuring', 'Safety', 'Equipment', 'Other']
               const STATUS_COLORS = { available: '#4ade80', checked_out: '#f59e0b', repair: '#3b82f6', lost: '#ef4444' }
               const COND_COLORS = { good: '#4ade80', fair: '#f59e0b', poor: '#ef4444' }
-              const supers = teamMembers.filter(m => m.role === 'super')
+              const supers = teamMembers
               const LOG_TYPE_LABELS = { checkout: 'Checked Out', checkin: 'Checked In', repair: 'Sent for Repair', damage: 'Damage Reported', lost: 'Reported Lost', found: 'Found / Recovered', maintenance: 'Maintenance' }
 
               const filtered = tools.filter(t => {

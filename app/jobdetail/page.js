@@ -4758,6 +4758,76 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )
             })()}
+            {/* Employee Labor — Against Profit */}
+            {(() => {
+              const profitAllocs = jobAllocations.filter(a => a.allocation_type === 'profit')
+              if (profitAllocs.length === 0) return null
+              const rows = profitAllocs.map(a => {
+                const emp = a.employees
+                if (!emp) return null
+                const weeklyRate = Number(emp.weekly_salary || 0) + Number(emp.weekly_truck || 0) + Number(emp.weekly_healthcare || 0) + Number(emp.weekly_taxes || 0)
+                const pct = a.percentage != null ? Number(a.percentage) : 100
+                const start = a.start_date ? new Date(a.start_date) : null
+                const end = a.end_date ? new Date(a.end_date) : new Date()
+                const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : 0
+                const effectiveWeekly = Math.round(weeklyRate * pct / 100)
+                const accrued = Math.round(effectiveWeekly * days / 7)
+                return { ...a, emp, effectiveWeekly, days, accrued, pct }
+              }).filter(Boolean)
+              const totalAccrued = rows.reduce((sum, r) => sum + r.accrued, 0)
+              return (
+                <div style={{ ...s.card, marginTop: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <p style={{ ...s.cardTitle, margin: 0 }}>Employee Labor — Against Profit</p>
+                    <button style={s.btnSmallOrange} onClick={async () => {
+                      if (!confirm(`Post $${totalAccrued.toLocaleString()} in employee labor to job costs?\n\nThis creates direct cost entries for each employee. Only do this at closeout or end of period.`)) return
+                      const today = new Date().toISOString().slice(0, 10)
+                      const results = await Promise.all(rows.map(r =>
+                        fetch('/api/direct-costs', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            job_id: id,
+                            budget_item_id: null,
+                            cost_date: today,
+                            description: `Employee labor — ${r.emp.name} (${r.days} days${r.pct < 100 ? ` at ${r.pct}%` : ''})`,
+                            category: 'Employee Labor',
+                            amount: r.accrued,
+                            status: 'approved',
+                          })
+                        })
+                      ))
+                      const allOk = results.every(res => res.ok)
+                      alert(allOk ? `Posted $${totalAccrued.toLocaleString()} to job costs.` : 'Some entries may have failed — check the Costs tab.')
+                    }}>Post to Job Costs</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                    <span>Employee</span>
+                    <span style={{ textAlign: 'right' }}>Start</span>
+                    <span style={{ textAlign: 'right' }}>Days ▲</span>
+                    <span style={{ textAlign: 'right' }}>$/Wk</span>
+                    <span style={{ textAlign: 'right' }}>Accrued</span>
+                  </div>
+                  {rows.map(r => (
+                    <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '10px 0', borderBottom: '1px solid #111', fontSize: '13px', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: '#f1f1f1' }}>{r.emp.name}</span>
+                        {r.pct < 100 && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#facc15', fontWeight: '700' }}>{r.pct}%</span>}
+                        {r.emp.title && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{r.emp.title}</div>}
+                      </div>
+                      <div style={{ textAlign: 'right', color: '#aaa', fontSize: '12px' }}>{r.start_date}</div>
+                      <div style={{ textAlign: 'right', color: '#4ade80' }}>{r.days}</div>
+                      <div style={{ textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>${r.effectiveWeekly.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', color: '#4ade80', fontWeight: '700' }}>${r.accrued.toLocaleString()}</div>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 0', fontSize: '13px' }}>
+                    <span style={{ color: '#555' }}>{rows.length} employee{rows.length !== 1 ? 's' : ''} · accruing daily</span>
+                    <span style={{ fontWeight: '700', color: '#4ade80' }}>Total: ${totalAccrued.toLocaleString()}</span>
+                  </div>
+                </div>
+              )
+            })()}
           </>
         )}
 

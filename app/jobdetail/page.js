@@ -479,7 +479,6 @@ export default function JobDetail() {
   async function loadJobAllocations() {
     const res = await fetch(`/api/employee-allocations?job_id=${id}`)
     const json = await res.json()
-    console.log('[allocations debug] ' + JSON.stringify((json.allocations || []).map(a => ({ allocation_type: a.allocation_type, budget_item_id: a.budget_item_id, percentage: a.percentage }))))
     setJobAllocations(json.allocations || [])
   }
 

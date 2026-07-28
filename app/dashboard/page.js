@@ -4244,7 +4244,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                       onClick={async () => {
                                                         if (!allocForm.job_id || !allocForm.start_date) return
                                                         setSavingAlloc(true)
-                                                        const payload = Object.fromEntries(Object.entries({ employee_id: e.id, ...allocForm }).filter(([, v]) => v !== '' && v !== null && v !== undefined))
+                                                        const { budget_line_id: _bli, ...formData } = allocForm
+                                                        const payload = Object.fromEntries(Object.entries({ employee_id: e.id, ...formData }).filter(([, v]) => v !== '' && v !== null && v !== undefined))
                                                         const res = await fetch('/api/employee-allocations', {
                                                           method: 'POST',
                                                           headers: { 'Content-Type': 'application/json' },

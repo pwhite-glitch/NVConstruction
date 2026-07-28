@@ -4244,16 +4244,25 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                       onClick={async () => {
                                                         if (!allocForm.job_id || !allocForm.start_date) return
                                                         setSavingAlloc(true)
+                                                        const payload = Object.fromEntries(Object.entries({ employee_id: e.id, ...allocForm }).filter(([, v]) => v !== '' && v !== null && v !== undefined))
                                                         const res = await fetch('/api/employee-allocations', {
                                                           method: 'POST',
                                                           headers: { 'Content-Type': 'application/json' },
-                                                          body: JSON.stringify(Object.fromEntries(Object.entries({ employee_id: e.id, ...allocForm }).filter(([, v]) => v !== '' && v !== null && v !== undefined)))
+                                                          body: JSON.stringify(payload)
                                                         })
-                                                        const { data } = await res.json()
+                                                        const json = await res.json()
+                                                        if (!res.ok || json.error) {
+                                                          alert('Save failed: ' + (json.error || res.status))
+                                                          setSavingAlloc(false)
+                                                          return
+                                                        }
+                                                        const data = json.data
                                                         if (data) {
                                                           setEmpAllocations(prev => ({ ...prev, [e.id]: [data, ...(prev[e.id] || [])] }))
                                                           setAllocForm({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '', percentage: 100 })
                                                           setShowAllocFormFor(null)
+                                                        } else {
+                                                          alert('Save failed: no data returned. Response: ' + JSON.stringify(json))
                                                         }
                                                         setSavingAlloc(false)
                                                       }}

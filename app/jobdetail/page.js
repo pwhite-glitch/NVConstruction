@@ -478,8 +478,9 @@ export default function JobDetail() {
 
   async function loadJobAllocations() {
     const res = await fetch(`/api/employee-allocations?job_id=${id}`)
-    const { allocations } = await res.json()
-    setJobAllocations(allocations || [])
+    const json = await res.json()
+    console.log('[allocations debug]', json)
+    setJobAllocations(json.allocations || [])
   }
 
   async function loadBillingByItem() {

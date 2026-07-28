@@ -158,6 +158,7 @@ export default function JobDetail() {
 
   // Budget state
   const [budgetItems, setBudgetItems] = useState([])
+  const [jobAllocations, setJobAllocations] = useState([])
   const [showAddBudgetItem, setShowAddBudgetItem] = useState(false)
   const [budgetItemForm, setBudgetItemForm] = useState(emptyBudgetItem)
   const [addingBudgetItem, setAddingBudgetItem] = useState(false)
@@ -473,6 +474,12 @@ export default function JobDetail() {
   async function loadBudgetItems() {
     const { data } = await supabase.from('budget_items').select('*').eq('job_id', id).order('cost_code', { ascending: true })
     setBudgetItems(data || [])
+  }
+
+  async function loadJobAllocations() {
+    const res = await fetch(`/api/employee-allocations?job_id=${id}`)
+    const { allocations } = await res.json()
+    setJobAllocations(allocations || [])
   }
 
   async function loadBillingByItem() {
@@ -1433,7 +1440,7 @@ ${sovLines.length > 0 ? `
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem(); loadPrimeCOs() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
     if (activeTab === 'subs') { loadSubDirectory() }
@@ -2954,8 +2961,23 @@ ${sovHtml}
     setCsvUploading(false)
   }
 
+  function laborCostForItem(budgetItemId) {
+    return jobAllocations
+      .filter(a => a.allocation_type === 'pm_allocation' && a.budget_item_id === budgetItemId)
+      .reduce((sum, a) => {
+        const emp = a.employees
+        if (!emp) return sum
+        const weeklyRate = Number(emp.weekly_salary || 0) + Number(emp.weekly_truck || 0) + Number(emp.weekly_healthcare || 0) + Number(emp.weekly_taxes || 0)
+        const pct = a.percentage != null ? Number(a.percentage) : 100
+        const start = a.start_date ? new Date(a.start_date) : null
+        const end = a.end_date ? new Date(a.end_date) : new Date()
+        const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : 0
+        return sum + (weeklyRate * pct / 100 * days / 7)
+      }, 0)
+  }
+
   function committedForItem(budgetItemId) {
-    return contracts.reduce((total, c) => {
+    const contractCommitted = contracts.reduce((total, c) => {
       const adjusted = Number(c.adjusted_contract_value || c.contract_value || 0)
       const allocs = c.budget_allocations
       if (allocs && allocs.length > 0) {
@@ -2971,6 +2993,7 @@ ${sovHtml}
       }
       return total
     }, 0)
+    return contractCommitted + laborCostForItem(budgetItemId)
   }
 
   async function saveForecastEac(budgetItemId, value) {

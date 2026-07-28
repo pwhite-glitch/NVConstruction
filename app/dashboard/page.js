@@ -306,7 +306,7 @@ export default function Dashboard() {
   const [empAllocations, setEmpAllocations] = useState({}) // keyed by employee_id
   const [expandedEmpId, setExpandedEmpId] = useState(null)
   const [showAllocFormFor, setShowAllocFormFor] = useState(null)
-  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '', percentage: 100 })
+  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_item_id: '', notes: '', percentage: 100 })
   const [savingAlloc, setSavingAlloc] = useState(false)
   const [allocBudgetItems, setAllocBudgetItems] = useState([])
   const [showAddEmp, setShowAddEmp] = useState(false)
@@ -4183,7 +4183,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                       <label style={s.label}>Job</label>
                                                       <select value={allocForm.job_id} onChange={async ev => {
                                                         const jobId = ev.target.value
-                                                        setAllocForm(f => ({ ...f, job_id: jobId, budget_line: '', budget_line_id: '' }))
+                                                        setAllocForm(f => ({ ...f, job_id: jobId, budget_line: '', budget_item_id: '' }))
                                                         if (jobId) {
                                                           const { data } = await supabase.from('budget_items').select('id, cost_code, description, budget_amount').eq('job_id', jobId).order('cost_code')
                                                           setAllocBudgetItems(data || [])
@@ -4218,10 +4218,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                       <label style={s.label}>Budget Line Item</label>
                                                       {allocBudgetItems.length > 0 ? (
                                                         <select
-                                                          value={allocForm.budget_line_id}
+                                                          value={allocForm.budget_item_id}
                                                           onChange={ev => {
                                                             const item = allocBudgetItems.find(b => b.id === ev.target.value)
-                                                            setAllocForm(f => ({ ...f, budget_line_id: ev.target.value, budget_line: item ? `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` : '' }))
+                                                            setAllocForm(f => ({ ...f, budget_item_id: ev.target.value, budget_line: item ? `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` : '' }))
                                                           }}
                                                           style={{ ...s.input, color: '#f1f1f1' }}
                                                         >
@@ -4244,8 +4244,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                       onClick={async () => {
                                                         if (!allocForm.job_id || !allocForm.start_date) return
                                                         setSavingAlloc(true)
-                                                        const { budget_line_id: _bli, ...formData } = allocForm
-                                                        const payload = Object.fromEntries(Object.entries({ employee_id: e.id, ...formData }).filter(([, v]) => v !== '' && v !== null && v !== undefined))
+                                                        const payload = Object.fromEntries(Object.entries({ employee_id: e.id, ...allocForm }).filter(([, v]) => v !== '' && v !== null && v !== undefined))
                                                         const res = await fetch('/api/employee-allocations', {
                                                           method: 'POST',
                                                           headers: { 'Content-Type': 'application/json' },
@@ -4260,7 +4259,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                         const data = json.data
                                                         if (data) {
                                                           setEmpAllocations(prev => ({ ...prev, [e.id]: [data, ...(prev[e.id] || [])] }))
-                                                          setAllocForm({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '', percentage: 100 })
+                                                          setAllocForm({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_item_id: '', notes: '', percentage: 100 })
                                                           setShowAllocFormFor(null)
                                                         } else {
                                                           alert('Save failed: no data returned. Response: ' + JSON.stringify(json))

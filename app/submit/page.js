@@ -777,17 +777,18 @@ export default function Submit() {
   // sub_admin: billing-focused only
   // sub_pm: all except bids (they don't handle estimating)
   // sub_estimator / subcontractor: full access
+  const allSubRoles = ['subcontractor', 'sub_pm', 'sub_admin', 'sub_estimator']
   const allNavItems = [
-    { tab: 'calendar',   label: 'Calendar',        icon: <IconCal />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'] },
-    { tab: 'billing',    label: 'Submit Billing',   icon: <IconDollar />,    roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'] },
-    { tab: 'contracts',  label: 'My Contracts',     icon: <IconBriefcase />, roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: myContracts.length || null },
-    { tab: 'history',    label: 'Billing History',  icon: <IconHistory />,   roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'], badge: submissions.length || null },
-    { tab: 'bids',       label: 'Bid Invites',      icon: <IconBid />,       roles: ['subcontractor', 'sub_estimator'], badge: pendingBids || null },
-    { tab: 'docs',       label: 'My Documents',     icon: <IconDoc />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'] },
-    { tab: 'rfis',       label: 'RFIs',             icon: <IconRfi />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: openRfis || null },
-    { tab: 'messages',   label: 'Messages',         icon: <IconMsg />,       roles: ['subcontractor', 'sub_estimator', 'sub_pm'] },
-    { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />,     roles: ['subcontractor', 'sub_estimator', 'sub_pm'], badge: openPunch || null },
-    { tab: 'team',       label: 'My Team',          icon: <IconTeam />,      roles: ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'] },
+    { tab: 'calendar',   label: 'Calendar',        icon: <IconCal />,       roles: allSubRoles },
+    { tab: 'billing',    label: 'Submit Billing',   icon: <IconDollar />,    roles: allSubRoles },
+    { tab: 'contracts',  label: 'My Contracts',     icon: <IconBriefcase />, roles: allSubRoles, badge: myContracts.length || null },
+    { tab: 'history',    label: 'Billing History',  icon: <IconHistory />,   roles: allSubRoles, badge: submissions.length || null },
+    { tab: 'bids',       label: 'Bid Invites',      icon: <IconBid />,       roles: allSubRoles, badge: pendingBids || null },
+    { tab: 'docs',       label: 'My Documents',     icon: <IconDoc />,       roles: allSubRoles },
+    { tab: 'rfis',       label: 'RFIs',             icon: <IconRfi />,       roles: allSubRoles, badge: openRfis || null },
+    { tab: 'messages',   label: 'Messages',         icon: <IconMsg />,       roles: allSubRoles },
+    { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />,     roles: allSubRoles, badge: openPunch || null },
+    { tab: 'team',       label: 'My Team',          icon: <IconTeam />,      roles: allSubRoles },
   ]
   const navItems = allNavItems.filter(item => item.roles.includes(role))
 

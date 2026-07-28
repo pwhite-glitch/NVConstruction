@@ -1784,7 +1784,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
     ...(profile?.role === 'pm' ? [{ tab: 'vehicles',  label: 'Fleet',      icon: <IconTruck /> }] : []),
-    ...(profile?.role === 'pm' ? [{ tab: 'tools',     label: 'Tools',      icon: <IconWrench /> }] : []),
+    ...(['pm', 'apm'].includes(profile?.role) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
     { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
     ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
     { tab: 'calendar',      label: 'Calendar',       icon: <IconCal /> },
@@ -4570,7 +4570,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               )
             })()}
 
-            {activeTab === 'tools' && profile?.role === 'pm' && (() => {
+            {activeTab === 'tools' && ['pm', 'apm'].includes(profile?.role) && (() => {
               const CATEGORIES = ['Power Tools', 'Hand Tools', 'Measuring', 'Safety', 'Equipment', 'Other']
               const STATUS_COLORS = { available: '#4ade80', checked_out: '#f59e0b', repair: '#3b82f6', lost: '#ef4444' }
               const COND_COLORS = { good: '#4ade80', fair: '#f59e0b', poor: '#ef4444' }

@@ -306,8 +306,9 @@ export default function Dashboard() {
   const [empAllocations, setEmpAllocations] = useState({}) // keyed by employee_id
   const [expandedEmpId, setExpandedEmpId] = useState(null)
   const [showAllocFormFor, setShowAllocFormFor] = useState(null)
-  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', notes: '' })
+  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '' })
   const [savingAlloc, setSavingAlloc] = useState(false)
+  const [allocBudgetItems, setAllocBudgetItems] = useState([])
   const [showAddEmp, setShowAddEmp] = useState(false)
   const [empForm, setEmpForm] = useState({ name: '', title: '', type: 'w2', weekly_salary: '', weekly_truck: '', weekly_healthcare: '', weekly_taxes: '' })
   const [savingEmp, setSavingEmp] = useState(false)
@@ -4180,7 +4181,16 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '10px', alignItems: 'end' }}>
                                                     <div>
                                                       <label style={s.label}>Job</label>
-                                                      <select value={allocForm.job_id} onChange={ev => setAllocForm(f => ({ ...f, job_id: ev.target.value }))} style={{ ...s.input, color: '#f1f1f1' }}>
+                                                      <select value={allocForm.job_id} onChange={async ev => {
+                                                        const jobId = ev.target.value
+                                                        setAllocForm(f => ({ ...f, job_id: jobId, budget_line: '', budget_line_id: '' }))
+                                                        if (jobId) {
+                                                          const { data } = await supabase.from('budget_items').select('id, cost_code, description, budget_amount').eq('job_id', jobId).order('cost_code')
+                                                          setAllocBudgetItems(data || [])
+                                                        } else {
+                                                          setAllocBudgetItems([])
+                                                        }
+                                                      }} style={{ ...s.input, color: '#f1f1f1' }}>
                                                         <option value="">Select job…</option>
                                                         {jobs.filter(j => j.status === 'active').map(j => (
                                                           <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
@@ -4205,8 +4215,26 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                   </div>
                                                   {allocForm.allocation_type === 'pm_allocation' && (
                                                     <div style={{ marginTop: '10px' }}>
-                                                      <label style={s.label}>Budget Line</label>
-                                                      <input value={allocForm.budget_line} onChange={ev => setAllocForm(f => ({ ...f, budget_line: ev.target.value }))} style={s.input} placeholder="e.g. General Conditions — Superintendent" />
+                                                      <label style={s.label}>Budget Line Item</label>
+                                                      {allocBudgetItems.length > 0 ? (
+                                                        <select
+                                                          value={allocForm.budget_line_id}
+                                                          onChange={ev => {
+                                                            const item = allocBudgetItems.find(b => b.id === ev.target.value)
+                                                            setAllocForm(f => ({ ...f, budget_line_id: ev.target.value, budget_line: item ? `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` : '' }))
+                                                          }}
+                                                          style={{ ...s.input, color: '#f1f1f1' }}
+                                                        >
+                                                          <option value="">Select budget line…</option>
+                                                          {allocBudgetItems.map(b => (
+                                                            <option key={b.id} value={b.id}>
+                                                              {b.cost_code ? `${b.cost_code} — ` : ''}{b.description}{b.budget_amount ? ` ($${Number(b.budget_amount).toLocaleString()})` : ''}
+                                                            </option>
+                                                          ))}
+                                                        </select>
+                                                      ) : (
+                                                        <input value={allocForm.budget_line} onChange={ev => setAllocForm(f => ({ ...f, budget_line: ev.target.value }))} style={s.input} placeholder={allocForm.job_id ? 'No budget items on this job yet' : 'Select a job first'} />
+                                                      )}
                                                     </div>
                                                   )}
                                                   <div style={{ marginTop: '10px' }}>

@@ -4247,7 +4247,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                         const res = await fetch('/api/employee-allocations', {
                                                           method: 'POST',
                                                           headers: { 'Content-Type': 'application/json' },
-                                                          body: JSON.stringify({ employee_id: e.id, ...allocForm })
+                                                          body: JSON.stringify(Object.fromEntries(Object.entries({ employee_id: e.id, ...allocForm }).filter(([, v]) => v !== '' && v !== null && v !== undefined)))
                                                         })
                                                         const { data } = await res.json()
                                                         if (data) {

@@ -306,7 +306,7 @@ export default function Dashboard() {
   const [empAllocations, setEmpAllocations] = useState({}) // keyed by employee_id
   const [expandedEmpId, setExpandedEmpId] = useState(null)
   const [showAllocFormFor, setShowAllocFormFor] = useState(null)
-  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '' })
+  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '', percentage: 100 })
   const [savingAlloc, setSavingAlloc] = useState(false)
   const [allocBudgetItems, setAllocBudgetItems] = useState([])
   const [showAddEmp, setShowAddEmp] = useState(false)
@@ -4178,7 +4178,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
                                               {showAllocFormFor === e.id && (
                                                 <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px 16px', marginBottom: '14px' }}>
-                                                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '10px', alignItems: 'end' }}>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 0.7fr 1fr', gap: '10px', alignItems: 'end' }}>
                                                     <div>
                                                       <label style={s.label}>Job</label>
                                                       <select value={allocForm.job_id} onChange={async ev => {
@@ -4205,12 +4205,12 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                       </select>
                                                     </div>
                                                     <div>
-                                                      <label style={s.label}>Start</label>
-                                                      <input type="date" value={allocForm.start_date} onChange={ev => setAllocForm(f => ({ ...f, start_date: ev.target.value }))} style={s.input} />
+                                                      <label style={s.label}>Split %</label>
+                                                      <input type="number" min="1" max="100" value={allocForm.percentage} onChange={ev => setAllocForm(f => ({ ...f, percentage: Math.min(100, Math.max(1, Number(ev.target.value))) }))} style={s.input} placeholder="100" />
                                                     </div>
                                                     <div>
-                                                      <label style={s.label}>End</label>
-                                                      <input type="date" value={allocForm.end_date} onChange={ev => setAllocForm(f => ({ ...f, end_date: ev.target.value }))} style={s.input} placeholder="Ongoing" />
+                                                      <label style={s.label}>Start</label>
+                                                      <input type="date" value={allocForm.start_date} onChange={ev => setAllocForm(f => ({ ...f, start_date: ev.target.value }))} style={s.input} />
                                                     </div>
                                                   </div>
                                                   {allocForm.allocation_type === 'pm_allocation' && (
@@ -4252,7 +4252,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                         const { data } = await res.json()
                                                         if (data) {
                                                           setEmpAllocations(prev => ({ ...prev, [e.id]: [data, ...(prev[e.id] || [])] }))
-                                                          setAllocForm({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', notes: '' })
+                                                          setAllocForm({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', budget_line_id: '', notes: '', percentage: 100 })
                                                           setShowAllocFormFor(null)
                                                         }
                                                         setSavingAlloc(false)
@@ -4268,22 +4268,25 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                                   <thead>
                                                     <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
-                                                      {['Job', 'Type', 'Start', 'End', 'Weeks', 'Wk Cost', 'Total', ''].map(h => (
+                                                      {['Job', 'Type', '%', 'Start', 'Days', '$/Wk', 'Accrued', ''].map(h => (
                                                         <th key={h} style={{ textAlign: 'left', padding: '4px 8px 8px 0', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>{h}</th>
                                                       ))}
                                                     </tr>
                                                   </thead>
                                                   <tbody>
                                                     {allocs.map(a => {
+                                                      const pct = a.percentage != null ? Number(a.percentage) : 100
                                                       const start = a.start_date ? new Date(a.start_date) : null
                                                       const end = a.end_date ? new Date(a.end_date) : new Date()
-                                                      const weeks = start ? Math.max(0, Math.round((end - start) / (7 * 24 * 60 * 60 * 1000) * 10) / 10) : null
-                                                      const total = weeks != null ? Math.round(weeklyRate * weeks) : null
+                                                      const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : null
+                                                      const effectiveWeekly = Math.round(weeklyRate * pct / 100)
+                                                      const total = days != null ? Math.round(effectiveWeekly * days / 7) : null
                                                       const isPM = a.allocation_type === 'pm_allocation'
+                                                      const isOngoing = !a.end_date
                                                       return (
                                                         <tr key={a.id} style={{ borderBottom: '1px solid #141414' }}>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1' }}>
-                                                            #{a.jobs?.job_number} {a.jobs?.project_name}
+                                                            {a.jobs ? `#${a.jobs.job_number} ${a.jobs.project_name}` : '—'}
                                                             {a.budget_line && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{a.budget_line}</div>}
                                                           </td>
                                                           <td style={{ padding: '8px 8px 8px 0' }}>
@@ -4291,10 +4294,13 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                               {isPM ? 'PM / Super' : 'Profit'}
                                                             </span>
                                                           </td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: pct < 100 ? '#facc15' : '#aaa', fontWeight: pct < 100 ? '700' : '400' }}>{pct}%</td>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#aaa' }}>{a.start_date || '—'}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: a.end_date ? '#aaa' : '#4ade80' }}>{a.end_date || 'Ongoing'}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#aaa' }}>{weeks != null ? weeks : '—'}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1', fontWeight: '600' }}>${weeklyRate.toLocaleString()}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: isOngoing ? '#4ade80' : '#aaa' }}>
+                                                            {days != null ? days : '—'}
+                                                            {isOngoing && <span style={{ fontSize: '10px', marginLeft: '4px', color: '#4ade80' }}>▲</span>}
+                                                          </td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1', fontWeight: '600' }}>${effectiveWeekly.toLocaleString()}</td>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#4ade80', fontWeight: '700' }}>{total != null ? `$${total.toLocaleString()}` : '—'}</td>
                                                           <td style={{ padding: '8px 0' }}>
                                                             <button
@@ -4311,20 +4317,29 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                                     })}
                                                   </tbody>
                                                   <tfoot>
-                                                    <tr style={{ borderTop: '1px solid #2a2a2a' }}>
-                                                      <td colSpan={5} style={{ padding: '8px 0', fontSize: '11px', color: '#555' }}>
-                                                        {profitAllocs.length} against profit · {pmAllocs.length} PM/Super
-                                                      </td>
-                                                      <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#f1f1f1' }}>${weeklyRate.toLocaleString()}/wk</td>
-                                                      <td colSpan={2} style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#4ade80' }}>
-                                                        ${allocs.reduce((sum, a) => {
-                                                          const s = a.start_date ? new Date(a.start_date) : null
-                                                          const en = a.end_date ? new Date(a.end_date) : new Date()
-                                                          const w = s ? Math.max(0, Math.round((en - s) / (7 * 24 * 60 * 60 * 1000) * 10) / 10) : 0
-                                                          return sum + Math.round(weeklyRate * w)
-                                                        }, 0).toLocaleString()} total
-                                                      </td>
-                                                    </tr>
+                                                    {(() => {
+                                                      const totalEffectiveWeekly = allocs.reduce((sum, a) => sum + Math.round(weeklyRate * (a.percentage != null ? Number(a.percentage) : 100) / 100), 0)
+                                                      const totalPct = allocs.reduce((sum, a) => sum + (a.percentage != null ? Number(a.percentage) : 100), 0)
+                                                      const totalAccrued = allocs.reduce((sum, a) => {
+                                                        const pct = a.percentage != null ? Number(a.percentage) : 100
+                                                        const s = a.start_date ? new Date(a.start_date) : null
+                                                        const en = a.end_date ? new Date(a.end_date) : new Date()
+                                                        const d = s ? Math.max(0, Math.round((en - s) / (24 * 60 * 60 * 1000))) : 0
+                                                        return sum + Math.round(weeklyRate * pct / 100 * d / 7)
+                                                      }, 0)
+                                                      return (
+                                                        <tr style={{ borderTop: '1px solid #2a2a2a' }}>
+                                                          <td colSpan={4} style={{ padding: '8px 0', fontSize: '11px', color: '#555' }}>
+                                                            {profitAllocs.length} against profit · {pmAllocs.length} PM/Super · {totalPct}% allocated
+                                                          </td>
+                                                          <td style={{ padding: '8px 0' }}></td>
+                                                          <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: totalPct > 100 ? '#f87171' : '#f1f1f1' }}>${totalEffectiveWeekly.toLocaleString()}/wk</td>
+                                                          <td colSpan={2} style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#4ade80' }}>
+                                                            ${totalAccrued.toLocaleString()} total
+                                                          </td>
+                                                        </tr>
+                                                      )
+                                                    })()}
                                                   </tfoot>
                                                 </table>
                                               )}

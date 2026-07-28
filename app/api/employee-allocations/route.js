@@ -40,7 +40,7 @@ export async function POST(request) {
   const { data, error } = await adminSupabase
     .from('employee_job_allocations')
     .insert(body)
-    .select('*, employees(id, name, title, type, weekly_salary, weekly_truck, weekly_healthcare, weekly_taxes)')
+    .select('*, employees(id, name, title, type, weekly_salary, weekly_truck, weekly_healthcare, weekly_taxes), jobs(id, job_number, project_name)')
     .single()
   if (error) return Response.json({ error: error.message }, { status: 500 })
   // Return both keys so existing callers (data.allocation) and new callers ({ data }) both work

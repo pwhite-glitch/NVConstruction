@@ -10,6 +10,18 @@ export async function GET(request) {
   const job_id = searchParams.get('job_id')
   const employee_id = searchParams.get('employee_id')
 
+  // Employee-centric view: return all allocations for one employee, joined with job info
+  if (employee_id && !job_id) {
+    const { data, error } = await adminSupabase
+      .from('employee_job_allocations')
+      .select('*, jobs(id, job_number, project_name)')
+      .eq('employee_id', employee_id)
+      .order('start_date', { ascending: false })
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ data: data || [] })
+  }
+
+  // Job-centric view (existing behaviour)
   let query = adminSupabase
     .from('employee_job_allocations')
     .select('*, employees(id, name, title, type, weekly_salary, weekly_truck, weekly_healthcare, weekly_taxes)')
@@ -31,12 +43,23 @@ export async function POST(request) {
     .select('*, employees(id, name, title, type, weekly_salary, weekly_truck, weekly_healthcare, weekly_taxes)')
     .single()
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ allocation: data })
+  // Return both keys so existing callers (data.allocation) and new callers ({ data }) both work
+  return Response.json({ allocation: data, data })
 }
 
 export async function DELETE(request) {
   const { searchParams } = new URL(request.url)
-  const id = searchParams.get('id')
+  let id = searchParams.get('id')
+
+  // Support body-based delete (dashboard sends { id } in body)
+  if (!id) {
+    try {
+      const body = await request.json()
+      id = body?.id
+    } catch {}
+  }
+
+  if (!id) return Response.json({ error: 'id required' }, { status: 400 })
   const { error } = await adminSupabase.from('employee_job_allocations').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

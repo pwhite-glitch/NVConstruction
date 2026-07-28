@@ -303,6 +303,11 @@ export default function Dashboard() {
   // Employees state (PM-only)
   const [employees, setEmployees] = useState([])
   const [empLoaded, setEmpLoaded] = useState(false)
+  const [empAllocations, setEmpAllocations] = useState({}) // keyed by employee_id
+  const [expandedEmpId, setExpandedEmpId] = useState(null)
+  const [showAllocFormFor, setShowAllocFormFor] = useState(null)
+  const [allocForm, setAllocForm] = useState({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', notes: '' })
+  const [savingAlloc, setSavingAlloc] = useState(false)
   const [showAddEmp, setShowAddEmp] = useState(false)
   const [empForm, setEmpForm] = useState({ name: '', title: '', type: 'w2', weekly_salary: '', weekly_truck: '', weekly_healthcare: '', weekly_taxes: '' })
   const [savingEmp, setSavingEmp] = useState(false)
@@ -1581,6 +1586,12 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     const data = await res.json()
     setEmployees(data.employees || [])
     setEmpLoaded(true)
+  }
+
+  async function loadEmpAllocations(employeeId) {
+    const res = await fetch(`/api/employee-allocations?employee_id=${employeeId}`)
+    const { data } = await res.json()
+    setEmpAllocations(prev => ({ ...prev, [employeeId]: data || [] }))
   }
 
   async function saveEmployee() {
@@ -4112,6 +4123,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   </td>
                                 </tr>
                               ) : (
+                                <>
                                 <tr key={e.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
                                   <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>
                                     {e.name}
@@ -4131,9 +4143,171 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                       <button style={s.btnSm('gray')} onClick={() => { setEditingEmpId(e.id); setEditEmpForm({ name: e.name, title: e.title || '', type: e.type, weekly_salary: e.weekly_salary, weekly_truck: e.weekly_truck || '', weekly_healthcare: e.weekly_healthcare || '', weekly_taxes: e.weekly_taxes || '' }) }}>Edit</button>
                                       <button style={s.btnSm('gray')} onClick={() => archiveEmployee(e.id, e.active)}>Archive</button>
+                                      <button
+                                        style={{ ...s.btnSm('gray'), color: expandedEmpId === e.id ? '#e8590c' : undefined }}
+                                        onClick={() => {
+                                          if (expandedEmpId === e.id) { setExpandedEmpId(null) }
+                                          else { setExpandedEmpId(e.id); loadEmpAllocations(e.id) }
+                                        }}
+                                      >
+                                        {expandedEmpId === e.id ? '▲ Jobs' : '▼ Jobs'}
+                                      </button>
                                     </div>
                                   </td>
                                 </tr>
+                                {expandedEmpId === e.id && (
+                                  <tr>
+                                    <td colSpan={99} style={{ padding: 0 }}>
+                                      <div style={{ background: '#0d0d0d', borderTop: '1px solid #1e1e1e', padding: '16px 20px' }}>
+                                        {(() => {
+                                          const allocs = empAllocations[e.id] || []
+                                          const weeklyRate = (Number(e.weekly_salary||0) + Number(e.weekly_truck||0) + Number(e.weekly_healthcare||0) + Number(e.weekly_taxes||0))
+                                          const profitAllocs = allocs.filter(a => a.allocation_type !== 'pm_allocation')
+                                          const pmAllocs = allocs.filter(a => a.allocation_type === 'pm_allocation')
+                                          return (
+                                            <>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                                                  Job Allocations — {e.name}
+                                                </p>
+                                                <button style={s.btnSm('gray')} onClick={() => setShowAllocFormFor(showAllocFormFor === e.id ? null : e.id)}>
+                                                  {showAllocFormFor === e.id ? 'Cancel' : '+ Add Allocation'}
+                                                </button>
+                                              </div>
+
+                                              {showAllocFormFor === e.id && (
+                                                <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px 16px', marginBottom: '14px' }}>
+                                                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '10px', alignItems: 'end' }}>
+                                                    <div>
+                                                      <label style={s.label}>Job</label>
+                                                      <select value={allocForm.job_id} onChange={ev => setAllocForm(f => ({ ...f, job_id: ev.target.value }))} style={{ ...s.input, color: '#f1f1f1' }}>
+                                                        <option value="">Select job…</option>
+                                                        {jobs.filter(j => j.status === 'active').map(j => (
+                                                          <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
+                                                        ))}
+                                                      </select>
+                                                    </div>
+                                                    <div>
+                                                      <label style={s.label}>Type</label>
+                                                      <select value={allocForm.allocation_type} onChange={ev => setAllocForm(f => ({ ...f, allocation_type: ev.target.value }))} style={{ ...s.input, color: '#f1f1f1' }}>
+                                                        <option value="profit">Against Profit</option>
+                                                        <option value="pm_allocation">PM / Super Allocation</option>
+                                                      </select>
+                                                    </div>
+                                                    <div>
+                                                      <label style={s.label}>Start</label>
+                                                      <input type="date" value={allocForm.start_date} onChange={ev => setAllocForm(f => ({ ...f, start_date: ev.target.value }))} style={s.input} />
+                                                    </div>
+                                                    <div>
+                                                      <label style={s.label}>End</label>
+                                                      <input type="date" value={allocForm.end_date} onChange={ev => setAllocForm(f => ({ ...f, end_date: ev.target.value }))} style={s.input} placeholder="Ongoing" />
+                                                    </div>
+                                                  </div>
+                                                  {allocForm.allocation_type === 'pm_allocation' && (
+                                                    <div style={{ marginTop: '10px' }}>
+                                                      <label style={s.label}>Budget Line</label>
+                                                      <input value={allocForm.budget_line} onChange={ev => setAllocForm(f => ({ ...f, budget_line: ev.target.value }))} style={s.input} placeholder="e.g. General Conditions — Superintendent" />
+                                                    </div>
+                                                  )}
+                                                  <div style={{ marginTop: '10px' }}>
+                                                    <button
+                                                      disabled={savingAlloc || !allocForm.job_id || !allocForm.start_date}
+                                                      style={{ ...s.btn, opacity: savingAlloc ? 0.6 : 1 }}
+                                                      onClick={async () => {
+                                                        if (!allocForm.job_id || !allocForm.start_date) return
+                                                        setSavingAlloc(true)
+                                                        const res = await fetch('/api/employee-allocations', {
+                                                          method: 'POST',
+                                                          headers: { 'Content-Type': 'application/json' },
+                                                          body: JSON.stringify({ employee_id: e.id, ...allocForm })
+                                                        })
+                                                        const { data } = await res.json()
+                                                        if (data) {
+                                                          setEmpAllocations(prev => ({ ...prev, [e.id]: [data, ...(prev[e.id] || [])] }))
+                                                          setAllocForm({ job_id: '', allocation_type: 'profit', start_date: '', end_date: '', budget_line: '', notes: '' })
+                                                          setShowAllocFormFor(null)
+                                                        }
+                                                        setSavingAlloc(false)
+                                                      }}
+                                                    >{savingAlloc ? 'Saving…' : 'Save'}</button>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {allocs.length === 0 ? (
+                                                <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No job allocations yet.</p>
+                                              ) : (
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                                  <thead>
+                                                    <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                                                      {['Job', 'Type', 'Start', 'End', 'Weeks', 'Wk Cost', 'Total', ''].map(h => (
+                                                        <th key={h} style={{ textAlign: 'left', padding: '4px 8px 8px 0', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>{h}</th>
+                                                      ))}
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {allocs.map(a => {
+                                                      const start = a.start_date ? new Date(a.start_date) : null
+                                                      const end = a.end_date ? new Date(a.end_date) : new Date()
+                                                      const weeks = start ? Math.max(0, Math.round((end - start) / (7 * 24 * 60 * 60 * 1000) * 10) / 10) : null
+                                                      const total = weeks != null ? Math.round(weeklyRate * weeks) : null
+                                                      const isPM = a.allocation_type === 'pm_allocation'
+                                                      return (
+                                                        <tr key={a.id} style={{ borderBottom: '1px solid #141414' }}>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1' }}>
+                                                            #{a.jobs?.job_number} {a.jobs?.project_name}
+                                                            {a.budget_line && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{a.budget_line}</div>}
+                                                          </td>
+                                                          <td style={{ padding: '8px 8px 8px 0' }}>
+                                                            <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isPM ? '#0a1a2a' : '#1a0a00', color: isPM ? '#60a5fa' : '#f97316', border: `1px solid ${isPM ? '#1a3a5a' : '#4a2a00'}` }}>
+                                                              {isPM ? 'PM / Super' : 'Profit'}
+                                                            </span>
+                                                          </td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#aaa' }}>{a.start_date || '—'}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: a.end_date ? '#aaa' : '#4ade80' }}>{a.end_date || 'Ongoing'}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#aaa' }}>{weeks != null ? weeks : '—'}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1', fontWeight: '600' }}>${weeklyRate.toLocaleString()}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#4ade80', fontWeight: '700' }}>{total != null ? `$${total.toLocaleString()}` : '—'}</td>
+                                                          <td style={{ padding: '8px 0' }}>
+                                                            <button
+                                                              onClick={async () => {
+                                                                if (!confirm('Remove this allocation?')) return
+                                                                await fetch('/api/employee-allocations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id }) })
+                                                                setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).filter(x => x.id !== a.id) }))
+                                                              }}
+                                                              style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px' }}
+                                                            >×</button>
+                                                          </td>
+                                                        </tr>
+                                                      )
+                                                    })}
+                                                  </tbody>
+                                                  <tfoot>
+                                                    <tr style={{ borderTop: '1px solid #2a2a2a' }}>
+                                                      <td colSpan={5} style={{ padding: '8px 0', fontSize: '11px', color: '#555' }}>
+                                                        {profitAllocs.length} against profit · {pmAllocs.length} PM/Super
+                                                      </td>
+                                                      <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#f1f1f1' }}>${weeklyRate.toLocaleString()}/wk</td>
+                                                      <td colSpan={2} style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#4ade80' }}>
+                                                        ${allocs.reduce((sum, a) => {
+                                                          const s = a.start_date ? new Date(a.start_date) : null
+                                                          const en = a.end_date ? new Date(a.end_date) : new Date()
+                                                          const w = s ? Math.max(0, Math.round((en - s) / (7 * 24 * 60 * 60 * 1000) * 10) / 10) : 0
+                                                          return sum + Math.round(weeklyRate * w)
+                                                        }, 0).toLocaleString()} total
+                                                      </td>
+                                                    </tr>
+                                                  </tfoot>
+                                                </table>
+                                              )}
+                                            </>
+                                          )
+                                        })()}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                                </>
                               )
                             })}
                           </tbody>

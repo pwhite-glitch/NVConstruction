@@ -6592,7 +6592,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" step="0.01" style={s.input} value={createBillingForm.amount_billed} onChange={e => {
                         const amt = parseFloat(e.target.value) || 0
                         const contractVal = parseFloat(createBillingForm._contract_value) || 0
-                        const pct = contractVal > 0 ? Math.min(100, Math.round(amt / contractVal * 100)) : null
+                        const pct = contractVal > 0 ? Math.round(amt / contractVal * 100) : null
                         setCreateBillingForm(f => ({ ...f, amount_billed: e.target.value, pct_complete: pct !== null ? String(pct) : f.pct_complete }))
                       }} placeholder="0.00" required />
                       {parseFloat(createBillingForm._retainage_pct) > 0 && parseFloat(createBillingForm.amount_billed) > 0 && (() => {
@@ -6608,7 +6608,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <div>
                       <label style={s.label}>% complete</label>
-                      <input type="number" min="0" max="100" style={s.input} value={createBillingForm.pct_complete} onChange={e => setCreateBillingForm(f => ({ ...f, pct_complete: e.target.value }))} placeholder="0" />
+                      <input type="number" min="0" style={s.input} value={createBillingForm.pct_complete} onChange={e => setCreateBillingForm(f => ({ ...f, pct_complete: e.target.value }))} placeholder="0" />
                     </div>
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
@@ -6854,7 +6854,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>% complete</label>
-                            <input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} />
+                            <input type="number" min="0" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} />
                           </div>
                         </div>
                         <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">

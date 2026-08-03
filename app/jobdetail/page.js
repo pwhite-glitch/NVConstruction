@@ -6267,7 +6267,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
                               />
                               <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
-                              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number} · {fmt(po.amount)}</span>
+                              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number} · ${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </label>
                           ))}
                         </div>
@@ -6433,7 +6433,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                  <span style={{ color: '#e8590c', fontWeight: '700' }}>{fmt(po.amount)}</span>
+                                  <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                   <button
                                     style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
@@ -6445,7 +6445,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               </div>
                             ))}
                             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 0', fontSize: '13px', fontWeight: '800', color: '#e8590c' }}>
-                              Total: {fmt(taggedPOTotal)}
+                              Total: ${taggedPOTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </div>
                           </div>
                         )}
@@ -6465,7 +6465,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   />
                                   <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
                                   <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number}</span>
-                                  <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>{fmt(po.amount)}</span>
+                                  <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 </label>
                               ))}
                             </div>

@@ -242,6 +242,17 @@ export default function JobDetail() {
   const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '' })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
+
+  // Purchase Orders state
+  const [purchaseOrders, setPurchaseOrders] = useState([])
+  const [showNewPO, setShowNewPO] = useState(false)
+  const [poForm, setPOForm] = useState({ vendor_name: '', description: '', budget_item_id: '', notes: '', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
+  const [savingPO, setSavingPO] = useState(false)
+  const [expandedPOId, setExpandedPOId] = useState(null)
+  const [updatingPOId, setUpdatingPOId] = useState(null)
+  const [editingPOId, setEditingPOId] = useState(null)
+  const [editPOForm, setEditPOForm] = useState({})
+  const [savingPOEdit, setSavingPOEdit] = useState(false)
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
@@ -1444,7 +1455,7 @@ ${sovLines.length > 0 ? `
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
     if (activeTab === 'subs') { loadSubDirectory() }
@@ -1465,11 +1476,73 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
+    if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems() }
   }, [activeTab, id])
 
   async function loadNvSubcontracts() {
     const { data } = await supabase.from('nv_subcontracts').select('*').eq('job_id', id).order('created_at', { ascending: true })
     setNvSubcontracts(data || [])
+  }
+
+  // ── Purchase Orders ──────────────────────────────────────────
+  async function loadPurchaseOrders() {
+    const res = await fetch(`/api/purchase-orders?job_id=${id}`)
+    const data = await res.json()
+    setPurchaseOrders(data.purchase_orders || [])
+  }
+
+  async function savePO(issueImmediately = false) {
+    if (!poForm.vendor_name) return
+    setSavingPO(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const validItems = poForm.items.filter(i => i.description && i.unit_price)
+    await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      job_id: id,
+      vendor_name: poForm.vendor_name,
+      description: poForm.description || null,
+      budget_item_id: poForm.budget_item_id || null,
+      notes: poForm.notes || null,
+      status: issueImmediately ? 'issued' : 'draft',
+      created_by: session.user.id,
+      items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
+    }) })
+    setShowNewPO(false)
+    setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
+    await loadPurchaseOrders()
+    await loadBudgetItems()
+    setSavingPO(false)
+  }
+
+  async function updatePOStatus(poId, status) {
+    setUpdatingPOId(poId)
+    await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId, status }) })
+    await loadPurchaseOrders()
+    await loadBudgetItems()
+    setUpdatingPOId(null)
+  }
+
+  async function savePOEdit() {
+    setSavingPOEdit(true)
+    const validItems = editPOForm.items.filter(i => i.description && i.unit_price)
+    await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      id: editingPOId,
+      vendor_name: editPOForm.vendor_name,
+      description: editPOForm.description || null,
+      budget_item_id: editPOForm.budget_item_id || null,
+      notes: editPOForm.notes || null,
+      items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
+    }) })
+    setEditingPOId(null)
+    await loadPurchaseOrders()
+    await loadBudgetItems()
+    setSavingPOEdit(false)
+  }
+
+  async function deletePO(poId) {
+    if (!window.confirm('Delete this purchase order?')) return
+    await fetch('/api/purchase-orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId }) })
+    await loadPurchaseOrders()
+    await loadBudgetItems()
   }
 
   async function addNvSubcontract(e) {
@@ -3096,7 +3169,10 @@ ${sovHtml}
     const dcCommitted = directCosts
       .filter(c => c.status === 'approved' && c.budget_item_id === budgetItemId)
       .reduce((a, c) => a + Number(c.amount || 0), 0)
-    return contractCommitted + laborCostForItem(budgetItemId) + dcCommitted
+    const poCommitted = purchaseOrders
+      .filter(po => (po.status === 'issued' || po.status === 'received') && po.budget_item_id === budgetItemId)
+      .reduce((a, po) => a + Number(po.amount || 0), 0)
+    return contractCommitted + laborCostForItem(budgetItemId) + dcCommitted + poCommitted
   }
 
   async function saveForecastEac(budgetItemId, value) {
@@ -3773,6 +3849,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : null, alert: pendingCOs > 0 },
                   { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
                   { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
+                  { key: 'po', label: 'Purchase Orders', badge: purchaseOrders.filter(p => p.status === 'issued').length > 0 ? purchaseOrders.filter(p => p.status === 'issued').length : null },
                   { key: 'prime', label: job?.nv_role === 'sub' ? 'GC Billing' : 'Prime Contract' },
                   { key: 'cashflow', label: 'Cash Flow' },
                   { key: 'retainage', label: 'Retainage' },
@@ -3856,6 +3933,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <option value="changeorders">Change Orders</option>
             <option value="billing">Billing</option>
             <option value="costs">Direct Costs</option>
+            <option value="po">Purchase Orders</option>
             <option value="prime">Prime Contract</option>
             <option value="cashflow">Cash Flow</option>
             <option value="retainage">Retainage</option>
@@ -9625,6 +9703,210 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         })()}
 
               {/* ── ORDERS ── */}
+              {activeTab === 'po' && (() => {
+                const PO_STATUS = {
+                  draft:    { color: '#888',    bg: '#111',    border: '#2a2a2a' },
+                  issued:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
+                  received: { color: '#4ade80', bg: '#0a2a0a', border: '#1a4a1a' },
+                  closed:   { color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' },
+                }
+                const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                const issuedPOs = purchaseOrders.filter(p => p.status === 'issued')
+                const receivedPOs = purchaseOrders.filter(p => p.status === 'received')
+                const totalCommitted = [...issuedPOs, ...receivedPOs].reduce((a, p) => a + Number(p.amount || 0), 0)
+
+                const POLineItemsTable = ({ items, small }) => {
+                  const lineTotal = (items || []).reduce((a, i) => a + Number(i.amount || 0), 0)
+                  return (
+                    <div style={{ border: '1px solid #1e1e1e', borderRadius: '6px', overflow: 'hidden', marginTop: small ? '8px' : '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '6px 12px', background: '#0a0a0a', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                        <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span style={{ textAlign: 'right' }}>Amount</span>
+                      </div>
+                      {(items || []).map((i, idx) => (
+                        <div key={i.id || idx} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '1px solid #111', fontSize: '13px', color: '#ccc' }}>
+                          <span>{i.description}</span>
+                          <span style={{ textAlign: 'right', color: '#888' }}>{Number(i.qty)}</span>
+                          <span style={{ color: '#555' }}>{i.unit || '—'}</span>
+                          <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{fmt(i.unit_price)}</span>
+                          <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#f1f1f1' }}>{fmt(i.amount)}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '2px solid #2a2a2a', background: '#111' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/5', textAlign: 'right' }}>Total</span>
+                        <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#e8590c', fontSize: '14px' }}>{fmt(lineTotal)}</span>
+                      </div>
+                    </div>
+                  )
+                }
+
+                const POItemsEditTable = ({ items, onChange }) => {
+                  const lineTotal = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)
+                  return (
+                    <div>
+                      <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                          <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
+                        </div>
+                        {items.map((item, idx) => (
+                          <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
+                            <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
+                            <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
+                            <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))} />
+                            <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x))} />
+                            <button onClick={() => onChange(items.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
+                          </div>
+                        ))}
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
+                          <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(lineTotal)}</span>
+                          <span />
+                        </div>
+                      </div>
+                      <button type="button" style={{ marginTop: '8px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '5px 14px', cursor: 'pointer' }}
+                        onClick={() => onChange([...items, { uid: Date.now(), description: '', qty: '1', unit: '', unit_price: '' }])}>
+                        + Add item
+                      </button>
+                    </div>
+                  )
+                }
+
+                return (
+                  <>
+                    {/* Stats */}
+                    <div style={s.statRow} className="rx-stats">
+                      <div style={s.statCard}><div style={s.statLabel}>Total POs</div><div style={s.statValue()}>{purchaseOrders.length}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Issued (open)</div><div style={s.statValue(issuedPOs.length > 0 ? '#facc15' : undefined)}>{issuedPOs.length}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#4ade80')}>{receivedPOs.length}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Total committed</div><div style={s.statValue('#e8590c')}>{fmt(totalCommitted)}</div></div>
+                    </div>
+
+                    {/* Header + new PO form */}
+                    <div style={s.card}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showNewPO ? '1.25rem' : 0 }}>
+                        <p style={{ ...s.cardTitle, margin: 0 }}>Purchase Orders</p>
+                        <button style={s.btnSmallOrange} onClick={() => { setShowNewPO(v => !v); setEditingPOId(null) }}>{showNewPO ? 'Cancel' : '+ New PO'}</button>
+                      </div>
+
+                      {showNewPO && (
+                        <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '1.25rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
+                            <div><label style={s.label}>Vendor / Supplier *</label><input style={s.input} value={poForm.vendor_name} onChange={e => setPOForm(f => ({ ...f, vendor_name: e.target.value }))} placeholder="Vendor name" /></div>
+                            <div><label style={s.label}>Description</label><input style={s.input} value={poForm.description} onChange={e => setPOForm(f => ({ ...f, description: e.target.value }))} placeholder="What is this PO for?" /></div>
+                          </div>
+                          <div style={{ marginBottom: '12px' }}>
+                            <label style={s.label}>Budget line item</label>
+                            <select style={s.input} value={poForm.budget_item_id} onChange={e => setPOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                              <option value="">— Unassigned —</option>
+                              {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ marginBottom: '12px' }}>
+                            <label style={s.label}>Line items</label>
+                            <POItemsEditTable items={poForm.items} onChange={items => setPOForm(f => ({ ...f, items }))} />
+                          </div>
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <label style={s.label}>Notes</label>
+                            <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={poForm.notes} onChange={e => setPOForm(f => ({ ...f, notes: e.target.value }))} placeholder="Delivery instructions, payment terms..." />
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button style={{ ...s.btnSmallGreen, padding: '8px 20px', opacity: (savingPO || !poForm.vendor_name) ? 0.6 : 1 }} disabled={savingPO || !poForm.vendor_name} onClick={() => savePO(true)}>{savingPO ? 'Saving...' : 'Issue PO'}</button>
+                            <button style={{ ...s.btnSmall, padding: '8px 20px', opacity: (savingPO || !poForm.vendor_name) ? 0.6 : 1 }} disabled={savingPO || !poForm.vendor_name} onClick={() => savePO(false)}>Save as Draft</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* PO list */}
+                    <div style={s.card}>
+                      {purchaseOrders.length === 0 && <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No purchase orders yet. Click "+ New PO" to create one.</p>}
+                      {purchaseOrders.map(po => {
+                        const isExpanded = expandedPOId === po.id
+                        const isEditing = editingPOId === po.id
+                        const sc = PO_STATUS[po.status] || PO_STATUS.draft
+                        const bi = budgetItems.find(b => b.id === po.budget_item_id)
+                        return (
+                          <div key={po.id} style={{ borderBottom: '1px solid #111', paddingBottom: '0', marginBottom: '0' }}>
+                            {isEditing ? (
+                              <div style={{ padding: '14px 0' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Edit {po.po_number}</p>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
+                                  <div><label style={s.label}>Vendor *</label><input style={s.input} value={editPOForm.vendor_name} onChange={e => setEditPOForm(f => ({ ...f, vendor_name: e.target.value }))} /></div>
+                                  <div><label style={s.label}>Description</label><input style={s.input} value={editPOForm.description} onChange={e => setEditPOForm(f => ({ ...f, description: e.target.value }))} /></div>
+                                </div>
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={s.label}>Budget line item</label>
+                                  <select style={s.input} value={editPOForm.budget_item_id} onChange={e => setEditPOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                                    <option value="">— Unassigned —</option>
+                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                                  </select>
+                                </div>
+                                <div style={{ marginBottom: '12px' }}>
+                                  <label style={s.label}>Line items</label>
+                                  <POItemsEditTable items={editPOForm.items} onChange={items => setEditPOForm(f => ({ ...f, items }))} />
+                                </div>
+                                <div style={{ marginBottom: '1rem' }}>
+                                  <label style={s.label}>Notes</label>
+                                  <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editPOForm.notes} onChange={e => setEditPOForm(f => ({ ...f, notes: e.target.value }))} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button style={{ ...s.btnSmall, opacity: savingPOEdit ? 0.6 : 1 }} disabled={savingPOEdit} onClick={savePOEdit}>{savingPOEdit ? 'Saving...' : 'Save changes'}</button>
+                                  <button style={s.btnGray} onClick={() => setEditingPOId(null)}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', cursor: 'pointer' }}
+                                  onClick={() => setExpandedPOId(isExpanded ? null : po.id)}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{po.vendor_name}</span>
+                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#555' }}>{po.po_number}</span>
+                                      {po.description && <span style={{ fontSize: '12px', color: '#888' }}>{po.description}</span>}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{po.status}</span>
+                                      {bi && <span style={{ fontSize: '11px', color: '#555' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
+                                      {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
+                                      <span style={{ fontSize: '11px', color: '#444' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#f1f1f1' }}>{fmt(po.amount)}</span>
+                                    <span style={{ color: '#555', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
+                                  </div>
+                                </div>
+
+                                {isExpanded && (
+                                  <div style={{ paddingBottom: '14px' }}>
+                                    {po.notes && <p style={{ fontSize: '13px', color: '#666', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
+                                    <POLineItemsTable items={po.purchase_order_items} />
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                                      {po.status === 'draft' && <>
+                                        <button style={{ ...s.btnSmallGreen, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>
+                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
+                                        <button style={s.btnSmallRed} onClick={() => deletePO(po.id)}>Delete</button>
+                                      </>}
+                                      {po.status === 'issued' && <>
+                                        <button style={{ ...s.btnSmallGreen, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'received')}>Mark Received</button>
+                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
+                                        <button style={{ ...s.btnSmallRed, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'closed')}>Cancel PO</button>
+                                      </>}
+                                      {po.status === 'received' && <>
+                                        <button style={{ ...s.btnSmall, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'closed')}>Close PO</button>
+                                      </>}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
+
               {activeTab === 'orders' && (() => {
                 const STATUS_COLORS = {
                   ordered:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },

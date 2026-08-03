@@ -1109,7 +1109,7 @@ export default function JobDetail() {
           ? Number(prevLine.dollar_this_period)
           : bAmt * (parseFloat(prevLine?.pct_this_period || 0) / 100)
         const newDollarPrev = prevLine ? prevDollarPrev + prevDollarThis : 0
-        const newPctPrev = bAmt > 0 ? Math.min(100, newDollarPrev / bAmt * 100) : 0
+        const newPctPrev = bAmt > 0 ? newDollarPrev / bAmt * 100 : 0
         return {
           application_id: newApp.id,
           budget_item_id: b.id,

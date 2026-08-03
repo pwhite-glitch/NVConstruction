@@ -502,10 +502,14 @@ export default function JobDetail() {
   async function loadBillingByItem() {
     const { data: latestApp } = await supabase.from('aia_applications').select('id').eq('job_id', id).order('app_number', { ascending: false }).limit(1).single()
     if (!latestApp) { setBillingByItem({}); return }
-    const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, pct_prev, pct_this_period').eq('application_id', latestApp.id)
+    const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period').eq('application_id', latestApp.id)
     const map = {}
     for (const l of lines || []) {
-      map[l.budget_item_id] = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
+      const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
+      const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
+      // Store dollar amounts when available — accurate even when overbilled (>100%)
+      // Fall back to pct-based for legacy lines that never stored dollars
+      map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
     }
     setBillingByItem(map)
   }
@@ -4866,9 +4870,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const hasBilling = Object.keys(billingByItem).length > 0
               const rows = budgetItems.map(item => {
                 const ownerSOV = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
-                const pct = billingByItem[item.id] || 0
-                const billed = Math.round(ownerSOV * pct / 100 * 100) / 100
+                const entry = billingByItem[item.id]
+                const billed = entry
+                  ? entry.dollars != null
+                    ? Math.round(entry.dollars * 100) / 100
+                    : Math.round(ownerSOV * (entry.pct || 0) / 100 * 100) / 100
+                  : 0
                 const remaining = ownerSOV - billed
+                const pct = ownerSOV > 0 ? billed / ownerSOV * 100 : 0
                 return { item, ownerSOV, pct, billed, remaining }
               })
               const totalOwner = rows.reduce((a, r) => a + r.ownerSOV, 0)

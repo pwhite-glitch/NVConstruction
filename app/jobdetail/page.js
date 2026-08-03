@@ -183,11 +183,13 @@ export default function JobDetail() {
   // Draw requests state
   const [drawRequests, setDrawRequests] = useState([])
   const [showCreateDraw, setShowCreateDraw] = useState(false)
-  const [drawForm, setDrawForm] = useState({ title: '', dc_ids: [] })
+  const [drawForm, setDrawForm] = useState({ title: '', dc_ids: [], po_ids: [] })
   const [creatingDraw, setCreatingDraw] = useState(false)
   const [expandedDrawId, setExpandedDrawId] = useState(null)
   const [drawAddCostIds, setDrawAddCostIds] = useState([])
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
+  const [drawAddPOIds, setDrawAddPOIds] = useState([])
+  const [savingDrawPOs, setSavingDrawPOs] = useState(false)
   const [editBillingForm, setEditBillingForm] = useState({})
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
@@ -1457,7 +1459,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
-    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts() }
+    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
@@ -6219,6 +6221,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {showCreateDraw && (() => {
                 const undrawnApproved = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id && !c.drawn_application_id)
+                const undrawnPOs = purchaseOrders.filter(po => (po.status === 'issued' || po.status === 'received') && !po.draw_request_id)
                 return (
                   <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
                     <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create new draw request</p>
@@ -6251,23 +6254,46 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {undrawnApproved.length === 0 && (
                       <p style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>No undrawn approved direct costs to tag.</p>
                     )}
+                    {undrawnPOs.length > 0 && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Tag POs to this draw</label>
+                        <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                          {undrawnPOs.map(po => (
+                            <label key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                              <input
+                                type="checkbox"
+                                checked={drawForm.po_ids.includes(po.id)}
+                                onChange={e => setDrawForm(f => ({ ...f, po_ids: e.target.checked ? [...f.po_ids, po.id] : f.po_ids.filter(x => x !== po.id) }))}
+                                style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
+                              />
+                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
+                              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number} · {fmt(po.amount)}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {drawForm.po_ids.length > 0 && (
+                          <p style={{ fontSize: '12px', color: '#e8590c', margin: '6px 0 0' }}>{drawForm.po_ids.length} PO{drawForm.po_ids.length > 1 ? 's' : ''} will be tagged to this draw</p>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...s.btn, opacity: creatingDraw ? 0.5 : 1 }} disabled={creatingDraw} onClick={async () => {
                         setCreatingDraw(true)
                         await fetch('/api/draw-requests', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids }),
+                          body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids, po_ids: drawForm.po_ids }),
                         })
-                        setDrawForm({ title: '', dc_ids: [] })
+                        setDrawForm({ title: '', dc_ids: [], po_ids: [] })
                         setShowCreateDraw(false)
                         await loadDrawRequests()
                         await loadDirectCosts()
+                        await loadPurchaseOrders()
                         setCreatingDraw(false)
                       }}>
                         {creatingDraw ? 'Creating...' : 'Create draw'}
                       </button>
-                      <button style={s.btnGray} onClick={() => { setShowCreateDraw(false); setDrawForm({ title: '', dc_ids: [] }) }}>Cancel</button>
+                      <button style={s.btnGray} onClick={() => { setShowCreateDraw(false); setDrawForm({ title: '', dc_ids: [], po_ids: [] }) }}>Cancel</button>
                     </div>
                   </div>
                 )
@@ -6282,12 +6308,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const undrawnCosts = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id && !c.drawn_application_id)
                 const drawBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
                 const taggedTotal = taggedCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+                const taggedPOs = purchaseOrders.filter(po => po.draw_request_id === dr.id)
+                const undrawnPOs = purchaseOrders.filter(po => (po.status === 'issued' || po.status === 'received') && !po.draw_request_id)
+                const taggedPOTotal = taggedPOs.reduce((a, po) => a + Number(po.amount || 0), 0)
                 return (
                   <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                     {/* Header row — click to expand */}
                     <div
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: dr.status === 'open' ? '#140a00' : '#0a0a0a', cursor: 'pointer' }}
-                      onClick={() => { setExpandedDrawId(isOpen ? null : dr.id); setDrawAddCostIds([]) }}
+                      onClick={() => { setExpandedDrawId(isOpen ? null : dr.id); setDrawAddCostIds([]); setDrawAddPOIds([]) }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{dr.title}</span>
@@ -6295,6 +6324,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {dr.status}
                         </span>
                         <span style={{ fontSize: '11px', color: '#555' }}>{taggedCosts.length} cost{taggedCosts.length !== 1 ? 's' : ''}</span>
+                        {taggedPOs.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{taggedPOs.length} PO{taggedPOs.length !== 1 ? 's' : ''}</span>}
                         {taggedTotal > 0 && <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700' }}>${taggedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
                         <span style={{ fontSize: '11px', color: '#555' }}>{drawBillings.length} billing{drawBillings.length !== 1 ? 's' : ''}</span>
                       </div>
@@ -6388,6 +6418,72 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         {undrawnCosts.length === 0 && (
                           <p style={{ fontSize: '12px', color: '#444', marginBottom: '1rem' }}>No undrawn approved direct costs available.</p>
+                        )}
+
+                        {/* Tagged POs */}
+                        <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Purchase orders drawn ({taggedPOs.length})</p>
+                        {taggedPOs.length === 0 ? (
+                          <p style={{ fontSize: '13px', color: '#444', marginBottom: '1rem' }}>No POs tagged to this draw yet.</p>
+                        ) : (
+                          <div style={{ marginBottom: '1rem' }}>
+                            {taggedPOs.map(po => (
+                              <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                                <div>
+                                  <span style={{ color: '#ccc' }}>{po.vendor_name}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ color: '#e8590c', fontWeight: '700' }}>{fmt(po.amount)}</span>
+                                  <button
+                                    style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
+                                    onClick={async () => {
+                                      await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: po.id, draw_request_id: null, drawn_at: null }) })
+                                      await loadPurchaseOrders()
+                                    }}
+                                  >Remove</button>
+                                </div>
+                              </div>
+                            ))}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 0', fontSize: '13px', fontWeight: '800', color: '#e8590c' }}>
+                              Total: {fmt(taggedPOTotal)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Add undrawn POs */}
+                        {undrawnPOs.length > 0 && (
+                          <>
+                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Add POs to this draw</p>
+                            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                              {undrawnPOs.map(po => (
+                                <label key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={drawAddPOIds.includes(po.id)}
+                                    onChange={e => setDrawAddPOIds(ids => e.target.checked ? [...ids, po.id] : ids.filter(x => x !== po.id))}
+                                    style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }}
+                                  />
+                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
+                                  <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number}</span>
+                                  <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>{fmt(po.amount)}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <button
+                              style={{ ...s.btn, opacity: (savingDrawPOs || drawAddPOIds.length === 0) ? 0.4 : 1, marginBottom: '1rem' }}
+                              disabled={savingDrawPOs || drawAddPOIds.length === 0}
+                              onClick={async () => {
+                                setSavingDrawPOs(true)
+                                await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_po_ids: drawAddPOIds }) })
+                                setDrawAddPOIds([])
+                                await loadPurchaseOrders()
+                                setSavingDrawPOs(false)
+                              }}
+                            >{savingDrawPOs ? 'Saving...' : `Draw ${drawAddPOIds.length > 0 ? drawAddPOIds.length + ' ' : ''}selected PO${drawAddPOIds.length !== 1 ? 's' : ''}`}</button>
+                          </>
+                        )}
+                        {undrawnPOs.length === 0 && (
+                          <p style={{ fontSize: '12px', color: '#444', marginBottom: '1rem' }}>No undrawn issued/received POs available.</p>
                         )}
 
                         {/* Billing submissions for this draw */}
@@ -9739,37 +9835,6 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   )
                 }
 
-                const POItemsEditTable = ({ items, onChange }) => {
-                  const lineTotal = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)
-                  return (
-                    <div>
-                      <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                          <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
-                        </div>
-                        {items.map((item, idx) => (
-                          <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
-                            <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
-                            <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x))} />
-                            <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))} />
-                            <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => onChange(items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x))} />
-                            <button onClick={() => onChange(items.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
-                          </div>
-                        ))}
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
-                          <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(lineTotal)}</span>
-                          <span />
-                        </div>
-                      </div>
-                      <button type="button" style={{ marginTop: '8px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '5px 14px', cursor: 'pointer' }}
-                        onClick={() => onChange([...items, { uid: Date.now(), description: '', qty: '1', unit: '', unit_price: '' }])}>
-                        + Add item
-                      </button>
-                    </div>
-                  )
-                }
-
                 return (
                   <>
                     {/* Stats */}
@@ -9802,7 +9867,31 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div style={{ marginBottom: '12px' }}>
                             <label style={s.label}>Line items</label>
-                            <POItemsEditTable items={poForm.items} onChange={items => setPOForm(f => ({ ...f, items }))} />
+                            <div>
+                              <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                  <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
+                                </div>
+                                {poForm.items.map((item, idx) => (
+                                  <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < poForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
+                                    <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
+                                    <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
+                                    <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
+                                    <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
+                                    <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
+                                  </div>
+                                ))}
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
+                                  <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(poForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
+                                  <span />
+                                </div>
+                              </div>
+                              <button type="button" style={{ marginTop: '8px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '5px 14px', cursor: 'pointer' }}
+                                onClick={() => setPOForm(f => ({ ...f, items: [...f.items, { uid: Date.now(), description: '', qty: '1', unit: '', unit_price: '' }] }))}>
+                                + Add item
+                              </button>
+                            </div>
                           </div>
                           <div style={{ marginBottom: '1.25rem' }}>
                             <label style={s.label}>Notes</label>
@@ -9842,7 +9931,31 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </div>
                                 <div style={{ marginBottom: '12px' }}>
                                   <label style={s.label}>Line items</label>
-                                  <POItemsEditTable items={editPOForm.items} onChange={items => setEditPOForm(f => ({ ...f, items }))} />
+                                  <div>
+                                    <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                        <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
+                                      </div>
+                                      {editPOForm.items.map((item, idx) => (
+                                        <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < editPOForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
+                                          <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
+                                          <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
+                                          <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
+                                          <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
+                                          <button onClick={() => setEditPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
+                                        </div>
+                                      ))}
+                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
+                                        <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(editPOForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
+                                        <span />
+                                      </div>
+                                    </div>
+                                    <button type="button" style={{ marginTop: '8px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '5px 14px', cursor: 'pointer' }}
+                                      onClick={() => setEditPOForm(f => ({ ...f, items: [...f.items, { uid: Date.now(), description: '', qty: '1', unit: '', unit_price: '' }] }))}>
+                                      + Add item
+                                    </button>
+                                  </div>
                                 </div>
                                 <div style={{ marginBottom: '1rem' }}>
                                   <label style={s.label}>Notes</label>

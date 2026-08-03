@@ -83,6 +83,8 @@ export async function PUT(request) {
     if (fields.description !== undefined) updates.description = fields.description || null
     if (fields.budget_item_id !== undefined) updates.budget_item_id = fields.budget_item_id || null
     if (fields.notes !== undefined) updates.notes = fields.notes || null
+    if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
+    if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
 
     if (items !== undefined) {
       updates.amount = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)

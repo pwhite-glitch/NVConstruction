@@ -7402,8 +7402,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {c.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
-                              style={{ ...s.btnSmallGreen, opacity: updatingCostId === c.id ? 0.6 : 1 }}
-                              disabled={updatingCostId === c.id}
+                              style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.budget_item_id) ? 0.4 : 1, cursor: !c.budget_item_id ? 'not-allowed' : 'pointer' }}
+                              disabled={updatingCostId === c.id || !c.budget_item_id}
+                              title={!c.budget_item_id ? 'Assign a budget line item before approving' : ''}
                               onClick={() => updateCostStatus(c.id, 'approved', c.notes)}>
                               Approve
                             </button>

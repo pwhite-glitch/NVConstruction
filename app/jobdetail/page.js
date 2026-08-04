@@ -1460,7 +1460,7 @@ ${sovLines.length > 0 ? `
   useEffect(() => {
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
-    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests() }
+    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders() }
@@ -5407,8 +5407,95 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const sovs = contractSovLines[c.id]
                       const totalScheduled = (sovs || []).reduce((a, l) => a + Number(l.scheduled_value), 0)
                       const totalBilled = (sovs || []).reduce((a, l) => a + Number(l.billed_to_date || 0), 0)
+                      const contractBillings = billingSubmissions.filter(b =>
+                        (c.sub_id && b.sub_id === c.sub_id) ||
+                        (c.vendor_name && b.company_name && b.company_name.toLowerCase() === c.vendor_name.toLowerCase())
+                      ).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))
+                      const approvedBillings = contractBillings.filter(b => b.status === 'approved')
+                      const totalApproved = approvedBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+                      const totalRetHeld = approvedBillings.reduce((a, b) => a + Number(b.retainage_held || 0), 0)
+                      const remainingToBill = Number(c.adjusted_contract_value) - totalApproved
+                      const pctBilled = Number(c.adjusted_contract_value) > 0 ? totalApproved / Number(c.adjusted_contract_value) * 100 : 0
+                      const thS = { textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }
+                      const fmtC = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       return (
                         <div style={{ ...s.contractRowExpanded, background: '#060606' }}>
+
+                          {/* Summary stats */}
+                          <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(5, 1fr)' }} className="rx-stats">
+                            <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue('#e8590c')}>{fmtC(c.adjusted_contract_value)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Billed (Approved)</div><div style={s.statValue('#60a5fa')}>{fmtC(totalApproved)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Retainage Held</div><div style={s.statValue('#facc15')}>{fmtC(totalRetHeld)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Net Paid</div><div style={s.statValue('#4ade80')}>{fmtC(totalApproved - totalRetHeld)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Remaining to Bill</div><div style={s.statValue(remainingToBill < 0 ? '#ff6b6b' : undefined)}>{fmtC(remainingToBill)}</div></div>
+                          </div>
+
+                          {/* Progress bar */}
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
+                              <span style={{ color: '#555' }}>Billed to date</span>
+                              <span style={{ fontWeight: '700', color: pctBilled > 100 ? '#ff6b6b' : pctBilled >= 95 ? '#4ade80' : '#e8590c' }}>{pctBilled.toFixed(1)}%</span>
+                            </div>
+                            <div style={{ height: '6px', background: '#1a1a1a', borderRadius: '3px' }}>
+                              <div style={{ height: '100%', width: Math.min(100, pctBilled) + '%', background: pctBilled > 100 ? '#ff6b6b' : pctBilled >= 95 ? '#4ade80' : '#e8590c', borderRadius: '3px', transition: 'width 0.3s' }} />
+                            </div>
+                          </div>
+
+                          {/* Billing submissions */}
+                          <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Billing submissions ({contractBillings.length})</p>
+                          {contractBillings.length === 0 ? (
+                            <p style={{ fontSize: '13px', color: '#444', marginBottom: '1.5rem' }}>No billing submissions found for this sub.</p>
+                          ) : (
+                            <div style={{ overflowX: 'auto', marginBottom: '1.5rem' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+                                    <th style={thS}>Date</th>
+                                    <th style={thS}>Period</th>
+                                    <th style={{ ...thS, textAlign: 'right' }}>Amount Billed</th>
+                                    <th style={{ ...thS, textAlign: 'right' }}>Retainage</th>
+                                    <th style={{ ...thS, textAlign: 'right' }}>Net</th>
+                                    <th style={{ ...thS, textAlign: 'center' }}>% Complete</th>
+                                    <th style={{ ...thS, textAlign: 'center' }}>Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {contractBillings.map(b => {
+                                    const net = Number(b.amount_billed || 0) - Number(b.retainage_held || 0)
+                                    const sc = b.status === 'approved'
+                                      ? { bg: '#0a2a0a', color: '#4ade80', border: '#1a4a1a' }
+                                      : b.status === 'rejected'
+                                      ? { bg: '#2a0a0a', color: '#ff6b6b', border: '#4a1a1a' }
+                                      : { bg: '#1a1400', color: '#f59e0b', border: '#4a3800' }
+                                    return (
+                                      <tr key={b.id} style={{ borderBottom: '1px solid #111' }}>
+                                        <td style={{ padding: '8px', color: '#888', fontSize: '11px', whiteSpace: 'nowrap' }}>{new Date(b.submitted_at).toLocaleDateString()}</td>
+                                        <td style={{ padding: '8px', color: '#555', fontSize: '11px' }}>{b.billing_period ? b.billing_period.slice(0, 7) : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#f1f1f1', fontWeight: '600' }}>{fmtC(b.amount_billed)}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#facc15' }}>{Number(b.retainage_held || 0) > 0 ? fmtC(b.retainage_held) : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#4ade80' }}>{fmtC(net)}</td>
+                                        <td style={{ padding: '8px', textAlign: 'center', color: '#888', fontSize: '11px' }}>{b.pct_complete != null ? b.pct_complete + '%' : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                                          <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{b.status}</span>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                  {approvedBillings.length > 0 && (
+                                    <tr style={{ borderTop: '2px solid #2a2a2a' }}>
+                                      <td colSpan="2" style={{ padding: '8px', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Approved Total</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#60a5fa' }}>{fmtC(totalApproved)}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#facc15' }}>{fmtC(totalRetHeld)}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#4ade80' }}>{fmtC(totalApproved - totalRetHeld)}</td>
+                                      <td colSpan="2"></td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {/* Schedule of Values */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                             <p style={{ ...s.cardTitle, margin: 0 }}>Schedule of Values{sovs ? ` (${sovs.length})` : ''}</p>
                             {showAddSovLine !== c.id && (

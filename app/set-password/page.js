@@ -36,6 +36,11 @@ export default function SetPassword() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setStep('password')
     })
+    // If the invite link is expired or invalid, auth never resolves — show an error after 6s
+    const timeout = setTimeout(() => {
+      setStep(s => s === 'loading' ? 'expired' : s)
+    }, 6000)
+    return () => clearTimeout(timeout)
   }, [])
 
   async function handleSetPassword(e) {
@@ -88,6 +93,22 @@ export default function SetPassword() {
         <div style={s.card}>
           <div style={s.logo}><img src="/logo.png" alt="NV Construction" style={s.logoImg} /></div>
           <p style={{ textAlign: 'center', color: '#555', fontSize: '14px' }}>Loading your account...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'expired') {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <div style={s.logo}>
+            <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
+            <span style={s.logoText}>NV Construction</span>
+          </div>
+          <p style={s.title}>Link expired</p>
+          <p style={s.sub}>This invite link has expired or is no longer valid. Please contact your project manager to get a new invite sent to you.</p>
+          <a href="/login" style={{ ...s.btn, display: 'block', textAlign: 'center', textDecoration: 'none' }}>Back to login</a>
         </div>
       </div>
     )

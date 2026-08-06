@@ -2027,12 +2027,21 @@ export default function Submit() {
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{m.full_name || m.email || 'Unnamed'}</div>
                       <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{m.email}</div>
                     </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
                       <div style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', background: hasLoggedIn ? '#0a2a0a' : '#1a1a0a', color: hasLoggedIn ? '#4ade80' : '#888', border: `1px solid ${hasLoggedIn ? '#1a4a1a' : '#2a2a1a'}` }}>
                         {hasLoggedIn ? 'Active' : 'Invite pending'}
                       </div>
+                      {!hasLoggedIn && m.email && (
+                        <button onClick={async () => {
+                          const res = await fetch('/api/invite-team-member', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inviter_id: profile?.id, company_id: teamCompanyId, email: m.email, full_name: m.full_name }) })
+                          const d = await res.json()
+                          setTeamInviteMsg(d.ok ? `Invite resent to ${m.email}` : `Error: ${d.error}`)
+                        }} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', background: 'transparent', color: '#e8590c', border: '1px solid #e8590c', cursor: 'pointer' }}>
+                          ↩ Resend
+                        </button>
+                      )}
                       {m.role && m.role !== 'subcontractor' && (
-                        <div style={{ fontSize: '10px', color: '#444', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.role.replace('sub_', '')}</div>
+                        <div style={{ fontSize: '10px', color: '#444', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.role.replace('sub_', '')}</div>
                       )}
                     </div>
                   </div>

@@ -183,13 +183,19 @@ export default function JobDetail() {
   // Draw requests state
   const [drawRequests, setDrawRequests] = useState([])
   const [showCreateDraw, setShowCreateDraw] = useState(false)
-  const [drawForm, setDrawForm] = useState({ title: '', dc_ids: [], po_ids: [] })
+  const [drawForm, setDrawForm] = useState({ title: '', dc_ids: [], po_ids: [], gc_ids: [] })
   const [creatingDraw, setCreatingDraw] = useState(false)
   const [expandedDrawId, setExpandedDrawId] = useState(null)
   const [drawAddCostIds, setDrawAddCostIds] = useState([])
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
   const [drawAddPOIds, setDrawAddPOIds] = useState([])
   const [savingDrawPOs, setSavingDrawPOs] = useState(false)
+  const [generalConditions, setGeneralConditions] = useState([])
+  const [gcForm, setGcForm] = useState({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '' })
+  const [savingGC, setSavingGC] = useState(false)
+  const [editingGCId, setEditingGCId] = useState(null)
+  const [drawAddGCIds, setDrawAddGCIds] = useState([])
+  const [savingDrawGCs, setSavingDrawGCs] = useState(false)
   const [editBillingForm, setEditBillingForm] = useState({})
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
@@ -647,6 +653,12 @@ export default function JobDetail() {
     } catch (err) {
       console.error('loadDirectCosts threw:', err)
     }
+  }
+
+  async function loadGeneralConditions() {
+    const res = await fetch(`/api/general-conditions?job_id=${id}`)
+    const json = await res.json()
+    setGeneralConditions(json.entries || [])
   }
 
   async function openDcReceiptUrl(path) {
@@ -1463,7 +1475,8 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
-    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders() }
+    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
+    if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }
     if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
@@ -3856,6 +3869,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
                   { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
                   { key: 'po', label: 'Purchase Orders', badge: purchaseOrders.filter(p => p.status === 'issued').length > 0 ? purchaseOrders.filter(p => p.status === 'issued').length : null },
+                  { key: 'gc', label: 'Gen. Conditions', badge: generalConditions.length > 0 ? generalConditions.length : null },
                   { key: 'prime', label: job?.nv_role === 'sub' ? 'GC Billing' : 'Prime Contract' },
                   { key: 'cashflow', label: 'Cash Flow' },
                   { key: 'retainage', label: 'Retainage' },
@@ -6318,6 +6332,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {showCreateDraw && (() => {
                 const undrawnApproved = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id && !c.drawn_application_id)
                 const undrawnPOs = purchaseOrders.filter(po => (po.status === 'issued' || po.status === 'received') && !po.draw_request_id)
+                const undrawnGCs = generalConditions.filter(e => !e.draw_request_id)
                 return (
                   <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
                     <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create new draw request</p>
@@ -6372,24 +6387,42 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                       </div>
                     )}
+                    {undrawnGCs.length > 0 && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Tag general conditions to this draw</label>
+                        <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                          {undrawnGCs.map(e => (
+                            <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                              <input type="checkbox" checked={drawForm.gc_ids.includes(e.id)} onChange={ev => setDrawForm(f => ({ ...f, gc_ids: ev.target.checked ? [...f.gc_ids, e.id] : f.gc_ids.filter(x => x !== e.id) }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
+                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{e.description}</span>
+                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{e.entry_date} · ${Number(e.amount).toLocaleString()}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {drawForm.gc_ids.length > 0 && (
+                          <p style={{ fontSize: '12px', color: '#e8590c', margin: '6px 0 0' }}>{drawForm.gc_ids.length} GC entr{drawForm.gc_ids.length !== 1 ? 'ies' : 'y'} will be tagged to this draw</p>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...s.btn, opacity: creatingDraw ? 0.5 : 1 }} disabled={creatingDraw} onClick={async () => {
                         setCreatingDraw(true)
                         await fetch('/api/draw-requests', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids, po_ids: drawForm.po_ids }),
+                          body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids, po_ids: drawForm.po_ids, gc_ids: drawForm.gc_ids }),
                         })
-                        setDrawForm({ title: '', dc_ids: [], po_ids: [] })
+                        setDrawForm({ title: '', dc_ids: [], po_ids: [], gc_ids: [] })
                         setShowCreateDraw(false)
                         await loadDrawRequests()
                         await loadDirectCosts()
                         await loadPurchaseOrders()
+                        await loadGeneralConditions()
                         setCreatingDraw(false)
                       }}>
                         {creatingDraw ? 'Creating...' : 'Create draw'}
                       </button>
-                      <button style={s.btnGray} onClick={() => { setShowCreateDraw(false); setDrawForm({ title: '', dc_ids: [], po_ids: [] }) }}>Cancel</button>
+                      <button style={s.btnGray} onClick={() => { setShowCreateDraw(false); setDrawForm({ title: '', dc_ids: [], po_ids: [], gc_ids: [] }) }}>Cancel</button>
                     </div>
                   </div>
                 )
@@ -6407,6 +6440,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const taggedPOs = purchaseOrders.filter(po => po.draw_request_id === dr.id)
                 const undrawnPOs = purchaseOrders.filter(po => (po.status === 'issued' || po.status === 'received') && !po.draw_request_id)
                 const taggedPOTotal = taggedPOs.reduce((a, po) => a + Number(po.amount || 0), 0)
+                const taggedGCs = generalConditions.filter(e => e.draw_request_id === dr.id)
+                const undrawnGCsForDraw = generalConditions.filter(e => !e.draw_request_id)
+                const taggedGCTotal = taggedGCs.reduce((a, e) => a + Number(e.amount || 0), 0)
                 return (
                   <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                     {/* Header row — click to expand */}
@@ -6421,6 +6457,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </span>
                         <span style={{ fontSize: '11px', color: '#555' }}>{taggedCosts.length} cost{taggedCosts.length !== 1 ? 's' : ''}</span>
                         {taggedPOs.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{taggedPOs.length} PO{taggedPOs.length !== 1 ? 's' : ''}</span>}
+                        {taggedGCs.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{taggedGCs.length} GC</span>}
                         {taggedTotal > 0 && <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700' }}>${taggedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
                         <span style={{ fontSize: '11px', color: '#555' }}>{drawBillings.length} billing{drawBillings.length !== 1 ? 's' : ''}</span>
                       </div>
@@ -6580,6 +6617,60 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         {undrawnPOs.length === 0 && (
                           <p style={{ fontSize: '12px', color: '#444', marginBottom: '1rem' }}>No undrawn issued/received POs available.</p>
+                        )}
+
+                        {/* Tagged General Conditions */}
+                        <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>General conditions drawn ({taggedGCs.length})</p>
+                        {taggedGCs.length === 0 ? (
+                          <p style={{ fontSize: '13px', color: '#444', marginBottom: '1rem' }}>No general conditions tagged to this draw yet.</p>
+                        ) : (
+                          <div style={{ marginBottom: '1rem' }}>
+                            {taggedGCs.map(e => (
+                              <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                                <div>
+                                  <span style={{ color: '#ccc' }}>{e.description}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{e.entry_date} · {e.category}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                  <button style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
+                                    onClick={async () => {
+                                      await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_gc_ids: [e.id] }) })
+                                      await loadGeneralConditions()
+                                    }}>Remove</button>
+                                </div>
+                              </div>
+                            ))}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 10px 0', fontSize: '13px', fontWeight: '800', color: '#e8590c' }}>
+                              Total: ${taggedGCTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        )}
+                        {undrawnGCsForDraw.length > 0 && (
+                          <>
+                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Add general conditions to this draw</p>
+                            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                              {undrawnGCsForDraw.map(e => (
+                                <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                                  <input type="checkbox" checked={drawAddGCIds.includes(e.id)} onChange={ev => setDrawAddGCIds(ids => ev.target.checked ? [...ids, e.id] : ids.filter(x => x !== e.id))} style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }} />
+                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{e.description}</span>
+                                  <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{e.entry_date}</span>
+                                  <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <button
+                              style={{ ...s.btn, opacity: (savingDrawGCs || drawAddGCIds.length === 0) ? 0.4 : 1, marginBottom: '1rem' }}
+                              disabled={savingDrawGCs || drawAddGCIds.length === 0}
+                              onClick={async () => {
+                                setSavingDrawGCs(true)
+                                await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_gc_ids: drawAddGCIds }) })
+                                setDrawAddGCIds([])
+                                await loadGeneralConditions()
+                                setSavingDrawGCs(false)
+                              }}
+                            >{savingDrawGCs ? 'Saving...' : `Draw ${drawAddGCIds.length > 0 ? drawAddGCIds.length + ' ' : ''}selected GC entr${drawAddGCIds.length !== 1 ? 'ies' : 'y'}`}</button>
+                          </>
                         )}
 
                         {/* Billing submissions for this draw */}
@@ -10111,6 +10202,159 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )
                       })}
+                    </div>
+                  </>
+                )
+              })()}
+
+              {activeTab === 'gc' && (() => {
+                const GC_CATEGORIES = ['salary', 'equipment', 'disposal', 'utilities', 'insurance', 'permits', 'general']
+                const catLabel = c => c.charAt(0).toUpperCase() + c.slice(1)
+                const fmtAmt = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                const totalDrawn = generalConditions.filter(e => e.draw_request_id).reduce((a, e) => a + Number(e.amount || 0), 0)
+                const totalUndrawn = generalConditions.filter(e => !e.draw_request_id).reduce((a, e) => a + Number(e.amount || 0), 0)
+                return (
+                  <>
+                    <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '1.5rem' }} className="rx-stats">
+                      <div style={s.statCard}><div style={s.statLabel}>Total entries</div><div style={s.statValue()}>{generalConditions.length}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Drawn to date</div><div style={s.statValue('#4ade80')}>{fmtAmt(totalDrawn)}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Undrawn</div><div style={s.statValue(totalUndrawn > 0 ? '#e8590c' : undefined)}>{fmtAmt(totalUndrawn)}</div></div>
+                    </div>
+
+                    <div style={s.card}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                        <p style={{ ...s.cardTitle, margin: 0 }}>General Conditions ({generalConditions.length})</p>
+                      </div>
+
+                      {/* Add entry form */}
+                      <div style={{ ...s.inlineForm, border: '1px solid #2a2a2a', marginBottom: '1.5rem' }}>
+                        <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Log entry</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label style={s.label}>Description *</label>
+                            <input style={s.input} value={gcForm.description} onChange={e => setGcForm(f => ({ ...f, description: e.target.value }))} placeholder="PM salary — 8/1 to 8/14" />
+                          </div>
+                          <div>
+                            <label style={s.label}>Amount *</label>
+                            <input type="number" step="0.01" style={s.input} value={gcForm.amount} onChange={e => setGcForm(f => ({ ...f, amount: e.target.value }))} placeholder="12500.00" />
+                          </div>
+                          <div>
+                            <label style={s.label}>Category</label>
+                            <select style={s.input} value={gcForm.category} onChange={e => setGcForm(f => ({ ...f, category: e.target.value }))}>
+                              {GC_CATEGORIES.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={s.label}>Date</label>
+                            <input type="date" style={s.input} value={gcForm.entry_date} onChange={e => setGcForm(f => ({ ...f, entry_date: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Budget item</label>
+                            <select style={s.input} value={gcForm.budget_item_id} onChange={e => setGcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                              <option value="">— none —</option>
+                              {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                          <label style={s.label}>Notes</label>
+                          <input style={s.input} value={gcForm.notes} onChange={e => setGcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                        </div>
+                        <button
+                          style={{ ...s.btn, opacity: (savingGC || !gcForm.description.trim() || !gcForm.amount) ? 0.4 : 1 }}
+                          disabled={savingGC || !gcForm.description.trim() || !gcForm.amount}
+                          onClick={async () => {
+                            setSavingGC(true)
+                            await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
+                            setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '' })
+                            await loadGeneralConditions()
+                            setSavingGC(false)
+                          }}
+                        >{savingGC ? 'Saving...' : 'Add entry'}</button>
+                      </div>
+
+                      {/* Entries list */}
+                      {generalConditions.length === 0 ? (
+                        <p style={{ fontSize: '14px', color: '#444' }}>No general conditions logged yet.</p>
+                      ) : (
+                        <div>
+                          {generalConditions.map(e => {
+                            const isEditing = editingGCId === e.id
+                            const budgetItem = budgetItems.find(b => b.id === e.budget_item_id)
+                            const draw = drawRequests.find(d => d.id === e.draw_request_id)
+                            return (
+                              <div key={e.id} style={{ borderBottom: '1px solid #111', padding: '10px 0' }}>
+                                {isEditing ? (
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingBottom: '8px' }}>
+                                    <div style={{ gridColumn: '1 / -1' }}>
+                                      <label style={s.label}>Description</label>
+                                      <input style={s.input} value={gcForm.description} onChange={e2 => setGcForm(f => ({ ...f, description: e2.target.value }))} />
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Amount</label>
+                                      <input type="number" step="0.01" style={s.input} value={gcForm.amount} onChange={e2 => setGcForm(f => ({ ...f, amount: e2.target.value }))} />
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Category</label>
+                                      <select style={s.input} value={gcForm.category} onChange={e2 => setGcForm(f => ({ ...f, category: e2.target.value }))}>
+                                        {GC_CATEGORIES.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Date</label>
+                                      <input type="date" style={s.input} value={gcForm.entry_date} onChange={e2 => setGcForm(f => ({ ...f, entry_date: e2.target.value }))} />
+                                    </div>
+                                    <div>
+                                      <label style={s.label}>Budget item</label>
+                                      <select style={s.input} value={gcForm.budget_item_id} onChange={e2 => setGcForm(f => ({ ...f, budget_item_id: e2.target.value }))}>
+                                        <option value="">— none —</option>
+                                        {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
+                                      </select>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                                      <button style={s.btn} onClick={async () => {
+                                        setSavingGC(true)
+                                        await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcForm }) })
+                                        setEditingGCId(null)
+                                        await loadGeneralConditions()
+                                        setSavingGC(false)
+                                      }}>{savingGC ? 'Saving...' : 'Save'}</button>
+                                      <button style={s.btnGray} onClick={() => setEditingGCId(null)}>Cancel</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{e.description}</span>
+                                        <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a' }}>{catLabel(e.category)}</span>
+                                        {draw && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', color: '#4ade80', border: '1px solid #1a3a1a' }}>{draw.title}</span>}
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>
+                                        {e.entry_date && <span style={{ marginRight: '10px' }}>{e.entry_date}</span>}
+                                        {budgetItem && <span style={{ marginRight: '10px' }}>→ {budgetItem.description}</span>}
+                                        {e.notes && <span style={{ color: '#444' }}>{e.notes}</span>}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                                      <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
+                                      <button style={s.btnSmallOrange} onClick={() => {
+                                        setEditingGCId(e.id)
+                                        setGcForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '' })
+                                      }}>Edit</button>
+                                      <button style={s.btnSmallRed} onClick={async () => {
+                                        if (!window.confirm('Delete this entry?')) return
+                                        await fetch('/api/general-conditions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id }) })
+                                        await loadGeneralConditions()
+                                      }}>Delete</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   </>
                 )

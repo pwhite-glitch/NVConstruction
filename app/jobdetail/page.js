@@ -2775,7 +2775,6 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const { error } = await supabase.from('change_orders').update({
       description,
       amount: finalAmount,
-      notes: notes || null,
       sov: validSOV.length > 0 ? validSOV : null,
     }).eq('id', editingSubCOId)
     setSavingSubCO(false)
@@ -6312,10 +6311,6 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <label style={s.label}>Amount{sovRows.length > 0 ? ' (from SOV)' : ''}</label>
                               <input style={{ ...s.input, color: sovRows.length > 0 ? '#555' : undefined }} type="number" value={sovRows.length > 0 ? sovTotal.toFixed(2) : editSubCOForm.amount} readOnly={sovRows.length > 0} onChange={e => setEditSubCOForm(f => ({ ...f, amount: e.target.value }))} />
                             </div>
-                          </div>
-                          <div style={{ marginBottom: '12px' }}>
-                            <label style={s.label}>Notes (optional)</label>
-                            <input style={s.input} value={editSubCOForm.notes} onChange={e => setEditSubCOForm(f => ({ ...f, notes: e.target.value }))} />
                           </div>
                           {sovRows.length > 0 && (
                             <div style={{ marginBottom: '12px' }}>

@@ -170,6 +170,9 @@ export default function JobDetail() {
   const [editingBudgetItem, setEditingBudgetItem] = useState(null)
   const [editBudgetForm, setEditBudgetForm] = useState({})
   const [committedDrilldownItem, setCommittedDrilldownItem] = useState(null)
+  const [editingSubCOId, setEditingSubCOId] = useState(null)
+  const [editSubCOForm, setEditSubCOForm] = useState({})
+  const [savingSubCO, setSavingSubCO] = useState(false)
 
   // Billing tab state
   const [billingSubmissions, setBillingSubmissions] = useState([])
@@ -2759,6 +2762,28 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await loadAllCOs()
     await loadContracts()
     setAddingCO(false)
+  }
+
+  async function saveSubCO() {
+    const { description, amount, notes, sov } = editSubCOForm
+    const validSOV = (sov || []).filter(r => r.description || r.budget_item_id || r.amount)
+    const sovTotal = validSOV.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+    const finalAmount = validSOV.length > 0 ? sovTotal : parseFloat(amount)
+    if (!description) { alert('Description is required.'); return }
+    if (!finalAmount) { alert('Enter an amount.'); return }
+    setSavingSubCO(true)
+    const { error } = await supabase.from('change_orders').update({
+      description,
+      amount: finalAmount,
+      notes: notes || null,
+      sov: validSOV.length > 0 ? validSOV : null,
+    }).eq('id', editingSubCOId)
+    setSavingSubCO(false)
+    if (error) { alert('Error saving: ' + error.message); return }
+    setEditingSubCOId(null)
+    setEditSubCOForm({})
+    await loadAllCOs()
+    await loadContracts()
   }
 
   async function reviewCO(coId, status, sovOverride = null) {
@@ -6257,8 +6282,65 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </button>
                         )}
                         <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const num = allCOs.length - coIdx; printSubCO(co, subName, scope, num) }}>Print CO</button>
+                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
+                          setEditingSubCOId(co.id)
+                          setEditSubCOForm({
+                            description: co.description || '',
+                            amount: String(co.amount || ''),
+                            notes: co.notes || '',
+                            sov: co.sov?.length > 0 ? co.sov.map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || '', amount: String(r.amount || '') })) : [],
+                          })
+                          setPushCOId(null)
+                        }}>Edit</button>
                       </div>
                     </div>
+                    {editingSubCOId === co.id && (() => {
+                      const sovRows = editSubCOForm.sov || []
+                      const sovTotal = sovRows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
+                      return (
+                        <div style={{ background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '16px', marginTop: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                            <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit Change Order</p>
+                            <button onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '18px', cursor: 'pointer' }}>×</button>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                            <div>
+                              <label style={s.label}>Description</label>
+                              <input style={s.input} value={editSubCOForm.description} onChange={e => setEditSubCOForm(f => ({ ...f, description: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label style={s.label}>Amount{sovRows.length > 0 ? ' (from SOV)' : ''}</label>
+                              <input style={{ ...s.input, color: sovRows.length > 0 ? '#555' : undefined }} type="number" value={sovRows.length > 0 ? sovTotal.toFixed(2) : editSubCOForm.amount} readOnly={sovRows.length > 0} onChange={e => setEditSubCOForm(f => ({ ...f, amount: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: '12px' }}>
+                            <label style={s.label}>Notes (optional)</label>
+                            <input style={s.input} value={editSubCOForm.notes} onChange={e => setEditSubCOForm(f => ({ ...f, notes: e.target.value }))} />
+                          </div>
+                          {sovRows.length > 0 && (
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={{ ...s.label, marginBottom: '8px', display: 'block' }}>SOV Lines</label>
+                              {sovRows.map((row, i) => (
+                                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+                                  <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
+                                  <select style={s.input} value={row.budget_item_id} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value } : r) }))}>
+                                    <option value="">— No budget line —</option>
+                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? b.cost_code + ' · ' : ''}{b.description}</option>)}
+                                  </select>
+                                  <input style={s.input} type="number" placeholder="Amount" value={row.amount} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r) }))} />
+                                  <button style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>×</button>
+                                </div>
+                              ))}
+                              <button style={{ ...s.btnSmall, fontSize: '11px', marginTop: '4px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: [...f.sov, { description: '', budget_item_id: '', amount: '' }] }))}>+ Add Line</button>
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button style={{ ...s.btn, opacity: savingSubCO ? 0.6 : 1 }} disabled={savingSubCO} onClick={saveSubCO}>{savingSubCO ? 'Saving...' : 'Save Changes'}</button>
+                            <button style={s.btnGray} onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }}>Cancel</button>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     {isPushing && (
                       <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px 16px', marginTop: '8px' }}>
                         <p style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>Push to Prime Contract CO</p>

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
@@ -169,6 +169,7 @@ export default function JobDetail() {
   const [csvUploading, setCsvUploading] = useState(false)
   const [editingBudgetItem, setEditingBudgetItem] = useState(null)
   const [editBudgetForm, setEditBudgetForm] = useState({})
+  const [committedDrilldownItem, setCommittedDrilldownItem] = useState(null)
 
   // Billing tab state
   const [billingSubmissions, setBillingSubmissions] = useState([])
@@ -2765,16 +2766,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await supabase.from('change_orders').update({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq('id', coId)
     if (status === 'approved') {
       const co = allCOs.find(c => c.id === coId)
-      const sov = sovOverride || co?.sov || []
-      for (const sovItem of sov) {
-        if (!sovItem.budget_item_id || !sovItem.amount) continue
-        const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: {
-          budget_amount: Number(item.budget_amount) + Number(sovItem.amount),
-          owner_amount: Number(item.owner_amount ?? item.budget_amount) + Number(sovItem.amount),
-        } }) })
-      }
-      await loadBudgetItems()
+      // Sub COs do NOT change budget — they increase committed cost via the subcontract's
+      // adjusted_contract_value (computed in the DB view). Budget only grows when the owner
+      // approves a prime CO and pays us for it.
       if (co?.direction === 'sub_to_pm' && co?.subcontract_id && co?.amount) {
         const { data: existingLines } = await supabase.from('subcontract_sov_lines').select('sort_order').eq('subcontract_id', co.subcontract_id).order('sort_order', { ascending: false }).limit(1)
         const nextSort = (existingLines?.[0]?.sort_order || 0) + 1
@@ -2898,6 +2892,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
         }
       }
+      // Mark budget as applied so the "Apply to Budget" button is hidden — prevents double-counting
+      if (linkedSovItems.length > 0) {
+        await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', coId)
+      }
       await loadBudgetItems()
     }
     await loadPrimeCOs()
@@ -2910,7 +2908,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       const bi = budgetItems.find(b => b.id === r.budget_item_id)
       return `  ${bi ? (bi.cost_code ? bi.cost_code + ' · ' : '') + bi.description : 'Unknown'}: +$${Number(r.amount).toLocaleString()}`
     }).join('\n')
-    if (!window.confirm(`Apply CO "${co.description}" to budget items?\n\n${lines}\n\nOnly do this if the budget does NOT already reflect this CO — clicking twice will double-count.`)) return
+    if (!window.confirm(`Apply CO "${co.description}" to budget items?\n\n${lines}`)) return
     for (const sovItem of linked) {
       const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
       if (item) {
@@ -2920,8 +2918,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         } }) })
       }
     }
+    // Mark applied so this button is hidden — prevents double-counting
+    await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', co.id)
     await loadBudgetItems()
-    alert('Budget updated.')
+    await loadPrimeCOs()
   }
 
   async function deletePrimeCO(coId) {
@@ -3192,6 +3192,58 @@ ${sovHtml}
       .filter(po => (po.status === 'issued' || po.status === 'received') && po.budget_item_id === budgetItemId)
       .reduce((a, po) => a + Number(po.amount || 0), 0)
     return contractCommitted + laborCostForItem(budgetItemId) + dcCommitted + poCommitted
+  }
+
+  function committedBreakdownForItem(budgetItemId) {
+    const contractLines = contracts.reduce((acc, c) => {
+      const base = Number(c.contract_value || 0)
+      const adjusted = Number(c.adjusted_contract_value || base)
+      const allocs = c.budget_allocations
+      let amount = 0
+      if (allocs && allocs.length > 0) {
+        const match = allocs.find(a => a.budget_item_id === budgetItemId)
+        if (!match) return acc
+        const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+        const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
+        amount = pct * adjusted
+        acc.push({ type: 'contract', name: c.vendor_name || c.description || 'Contract', base, adjusted, amount, coAmount: adjusted - base, id: c.id })
+      } else if (c.budget_item_id === budgetItemId) {
+        amount = adjusted
+        acc.push({ type: 'contract', name: c.vendor_name || c.description || 'Contract', base, adjusted, amount, coAmount: adjusted - base, id: c.id })
+      }
+      return acc
+    }, [])
+
+    const dcLines = directCosts
+      .filter(c => c.status === 'approved' && c.budget_item_id === budgetItemId)
+      .map(c => ({ type: 'dc', name: c.description || 'Direct Cost', amount: Number(c.amount || 0), date: c.entry_date, id: c.id }))
+
+    const poLines = purchaseOrders
+      .filter(po => (po.status === 'issued' || po.status === 'received') && po.budget_item_id === budgetItemId)
+      .map(po => ({ type: 'po', name: po.description || 'Purchase Order', amount: Number(po.amount || 0), status: po.status, id: po.id }))
+
+    const laborLines = jobAllocations
+      .filter(a => {
+        if (a.allocation_type !== 'pm_allocation') return false
+        const budgetItem = budgetItems.find(b => b.id === budgetItemId)
+        const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' — ' : ''}${budgetItem.description}` : null
+        if (a.budget_item_id) return a.budget_item_id === budgetItemId
+        if (itemText && a.budget_line) return a.budget_line === itemText
+        return false
+      })
+      .map(a => {
+        const emp = a.employees
+        const weeklyRate = Number(emp?.weekly_salary || 0) + Number(emp?.weekly_truck || 0) + Number(emp?.weekly_healthcare || 0) + Number(emp?.weekly_taxes || 0)
+        const pct = a.percentage != null ? Number(a.percentage) : 100
+        const start = a.start_date ? new Date(a.start_date) : null
+        const end = a.end_date ? new Date(a.end_date) : new Date()
+        const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : 0
+        const amount = weeklyRate * pct / 100 * days / 7
+        const name = emp ? `${emp.name || 'Employee'} (${pct}%)` : 'Labor'
+        return { type: 'labor', name, amount, start: a.start_date, end: a.end_date, id: a.id }
+      })
+
+    return { contractLines, dcLines, poLines, laborLines }
   }
 
   async function saveForecastEac(budgetItemId, value) {
@@ -4768,8 +4820,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const markup = ownerAmt - Number(item.budget_amount)
                     const rowAccent = over ? '#ff4444' : pct >= 80 ? '#e8590c' : pct >= 50 ? '#facc15' : committed > 0 ? '#4ade80' : 'transparent'
                     const itemCOs = cosByBudgetItem[item.id] || []
+                    const drillOpen = committedDrilldownItem === item.id
                     return (
-                      <div key={item.id} style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1, borderLeft: `3px solid ${rowAccent}`, paddingLeft: '10px' }}>
+                    <React.Fragment key={item.id}>
+                      <div style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1, borderLeft: `3px solid ${rowAccent}`, paddingLeft: '10px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace', flexShrink: 0 }}>{item.cost_code}</span>}
@@ -4792,7 +4846,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '14px', color: '#60a5fa', fontWeight: '600' }}>${ownerAmt.toLocaleString()}</div>
                           {markup !== 0 && <div style={{ fontSize: '11px', color: markup > 0 ? '#4ade80' : '#ff6b6b', marginTop: '2px' }}>{markup > 0 ? '+' : ''}{((markup / Number(item.budget_amount)) * 100).toFixed(1)}%</div>}
                         </div>
-                        <div style={{ textAlign: 'right', fontSize: '14px', color: committed > 0 ? '#e8590c' : '#444', fontWeight: '600' }}>${committed.toLocaleString()}</div>
+                        <div
+                          title="Click to see what's committed to this line"
+                          onClick={() => setCommittedDrilldownItem(drillOpen ? null : item.id)}
+                          style={{ textAlign: 'right', fontSize: '14px', color: committed > 0 ? '#e8590c' : '#444', fontWeight: '600', cursor: committed > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}
+                        >
+                          ${committed.toLocaleString()}
+                          {committed > 0 && <span style={{ fontSize: '10px', opacity: 0.6 }}>{drillOpen ? '▲' : '▼'}</span>}
+                        </div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: over ? '#ff6b6b' : '#4ade80', fontWeight: '600' }}>{over ? '-' : ''}${Math.abs(uncommitted).toLocaleString()}</div>
                         <div style={{ textAlign: 'right', fontSize: '13px', color: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</div>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
@@ -4800,6 +4861,40 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmallRed} onClick={() => deleteBudgetItem(item.id)}>Del</button>
                         </div>
                       </div>
+                      {drillOpen && (() => {
+                        const { contractLines, dcLines, poLines, laborLines } = committedBreakdownForItem(item.id)
+                        const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                        const DrillSection = ({ label, color, rows }) => rows.length === 0 ? null : (
+                          <div style={{ marginBottom: '10px' }}>
+                            <div style={{ fontSize: '10px', fontWeight: '700', color, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
+                            {rows.map((r, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderRadius: '4px', gap: '12px' }}>
+                                <span style={{ fontSize: '13px', color: '#ccc', flex: 1, minWidth: 0 }}>
+                                  {r.name}
+                                  {r.type === 'contract' && r.coAmount > 0 && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '6px' }}>+{fmt(r.coAmount)} CO</span>}
+                                  {r.type === 'po' && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.status}</span>}
+                                  {r.type === 'labor' && r.start && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.start}{r.end ? ' → ' + r.end : ''}</span>}
+                                  {r.type === 'dc' && r.date && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.date}</span>}
+                                </span>
+                                <span style={{ fontSize: '13px', fontWeight: '700', color, whiteSpace: 'nowrap' }}>{fmt(r.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                        return (
+                          <div style={{ gridColumn: '1 / -1', background: '#0d0d0d', border: '1px solid #1e1e1e', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px 18px', marginBottom: '2px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', marginBottom: '12px' }}>COMMITTED BREAKDOWN — {item.description.toUpperCase()}</div>
+                            <DrillSection label="Subcontracts" color="#60a5fa" rows={contractLines} />
+                            <DrillSection label="Direct Costs" color="#4ade80" rows={dcLines} />
+                            <DrillSection label="Purchase Orders" color="#facc15" rows={poLines} />
+                            <DrillSection label="Labor / PM" color="#c084fc" rows={laborLines} />
+                            {contractLines.length + dcLines.length + poLines.length + laborLines.length === 0 && (
+                              <div style={{ fontSize: '13px', color: '#555', textAlign: 'center', padding: '12px' }}>No committed items found for this budget line.</div>
+                            )}
+                          </div>
+                        )
+                      })()}
+                    </React.Fragment>
                     )
                   })})()}
                 </div>
@@ -5869,8 +5964,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
                         </div>
                       )}
-                      {co.status === 'approved' && hasSov && (
+                      {co.status === 'approved' && hasSov && !co.budget_applied && (
                         <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#0a1a2a', border: '1px solid #1a3a5a', color: '#60a5fa' }} onClick={() => applyPrimeCOToBudget(co)}>Apply to Budget</button>
+                      )}
+                      {co.status === 'approved' && hasSov && co.budget_applied && (
+                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600' }}>✓ Budget Applied</span>
                       )}
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
                         loadBudgetItems()

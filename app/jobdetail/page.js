@@ -3170,20 +3170,28 @@ ${sovHtml}
 
   function committedForItem(budgetItemId) {
     const contractCommitted = contracts.reduce((total, c) => {
-      const adjusted = Number(c.adjusted_contract_value || c.contract_value || 0)
+      const base = Number(c.contract_value || 0)
       const allocs = c.budget_allocations
+      let baseAmount = 0
       if (allocs && allocs.length > 0) {
         const match = allocs.find(a => a.budget_item_id === budgetItemId)
-        if (!match) return total
-        // Scale the allocation proportionally by the adjusted contract value (includes approved COs)
-        const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
-        const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
-        return total + pct * adjusted
+        if (match) {
+          // Use contract_value (not adjusted) so CO amounts are tracked separately below
+          const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+          const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
+          baseAmount = pct * base
+        }
+      } else if (c.budget_item_id === budgetItemId) {
+        baseAmount = base
       }
-      if (c.budget_item_id === budgetItemId) {
-        return total + adjusted
-      }
-      return total
+      // Add approved CO amounts from this subcontract that explicitly target this budget item via SOV
+      const coAmount = allCOs
+        .filter(co => co.subcontract_id === c.id && co.status === 'approved')
+        .reduce((coTotal, co) => {
+          const sovMatch = (co.sov || []).find(s => s.budget_item_id === budgetItemId)
+          return coTotal + (sovMatch ? Number(sovMatch.amount || 0) : 0)
+        }, 0)
+      return total + baseAmount + coAmount
     }, 0)
     const dcCommitted = directCosts
       .filter(c => c.status === 'approved' && c.budget_item_id === budgetItemId)
@@ -3197,20 +3205,34 @@ ${sovHtml}
   function committedBreakdownForItem(budgetItemId) {
     const contractLines = contracts.reduce((acc, c) => {
       const base = Number(c.contract_value || 0)
-      const adjusted = Number(c.adjusted_contract_value || base)
       const allocs = c.budget_allocations
-      let amount = 0
+      let baseAmount = 0
+      let matched = false
       if (allocs && allocs.length > 0) {
         const match = allocs.find(a => a.budget_item_id === budgetItemId)
-        if (!match) return acc
-        const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
-        const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
-        amount = pct * adjusted
-        acc.push({ type: 'contract', name: c.vendor_name || c.description || 'Contract', base, adjusted, amount, coAmount: adjusted - base, id: c.id })
+        if (match) {
+          const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+          const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
+          baseAmount = pct * base
+          matched = true
+        }
       } else if (c.budget_item_id === budgetItemId) {
-        amount = adjusted
-        acc.push({ type: 'contract', name: c.vendor_name || c.description || 'Contract', base, adjusted, amount, coAmount: adjusted - base, id: c.id })
+        baseAmount = base
+        matched = true
       }
+      // Approved CO SOV amounts explicitly targeting this budget item
+      const coLines = allCOs
+        .filter(co => co.subcontract_id === c.id && co.status === 'approved')
+        .flatMap(co => {
+          const sovMatch = (co.sov || []).find(s => s.budget_item_id === budgetItemId)
+          if (!sovMatch) return []
+          return [{ type: 'co', name: `CO: ${co.description || 'Change Order'}`, amount: Number(sovMatch.amount || 0), id: co.id, vendor: c.vendor_name }]
+        })
+      const hasCoLines = coLines.length > 0
+      if (matched) {
+        acc.push({ type: 'contract', name: c.vendor_name || c.description || 'Contract', base, amount: baseAmount, id: c.id })
+      }
+      if (hasCoLines) acc.push(...coLines)
       return acc
     }, [])
 
@@ -4871,7 +4893,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderRadius: '4px', gap: '12px' }}>
                                 <span style={{ fontSize: '13px', color: '#ccc', flex: 1, minWidth: 0 }}>
                                   {r.name}
-                                  {r.type === 'contract' && r.coAmount > 0 && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '6px' }}>+{fmt(r.coAmount)} CO</span>}
+                                  {r.type === 'co' && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '6px' }}>({r.vendor})</span>}
                                   {r.type === 'po' && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.status}</span>}
                                   {r.type === 'labor' && r.start && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.start}{r.end ? ' → ' + r.end : ''}</span>}
                                   {r.type === 'dc' && r.date && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.date}</span>}

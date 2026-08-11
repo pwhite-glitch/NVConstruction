@@ -143,6 +143,7 @@ export default function JobDetail() {
   const [primeCOs, setPrimeCOs] = useState([])
   const [showAddPrimeCO, setShowAddPrimeCO] = useState(false)
   const [primeCOForm, setPrimeCOForm] = useState(emptyPrimeCO)
+  const [primeCOBillingLink, setPrimeCOBillingLink] = useState(null)
   const [addingPrimeCO, setAddingPrimeCO] = useState(false)
   const [pushCOId, setPushCOId] = useState(null)
   const [pushMarkup, setPushMarkup] = useState('')
@@ -5815,7 +5816,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Prime Contract Change Orders ({primeCOs.length})</p>
-                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems(); setPrimeCOForm({ ...emptyPrimeCO, sov: [{ ...emptySOVRow }] }) }}>+ Add Prime CO</button>}
+                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems(); setPrimeCOForm({ ...emptyPrimeCO, sov: [{ ...emptySOVRow }] }); setPrimeCOBillingLink(null) }}>+ Add Prime CO</button>}
               </div>
 
               {showAddPrimeCO && (() => {
@@ -5826,6 +5827,39 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New prime contract change order</p>
+
+                  {(() => {
+                    const approvedBillings = billingSubmissions.filter(b => b.status === 'approved')
+                    if (!approvedBillings.length) return null
+                    return (
+                      <div style={{ background: '#0a0f1a', border: '1px solid #1a3a5c', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                        <label style={{ ...s.label, color: '#60a5fa' }}>Link from approved billing (optional)</label>
+                        <select style={{ ...s.input, borderColor: primeCOBillingLink ? '#1a3a5c' : undefined }} value={primeCOBillingLink || ''} onChange={e => {
+                          const billingId = e.target.value
+                          if (!billingId) { setPrimeCOBillingLink(null); return }
+                          const billing = approvedBillings.find(b => b.id === billingId)
+                          if (!billing) return
+                          setPrimeCOBillingLink(billingId)
+                          const period = billing.billing_period ? ` (${billing.billing_period})` : ''
+                          const amt = String(billing.amount_billed || '')
+                          setPrimeCOForm(f => ({
+                            ...f,
+                            description: `${billing.company_name}${period}`,
+                            sov: [{ ...emptySOVRow, amount: amt }],
+                            amount: amt,
+                          }))
+                        }}>
+                          <option value="">— None, fill in manually —</option>
+                          {approvedBillings.map(b => {
+                            const period = b.billing_period ? ` · ${b.billing_period}` : ''
+                            const amt = Number(b.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })
+                            return <option key={b.id} value={b.id}>{b.company_name}{period} — ${amt}</option>
+                          })}
+                        </select>
+                      </div>
+                    )
+                  })()}
+
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Description *</label>
@@ -5886,7 +5920,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       onClick={addPrimeCO}>
                       {addingPrimeCO ? 'Saving...' : 'Save Prime CO'}
                     </button>
-                    <button style={s.btnGray} onClick={() => { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO) }}>Cancel</button>
+                    <button style={s.btnGray} onClick={() => { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO); setPrimeCOBillingLink(null) }}>Cancel</button>
                   </div>
                 </div>
                 )

@@ -723,6 +723,7 @@ export default function ResidentialJobDetail() {
   async function importSelectedItems() {
     if (selectedImportIds.size === 0) return
     setImportingItems(true)
+    setParseMsg('')
     const toInsert = parsedItems
       .filter((_, i) => selectedImportIds.has(i))
       .map(item => ({
@@ -732,12 +733,26 @@ export default function ResidentialJobDetail() {
         cost_code: item.section || null,
         notes: null,
       }))
-    await supabase.from('budget_items').insert(toInsert)
-    await loadBudget()
-    setParsedItems([])
-    setSelectedImportIds(new Set())
-    setShowImportEstimate(false)
-    setParseMsg('')
+    try {
+      const res = await fetch('/api/budget-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toInsert),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setParseMsg('Import failed: ' + (data.error || 'Unknown error'))
+        setImportingItems(false)
+        return
+      }
+      await loadBudget()
+      setParsedItems([])
+      setSelectedImportIds(new Set())
+      setShowImportEstimate(false)
+      setParseMsg('')
+    } catch (err) {
+      setParseMsg('Import failed: ' + err.message)
+    }
     setImportingItems(false)
   }
 

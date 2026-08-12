@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -65,9 +65,7 @@ const statusColor = { pending: 'orange', approved: 'green', rejected: 'red', act
 
 export default function ResidentialJobDetail() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const id = searchParams.get('id')
-
+  const [id, setId] = useState(null)
   const [profile, setProfile] = useState(null)
   const [job, setJob] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -133,6 +131,14 @@ export default function ResidentialJobDetail() {
   const [showAddContact, setShowAddContact] = useState(false)
   const [newContact, setNewContact] = useState({ name: '', role: '', phone: '', email: '', company: '', notes: '' })
   const [addingContact, setAddingContact] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const jobId = params.get('id')
+    const tab = params.get('tab')
+    setId(jobId)
+    if (tab) setActiveTab(tab)
+  }, [])
 
   useEffect(() => { if (id) loadAll() }, [id])
 

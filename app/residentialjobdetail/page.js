@@ -18,6 +18,10 @@ const TABS = [
   { id: 'subs',         label: 'Subs' },
   { id: 'changeorders', label: 'Change Orders' },
   { id: 'billing',      label: 'Billing' },
+  { id: 'ownerdraw',    label: 'Owner Draw' },
+  { id: 'inspections',  label: 'Inspections' },
+  { id: 'lienWaivers',  label: 'Lien Waivers' },
+  { id: 'punchlist',    label: 'Punch List' },
   { id: 'schedule',     label: 'Schedule' },
   { id: 'photos',       label: 'Photos' },
   { id: 'documents',    label: 'Documents' },
@@ -151,6 +155,30 @@ export default function ResidentialJobDetail() {
   const [parseMsg, setParseMsg] = useState('')
   const estimateInputRef = useRef(null)
 
+  // Inspections
+  const [inspections, setInspections] = useState([])
+  const [showAddInspection, setShowAddInspection] = useState(false)
+  const [newInspection, setNewInspection] = useState({ inspection_type: 'Framing', scheduled_date: '', inspector_name: '', result: 'pending', notes: '' })
+  const [addingInspection, setAddingInspection] = useState(false)
+
+  // Lien Waivers
+  const [lienWaivers, setLienWaivers] = useState([])
+  const [showAddWaiver, setShowAddWaiver] = useState(false)
+  const [newWaiver, setNewWaiver] = useState({ company_name: '', subcontract_id: '', waiver_type: 'conditional', amount: '', payment_date: '', waiver_date: '', status: 'pending', notes: '' })
+  const [addingWaiver, setAddingWaiver] = useState(false)
+
+  // Owner Draw
+  const [ownerDraws, setOwnerDraws] = useState([])
+  const [showAddOwnerDraw, setShowAddOwnerDraw] = useState(false)
+  const [newOwnerDraw, setNewOwnerDraw] = useState({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '' })
+  const [addingOwnerDraw, setAddingOwnerDraw] = useState(false)
+
+  // Punch List
+  const [punchList, setPunchList] = useState([])
+  const [showAddPunch, setShowAddPunch] = useState(false)
+  const [newPunch, setNewPunch] = useState({ description: '', assigned_to: '', subcontract_id: '', due_date: '', status: 'open', notes: '' })
+  const [addingPunch, setAddingPunch] = useState(false)
+
   // Contacts
   const [contacts, setContacts] = useState([])
   const [showAddContact, setShowAddContact] = useState(false)
@@ -192,6 +220,10 @@ export default function ResidentialJobDetail() {
       loadDocuments(),
       loadContacts(),
       loadDirectCosts(),
+      loadInspections(),
+      loadLienWaivers(),
+      loadOwnerDraws(),
+      loadPunchList(),
     ])
     setLoading(false)
   }
@@ -244,6 +276,26 @@ export default function ResidentialJobDetail() {
   async function loadContacts() {
     const { data } = await supabase.from('job_contacts').select('*').eq('job_id', id).order('name')
     setContacts(data || [])
+  }
+
+  async function loadInspections() {
+    const { data } = await supabase.from('res_inspections').select('*').eq('job_id', id).order('scheduled_date')
+    setInspections(data || [])
+  }
+
+  async function loadLienWaivers() {
+    const { data } = await supabase.from('res_lien_waivers').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    setLienWaivers(data || [])
+  }
+
+  async function loadOwnerDraws() {
+    const { data } = await supabase.from('res_owner_draws').select('*').eq('job_id', id).order('draw_number')
+    setOwnerDraws(data || [])
+  }
+
+  async function loadPunchList() {
+    const { data } = await supabase.from('res_punch_list').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    setPunchList(data || [])
   }
 
   async function loadDirectCosts() {
@@ -547,6 +599,101 @@ export default function ResidentialJobDetail() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  // ── Inspections ──
+  async function addInspection() {
+    if (!newInspection.inspection_type) return
+    setAddingInspection(true)
+    await supabase.from('res_inspections').insert({ job_id: id, inspection_type: newInspection.inspection_type, scheduled_date: newInspection.scheduled_date || null, inspector_name: newInspection.inspector_name || null, result: newInspection.result, notes: newInspection.notes || null })
+    await loadInspections()
+    setNewInspection({ inspection_type: 'Framing', scheduled_date: '', inspector_name: '', result: 'pending', notes: '' })
+    setShowAddInspection(false)
+    setAddingInspection(false)
+  }
+
+  async function updateInspectionResult(inspectionId, result) {
+    await supabase.from('res_inspections').update({ result, actual_date: result !== 'pending' ? new Date().toISOString().slice(0, 10) : null }).eq('id', inspectionId)
+    await loadInspections()
+  }
+
+  async function deleteInspection(inspectionId) {
+    if (!confirm('Delete this inspection?')) return
+    await supabase.from('res_inspections').delete().eq('id', inspectionId)
+    await loadInspections()
+  }
+
+  // ── Lien Waivers ──
+  async function addLienWaiver() {
+    if (!newWaiver.company_name) return
+    setAddingWaiver(true)
+    await supabase.from('res_lien_waivers').insert({ job_id: id, company_name: newWaiver.company_name, subcontract_id: newWaiver.subcontract_id || null, waiver_type: newWaiver.waiver_type, amount: parseFloat(newWaiver.amount) || null, payment_date: newWaiver.payment_date || null, waiver_date: newWaiver.waiver_date || null, status: newWaiver.status, notes: newWaiver.notes || null })
+    await loadLienWaivers()
+    setNewWaiver({ company_name: '', subcontract_id: '', waiver_type: 'conditional', amount: '', payment_date: '', waiver_date: '', status: 'pending', notes: '' })
+    setShowAddWaiver(false)
+    setAddingWaiver(false)
+  }
+
+  async function updateWaiverStatus(waiverId, status) {
+    const update = { status }
+    if (status === 'received') update.waiver_date = new Date().toISOString().slice(0, 10)
+    await supabase.from('res_lien_waivers').update(update).eq('id', waiverId)
+    await loadLienWaivers()
+  }
+
+  async function deleteWaiver(waiverId) {
+    if (!confirm('Delete this waiver record?')) return
+    await supabase.from('res_lien_waivers').delete().eq('id', waiverId)
+    await loadLienWaivers()
+  }
+
+  // ── Owner Draw ──
+  async function addOwnerDraw() {
+    if (!newOwnerDraw.amount_requested) return
+    setAddingOwnerDraw(true)
+    const drawNum = (ownerDraws.length > 0 ? Math.max(...ownerDraws.map(d => d.draw_number || 0)) : 0) + 1
+    await supabase.from('res_owner_draws').insert({ job_id: id, draw_number: drawNum, title: newOwnerDraw.title || `Draw #${drawNum}`, period_start: newOwnerDraw.period_start || null, period_end: newOwnerDraw.period_end || null, amount_requested: parseFloat(newOwnerDraw.amount_requested), status: 'draft', notes: newOwnerDraw.notes || null })
+    await loadOwnerDraws()
+    setNewOwnerDraw({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '' })
+    setShowAddOwnerDraw(false)
+    setAddingOwnerDraw(false)
+  }
+
+  async function updateOwnerDrawStatus(drawId, status) {
+    const update = { status }
+    if (status === 'submitted') update.submitted_date = new Date().toISOString().slice(0, 10)
+    if (status === 'funded') update.funded_date = new Date().toISOString().slice(0, 10)
+    await supabase.from('res_owner_draws').update(update).eq('id', drawId)
+    await loadOwnerDraws()
+  }
+
+  async function deleteOwnerDraw(drawId) {
+    if (!confirm('Delete this draw request?')) return
+    await supabase.from('res_owner_draws').delete().eq('id', drawId)
+    await loadOwnerDraws()
+  }
+
+  // ── Punch List ──
+  async function addPunchItem() {
+    if (!newPunch.description) return
+    setAddingPunch(true)
+    const dirEntry = newPunch.subcontract_id ? contracts.find(c => c.id === newPunch.subcontract_id) : null
+    await supabase.from('res_punch_list').insert({ job_id: id, description: newPunch.description, assigned_to: dirEntry?.company_name || newPunch.assigned_to || null, subcontract_id: newPunch.subcontract_id || null, due_date: newPunch.due_date || null, status: 'open', notes: newPunch.notes || null })
+    await loadPunchList()
+    setNewPunch({ description: '', assigned_to: '', subcontract_id: '', due_date: '', status: 'open', notes: '' })
+    setShowAddPunch(false)
+    setAddingPunch(false)
+  }
+
+  async function updatePunchStatus(itemId, status) {
+    await supabase.from('res_punch_list').update({ status, completed_date: status === 'done' ? new Date().toISOString().slice(0, 10) : null }).eq('id', itemId)
+    await loadPunchList()
+  }
+
+  async function deletePunchItem(itemId) {
+    if (!confirm('Delete this punch list item?')) return
+    await supabase.from('res_punch_list').delete().eq('id', itemId)
+    await loadPunchList()
+  }
+
   async function parseEstimate(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -805,29 +952,39 @@ export default function ResidentialJobDetail() {
                 <div style={s.emptyMsg}>No budget lines yet.</div>
               ) : (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 80px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                    {['Description', 'Code', 'Budget', 'Committed', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  <div style={{ overflowX: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', minWidth: '700px' }}>
+                    {['Description', 'Code', 'Budget', 'Committed', 'Spent', 'Variance', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                   </div>
                   {budgetItems.map(item => {
                     const committed = contracts.filter(c => c.budget_item_id === item.id).reduce((a, c) => a + Number(c.contract_value || 0), 0)
-                    const over = committed > Number(item.budgeted_amount)
+                    const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
+                    const budgeted = Number(item.budgeted_amount || 0)
+                    const variance = budgeted - committed - spent
+                    const over = variance < 0
                     return editingBudgetId === item.id ? (
-                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 80px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', minWidth: '700px' }}>
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.description || ''} onChange={e => setEditBudgetForm(f => ({ ...f, description: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editBudgetForm.budgeted_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budgeted_amount: e.target.value }))} />
-                        <span style={{ fontSize: '13px', color: over ? '#f87171' : '#f1f1f1', fontFamily: 'monospace' }}>${fmt(committed)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committed)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spent)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#f87171' : '#4ade80' }}>{over ? '-' : ''}${fmt(Math.abs(variance))}</span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnGreen} onClick={() => saveBudgetEdit(item.id)}>Save</button>
                           <button style={s.btnSmGray} onClick={() => setEditingBudgetId(null)}>×</button>
                         </div>
                       </div>
                     ) : (
-                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', minWidth: '700px', background: over ? '#150505' : 'transparent' }}>
                         <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
                         <span style={{ fontSize: '12px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code || '—'}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.budgeted_amount)}</span>
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#f87171' : committed > 0 ? '#60a5fa' : '#555' }}>${fmt(committed)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: committed > 0 ? '#60a5fa' : '#555' }}>${fmt(committed)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: spent > 0 ? '#e8590c' : '#555' }}>${fmt(spent)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: '700', color: over ? '#f87171' : variance < budgeted * 0.1 ? '#f59e0b' : '#4ade80' }}>
+                          {over ? '-' : ''}${fmt(Math.abs(variance))}
+                        </span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnSmGray} onClick={() => { setEditingBudgetId(item.id); setEditBudgetForm(item) }}>Edit</button>
                           <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteBudgetItem(item.id)}>×</button>
@@ -835,12 +992,17 @@ export default function ResidentialJobDetail() {
                       </div>
                     )
                   })}
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', marginTop: '4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #333', minWidth: '700px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', textTransform: 'uppercase' }}>Total</span>
                     <span />
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(budgetTotal)}</span>
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committedTotal)}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(directCosts.filter(c => c.status === 'approved' && budgetItems.some(b => b.id === c.budget_item_id)).reduce((a, c) => a + Number(c.amount || 0), 0))}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: (() => { const v = budgetTotal - committedTotal - directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0); return v < 0 ? '#f87171' : '#4ade80' })() }}>
+                      {(() => { const v = budgetTotal - committedTotal - directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0); return `${v < 0 ? '-' : ''}$${fmt(Math.abs(v))}` })()}
+                    </span>
                     <span />
+                  </div>
                   </div>
                 </>
               )}
@@ -1376,6 +1538,328 @@ export default function ResidentialJobDetail() {
             )}
           </div>
         )}
+
+        {/* ── INSPECTIONS ── */}
+        {activeTab === 'inspections' && (() => {
+          const TYPES = ['Foundation','Framing','Rough Plumbing','Rough Electrical','Rough HVAC','Insulation','Drywall','Final Plumbing','Final Electrical','Final HVAC','Final']
+          const resultColor = { pending: 'orange', passed: 'green', failed: 'red', rescheduled: 'blue' }
+          return (
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Inspections ({inspections.length})</p>
+                <button style={s.btnSm} onClick={() => setShowAddInspection(v => !v)}>{showAddInspection ? 'Cancel' : '+ Add Inspection'}</button>
+              </div>
+              {showAddInspection && (
+                <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                  <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                    <div>
+                      <label style={s.label}>Inspection Type *</label>
+                      <select style={s.select} value={newInspection.inspection_type} onChange={e => setNewInspection(f => ({ ...f, inspection_type: e.target.value }))}>
+                        {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={s.label}>Scheduled Date</label>
+                      <input type="date" style={s.input} value={newInspection.scheduled_date} onChange={e => setNewInspection(f => ({ ...f, scheduled_date: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Inspector Name</label>
+                      <input style={s.input} placeholder="City inspector..." value={newInspection.inspector_name} onChange={e => setNewInspection(f => ({ ...f, inspector_name: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                    <div>
+                      <label style={s.label}>Notes</label>
+                      <input style={s.input} value={newInspection.notes} onChange={e => setNewInspection(f => ({ ...f, notes: e.target.value }))} placeholder="Permit #, notes..." />
+                    </div>
+                  </div>
+                  <button style={s.btn} onClick={addInspection} disabled={addingInspection}>{addingInspection ? 'Adding...' : 'Add Inspection'}</button>
+                </div>
+              )}
+              {inspections.length === 0 ? (
+                <div style={s.emptyMsg}>No inspections yet. Track each building department inspection here.</div>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
+                    {['Type', 'Scheduled', 'Inspector', 'Result', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  </div>
+                  {inspections.map(ins => (
+                    <div key={ins.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', color: '#f1f1f1' }}>{ins.inspection_type}</div>
+                        {ins.notes && <div style={{ fontSize: '11px', color: '#555' }}>{ins.notes}</div>}
+                      </div>
+                      <span style={{ fontSize: '12px', color: '#aaa' }}>{fmtDate(ins.scheduled_date)}</span>
+                      <span style={{ fontSize: '12px', color: '#aaa' }}>{ins.inspector_name || '—'}</span>
+                      <span style={s.badge(resultColor[ins.result] || 'gray')}>{ins.result}</span>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {ins.result !== 'passed' && <button style={s.btnGreen} onClick={() => updateInspectionResult(ins.id, 'passed')}>Pass</button>}
+                        {ins.result !== 'failed' && <button style={s.btnRed} onClick={() => updateInspectionResult(ins.id, 'failed')}>Fail</button>}
+                        {ins.result !== 'pending' && <button style={s.btnSmGray} onClick={() => updateInspectionResult(ins.id, 'pending')}>Reset</button>}
+                        <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteInspection(ins.id)}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ── LIEN WAIVERS ── */}
+        {activeTab === 'lienWaivers' && (() => {
+          const pendingWaivers = lienWaivers.filter(w => w.status === 'pending')
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Pending Waivers</div><div style={s.statValue(pendingWaivers.length > 0 ? '#e8590c' : undefined)}>{pendingWaivers.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#4ade80')}>{lienWaivers.filter(w => w.status === 'received').length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total Waived</div><div style={s.statValue()}>${fmt(lienWaivers.filter(w => w.status === 'received').reduce((a, w) => a + Number(w.amount || 0), 0))}</div></div>
+              </div>
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Lien Waivers ({lienWaivers.length})</p>
+                  <button style={s.btnSm} onClick={() => setShowAddWaiver(v => !v)}>{showAddWaiver ? 'Cancel' : '+ Add Waiver'}</button>
+                </div>
+                {showAddWaiver && (
+                  <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                      <div>
+                        <label style={s.label}>Subcontractor *</label>
+                        <select style={s.select} value={newWaiver.subcontract_id} onChange={e => {
+                          const c = contracts.find(x => x.id === e.target.value)
+                          setNewWaiver(f => ({ ...f, subcontract_id: e.target.value, company_name: c?.company_name || f.company_name }))
+                        }}>
+                          <option value="">— Select or type below —</option>
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                        </select>
+                        {!newWaiver.subcontract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Company name (if not listed)" value={newWaiver.company_name} onChange={e => setNewWaiver(f => ({ ...f, company_name: e.target.value }))} />}
+                      </div>
+                      <div>
+                        <label style={s.label}>Waiver Type</label>
+                        <select style={s.select} value={newWaiver.waiver_type} onChange={e => setNewWaiver(f => ({ ...f, waiver_type: e.target.value }))}>
+                          <option value="conditional">Conditional (upon payment)</option>
+                          <option value="unconditional">Unconditional (payment received)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={s.label}>Amount ($)</label>
+                        <input type="number" step="0.01" style={s.input} placeholder="0.00" value={newWaiver.amount} onChange={e => setNewWaiver(f => ({ ...f, amount: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                      <div>
+                        <label style={s.label}>Payment Date</label>
+                        <input type="date" style={s.input} value={newWaiver.payment_date} onChange={e => setNewWaiver(f => ({ ...f, payment_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Waiver Received Date</label>
+                        <input type="date" style={s.input} value={newWaiver.waiver_date} onChange={e => setNewWaiver(f => ({ ...f, waiver_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Status</label>
+                        <select style={s.select} value={newWaiver.status} onChange={e => setNewWaiver(f => ({ ...f, status: e.target.value }))}>
+                          <option value="pending">Pending</option>
+                          <option value="received">Received</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button style={s.btn} onClick={addLienWaiver} disabled={addingWaiver || (!newWaiver.company_name && !newWaiver.subcontract_id)}>{addingWaiver ? 'Adding...' : 'Add Waiver'}</button>
+                  </div>
+                )}
+                {lienWaivers.length === 0 ? (
+                  <div style={s.emptyMsg}>No lien waivers yet. Track conditional and unconditional waivers from each sub upon payment.</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
+                      {['Company', 'Type', 'Amount', 'Paid', 'Received', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                    </div>
+                    {lienWaivers.map(w => (
+                      <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', background: w.status === 'pending' ? '#0d0a00' : 'transparent' }}>
+                        <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{w.company_name}</span>
+                        <span style={s.badge(w.waiver_type === 'conditional' ? 'blue' : 'green')}>{w.waiver_type === 'conditional' ? 'Conditional' : 'Unconditional'}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>{w.amount ? '$' + fmt(w.amount) : '—'}</span>
+                        <span style={{ fontSize: '12px', color: '#aaa' }}>{fmtDate(w.payment_date)}</span>
+                        <span style={{ fontSize: '12px', color: w.waiver_date ? '#4ade80' : '#e8590c' }}>{fmtDate(w.waiver_date)}</span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          {w.status === 'pending' && <button style={s.btnGreen} onClick={() => updateWaiverStatus(w.id, 'received')}>Received</button>}
+                          <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteWaiver(w.id)}>×</button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            </>
+          )
+        })()}
+
+        {/* ── OWNER DRAW ── */}
+        {activeTab === 'ownerdraw' && (() => {
+          const totalFunded = ownerDraws.filter(d => d.status === 'funded').reduce((a, d) => a + Number(d.amount_requested || 0), 0)
+          const totalRequested = ownerDraws.reduce((a, d) => a + Number(d.amount_requested || 0), 0)
+          const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+          const approvedCostTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+          const drawStatusColor = { draft: 'gray', submitted: 'orange', approved: 'blue', funded: 'green' }
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Total Requested</div><div style={s.statValue()}>${fmt(totalRequested)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total Funded</div><div style={s.statValue('#4ade80')}>${fmt(totalFunded)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Approved Sub Billing</div><div style={s.statValue('#60a5fa')}>${fmt(approvedBillingTotal)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Approved Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(approvedCostTotal)}</div></div>
+              </div>
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Owner Draw Requests ({ownerDraws.length})</p>
+                  <button style={s.btnSm} onClick={() => setShowAddOwnerDraw(v => !v)}>{showAddOwnerDraw ? 'Cancel' : '+ New Draw'}</button>
+                </div>
+                {showAddOwnerDraw && (
+                  <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                    <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '6px', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: '#aaa' }}>
+                      Current approved sub billing: <strong style={{ color: '#4ade80' }}>${fmt(approvedBillingTotal)}</strong> &nbsp;·&nbsp;
+                      Direct costs: <strong style={{ color: '#e8590c' }}>${fmt(approvedCostTotal)}</strong> &nbsp;·&nbsp;
+                      Combined: <strong style={{ color: '#f1f1f1' }}>${fmt(approvedBillingTotal + approvedCostTotal)}</strong>
+                    </div>
+                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                      <div>
+                        <label style={s.label}>Draw Title</label>
+                        <input style={s.input} placeholder={`Draw #${ownerDraws.length + 1}`} value={newOwnerDraw.title} onChange={e => setNewOwnerDraw(f => ({ ...f, title: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Period Start</label>
+                        <input type="date" style={s.input} value={newOwnerDraw.period_start} onChange={e => setNewOwnerDraw(f => ({ ...f, period_start: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Period End</label>
+                        <input type="date" style={s.input} value={newOwnerDraw.period_end} onChange={e => setNewOwnerDraw(f => ({ ...f, period_end: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div>
+                        <label style={s.label}>Amount Requested ($) *</label>
+                        <input type="number" step="0.01" style={s.input} placeholder="0.00" value={newOwnerDraw.amount_requested} onChange={e => setNewOwnerDraw(f => ({ ...f, amount_requested: e.target.value }))} autoFocus />
+                      </div>
+                      <div>
+                        <label style={s.label}>Notes</label>
+                        <input style={s.input} value={newOwnerDraw.notes} onChange={e => setNewOwnerDraw(f => ({ ...f, notes: e.target.value }))} placeholder="Bank loan #, inspector contact..." />
+                      </div>
+                    </div>
+                    <button style={s.btn} onClick={addOwnerDraw} disabled={addingOwnerDraw || !newOwnerDraw.amount_requested}>{addingOwnerDraw ? 'Creating...' : 'Create Draw Request'}</button>
+                  </div>
+                )}
+                {ownerDraws.length === 0 ? (
+                  <div style={s.emptyMsg}>No owner draw requests yet. Create one to request funds from the construction lender or owner.</div>
+                ) : (
+                  ownerDraws.map(d => (
+                    <div key={d.id} style={{ border: `1px solid ${d.status === 'funded' ? '#1a4a1a' : d.status === 'submitted' ? '#2a1200' : '#1e1e1e'}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', marginBottom: '4px' }}>Draw #{d.draw_number} — {d.title}</div>
+                          <div style={{ fontSize: '12px', color: '#555' }}>
+                            {d.period_start && d.period_end ? `${fmtDate(d.period_start)} – ${fmtDate(d.period_end)}` : d.period_start ? `From ${fmtDate(d.period_start)}` : ''}
+                            {d.submitted_date && ` · Submitted ${fmtDate(d.submitted_date)}`}
+                            {d.funded_date && ` · Funded ${fmtDate(d.funded_date)}`}
+                            {d.notes && ` · ${d.notes}`}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'monospace', color: '#f1f1f1' }}>${fmt(d.amount_requested)}</span>
+                          <span style={s.badge(drawStatusColor[d.status] || 'gray')}>{d.status}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                        {d.status === 'draft' && <button style={s.btnSm} onClick={() => updateOwnerDrawStatus(d.id, 'submitted')}>Submit to Owner/Bank</button>}
+                        {d.status === 'submitted' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'approved')}>Mark Approved</button>}
+                        {d.status === 'approved' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'funded')}>Mark Funded</button>}
+                        {d.status !== 'funded' && <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteOwnerDraw(d.id)}>Delete</button>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )
+        })()}
+
+        {/* ── PUNCH LIST ── */}
+        {activeTab === 'punchlist' && (() => {
+          const openCount = punchList.filter(p => p.status === 'open').length
+          const inProgressCount = punchList.filter(p => p.status === 'in-progress').length
+          const doneCount = punchList.filter(p => p.status === 'done').length
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Open</div><div style={s.statValue(openCount > 0 ? '#e8590c' : undefined)}>{openCount}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>In Progress</div><div style={s.statValue('#60a5fa')}>{inProgressCount}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Done</div><div style={s.statValue('#4ade80')}>{doneCount}</div></div>
+              </div>
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Punch List ({punchList.length})</p>
+                  <button style={s.btnSm} onClick={() => setShowAddPunch(v => !v)}>{showAddPunch ? 'Cancel' : '+ Add Item'}</button>
+                </div>
+                {showAddPunch && (
+                  <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={s.label}>Description *</label>
+                      <input style={s.input} autoFocus placeholder="Touch-up paint in master bedroom..." value={newPunch.description} onChange={e => setNewPunch(f => ({ ...f, description: e.target.value }))} />
+                    </div>
+                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                      <div>
+                        <label style={s.label}>Assign to Sub</label>
+                        <select style={s.select} value={newPunch.subcontract_id} onChange={e => setNewPunch(f => ({ ...f, subcontract_id: e.target.value, assigned_to: '' }))}>
+                          <option value="">— Select sub or enter below —</option>
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                        </select>
+                        {!newPunch.subcontract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Or type name / trade..." value={newPunch.assigned_to} onChange={e => setNewPunch(f => ({ ...f, assigned_to: e.target.value }))} />}
+                      </div>
+                      <div>
+                        <label style={s.label}>Due Date</label>
+                        <input type="date" style={s.input} value={newPunch.due_date} onChange={e => setNewPunch(f => ({ ...f, due_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Notes</label>
+                        <input style={s.input} value={newPunch.notes} onChange={e => setNewPunch(f => ({ ...f, notes: e.target.value }))} placeholder="Location, details..." />
+                      </div>
+                    </div>
+                    <button style={s.btn} onClick={addPunchItem} disabled={addingPunch || !newPunch.description}>{addingPunch ? 'Adding...' : 'Add to Punch List'}</button>
+                  </div>
+                )}
+                {punchList.length === 0 ? (
+                  <div style={s.emptyMsg}>Punch list is clear. Add items as you approach project closeout.</div>
+                ) : (
+                  punchList.map(p => {
+                    const assignedSub = p.subcontract_id ? contracts.find(c => c.id === p.subcontract_id) : null
+                    return (
+                      <div key={p.id} style={{ border: `1px solid ${p.status === 'done' ? '#1a4a1a' : p.status === 'in-progress' ? '#0a1a2a' : '#1e1e1e'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '8px', opacity: p.status === 'done' ? 0.65 : 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: p.status === 'done' ? '#555' : '#f1f1f1', textDecoration: p.status === 'done' ? 'line-through' : 'none', marginBottom: '3px' }}>{p.description}</div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>
+                              {(assignedSub?.company_name || p.assigned_to) && <span style={{ color: '#60a5fa' }}>{assignedSub?.company_name || p.assigned_to}</span>}
+                              {p.due_date && <span> · Due {fmtDate(p.due_date)}</span>}
+                              {p.notes && <span> · {p.notes}</span>}
+                              {p.completed_date && <span style={{ color: '#4ade80' }}> · Completed {fmtDate(p.completed_date)}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={s.badge(statusColor[p.status] || 'gray')}>{p.status}</span>
+                            {p.status === 'open' && <button style={s.btnSmGray} onClick={() => updatePunchStatus(p.id, 'in-progress')}>Start</button>}
+                            {p.status !== 'done' && <button style={s.btnGreen} onClick={() => updatePunchStatus(p.id, 'done')}>Done</button>}
+                            {p.status === 'done' && <button style={s.btnSmGray} onClick={() => updatePunchStatus(p.id, 'open')}>Reopen</button>}
+                            <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deletePunchItem(p.id)}>×</button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </>
+          )
+        })()}
 
         {/* ── CONTACTS ── */}
         {activeTab === 'contacts' && (

@@ -14,6 +14,7 @@ const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—
 const TABS = [
   { id: 'details',      label: 'Details' },
   { id: 'budget',       label: 'Budget' },
+  { id: 'costs',        label: 'Costs' },
   { id: 'subs',         label: 'Subs' },
   { id: 'changeorders', label: 'Change Orders' },
   { id: 'billing',      label: 'Billing' },
@@ -88,7 +89,9 @@ export default function ResidentialJobDetail() {
 
   // Subs
   const [contracts, setContracts] = useState([])
+  const [subDirectory, setSubDirectory] = useState([])
   const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteDirId, setInviteDirId] = useState('')
   const [inviteMsg, setInviteMsg] = useState('')
   const [showInviteForm, setShowInviteForm] = useState(false)
 
@@ -120,6 +123,17 @@ export default function ResidentialJobDetail() {
   const [photos, setPhotos] = useState([])
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const photoInputRef = useRef(null)
+
+  // Direct costs tab
+  const [showDcForm, setShowDcForm] = useState(false)
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+  const [dcFile, setDcFile] = useState(null)
+  const [submittingDc, setSubmittingDc] = useState(false)
+  const [dcSearch, setDcSearch] = useState('')
+  const [dcStatusFilter, setDcStatusFilter] = useState('all')
+  const [updatingCostId, setUpdatingCostId] = useState(null)
+  const [rejectingCostId, setRejectingCostId] = useState(null)
+  const [costRejectNote, setCostRejectNote] = useState('')
 
   // Documents
   const [documents, setDocuments] = useState([])
@@ -167,6 +181,7 @@ export default function ResidentialJobDetail() {
     await Promise.all([
       loadBudget(),
       loadContracts(),
+      loadSubDirectory(),
       loadChangeOrders(),
       loadBillingSubmissions(),
       loadDrawRequests(),
@@ -187,6 +202,11 @@ export default function ResidentialJobDetail() {
   async function loadContracts() {
     const { data } = await supabase.from('subcontracts').select('*, budget_allocations:subcontract_budget_allocations(*)').eq('job_id', id).order('created_at')
     setContracts(data || [])
+  }
+
+  async function loadSubDirectory() {
+    const { data } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
+    setSubDirectory(data || [])
   }
 
   async function loadChangeOrders() {
@@ -225,8 +245,9 @@ export default function ResidentialJobDetail() {
   }
 
   async function loadDirectCosts() {
-    const { data } = await supabase.from('direct_costs').select('*').eq('job_id', id).order('date', { ascending: false })
-    setDirectCosts(data || [])
+    const res = await fetch(`/api/direct-costs?job_id=${id}`)
+    const json = await res.json()
+    setDirectCosts(json.data || [])
   }
 
   async function saveDetails() {
@@ -311,11 +332,16 @@ export default function ResidentialJobDetail() {
   async function inviteSub(e) {
     e.preventDefault()
     setInviteMsg('')
-    const res = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: inviteEmail.toLowerCase().trim() }) })
+    const dirEntry = inviteDirId ? subDirectory.find(d => d.id === inviteDirId) : null
+    const email = dirEntry ? dirEntry.email : inviteEmail.toLowerCase().trim()
+    if (!email) { setInviteMsg('Enter an email or select from directory'); return }
+    const res = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: email }) })
     const result = await res.json()
-    if (!res.ok) { setInviteMsg(res.status === 409 ? 'Already invited.' : 'Error: ' + result.error); return }
-    setInviteMsg('Invited!')
+    if (!res.ok) { setInviteMsg(res.status === 409 ? 'Already added.' : 'Error: ' + result.error); return }
+    setInviteMsg('Added!')
     setInviteEmail('')
+    setInviteDirId('')
+    setShowInviteForm(false)
     await loadContracts()
     setTimeout(() => setInviteMsg(''), 3000)
   }
@@ -422,6 +448,74 @@ export default function ResidentialJobDetail() {
     if (!confirm('Remove this contact?')) return
     await supabase.from('job_contacts').delete().eq('id', contactId)
     await loadContacts()
+  }
+
+  async function submitDC(e) {
+    e.preventDefault()
+    setSubmittingDc(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const rowData = {
+      job_id: id,
+      submitted_by: session.user.id,
+      cost_date: dcForm.cost_date,
+      description: dcForm.description,
+      category: dcForm.category,
+      amount: parseFloat(dcForm.amount),
+      notes: dcForm.notes || null,
+      budget_item_id: dcForm.budget_item_id || null,
+      status: 'approved',
+    }
+    let res, json
+    if (dcFile) {
+      const fd = new FormData()
+      fd.append('file', dcFile)
+      fd.append('data', JSON.stringify(rowData))
+      res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
+    } else {
+      res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    }
+    json = await res.json()
+    if (!json.error) {
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+      setDcFile(null)
+      setShowDcForm(false)
+      await loadDirectCosts()
+    }
+    setSubmittingDc(false)
+  }
+
+  async function updateDCStatus(costId, status) {
+    setUpdatingCostId(costId)
+    if (status === 'deleted') {
+      await fetch('/api/direct-costs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId }) })
+    } else {
+      await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status, reject_notes: costRejectNote || null }) })
+    }
+    setRejectingCostId(null)
+    setCostRejectNote('')
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function assignDCBudgetItem(costId, budgetItemId) {
+    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
+    await loadDirectCosts()
+  }
+
+  function exportDCsCSV() {
+    const rows = [['Date', 'Description', 'Category', 'Amount', 'Budget Line', 'Status', 'Notes']]
+    directCosts.forEach(c => {
+      const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)?.description || ''
+      rows.push([c.cost_date, c.description, c.category, c.amount, budgetLine, c.status, c.notes || ''])
+    })
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `direct-costs-${job.job_number}.csv` })
+    a.click()
+  }
+
+  async function openDCReceipt(path) {
+    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
   async function parseEstimate(e) {
@@ -725,6 +819,151 @@ export default function ResidentialJobDetail() {
           </>
         )}
 
+        {/* ── COSTS ── */}
+        {activeTab === 'costs' && (() => {
+          const approvedTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+          const pendingCount = directCosts.filter(c => c.status === 'pending').length
+          const q = dcSearch.toLowerCase().trim()
+          const visible = directCosts.filter(c => {
+            if (dcStatusFilter !== 'all' && c.status !== dcStatusFilter) return false
+            if (!q) return true
+            return c.description?.toLowerCase().includes(q) || c.notes?.toLowerCase().includes(q) || String(c.amount).includes(dcSearch.trim())
+          })
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Approved Total</div><div style={s.statValue('#4ade80')}>${fmt(approvedTotal)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Pending Approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total Entries</div><div style={s.statValue()}>{directCosts.length}</div></div>
+              </div>
+
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {directCosts.length > 0 && <button style={s.btnSmGray} onClick={exportDCsCSV}>Export CSV</button>}
+                    <button style={s.btnSm} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log Cost'}</button>
+                  </div>
+                </div>
+
+                {showDcForm && (
+                  <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                    <form onSubmit={submitDC}>
+                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                        <div>
+                          <label style={s.label}>Date *</label>
+                          <input type="date" style={s.input} required value={dcForm.cost_date} onChange={e => setDcForm(f => ({ ...f, cost_date: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Category *</label>
+                          <select style={s.select} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
+                            {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={s.label}>Amount ($) *</label>
+                          <input type="number" step="0.01" min="0" style={s.input} required placeholder="0.00" value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div>
+                          <label style={s.label}>Description *</label>
+                          <input style={s.input} required placeholder="Lumber delivery, Concrete pour..." value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Budget Line</label>
+                          <select style={s.select} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                            <option value="">— Unassigned —</option>
+                            {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                        <div>
+                          <label style={s.label}>Notes</label>
+                          <input style={s.input} placeholder="Optional notes..." value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label style={s.label}>Receipt (PDF / photo)</label>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 12px' }} onChange={e => setDcFile(e.target.files[0])} />
+                        </div>
+                      </div>
+                      <button type="submit" style={s.btn} disabled={submittingDc}>{submittingDc ? 'Saving…' : 'Save Cost'}</button>
+                    </form>
+                  </div>
+                )}
+
+                {/* Status filter */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                  {[['all', 'All', directCosts.length], ['pending', 'Pending', pendingCount], ['approved', 'Approved', directCosts.filter(c => c.status === 'approved').length]].map(([k, label, count]) => (
+                    <button key={k} onClick={() => setDcStatusFilter(k)} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === k ? '#e8590c' : '#2a2a2a'}`, background: dcStatusFilter === k ? '#2a1200' : 'transparent', color: dcStatusFilter === k ? '#e8590c' : '#555' }}>
+                      {label} ({count})
+                    </button>
+                  ))}
+                  <input style={{ ...s.input, width: '180px', padding: '4px 10px', fontSize: '12px', marginLeft: 'auto' }} placeholder="Search..." value={dcSearch} onChange={e => setDcSearch(e.target.value)} />
+                </div>
+
+                {visible.length === 0 ? (
+                  <div style={s.emptyMsg}>{directCosts.length === 0 ? 'No direct costs logged yet.' : 'No costs match the current filter.'}</div>
+                ) : (
+                  visible.map(c => {
+                    const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
+                    const isRejecting = rejectingCostId === c.id
+                    return (
+                      <div key={c.id} style={{ border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#3a1a1a' : '#1e1e1e'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{c.description}</span>
+                              <span style={s.badge('gray')}>{c.category}</span>
+                              <span style={s.badge(c.status === 'approved' ? 'green' : c.status === 'rejected' ? 'red' : 'orange')}>{c.status}</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>
+                              {c.cost_date ? new Date(c.cost_date + 'T12:00:00').toLocaleDateString() : ''}
+                              {budgetLine && ` · ${budgetLine.description}`}
+                              {c.notes && ` · ${c.notes}`}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '16px', fontWeight: '800', fontFamily: 'monospace' }}>${fmt(c.amount)}</span>
+                            {c.receipt_url && (
+                              <button style={s.btnSmGray} onClick={() => openDCReceipt(c.receipt_url)}>Receipt</button>
+                            )}
+                            {!c.budget_item_id && (
+                              <select style={{ ...s.select, width: '160px', fontSize: '12px', padding: '4px 8px' }} defaultValue="" onChange={e => assignDCBudgetItem(c.id, e.target.value)}>
+                                <option value="">Assign budget line</option>
+                                {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
+                              </select>
+                            )}
+                            {c.status === 'pending' && (
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button style={s.btnGreen} disabled={updatingCostId === c.id} onClick={() => updateDCStatus(c.id, 'approved')}>Approve</button>
+                                <button style={s.btnRed} onClick={() => setRejectingCostId(isRejecting ? null : c.id)}>{isRejecting ? 'Cancel' : 'Reject'}</button>
+                              </div>
+                            )}
+                            {c.status === 'approved' && profile?.role === 'pm' && (
+                              <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => updateDCStatus(c.id, 'rejected')}>Undo</button>
+                            )}
+                            {profile?.role === 'pm' && (
+                              <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => { if (confirm('Delete this cost?')) updateDCStatus(c.id, 'deleted') }}>Delete</button>
+                            )}
+                          </div>
+                        </div>
+                        {isRejecting && (
+                          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input style={{ ...s.input, flex: 1, fontSize: '12px' }} placeholder="Rejection reason (optional)" value={costRejectNote} onChange={e => setCostRejectNote(e.target.value)} autoFocus />
+                            <button style={s.btnRed} onClick={() => updateDCStatus(c.id, 'rejected')}>Confirm Reject</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </>
+          )
+        })()}
+
         {/* ── SUBS ── */}
         {activeTab === 'subs' && (
           <div style={s.card}>
@@ -734,13 +973,27 @@ export default function ResidentialJobDetail() {
             </div>
 
             {showInviteForm && (
-              <form onSubmit={inviteSub} style={{ ...s.inlineForm, display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '16px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={s.label}>Sub email address</label>
-                  <input style={s.input} type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="sub@company.com" required autoFocus />
+              <form onSubmit={inviteSub} style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                {subDirectory.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Pick from sub directory</label>
+                    <select style={s.select} value={inviteDirId} onChange={e => { setInviteDirId(e.target.value); setInviteEmail('') }}>
+                      <option value="">— Select company —</option>
+                      {subDirectory.map(d => (
+                        <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}{d.email ? ` (${d.email})` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={s.label}>{subDirectory.length > 0 ? 'Or enter email directly' : 'Sub email address'}</label>
+                  <input style={s.input} type="email" value={inviteEmail} onChange={e => { setInviteEmail(e.target.value); setInviteDirId('') }} placeholder="sub@company.com" disabled={!!inviteDirId} />
                 </div>
-                <button type="submit" style={s.btn}>Invite</button>
-                {inviteMsg && <span style={inviteMsg.startsWith('Error') || inviteMsg === 'Already invited.' ? s.errMsg : s.successMsg}>{inviteMsg}</span>}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button type="submit" style={s.btn} disabled={!inviteDirId && !inviteEmail}>Add Sub</button>
+                  <button type="button" style={s.btnGray} onClick={() => { setShowInviteForm(false); setInviteEmail(''); setInviteDirId('') }}>Cancel</button>
+                  {inviteMsg && <span style={inviteMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{inviteMsg}</span>}
+                </div>
               </form>
             )}
 

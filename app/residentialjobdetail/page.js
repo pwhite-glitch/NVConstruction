@@ -126,6 +126,15 @@ export default function ResidentialJobDetail() {
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const docInputRef = useRef(null)
 
+  // Estimate import
+  const [showImportEstimate, setShowImportEstimate] = useState(false)
+  const [parsedItems, setParsedItems] = useState([])
+  const [selectedImportIds, setSelectedImportIds] = useState(new Set())
+  const [parsingEstimate, setParsingEstimate] = useState(false)
+  const [importingItems, setImportingItems] = useState(false)
+  const [parseMsg, setParseMsg] = useState('')
+  const estimateInputRef = useRef(null)
+
   // Contacts
   const [contacts, setContacts] = useState([])
   const [showAddContact, setShowAddContact] = useState(false)
@@ -415,6 +424,53 @@ export default function ResidentialJobDetail() {
     await loadContacts()
   }
 
+  async function parseEstimate(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setParsingEstimate(true)
+    setParseMsg('Parsing estimate…')
+    setParsedItems([])
+    setSelectedImportIds(new Set())
+    const fd = new FormData()
+    fd.append('file', file)
+    try {
+      const res = await fetch('/api/parse-estimate', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setParseMsg('Error: ' + (data.error || 'Parse failed'))
+      } else {
+        setParsedItems(data.items || [])
+        setSelectedImportIds(new Set((data.items || []).map((_, i) => i)))
+        setParseMsg(`Found ${(data.items || []).length} line items — review and import below`)
+      }
+    } catch (err) {
+      setParseMsg('Error: ' + err.message)
+    }
+    setParsingEstimate(false)
+    e.target.value = ''
+  }
+
+  async function importSelectedItems() {
+    if (selectedImportIds.size === 0) return
+    setImportingItems(true)
+    const toInsert = parsedItems
+      .filter((_, i) => selectedImportIds.has(i))
+      .map(item => ({
+        job_id: id,
+        description: item.description,
+        budgeted_amount: parseFloat(item.amount) || 0,
+        cost_code: item.section || null,
+        notes: null,
+      }))
+    await supabase.from('budget_items').insert(toInsert)
+    await loadBudget()
+    setParsedItems([])
+    setSelectedImportIds(new Set())
+    setShowImportEstimate(false)
+    setParseMsg('')
+    setImportingItems(false)
+  }
+
   if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#555' }}>Loading...</div></div>
   if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#555' }}>Project not found.</div></div>
 
@@ -540,8 +596,76 @@ export default function ResidentialJobDetail() {
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Budget Lines ({budgetItems.length})</p>
-                <button style={s.btnSm} onClick={() => setShowAddBudget(v => !v)}>{showAddBudget ? 'Cancel' : '+ Add Line'}</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input type="file" ref={estimateInputRef} accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={parseEstimate} />
+                  <button style={s.btnSmGray} onClick={() => { setShowImportEstimate(v => !v); if (showImportEstimate) { setParsedItems([]); setParseMsg('') } }}>
+                    {showImportEstimate ? 'Cancel Import' : '↑ Import Estimate'}
+                  </button>
+                  <button style={s.btnSm} onClick={() => setShowAddBudget(v => !v)}>{showAddBudget ? 'Cancel' : '+ Add Line'}</button>
+                </div>
               </div>
+
+              {showImportEstimate && (
+                <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                  {parsedItems.length === 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#aaa', lineHeight: '1.5' }}>
+                        Upload your PDF estimate sheet and AI will extract all line items for you to review before importing.
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <button style={s.btn} onClick={() => estimateInputRef.current?.click()} disabled={parsingEstimate}>
+                          {parsingEstimate ? 'Parsing…' : 'Upload Estimate PDF'}
+                        </button>
+                        {parseMsg && <span style={parseMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{parseMsg}</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px', color: '#aaa' }}>{selectedImportIds.size} of {parsedItems.length} selected</span>
+                          <button style={s.btnSmGray} onClick={() => setSelectedImportIds(new Set(parsedItems.map((_, i) => i)))}>All</button>
+                          <button style={s.btnSmGray} onClick={() => setSelectedImportIds(new Set())}>None</button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {parseMsg && <span style={s.successMsg}>{parseMsg.split('—')[0]}</span>}
+                          <button style={s.btn} onClick={importSelectedItems} disabled={importingItems || selectedImportIds.size === 0}>
+                            {importingItems ? 'Importing…' : `Import ${selectedImportIds.size} Line${selectedImportIds.size !== 1 ? 's' : ''}`}
+                          </button>
+                          <button style={s.btnGray} onClick={() => { setParsedItems([]); setSelectedImportIds(new Set()); setParseMsg(''); estimateInputRef.current && (estimateInputRef.current.value = '') }}>Re-upload</button>
+                        </div>
+                      </div>
+                      <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', position: 'sticky', top: 0, background: '#0a0a0a' }}>
+                          {['', 'Description', 'Section', 'Amount'].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                        </div>
+                        {parsedItems.map((item, i) => (
+                          <label key={i} style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '8px 0', borderBottom: '1px solid #111', alignItems: 'center', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={selectedImportIds.has(i)} onChange={e => {
+                              setSelectedImportIds(prev => {
+                                const next = new Set(prev)
+                                if (e.target.checked) next.add(i); else next.delete(i)
+                                return next
+                              })
+                            }} />
+                            <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
+                            <span style={{ fontSize: '11px', color: '#555' }}>{item.section || '—'}</span>
+                            <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.amount)}</span>
+                          </label>
+                        ))}
+                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #222' }}>
+                          <span />
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', textTransform: 'uppercase' }}>Selected total</span>
+                          <span />
+                          <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>
+                            ${fmt(parsedItems.filter((_, i) => selectedImportIds.has(i)).reduce((a, x) => a + Number(x.amount || 0), 0))}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {showAddBudget && (
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>

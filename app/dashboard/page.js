@@ -97,6 +97,7 @@ const IconTruck    = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconWrench   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
 const IconLogout   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 const IconBox      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+const IconResidential = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10.5z"/><path d="M9 22V14h6v8"/><path d="M15 3v3"/></svg>
 
 export default function Dashboard() {
   const router = useRouter()
@@ -140,6 +141,10 @@ export default function Dashboard() {
   const [jobMsg, setJobMsg] = useState('')
   const [inviteMsg, setInviteMsg] = useState('')
   const [showInviteForm, setShowInviteForm] = useState(false)
+  const [showNewResJobForm, setShowNewResJobForm] = useState(false)
+  const [showCompletedResJobs, setShowCompletedResJobs] = useState(false)
+  const [newResJob, setNewResJob] = useState({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' })
+  const [resJobMsg, setResJobMsg] = useState('')
 
   // Per-sub assign-to-job state
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
@@ -856,6 +861,7 @@ export default function Dashboard() {
       pm_email: newJob.pm_email || null,
       billing_type: newJob.billing_type || 'aia',
       nv_role: newJob.nv_role || 'gc',
+      job_type: 'commercial',
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
     if (profile?.role === 'apm') {
@@ -863,6 +869,31 @@ export default function Dashboard() {
       await supabase.from('pm_job_assignments').insert({ job_id: data.id, user_id: session.user.id, assigned_by: session.user.id })
     }
     router.push(`/jobdetail?id=${data.id}`)
+  }
+
+  async function addResidentialJob(e) {
+    e.preventDefault()
+    const { data, error } = await supabase.from('jobs').insert({
+      job_number: newResJob.job_number,
+      project_name: newResJob.project_name,
+      location: newResJob.location || null,
+      start_date: newResJob.start_date || null,
+      owner_name: newResJob.owner_name || null,
+      owner_phone: newResJob.owner_phone || null,
+      owner_email: newResJob.owner_email || null,
+      contract_value: newResJob.contract_value || null,
+      pm_email: newResJob.pm_email || null,
+      status: 'active',
+      nv_role: 'gc',
+      billing_type: 'draw_request',
+      job_type: 'residential',
+      sub_billing_start: newResJob.sub_billing_start || null,
+      sub_billing_frequency: newResJob.sub_billing_frequency || 'monthly',
+      sub_billing_due: newResJob.sub_billing_due ? parseInt(newResJob.sub_billing_due) : null,
+      sub_billing_anchor: newResJob.sub_billing_anchor || null,
+    }).select('id').single()
+    if (error) { setResJobMsg('Error: ' + error.message); return }
+    router.push(`/residentialjobdetail?id=${data.id}`)
   }
 
   async function inviteSub(e) {
@@ -1846,7 +1877,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
   const navItems = [
     { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
-    { tab: 'jobs',          label: 'Jobs',           icon: <IconBriefcase /> },
+    { tab: 'jobs',          label: 'Commercial',     icon: <IconBriefcase /> },
+    { tab: 'residential',   label: 'Residential',    icon: <IconResidential /> },
     { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: billingBadge },
     { tab: 'orders', label: 'Orders', icon: <IconBox /> },
     { tab: 'directory',     label: 'Companies',      icon: <IconUsers />,    badge: dirBadge },
@@ -2969,8 +3001,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 )}
 
                 {(() => {
-                  const visibleJobs = jobs.filter(j => showCompletedJobs ? j.status === 'complete' : j.status !== 'complete')
-                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showCompletedJobs ? 'No completed jobs.' : 'No active jobs.'}</div>
+                  const visibleJobs = jobs.filter(j => j.job_type !== 'residential' && (showCompletedJobs ? j.status === 'complete' : j.status !== 'complete'))
+                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
                   return visibleJobs.map(j => {
                     const billed = billedByJob[j.id] || 0
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
@@ -3000,6 +3032,106 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                             <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
                           </div>
                         )}
+                      </div>
+                    )
+                  })
+                })()}
+              </>
+            )}
+
+            {/* ── RESIDENTIAL JOBS ── */}
+            {activeTab === 'residential' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setShowCompletedResJobs(false)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedResJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedResJobs ? '#e8590c' : '#555' }}>Active</button>
+                    <button onClick={() => setShowCompletedResJobs(true)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedResJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedResJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
+                  </div>
+                  {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
+                    {showNewResJobForm ? 'Cancel' : '+ New residential job'}
+                  </button>}
+                </div>
+
+                {showNewResJobForm && (
+                  <div style={{ ...s.formBox, marginBottom: '1.25rem' }}>
+                    <p style={s.formTitle}>New residential project</p>
+                    <form onSubmit={addResidentialJob}>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div><label style={s.label}>Job number *</label><input style={s.input} value={newResJob.job_number} onChange={e => setNewResJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="R-101" autoFocus /></div>
+                        <div><label style={s.label}>Project name *</label><input style={s.input} value={newResJob.project_name} onChange={e => setNewResJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Smith Kitchen Remodel" /></div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div><label style={s.label}>Owner name</label><input style={s.input} value={newResJob.owner_name} onChange={e => setNewResJob(j => ({ ...j, owner_name: e.target.value }))} placeholder="John Smith" /></div>
+                        <div><label style={s.label}>Owner email</label><input style={s.input} type="email" value={newResJob.owner_email} onChange={e => setNewResJob(j => ({ ...j, owner_email: e.target.value }))} placeholder="john@email.com" /></div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div><label style={s.label}>Owner phone</label><input style={s.input} value={newResJob.owner_phone} onChange={e => setNewResJob(j => ({ ...j, owner_phone: e.target.value }))} placeholder="(555) 555-5555" /></div>
+                        <div><label style={s.label}>Property address</label><input style={s.input} value={newResJob.location} onChange={e => setNewResJob(j => ({ ...j, location: e.target.value }))} placeholder="123 Main St, City, TX" /></div>
+                      </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div><label style={s.label}>Contract value</label><input style={s.input} type="number" value={newResJob.contract_value} onChange={e => setNewResJob(j => ({ ...j, contract_value: e.target.value }))} placeholder="85000" /></div>
+                        <div><label style={s.label}>Start date</label><input style={s.input} type="date" value={newResJob.start_date} onChange={e => setNewResJob(j => ({ ...j, start_date: e.target.value }))} /></div>
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>PM contact (for sub emails)</label>
+                        <select style={s.input} value={newResJob.pm_email} onChange={e => setNewResJob(j => ({ ...j, pm_email: e.target.value }))}>
+                          <option value="">— Select PM —</option>
+                          {teamMembers.filter(m => m.role === 'pm' || m.role === 'apm').map(m => (
+                            <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing schedule</p>
+                        <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                          <div><label style={s.label}>Billing start date</label><input style={s.input} type="date" value={newResJob.sub_billing_start} onChange={e => setNewResJob(j => ({ ...j, sub_billing_start: e.target.value }))} /></div>
+                          <div><label style={s.label}>Frequency</label>
+                            <select style={s.input} value={newResJob.sub_billing_frequency} onChange={e => setNewResJob(j => ({ ...j, sub_billing_frequency: e.target.value, sub_billing_due: '', sub_billing_anchor: '' }))}>
+                              <option value="monthly">Monthly</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="biweekly">Bi-weekly</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div style={s.grid2} className="rx-grid-2">
+                          {newResJob.sub_billing_frequency === 'monthly'
+                            ? <div><label style={s.label}>Due day of month</label><input style={s.input} type="number" min="1" max="28" value={newResJob.sub_billing_due} onChange={e => setNewResJob(j => ({ ...j, sub_billing_due: e.target.value }))} placeholder="e.g. 25" /></div>
+                            : <div><label style={s.label}>Due day of week</label>
+                                <select style={s.input} value={newResJob.sub_billing_due} onChange={e => setNewResJob(j => ({ ...j, sub_billing_due: e.target.value }))}>
+                                  <option value="">Select...</option>
+                                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
+                                </select>
+                              </div>
+                          }
+                          {newResJob.sub_billing_frequency === 'biweekly' && <div><label style={s.label}>Anchor date</label><input style={s.input} type="date" value={newResJob.sub_billing_anchor} onChange={e => setNewResJob(j => ({ ...j, sub_billing_anchor: e.target.value }))} /></div>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <button type="submit" style={s.btn}>Create & open project</button>
+                        {resJobMsg && <span style={{ fontSize: '13px', color: '#ff6b6b' }}>{resJobMsg}</span>}
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {(() => {
+                  const resJobs = jobs.filter(j => j.job_type === 'residential' && (showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete'))
+                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
+                  return resJobs.map(j => {
+                    const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                    return (
+                      <div key={j.id} onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                            <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', color: '#4ade80', border: '1px solid #1a4a1a', letterSpacing: '0.5px' }}>RESIDENTIAL</span>
+                            <span style={s.jobBadge(j.status)}>{j.status}</span>
+                            <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                          </div>
+                        </div>
                       </div>
                     )
                   })

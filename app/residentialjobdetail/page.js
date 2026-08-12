@@ -85,7 +85,7 @@ export default function ResidentialJobDetail() {
   // Budget
   const [budgetItems, setBudgetItems] = useState([])
   const [showAddBudget, setShowAddBudget] = useState(false)
-  const [newBudget, setNewBudget] = useState({ description: '', budgeted_amount: '', cost_code: '', notes: '' })
+  const [newBudget, setNewBudget] = useState({ description: '', budget_amount: '', cost_code: '', notes: '' })
   const [addingBudget, setAddingBudget] = useState(false)
   const [editingBudgetId, setEditingBudgetId] = useState(null)
   const [editBudgetForm, setEditBudgetForm] = useState({})
@@ -334,17 +334,17 @@ export default function ResidentialJobDetail() {
   }
 
   async function addBudgetItem() {
-    if (!newBudget.description || !newBudget.budgeted_amount) return
+    if (!newBudget.description || !newBudget.budget_amount) return
     setAddingBudget(true)
-    await supabase.from('budget_items').insert({ job_id: id, description: newBudget.description, budgeted_amount: parseFloat(newBudget.budgeted_amount), cost_code: newBudget.cost_code || null, notes: newBudget.notes || null })
+    await supabase.from('budget_items').insert({ job_id: id, description: newBudget.description, budget_amount: parseFloat(newBudget.budget_amount), cost_code: newBudget.cost_code || null, notes: newBudget.notes || null })
     await loadBudget()
-    setNewBudget({ description: '', budgeted_amount: '', cost_code: '', notes: '' })
+    setNewBudget({ description: '', budget_amount: '', cost_code: '', notes: '' })
     setShowAddBudget(false)
     setAddingBudget(false)
   }
 
   async function saveBudgetEdit(itemId) {
-    await supabase.from('budget_items').update({ description: editBudgetForm.description, budgeted_amount: parseFloat(editBudgetForm.budgeted_amount) || 0, cost_code: editBudgetForm.cost_code || null }).eq('id', itemId)
+    await supabase.from('budget_items').update({ description: editBudgetForm.description, budget_amount: parseFloat(editBudgetForm.budget_amount) || 0, cost_code: editBudgetForm.cost_code || null }).eq('id', itemId)
     await loadBudget()
     setEditingBudgetId(null)
   }
@@ -729,7 +729,7 @@ export default function ResidentialJobDetail() {
       .map(item => ({
         job_id: id,
         description: item.description,
-        budgeted_amount: parseFloat(item.amount) || 0,
+        budget_amount: parseFloat(item.amount) || 0,
         cost_code: item.section || null,
         notes: null,
       }))
@@ -761,7 +761,7 @@ export default function ResidentialJobDetail() {
 
   const approvedCOs = changeOrders.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount), 0)
   const baseContract = Number(job.contract_value || 0)
-  const budgetTotal = budgetItems.reduce((a, b) => a + Number(b.budgeted_amount || 0), 0)
+  const budgetTotal = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
   const committedTotal = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
   const dcTotal = directCosts.reduce((a, d) => a + Number(d.amount || 0), 0)
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
@@ -956,10 +956,10 @@ export default function ResidentialJobDetail() {
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
                   <div style={{ ...s.grid3, marginBottom: '10px' }}>
                     <div><label style={s.label}>Description *</label><input style={s.input} placeholder="Framing, Electrical..." value={newBudget.description} onChange={e => setNewBudget(f => ({ ...f, description: e.target.value }))} autoFocus /></div>
-                    <div><label style={s.label}>Budgeted Amount *</label><input style={s.input} type="number" placeholder="0.00" value={newBudget.budgeted_amount} onChange={e => setNewBudget(f => ({ ...f, budgeted_amount: e.target.value }))} /></div>
+                    <div><label style={s.label}>Budgeted Amount *</label><input style={s.input} type="number" placeholder="0.00" value={newBudget.budget_amount} onChange={e => setNewBudget(f => ({ ...f, budget_amount: e.target.value }))} /></div>
                     <div><label style={s.label}>Cost Code</label><input style={s.input} placeholder="03-000 (optional)" value={newBudget.cost_code} onChange={e => setNewBudget(f => ({ ...f, cost_code: e.target.value }))} /></div>
                   </div>
-                  <button style={s.btn} onClick={addBudgetItem} disabled={addingBudget || !newBudget.description || !newBudget.budgeted_amount}>{addingBudget ? 'Adding...' : 'Add Budget Line'}</button>
+                  <button style={s.btn} onClick={addBudgetItem} disabled={addingBudget || !newBudget.description || !newBudget.budget_amount}>{addingBudget ? 'Adding...' : 'Add Budget Line'}</button>
                 </div>
               )}
 
@@ -974,14 +974,14 @@ export default function ResidentialJobDetail() {
                   {budgetItems.map(item => {
                     const committed = contracts.filter(c => c.budget_item_id === item.id).reduce((a, c) => a + Number(c.contract_value || 0), 0)
                     const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
-                    const budgeted = Number(item.budgeted_amount || 0)
+                    const budgeted = Number(item.budget_amount || 0)
                     const variance = budgeted - committed - spent
                     const over = variance < 0
                     return editingBudgetId === item.id ? (
                       <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', minWidth: '700px' }}>
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.description || ''} onChange={e => setEditBudgetForm(f => ({ ...f, description: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} />
-                        <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editBudgetForm.budgeted_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budgeted_amount: e.target.value }))} />
+                        <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editBudgetForm.budget_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} />
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spent)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#f87171' : '#4ade80' }}>{over ? '-' : ''}${fmt(Math.abs(variance))}</span>
@@ -994,7 +994,7 @@ export default function ResidentialJobDetail() {
                       <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', minWidth: '700px', background: over ? '#150505' : 'transparent' }}>
                         <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
                         <span style={{ fontSize: '12px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code || '—'}</span>
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.budgeted_amount)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.budget_amount)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: committed > 0 ? '#60a5fa' : '#555' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: spent > 0 ? '#e8590c' : '#555' }}>${fmt(spent)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: '700', color: over ? '#f87171' : variance < budgeted * 0.1 ? '#f59e0b' : '#4ade80' }}>

@@ -90,10 +90,12 @@ export default function ResidentialJobDetail() {
   // Subs
   const [contracts, setContracts] = useState([])
   const [subDirectory, setSubDirectory] = useState([])
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteDirId, setInviteDirId] = useState('')
-  const [inviteMsg, setInviteMsg] = useState('')
-  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [showAddSubForm, setShowAddSubForm] = useState(false)
+  const [newSubForm, setNewSubForm] = useState({ dir_id: '', company_name: '', trade: '', email: '', contract_value: '', budget_item_id: '' })
+  const [addingSub, setAddingSub] = useState(false)
+  const [subMsg, setSubMsg] = useState('')
+  const [editingSubId, setEditingSubId] = useState(null)
+  const [editSubForm, setEditSubForm] = useState({})
 
   // Change orders
   const [changeOrders, setChangeOrders] = useState([])
@@ -329,21 +331,48 @@ export default function ResidentialJobDetail() {
     await loadChangeOrders()
   }
 
-  async function inviteSub(e) {
+  async function addSub(e) {
     e.preventDefault()
-    setInviteMsg('')
-    const dirEntry = inviteDirId ? subDirectory.find(d => d.id === inviteDirId) : null
-    const email = dirEntry ? dirEntry.email : inviteEmail.toLowerCase().trim()
-    if (!email) { setInviteMsg('Enter an email or select from directory'); return }
-    const res = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: email }) })
+    setAddingSub(true)
+    setSubMsg('')
+    const dirEntry = newSubForm.dir_id ? subDirectory.find(d => d.id === newSubForm.dir_id) : null
+    const company_name = dirEntry?.company_name || newSubForm.company_name
+    if (!company_name) { setSubMsg('Company name required'); setAddingSub(false); return }
+    const res = await fetch('/api/subcontracts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: id,
+        company_name,
+        trade: dirEntry?.trade || newSubForm.trade || null,
+        sub_email: dirEntry?.email || newSubForm.email || null,
+        contract_value: parseFloat(newSubForm.contract_value) || 0,
+        budget_item_id: newSubForm.budget_item_id || null,
+        status: 'active',
+      }),
+    })
     const result = await res.json()
-    if (!res.ok) { setInviteMsg(res.status === 409 ? 'Already added.' : 'Error: ' + result.error); return }
-    setInviteMsg('Added!')
-    setInviteEmail('')
-    setInviteDirId('')
-    setShowInviteForm(false)
+    if (result.error) { setSubMsg('Error: ' + result.error); setAddingSub(false); return }
+    setNewSubForm({ dir_id: '', company_name: '', trade: '', email: '', contract_value: '', budget_item_id: '' })
+    setShowAddSubForm(false)
     await loadContracts()
-    setTimeout(() => setInviteMsg(''), 3000)
+    setAddingSub(false)
+  }
+
+  async function saveSubEdit(contractId) {
+    await fetch('/api/subcontracts', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: contractId, company_name: editSubForm.company_name, trade: editSubForm.trade, contract_value: parseFloat(editSubForm.contract_value) || 0, budget_item_id: editSubForm.budget_item_id || null }),
+    })
+    setEditingSubId(null)
+    await loadContracts()
+  }
+
+  async function deleteSubcontract(contractId) {
+    if (!confirm('Remove this subcontractor?')) return
+    await fetch('/api/subcontracts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: contractId }) })
+    await loadContracts()
   }
 
   async function createDraw() {
@@ -969,50 +998,86 @@ export default function ResidentialJobDetail() {
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Subcontractors ({contracts.length})</p>
-              <button style={s.btnSm} onClick={() => setShowInviteForm(v => !v)}>{showInviteForm ? 'Cancel' : '+ Invite Sub'}</button>
+              <button style={s.btnSm} onClick={() => { setShowAddSubForm(v => !v); setSubMsg('') }}>{showAddSubForm ? 'Cancel' : '+ Add Sub'}</button>
             </div>
 
-            {showInviteForm && (
-              <form onSubmit={inviteSub} style={{ ...s.inlineForm, marginBottom: '16px' }}>
+            {showAddSubForm && (
+              <form onSubmit={addSub} style={{ ...s.inlineForm, marginBottom: '16px' }}>
                 {subDirectory.length > 0 && (
                   <div style={{ marginBottom: '12px' }}>
                     <label style={s.label}>Pick from sub directory</label>
-                    <select style={s.select} value={inviteDirId} onChange={e => { setInviteDirId(e.target.value); setInviteEmail('') }}>
+                    <select style={s.select} value={newSubForm.dir_id} onChange={e => setNewSubForm(f => ({ ...f, dir_id: e.target.value, company_name: '', trade: '', email: '' }))}>
                       <option value="">— Select company —</option>
                       {subDirectory.map(d => (
-                        <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}{d.email ? ` (${d.email})` : ''}</option>
+                        <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>
                       ))}
                     </select>
                   </div>
                 )}
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={s.label}>{subDirectory.length > 0 ? 'Or enter email directly' : 'Sub email address'}</label>
-                  <input style={s.input} type="email" value={inviteEmail} onChange={e => { setInviteEmail(e.target.value); setInviteDirId('') }} placeholder="sub@company.com" disabled={!!inviteDirId} />
+                {!newSubForm.dir_id && (
+                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                    <div><label style={s.label}>Company Name *</label><input style={s.input} value={newSubForm.company_name} onChange={e => setNewSubForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing..." /></div>
+                    <div><label style={s.label}>Trade</label><input style={s.input} value={newSubForm.trade} onChange={e => setNewSubForm(f => ({ ...f, trade: e.target.value }))} placeholder="Framing, Electrical..." /></div>
+                    <div><label style={s.label}>Email</label><input style={s.input} type="email" value={newSubForm.email} onChange={e => setNewSubForm(f => ({ ...f, email: e.target.value }))} placeholder="sub@company.com" /></div>
+                  </div>
+                )}
+                <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div>
+                    <label style={s.label}>Contract Value ($)</label>
+                    <input style={s.input} type="number" step="0.01" min="0" placeholder="0.00" value={newSubForm.contract_value} onChange={e => setNewSubForm(f => ({ ...f, contract_value: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={s.label}>Assign to Budget Line</label>
+                    <select style={s.select} value={newSubForm.budget_item_id} onChange={e => setNewSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                      <option value="">— Unassigned —</option>
+                      {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button type="submit" style={s.btn} disabled={!inviteDirId && !inviteEmail}>Add Sub</button>
-                  <button type="button" style={s.btnGray} onClick={() => { setShowInviteForm(false); setInviteEmail(''); setInviteDirId('') }}>Cancel</button>
-                  {inviteMsg && <span style={inviteMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{inviteMsg}</span>}
+                  <button type="submit" style={s.btn} disabled={addingSub}>{addingSub ? 'Adding…' : 'Add Subcontractor'}</button>
+                  {subMsg && <span style={subMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{subMsg}</span>}
                 </div>
               </form>
             )}
 
             {contracts.length === 0 ? (
-              <div style={s.emptyMsg}>No subcontracts yet. Invite a sub to get started.</div>
+              <div style={s.emptyMsg}>No subcontractors yet. Add a sub to get started.</div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 80px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                  {['Company', 'Trade', 'Contract', 'Status', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
+                  {['Company', 'Trade', 'Budget Line', 'Contract $', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
-                {contracts.map(c => (
-                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 80px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.company_name || c.sub_name || '—'}</span>
-                    <span style={{ fontSize: '13px', color: '#aaa' }}>{c.trade || '—'}</span>
-                    <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.contract_value)}</span>
-                    <span style={s.badge(c.status === 'active' ? 'green' : c.status === 'pending' ? 'orange' : 'gray')}>{c.status || 'active'}</span>
-                    <span />
-                  </div>
-                ))}
+                {contracts.map(c => {
+                  const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
+                  const isEditing = editingSubId === c.id
+                  return isEditing ? (
+                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                      <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.company_name || ''} onChange={e => setEditSubForm(f => ({ ...f, company_name: e.target.value }))} />
+                      <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.trade || ''} onChange={e => setEditSubForm(f => ({ ...f, trade: e.target.value }))} />
+                      <select style={{ ...s.select, fontSize: '12px' }} value={editSubForm.budget_item_id || ''} onChange={e => setEditSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                        <option value="">— None —</option>
+                        {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
+                      </select>
+                      <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editSubForm.contract_value || ''} onChange={e => setEditSubForm(f => ({ ...f, contract_value: e.target.value }))} />
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button style={s.btnGreen} onClick={() => saveSubEdit(c.id)}>Save</button>
+                        <button style={s.btnSmGray} onClick={() => setEditingSubId(null)}>×</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.company_name || c.sub_name || '—'}</span>
+                      <span style={{ fontSize: '12px', color: '#aaa' }}>{c.trade || '—'}</span>
+                      <span style={{ fontSize: '12px', color: budgetLine ? '#60a5fa' : '#444' }}>{budgetLine?.description || '—'}</span>
+                      <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.contract_value)}</span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button style={s.btnSmGray} onClick={() => { setEditingSubId(c.id); setEditSubForm(c) }}>Edit</button>
+                        <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteSubcontract(c.id)}>×</button>
+                      </div>
+                    </div>
+                  )
+                })}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 0', borderTop: '1px solid #1a1a1a', marginTop: '4px' }}>
                   <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>Total: ${fmt(committedTotal)}</span>
                 </div>

@@ -400,6 +400,7 @@ export default function ResidentialJobDetail() {
         contract_value: parseFloat(newSubForm.contract_value) || 0,
         budget_item_id: newSubForm.budget_item_id || null,
         status: 'active',
+        created_by: profile?.id || null,
       }),
     })
     const result = await res.json()

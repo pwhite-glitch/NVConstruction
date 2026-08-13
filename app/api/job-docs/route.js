@@ -22,10 +22,10 @@ export async function POST(request) {
     if (action === 'upload-url-residential') {
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
       const { data, error } = await adminSupabase.storage
-        .from('job-docs')
+        .from('job-documents')
         .createSignedUploadUrl(filePath)
       if (error) return Response.json({ error: error.message }, { status: 500 })
-      const { data: { publicUrl } } = adminSupabase.storage.from('job-docs').getPublicUrl(filePath)
+      const { data: { publicUrl } } = adminSupabase.storage.from('job-documents').getPublicUrl(filePath)
       return Response.json({ signedUrl: data.signedUrl, publicUrl })
     }
 

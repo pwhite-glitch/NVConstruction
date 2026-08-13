@@ -428,6 +428,22 @@ export default function JobDetail() {
   const [signMsg, setSignMsg] = useState('')
   const [signingRequests, setSigningRequests] = useState([])
 
+  // Lookahead state
+  const [lookahead, setLookahead] = useState(null)
+  const [lookaheadActivities, setLookaheadActivities] = useState([])
+  const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => {
+    const d = new Date()
+    const day = d.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    const mon = new Date(d); mon.setDate(d.getDate() + diff)
+    return mon.toISOString().split('T')[0]
+  })
+  const [showActivityModal, setShowActivityModal] = useState(false)
+  const [editingActivity, setEditingActivity] = useState(null)
+  const [activityForm, setActivityForm] = useState({})
+  const [savingActivity, setSavingActivity] = useState(false)
+  const [submittingLookahead, setSubmittingLookahead] = useState(false)
+
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
@@ -1501,6 +1517,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
     if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems() }
+    if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts() }
   }, [activeTab, id])
 
   async function loadNvSubcontracts() {
@@ -3856,6 +3873,104 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
   const totalLaborCostLive = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
 
+  async function loadLookaheadData(weekOverride) {
+    if (!id) return
+    const wk = weekOverride || lookaheadWeekStart
+    const res = await fetch(`/api/lookaheads?job_id=${id}&week_start=${wk}`)
+    const { data } = await res.json()
+    if (data && data.length > 0) {
+      setLookahead(data[0])
+      setLookaheadActivities(data[0].lookahead_activities || [])
+    } else {
+      setLookahead(null)
+      setLookaheadActivities([])
+    }
+  }
+
+  async function createLookahead() {
+    const res = await fetch('/api/lookaheads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: id, week_start_date: lookaheadWeekStart }),
+    })
+    const { data, error } = await res.json()
+    if (error) { alert(error); return }
+    setLookahead(data)
+    setLookaheadActivities([])
+  }
+
+  function openAddActivity(date) {
+    setEditingActivity(null)
+    setActivityForm({
+      planned_date: date,
+      description: '',
+      location: '',
+      responsible_type: 'own_crew',
+      sub_id: '',
+      manpower: '',
+      equipment: '',
+      materials_status: 'needed',
+      inspection_required: false,
+      inspection_scheduled: false,
+      preceding_work_complete: false,
+      committed: false,
+      constraints_notes: '',
+    })
+    setShowActivityModal(true)
+  }
+
+  function openEditActivity(act) {
+    setEditingActivity(act)
+    setActivityForm({ ...act })
+    setShowActivityModal(true)
+  }
+
+  async function saveActivity() {
+    if (!activityForm.description) return
+    setSavingActivity(true)
+    if (editingActivity) {
+      const res = await fetch('/api/lookahead-activities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingActivity.id, ...activityForm }),
+      })
+      const { data } = await res.json()
+      if (data) setLookaheadActivities(prev => prev.map(a => a.id === data.id ? data : a))
+    } else {
+      const res = await fetch('/api/lookahead-activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lookahead_id: lookahead.id, ...activityForm }),
+      })
+      const { data } = await res.json()
+      if (data) setLookaheadActivities(prev => [...prev, data])
+    }
+    setSavingActivity(false)
+    setShowActivityModal(false)
+  }
+
+  async function deleteActivity(actId) {
+    await fetch('/api/lookahead-activities', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: actId }),
+    })
+    setLookaheadActivities(prev => prev.filter(a => a.id !== actId))
+  }
+
+  async function submitLookahead() {
+    if (!lookahead) return
+    setSubmittingLookahead(true)
+    const res = await fetch('/api/lookaheads', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: lookahead.id, status: 'submitted' }),
+    })
+    const { data } = await res.json()
+    if (data) setLookahead(prev => ({ ...prev, ...data }))
+    setSubmittingLookahead(false)
+  }
+
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
   return (
@@ -3983,6 +4098,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
                   { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
                   { key: 'orders', label: 'Orders', badge: jobOrders.length || null },
+                  { key: 'lookahead', label: 'Lookahead' },
                 ],
               },
               {
@@ -4063,6 +4179,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <option value="submittals">Submittals</option>
             <option value="punch">Punch List</option>
             <option value="photos">Site Photos</option>
+            <option value="lookahead">Lookahead</option>
           </optgroup>
           <optgroup label="Team">
             <option value="subs">Companies</option>
@@ -9713,6 +9830,219 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </>
+          )
+        })()}
+
+        {/* ── LOOKAHEAD TAB ── */}
+        {activeTab === 'lookahead' && (() => {
+          const days = []
+          const start = new Date(lookaheadWeekStart + 'T12:00:00Z')
+          for (let i = 0; days.length < 10 && i < 20; i++) {
+            const d = new Date(start); d.setUTCDate(start.getUTCDate() + i)
+            const dow = d.getUTCDay()
+            if (dow !== 0 && dow !== 6) days.push(d.toISOString().split('T')[0])
+          }
+          const week1 = days.slice(0, 5)
+          const week2 = days.slice(5, 10)
+          const dayLabel = dt => new Date(dt + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' })
+          const activitiesForDay = dt => lookaheadActivities.filter(a => a.planned_date === dt)
+          const isLocked = lookahead?.status === 'submitted'
+          const mColor = { needed: '#ef4444', ordered: '#f59e0b', on_site: '#4ade80' }
+
+          const renderWeekGrid = (weekDays, weekLabel) => (
+            <div style={s.card}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '12px' }}>{weekLabel}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                {weekDays.map(dt => {
+                  const acts = activitiesForDay(dt)
+                  return (
+                    <div key={dt} style={{ background: '#0d0d0d', border: '1px solid #1f1f1f', borderRadius: '8px', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#666', textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'center', borderBottom: '1px solid #1a1a1a', paddingBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dayLabel(dt)}</div>
+                      {acts.length === 0 && <div style={{ fontSize: '11px', color: '#2a2a2a', textAlign: 'center', padding: '6px 0' }}>—</div>}
+                      {acts.map(act => (
+                        <div key={act.id} onClick={() => !isLocked && openEditActivity(act)}
+                          style={{ background: '#141414', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: isLocked ? 'default' : 'pointer', fontSize: '12px' }}
+                          onMouseEnter={e => { if (!isLocked) e.currentTarget.style.borderColor = '#3a3a3a' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = '#252525' }}>
+                          <div style={{ fontWeight: '600', color: '#e8e8e8', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
+                          {act.location && <div style={{ fontSize: '11px', color: '#555', marginBottom: '5px' }}>{act.location}</div>}
+                          <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            {act.responsible_type === 'sub'
+                              ? <span style={{ fontSize: '10px', background: '#1a2e4a', color: '#60a5fa', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub'}</span>
+                              : <span style={{ fontSize: '10px', background: '#0f2215', color: '#4ade80', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
+                            }
+                            {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#666' }}>👷{act.manpower}</span>}
+                            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block', flexShrink: 0 }} title={`Materials: ${act.materials_status || 'none'}`} />
+                            {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍</span>}
+                            {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
+                            {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 700 }}>✓</span>}
+                          </div>
+                        </div>
+                      ))}
+                      {!isLocked && (
+                        <button onClick={() => openAddActivity(dt)}
+                          style={{ background: 'transparent', border: '1px dashed #222', borderRadius: '6px', color: '#444', fontSize: '11px', padding: '6px', cursor: 'pointer', marginTop: 'auto' }}>
+                          + Add
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+
+          return (
+            <>
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <p style={s.cardTitle}>2-Week Lookahead</p>
+                    {lookahead && <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', marginTop: '-8px', fontWeight: 600 }}>{lookahead.status === 'submitted' ? '✓ Submitted' : '● Draft'}</div>}
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div>
+                      <label style={s.label}>Week Starting (Monday)</label>
+                      <input type="date" style={{ ...s.input, width: 'auto' }} value={lookaheadWeekStart}
+                        onChange={e => {
+                          const d = new Date(e.target.value + 'T12:00:00Z')
+                          const day = d.getUTCDay()
+                          if (day !== 1) { const diff = day === 0 ? -6 : 1 - day; d.setUTCDate(d.getUTCDate() + diff) }
+                          const mon = d.toISOString().split('T')[0]
+                          setLookaheadWeekStart(mon)
+                          setLookahead(null)
+                          setLookaheadActivities([])
+                          loadLookaheadData(mon)
+                        }}
+                      />
+                    </div>
+                    {!lookahead && <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>}
+                    {lookahead?.status === 'draft' && (
+                      <button style={{ ...s.btn, background: '#16a34a', borderColor: '#166534' }} onClick={submitLookahead} disabled={submittingLookahead}>
+                        {submittingLookahead ? 'Submitting…' : 'Submit to PM'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {!lookahead && (
+                <div style={{ ...s.card, textAlign: 'center', padding: '48px 24px' }}>
+                  <div style={{ fontSize: '14px', color: '#444', marginBottom: '16px' }}>No lookahead for this week yet.</div>
+                  <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>
+                </div>
+              )}
+
+              {lookahead && (
+                <>
+                  {renderWeekGrid(week1, `Week 1 — ${new Date(week1[0]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})} – ${new Date(week1[4]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}`)}
+                  {renderWeekGrid(week2, `Week 2 — ${new Date(week2[0]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})} – ${new Date(week2[4]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}`)}
+                </>
+              )}
+
+              {showActivityModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+                  onClick={e => { if (e.target === e.currentTarget) setShowActivityModal(false) }}>
+                  <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{editingActivity ? 'Edit Activity' : 'Add Activity'} — {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
+                      <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div>
+                        <label style={s.label}>Description *</label>
+                        <input style={s.input} value={activityForm.description || ''} onChange={e => setActivityForm(f => ({ ...f, description: e.target.value }))} placeholder="Pour slab, set steel, frame walls..." />
+                      </div>
+                      <div>
+                        <label style={s.label}>Location on Site</label>
+                        <input style={s.input} value={activityForm.location || ''} onChange={e => setActivityForm(f => ({ ...f, location: e.target.value }))} placeholder="Level 2 west, Grid B–D..." />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={s.label}>Responsible</label>
+                          <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.responsible_type || 'own_crew'} onChange={e => setActivityForm(f => ({ ...f, responsible_type: e.target.value, sub_id: '' }))}>
+                            <option value="own_crew">Own Crew</option>
+                            <option value="sub">Subcontractor</option>
+                          </select>
+                        </div>
+                        <div>
+                          {activityForm.responsible_type === 'sub' ? (
+                            <>
+                              <label style={s.label}>Subcontractor</label>
+                              <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.sub_id || ''} onChange={e => setActivityForm(f => ({ ...f, sub_id: e.target.value }))}>
+                                <option value="">— Select —</option>
+                                {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                              </select>
+                            </>
+                          ) : (
+                            <>
+                              <label style={s.label}>Manpower (headcount)</label>
+                              <input style={s.input} type="number" min="0" value={activityForm.manpower || ''} onChange={e => setActivityForm(f => ({ ...f, manpower: parseInt(e.target.value) || 0 }))} placeholder="4" />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {activityForm.responsible_type === 'sub' && (
+                        <div>
+                          <label style={s.label}>Manpower (headcount)</label>
+                          <input style={s.input} type="number" min="0" value={activityForm.manpower || ''} onChange={e => setActivityForm(f => ({ ...f, manpower: parseInt(e.target.value) || 0 }))} placeholder="4" />
+                        </div>
+                      )}
+                      <div>
+                        <label style={s.label}>Equipment Needed</label>
+                        <input style={s.input} value={activityForm.equipment || ''} onChange={e => setActivityForm(f => ({ ...f, equipment: e.target.value }))} placeholder="Crane, concrete pump, scissor lift..." />
+                      </div>
+                      <div>
+                        <label style={s.label}>Materials Status</label>
+                        <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.materials_status || 'needed'} onChange={e => setActivityForm(f => ({ ...f, materials_status: e.target.value }))}>
+                          <option value="needed">Need to Order</option>
+                          <option value="ordered">Ordered</option>
+                          <option value="on_site">On Site</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!activityForm.inspection_required} onChange={e => setActivityForm(f => ({ ...f, inspection_required: e.target.checked }))} />
+                          Inspection Required
+                        </label>
+                        {activityForm.inspection_required && (
+                          <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer', paddingLeft: '20px' }}>
+                            <input type="checkbox" checked={!!activityForm.inspection_scheduled} onChange={e => setActivityForm(f => ({ ...f, inspection_scheduled: e.target.checked }))} />
+                            Inspection Scheduled
+                          </label>
+                        )}
+                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!activityForm.preceding_work_complete} onChange={e => setActivityForm(f => ({ ...f, preceding_work_complete: e.target.checked }))} />
+                          Preceding Work Complete
+                        </label>
+                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={!!activityForm.committed} onChange={e => setActivityForm(f => ({ ...f, committed: e.target.checked }))} />
+                          Committed
+                        </label>
+                      </div>
+                      <div>
+                        <label style={s.label}>Constraints / Notes</label>
+                        <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} value={activityForm.constraints_notes || ''} onChange={e => setActivityForm(f => ({ ...f, constraints_notes: e.target.value }))} placeholder="Missing approvals, material delays, weather concerns..." />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
+                      <div>
+                        {editingActivity && (
+                          <button onClick={() => { deleteActivity(editingActivity.id); setShowActivityModal(false) }}
+                            style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#666', padding: '8px 14px', cursor: 'pointer', fontSize: '13px' }}>Delete</button>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', padding: '8px 16px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
+                        <button onClick={saveActivity} disabled={savingActivity || !activityForm.description} style={{ ...s.btn, opacity: !activityForm.description ? 0.5 : 1 }}>
+                          {savingActivity ? 'Saving…' : editingActivity ? 'Save Changes' : 'Add Activity'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </>

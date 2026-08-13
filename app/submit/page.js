@@ -74,6 +74,7 @@ const IconRfi      = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconMsg      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
 const IconPunch    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
 const IconTeam     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+const IconGrid     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
 
 export default function Submit() {
   const router = useRouter()
@@ -166,6 +167,10 @@ export default function Submit() {
   const [mySigningRequests, setMySigningRequests] = useState([])
   const [initiatingSignFor, setInitiatingSignFor] = useState(null)
   const [printingContractFor, setPrintingContractFor] = useState(null)
+
+  // Lookahead state
+  const [myLookaheadActivities, setMyLookaheadActivities] = useState([])
+  const [myLookaheadLoaded, setMyLookaheadLoaded] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -817,6 +822,20 @@ export default function Submit() {
   const openRfis = rfis.filter(r => r.status === 'open').length
   const openPunch = myPunchItems.filter(p => p.status === 'open').length
 
+  async function loadMyLookahead() {
+    if (!user) return
+    const today = new Date().toISOString().split('T')[0]
+    const twoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const res = await fetch(`/api/lookahead-activities?sub_user_id=${user.id}&from=${today}&to=${twoWeeks}`)
+    const { data } = await res.json()
+    setMyLookaheadActivities(data || [])
+    setMyLookaheadLoaded(true)
+  }
+
+  useEffect(() => {
+    if (activeTab === 'upcoming' && user && !myLookaheadLoaded) loadMyLookahead()
+  }, [activeTab, user])
+
   const role = profile?.role || 'subcontractor'
   // sub_admin: billing-focused only
   // sub_pm: all except bids (they don't handle estimating)
@@ -833,6 +852,7 @@ export default function Submit() {
     { tab: 'messages',   label: 'Messages',         icon: <IconMsg />,       roles: allSubRoles },
     { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />,     roles: allSubRoles, badge: openPunch || null },
     { tab: 'team',       label: 'My Team',          icon: <IconTeam />,      roles: allSubRoles },
+    { tab: 'upcoming',   label: 'Upcoming Work',    icon: <IconGrid />,      roles: allSubRoles },
   ]
   const navItems = allNavItems.filter(item => item.roles.includes(role))
 
@@ -2081,6 +2101,73 @@ export default function Submit() {
             </div>
           </div>
         )}
+
+        {activeTab === 'upcoming' && (() => {
+          const grouped = {}
+          myLookaheadActivities.forEach(a => {
+            if (!grouped[a.planned_date]) grouped[a.planned_date] = []
+            grouped[a.planned_date].push(a)
+          })
+          const sortedDates = Object.keys(grouped).sort()
+          const mColor = { needed: '#ef4444', ordered: '#f59e0b', on_site: '#4ade80' }
+          const mLabel = { needed: 'Materials needed', ordered: 'Materials ordered', on_site: 'Materials on site' }
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={s.card}>
+                <h2 style={s.cardTitle}>Upcoming Work</h2>
+                <p style={{ fontSize: '13px', color: '#555', marginTop: '-8px' }}>Your activities scheduled for the next 14 days.</p>
+              </div>
+              {!myLookaheadLoaded && <div style={{ ...s.card, color: '#555', fontSize: '14px' }}>Loading...</div>}
+              {myLookaheadLoaded && sortedDates.length === 0 && (
+                <div style={{ ...s.card, textAlign: 'center', padding: '48px 24px' }}>
+                  <div style={{ fontSize: '14px', color: '#444' }}>No activities scheduled for you in the next 14 days.</div>
+                </div>
+              )}
+              {sortedDates.map(date => {
+                const acts = grouped[date]
+                const dateLabel = new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
+                return (
+                  <div key={date} style={s.card}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '12px', borderBottom: '1px solid #1a1a1a', paddingBottom: '8px' }}>{dateLabel}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {acts.map(act => (
+                        <div key={act.id} style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1', marginBottom: '4px' }}>{act.description}</div>
+                              {act.location && <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px' }}>{act.location}</div>}
+                              <div style={{ fontSize: '11px', color: '#444' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` · Job #${act.lookaheads.jobs.job_number}` : ''}</div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', flexShrink: 0 }}>
+                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#888' }}>👷 {act.manpower} crew</span>}
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block' }} />
+                                <span style={{ fontSize: '11px', color: '#666' }}>{mLabel[act.materials_status] || 'No materials'}</span>
+                              </div>
+                              {act.inspection_required && (
+                                <span style={{ fontSize: '11px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍 Inspection {act.inspection_scheduled ? 'scheduled' : 'required'}</span>
+                              )}
+                              {act.committed && <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>✓ Committed</span>}
+                            </div>
+                          </div>
+                          {act.equipment && (
+                            <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>Equipment: {act.equipment}</div>
+                          )}
+                          {act.constraints_notes && (
+                            <div style={{ marginTop: '10px', padding: '10px', background: '#1a1008', border: '1px solid #2a1a08', borderRadius: '6px', fontSize: '12px', color: '#f59e0b' }}>
+                              ⚠ {act.constraints_notes}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
       </div>
 

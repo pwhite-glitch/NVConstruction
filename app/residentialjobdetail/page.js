@@ -395,7 +395,7 @@ export default function ResidentialJobDetail() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         job_id: id,
-        company_name,
+        vendor_name: company_name,
         trade: dirEntry?.trade || newSubForm.trade || null,
         sub_email: dirEntry?.email || newSubForm.email || null,
         contract_value: parseFloat(newSubForm.contract_value) || 0,
@@ -415,7 +415,7 @@ export default function ResidentialJobDetail() {
     await fetch('/api/subcontracts', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: contractId, company_name: editSubForm.company_name, trade: editSubForm.trade, contract_value: parseFloat(editSubForm.contract_value) || 0, budget_item_id: editSubForm.budget_item_id || null }),
+      body: JSON.stringify({ id: contractId, vendor_name: editSubForm.vendor_name, trade: editSubForm.trade, contract_value: parseFloat(editSubForm.contract_value) || 0, budget_item_id: editSubForm.budget_item_id || null }),
     })
     setEditingSubId(null)
     await loadContracts()
@@ -504,15 +504,30 @@ export default function ResidentialJobDetail() {
     const file = e.target.files?.[0]
     if (!file) return
     setUploadingDoc(true)
-    const ext = file.name.split('.').pop()
-    const path = `${id}/${Date.now()}_${file.name}`
-    const { error: upErr } = await supabase.storage.from('job-docs').upload(path, file)
-    if (!upErr) {
-      const { data: { publicUrl } } = supabase.storage.from('job-docs').getPublicUrl(path)
-      await supabase.from('job_docs').insert({ job_id: id, url: publicUrl, name: file.name, doc_type: 'general' })
+    try {
+      const path = `${id}/${Date.now()}_${file.name}`
+      const urlRes = await fetch('/api/job-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload-url-residential', path }),
+      })
+      const { signedUrl, publicUrl, error: urlErr } = await urlRes.json()
+      if (urlErr || !signedUrl) throw new Error(urlErr || 'Could not get upload URL')
+      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!up.ok) throw new Error('File upload failed')
+      const insertRes = await fetch('/api/job-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'insert-doc', job_id: id, url: publicUrl, name: file.name, doc_type: 'general' }),
+      })
+      const insertData = await insertRes.json()
+      if (insertData.error) throw new Error(insertData.error)
       await loadDocuments()
+    } catch (err) {
+      alert('Upload failed: ' + err.message)
     }
     setUploadingDoc(false)
+    if (docInputRef.current) docInputRef.current.value = ''
   }
 
   async function addContact() {
@@ -1229,7 +1244,7 @@ export default function ResidentialJobDetail() {
                   const isEditing = editingSubId === c.id
                   return isEditing ? (
                     <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
-                      <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.company_name || ''} onChange={e => setEditSubForm(f => ({ ...f, company_name: e.target.value }))} />
+                      <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.vendor_name || ''} onChange={e => setEditSubForm(f => ({ ...f, vendor_name: e.target.value }))} />
                       <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.trade || ''} onChange={e => setEditSubForm(f => ({ ...f, trade: e.target.value }))} />
                       <select style={{ ...s.select, fontSize: '12px' }} value={editSubForm.budget_item_id || ''} onChange={e => setEditSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
                         <option value="">— None —</option>
@@ -1243,7 +1258,7 @@ export default function ResidentialJobDetail() {
                     </div>
                   ) : (
                     <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.company_name || c.sub_name || '—'}</span>
+                      <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.vendor_name || c.sub_name || '—'}</span>
                       <span style={{ fontSize: '12px', color: '#aaa' }}>{c.trade || '—'}</span>
                       <span style={{ fontSize: '12px', color: budgetLine ? '#60a5fa' : '#444' }}>{budgetLine?.description || '—'}</span>
                       <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.contract_value)}</span>
@@ -1646,7 +1661,7 @@ export default function ResidentialJobDetail() {
                           setNewWaiver(f => ({ ...f, subcontract_id: e.target.value, company_name: c?.company_name || f.company_name }))
                         }}>
                           <option value="">— Select or type below —</option>
-                          {contracts.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                         </select>
                         {!newWaiver.subcontract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Company name (if not listed)" value={newWaiver.company_name} onChange={e => setNewWaiver(f => ({ ...f, company_name: e.target.value }))} />}
                       </div>
@@ -1825,7 +1840,7 @@ export default function ResidentialJobDetail() {
                         <label style={s.label}>Assign to Sub</label>
                         <select style={s.select} value={newPunch.subcontract_id} onChange={e => setNewPunch(f => ({ ...f, subcontract_id: e.target.value, assigned_to: '' }))}>
                           <option value="">— Select sub or enter below —</option>
-                          {contracts.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                         </select>
                         {!newPunch.subcontract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Or type name / trade..." value={newPunch.assigned_to} onChange={e => setNewPunch(f => ({ ...f, assigned_to: e.target.value }))} />}
                       </div>

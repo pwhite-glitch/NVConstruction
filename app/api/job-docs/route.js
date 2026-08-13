@@ -19,6 +19,24 @@ export async function POST(request) {
       return Response.json({ signedUrl: data.signedUrl })
     }
 
+    if (action === 'upload-url-residential') {
+      if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
+      const { data, error } = await adminSupabase.storage
+        .from('job-docs')
+        .createSignedUploadUrl(filePath)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      const { data: { publicUrl } } = adminSupabase.storage.from('job-docs').getPublicUrl(filePath)
+      return Response.json({ signedUrl: data.signedUrl, publicUrl })
+    }
+
+    if (action === 'insert-doc') {
+      const { job_id, url, name, doc_type } = body
+      if (!job_id || !url || !name) return Response.json({ error: 'job_id, url, name required' }, { status: 400 })
+      const { error } = await adminSupabase.from('job_docs').insert({ job_id, url, name, doc_type: doc_type || 'general' })
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ ok: true })
+    }
+
     if (action === 'signed-url') {
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
       const opts = body.download ? { download: true } : undefined

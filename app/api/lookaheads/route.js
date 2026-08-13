@@ -66,11 +66,28 @@ export async function PUT(request) {
         const resend = new Resend(process.env.RESEND_API_KEY)
         const d = new Date(data.week_start_date + 'T12:00:00Z')
         const weekStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+        // Build equipment section if any activities need company equipment
+        let eqHtml = ''
+        const activitiesWithEq = (data.lookahead_activities || []).filter(a => a.company_equipment_ids?.length > 0)
+        if (activitiesWithEq.length > 0) {
+          const allIds = [...new Set(activitiesWithEq.flatMap(a => a.company_equipment_ids))]
+          const { data: eqRows } = await adminSupabase.from('company_equipment').select('id, name').in('id', allIds)
+          const eqMap = Object.fromEntries((eqRows || []).map(e => [e.id, e.name]))
+          const lines = activitiesWithEq
+            .sort((a, b) => a.planned_date.localeCompare(b.planned_date))
+            .flatMap(a => (a.company_equipment_ids || []).map(eid => {
+              const dateStr = new Date(a.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' })
+              return `<li><strong>${eqMap[eid] || 'Unknown'}</strong> — ${dateStr}: ${a.description}</li>`
+            }))
+          eqHtml = `<p style="margin-top:16px"><strong style="color:#f59e0b">⚠ Company Equipment Required:</strong></p><ul style="margin:8px 0;padding-left:20px">${lines.join('')}</ul>`
+        }
+
         await resend.emails.send({
           from: 'NV Construction <noreply@nvim.co>',
           to: data.jobs.pm_email,
           subject: `2-Week Lookahead Submitted — ${data.jobs.project_name}`,
-          html: `<p>A 2-week lookahead has been submitted for <strong>${data.jobs.project_name}</strong> (Job #${data.jobs.job_number}) for the week of <strong>${weekStr}</strong>.</p><p>Log in to review it.</p>`,
+          html: `<p>A 2-week lookahead has been submitted for <strong>${data.jobs.project_name}</strong> (Job #${data.jobs.job_number}) for the week of <strong>${weekStr}</strong>.</p>${eqHtml}<p style="margin-top:16px">Log in to review the full lookahead.</p>`,
         })
       } catch {}
     }

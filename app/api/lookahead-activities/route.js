@@ -10,6 +10,7 @@ const ALLOWED = new Set([
   'responsible_type', 'sub_id', 'manpower', 'equipment',
   'materials_status', 'inspection_required', 'inspection_scheduled',
   'preceding_work_complete', 'committed', 'constraints_notes',
+  'company_equipment_ids',
 ])
 
 function pick(obj) {

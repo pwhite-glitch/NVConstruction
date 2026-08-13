@@ -434,8 +434,8 @@ export default function JobDetail() {
   const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => {
     const d = new Date()
     const day = d.getDay()
-    const diff = day === 0 ? -6 : 1 - day
-    const mon = new Date(d); mon.setDate(d.getDate() + diff)
+    const daysUntilNextMon = day === 0 ? 1 : day === 1 ? 7 : 8 - day
+    const mon = new Date(d); mon.setDate(d.getDate() + daysUntilNextMon)
     return mon.toISOString().split('T')[0]
   })
   const [showActivityModal, setShowActivityModal] = useState(false)
@@ -443,6 +443,11 @@ export default function JobDetail() {
   const [activityForm, setActivityForm] = useState({})
   const [savingActivity, setSavingActivity] = useState(false)
   const [submittingLookahead, setSubmittingLookahead] = useState(false)
+  const [companyEquipment, setCompanyEquipment] = useState([])
+  const [showEquipmentMgr, setShowEquipmentMgr] = useState(false)
+  const [newEqName, setNewEqName] = useState('')
+  const [newEqCategory, setNewEqCategory] = useState('')
+  const [addingEquipment, setAddingEquipment] = useState(false)
 
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -1517,7 +1522,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
     if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems() }
-    if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts() }
+    if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment() }
   }, [activeTab, id])
 
   async function loadNvSubcontracts() {
@@ -3873,6 +3878,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
   const totalLaborCostLive = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
 
+  function shiftLookaheadWeek(delta) {
+    const d = new Date(lookaheadWeekStart + 'T12:00:00Z')
+    d.setUTCDate(d.getUTCDate() + delta * 7)
+    const mon = d.toISOString().split('T')[0]
+    setLookaheadWeekStart(mon)
+    setLookahead(null)
+    setLookaheadActivities([])
+    loadLookaheadData(mon)
+  }
+
+  async function loadCompanyEquipment() {
+    const res = await fetch('/api/company-equipment')
+    const { data } = await res.json()
+    setCompanyEquipment(data || [])
+  }
+
+  async function addEquipment() {
+    if (!newEqName.trim()) return
+    setAddingEquipment(true)
+    const res = await fetch('/api/company-equipment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newEqName.trim(), category: newEqCategory.trim() || null }),
+    })
+    const { data, error } = await res.json()
+    if (error) { alert(error); setAddingEquipment(false); return }
+    setCompanyEquipment(prev => [...prev, data].sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name)))
+    setNewEqName('')
+    setNewEqCategory('')
+    setAddingEquipment(false)
+  }
+
+  async function deleteEquipment(eqId) {
+    await fetch('/api/company-equipment', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: eqId }),
+    })
+    setCompanyEquipment(prev => prev.filter(e => e.id !== eqId))
+  }
+
   async function loadLookaheadData(weekOverride) {
     if (!id) return
     const wk = weekOverride || lookaheadWeekStart
@@ -3909,6 +3955,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       sub_id: '',
       manpower: '',
       equipment: '',
+      company_equipment_ids: [],
       materials_status: 'needed',
       inspection_required: false,
       inspection_scheduled: false,
@@ -9879,6 +9926,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍</span>}
                             {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
                             {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 700 }}>✓</span>}
+                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#f59e0b' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
                           </div>
                         </div>
                       ))}
@@ -9904,20 +9952,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {lookahead && <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', marginTop: '-8px', fontWeight: 600 }}>{lookahead.status === 'submitted' ? '✓ Submitted' : '● Draft'}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div>
-                      <label style={s.label}>Week Starting (Monday)</label>
-                      <input type="date" style={{ ...s.input, width: 'auto' }} value={lookaheadWeekStart}
-                        onChange={e => {
-                          const d = new Date(e.target.value + 'T12:00:00Z')
-                          const day = d.getUTCDay()
-                          if (day !== 1) { const diff = day === 0 ? -6 : 1 - day; d.setUTCDate(d.getUTCDate() + diff) }
-                          const mon = d.toISOString().split('T')[0]
-                          setLookaheadWeekStart(mon)
-                          setLookahead(null)
-                          setLookaheadActivities([])
-                          loadLookaheadData(mon)
-                        }}
-                      />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>←</button>
+                      <div style={{ textAlign: 'center', minWidth: '155px' }}>
+                        <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '2px' }}>Week of</div>
+                        <div style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: 600 }}>{new Date(lookaheadWeekStart + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>
+                      </div>
+                      <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>→</button>
                     </div>
                     {!lookahead && <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>}
                     {lookahead?.status === 'draft' && (
@@ -9925,9 +9966,39 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {submittingLookahead ? 'Submitting…' : 'Submit to PM'}
                       </button>
                     )}
+                    <button onClick={() => setShowEquipmentMgr(v => !v)} style={{ ...s.btn, background: showEquipmentMgr ? '#2a2a2a' : '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', fontSize: '12px' }}>⚙ Equipment</button>
                   </div>
                 </div>
               </div>
+
+              {showEquipmentMgr && (
+                <div style={s.card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <p style={s.cardTitle}>Company Equipment Fleet</p>
+                    <span style={{ fontSize: '12px', color: '#555' }}>Selected equipment triggers an alert in the PM notification email</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                    <input style={{ ...s.input, flex: 1, minWidth: '160px' }} placeholder="Equipment name (e.g. Excavator CAT 320)" value={newEqName} onChange={e => setNewEqName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addEquipment()} />
+                    <input style={{ ...s.input, flex: 1, minWidth: '120px' }} placeholder="Category (e.g. Earthwork)" value={newEqCategory} onChange={e => setNewEqCategory(e.target.value)} onKeyDown={e => e.key === 'Enter' && addEquipment()} />
+                    <button style={s.btn} onClick={addEquipment} disabled={addingEquipment || !newEqName.trim()}>{addingEquipment ? 'Adding…' : '+ Add'}</button>
+                  </div>
+                  {companyEquipment.length === 0 ? (
+                    <div style={{ fontSize: '13px', color: '#444', textAlign: 'center', padding: '16px 0' }}>No equipment added yet.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {companyEquipment.map(eq => (
+                        <div key={eq.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '6px' }}>
+                          <div>
+                            <span style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: 600 }}>{eq.name}</span>
+                            {eq.category && <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{eq.category}</span>}
+                          </div>
+                          <button onClick={() => deleteEquipment(eq.id)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {!lookahead && (
                 <div style={{ ...s.card, textAlign: 'center', padding: '48px 24px' }}>
@@ -9992,8 +10063,30 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                       <div>
-                        <label style={s.label}>Equipment Needed</label>
-                        <input style={s.input} value={activityForm.equipment || ''} onChange={e => setActivityForm(f => ({ ...f, equipment: e.target.value }))} placeholder="Crane, concrete pump, scissor lift..." />
+                        <label style={s.label}>Rented / External Equipment</label>
+                        <input style={s.input} value={activityForm.equipment || ''} onChange={e => setActivityForm(f => ({ ...f, equipment: e.target.value }))} placeholder="Concrete pump, scissor lift, forklift..." />
+                      </div>
+                      <div>
+                        <label style={s.label}>Company Equipment Needed</label>
+                        {companyEquipment.length === 0 ? (
+                          <div style={{ fontSize: '12px', color: '#555', padding: '8px 0' }}>No company equipment added yet — use the ⚙ Equipment button in the header to add your fleet.</div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                            {companyEquipment.map(eq => (
+                              <label key={eq.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                                <input type="checkbox"
+                                  checked={(activityForm.company_equipment_ids || []).includes(eq.id)}
+                                  onChange={e => {
+                                    const ids = activityForm.company_equipment_ids || []
+                                    setActivityForm(f => ({ ...f, company_equipment_ids: e.target.checked ? [...ids, eq.id] : ids.filter(i => i !== eq.id) }))
+                                  }}
+                                />
+                                <span>{eq.name}</span>
+                                {eq.category && <span style={{ fontSize: '11px', color: '#555' }}>({eq.category})</span>}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label style={s.label}>Materials Status</label>
@@ -10623,7 +10716,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {poForm.items.map((item, idx) => (
                                   <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < poForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
                                     <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
-                                    <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
+                                    <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
                                     <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
                                     <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
                                     <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
@@ -10687,7 +10780,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       {editPOForm.items.map((item, idx) => (
                                         <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < editPOForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
                                           <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
-                                          <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
+                                          <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
                                           <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
                                           <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
                                           <button onClick={() => setEditPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>

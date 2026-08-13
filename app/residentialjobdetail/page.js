@@ -731,7 +731,6 @@ export default function ResidentialJobDetail() {
         description: item.description,
         budget_amount: parseFloat(item.amount) || 0,
         cost_code: item.section || null,
-        notes: null,
       }))
     try {
       const res = await fetch('/api/budget-items', {

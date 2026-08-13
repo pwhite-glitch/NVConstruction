@@ -118,6 +118,10 @@ export default function ResidentialJobDetail() {
   const [drawAddCostIds, setDrawAddCostIds] = useState([])
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
   const [billingBilling, setBillingBillingTab] = useState('submissions')
+  const [showBillingForm, setShowBillingForm] = useState(false)
+  const [billingForm, setBillingForm] = useState({ company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
+  const [addingBilling, setAddingBilling] = useState(false)
+  const [billingMsg, setBillingMsg] = useState('')
 
   // Schedule (milestones)
   const [milestones, setMilestones] = useState([])
@@ -434,7 +438,8 @@ export default function ResidentialJobDetail() {
     if (creatingDraw) return
     setCreatingDraw(true)
     const title = drawForm.title || `Draw Request ${drawRequests.length + 1}`
-    await fetch('/api/draw-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, title, dc_ids: [], po_ids: [], gc_ids: [] }) })
+    const res = await fetch('/api/draw-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, title, dc_ids: [], po_ids: [], gc_ids: [] }) })
+    if (!res.ok) { const j = await res.json(); alert(j.error || 'Failed to create draw'); setCreatingDraw(false); return }
     await loadDrawRequests()
     setDrawForm({ title: '' })
     setShowCreateDraw(false)
@@ -442,14 +447,59 @@ export default function ResidentialJobDetail() {
   }
 
   async function updateDrawStatus(drawId, status) {
-    await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: drawId, status }) })
+    const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: drawId, status }) })
+    if (!res.ok) { const j = await res.json(); alert(j.error || 'Failed to update draw'); return }
     await loadDrawRequests()
   }
 
   async function deleteDraw(drawId) {
     if (!confirm('Delete this draw request?')) return
-    await fetch(`/api/draw-requests?id=${drawId}`, { method: 'DELETE' })
+    const res = await fetch(`/api/draw-requests?id=${drawId}`, { method: 'DELETE' })
+    if (!res.ok) { const j = await res.json(); alert(j.error || 'Failed to delete draw'); return }
     await loadDrawRequests()
+  }
+
+  async function submitBilling() {
+    if (!billingForm.amount_billed || (!billingForm.sub_id && !billingForm.company_name)) return
+    setAddingBilling(true)
+    setBillingMsg('')
+    const amount = parseFloat(billingForm.amount_billed) || 0
+    const pct = parseFloat(billingForm.retainage_pct) || 0
+    const retainage_held = pct > 0 ? +(amount * pct / 100).toFixed(2) : 0
+    const body = {
+      job_id: id,
+      sub_id: billingForm.sub_id || null,
+      company_name: billingForm.company_name || '',
+      amount_billed: amount,
+      retainage_held: retainage_held || null,
+      retainage_pct: pct || null,
+      work_description: billingForm.work_description || null,
+      billing_period: billingForm.billing_period ? billingForm.billing_period + '-01' : null,
+      status: 'pending',
+      submitted_at: new Date().toISOString(),
+    }
+    const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const result = await res.json()
+    if (result.error) { setBillingMsg('Error: ' + result.error); setAddingBilling(false); return }
+    setBillingForm({ company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
+    setShowBillingForm(false)
+    await loadBillingSubmissions()
+    setAddingBilling(false)
+  }
+
+  async function updateBillingStatus(billingId, status) {
+    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId, status }) })
+    const result = await res.json()
+    if (result.error) { alert('Error: ' + result.error); return }
+    await loadBillingSubmissions()
+  }
+
+  async function deleteBilling(billingId) {
+    if (!confirm('Delete this billing submission?')) return
+    const res = await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
+    const result = await res.json()
+    if (result.error) { alert('Error: ' + result.error); return }
+    await loadBillingSubmissions()
   }
 
   async function saveDrawCosts(drawId) {
@@ -694,7 +744,7 @@ export default function ResidentialJobDetail() {
     if (!newPunch.description) return
     setAddingPunch(true)
     const dirEntry = newPunch.subcontract_id ? contracts.find(c => c.id === newPunch.subcontract_id) : null
-    await supabase.from('res_punch_list').insert({ job_id: id, description: newPunch.description, assigned_to: dirEntry?.company_name || newPunch.assigned_to || null, subcontract_id: newPunch.subcontract_id || null, due_date: newPunch.due_date || null, status: 'open', notes: newPunch.notes || null })
+    await supabase.from('res_punch_list').insert({ job_id: id, description: newPunch.description, assigned_to: dirEntry?.vendor_name || newPunch.assigned_to || null, subcontract_id: newPunch.subcontract_id || null, due_date: newPunch.due_date || null, status: 'open', notes: newPunch.notes || null })
     await loadPunchList()
     setNewPunch({ description: '', assigned_to: '', subcontract_id: '', due_date: '', status: 'open', notes: '' })
     setShowAddPunch(false)
@@ -1353,27 +1403,75 @@ export default function ResidentialJobDetail() {
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Sub Billing Submissions ({billingSubmissions.length})</p>
+                  <button style={s.btnSm} onClick={() => { setShowBillingForm(v => !v); setBillingMsg('') }}>{showBillingForm ? 'Cancel' : '+ New Submission'}</button>
                 </div>
+
+                {showBillingForm && (
+                  <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                      <div>
+                        <label style={s.label}>Subcontractor</label>
+                        <select style={s.select} value={billingForm.sub_id} onChange={e => {
+                          const c = contracts.find(x => x.id === e.target.value)
+                          setBillingForm(f => ({ ...f, sub_id: e.target.value, company_name: c?.vendor_name || f.company_name }))
+                        }}>
+                          <option value="">— Select or enter below —</option>
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                        </select>
+                        {!billingForm.sub_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Company name" value={billingForm.company_name} onChange={e => setBillingForm(f => ({ ...f, company_name: e.target.value }))} />}
+                      </div>
+                      <div>
+                        <label style={s.label}>Billing Period</label>
+                        <input type="month" style={s.input} value={billingForm.billing_period} onChange={e => setBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Amount Billed *</label>
+                        <input type="number" step="0.01" style={s.input} placeholder="0.00" value={billingForm.amount_billed} onChange={e => setBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label style={s.label}>Retainage %</label>
+                        <input type="number" step="0.1" style={s.input} placeholder="10" value={billingForm.retainage_pct} onChange={e => setBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} />
+                      </div>
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <label style={s.label}>Work Description</label>
+                        <input style={s.input} placeholder="Framing, rough plumbing, drywall..." value={billingForm.work_description} onChange={e => setBillingForm(f => ({ ...f, work_description: e.target.value }))} />
+                      </div>
+                    </div>
+                    {billingMsg && <div style={{ ...s.errMsg, marginBottom: '8px' }}>{billingMsg}</div>}
+                    <button style={s.btn} onClick={submitBilling} disabled={addingBilling || !billingForm.amount_billed || (!billingForm.sub_id && !billingForm.company_name)}>
+                      {addingBilling ? 'Submitting...' : 'Add Submission'}
+                    </button>
+                  </div>
+                )}
+
                 {billingSubmissions.length === 0 ? (
                   <div style={s.emptyMsg}>No billing submissions yet.</div>
                 ) : (
-                  billingSubmissions.map(b => (
-                    <div key={b.id} style={{ padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</div>
-                          <div style={{ fontSize: '12px', color: '#555' }}>{b.billing_period || ''}{b.work_description ? ' · ' + b.work_description : ''}</div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(b.amount_billed)}</div>
-                            {b.retainage_held ? <div style={{ fontSize: '11px', color: '#555' }}>-${fmt(b.retainage_held)} retainage</div> : null}
+                  billingSubmissions.map(b => {
+                    const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''
+                    return (
+                      <div key={b.id} style={{ padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>{period}{b.work_description ? ' · ' + b.work_description : ''}</div>
                           </div>
-                          <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(b.amount_billed)}</div>
+                              {b.retainage_held ? <div style={{ fontSize: '11px', color: '#555' }}>-${fmt(b.retainage_held)} ret.</div> : null}
+                            </div>
+                            <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status}</span>
+                            {profile?.role === 'pm' && b.status === 'pending' && (<>
+                              <button onClick={() => updateBillingStatus(b.id, 'approved')} style={s.btnGreen}>Approve</button>
+                              <button onClick={() => updateBillingStatus(b.id, 'rejected')} style={s.btnRed}>Reject</button>
+                            </>)}
+                            <button onClick={() => deleteBilling(b.id)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
                 <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '12px', color: '#555' }}>Approved billing total</span>
@@ -1660,7 +1758,7 @@ export default function ResidentialJobDetail() {
                         <label style={s.label}>Subcontractor *</label>
                         <select style={s.select} value={newWaiver.subcontract_id} onChange={e => {
                           const c = contracts.find(x => x.id === e.target.value)
-                          setNewWaiver(f => ({ ...f, subcontract_id: e.target.value, company_name: c?.company_name || f.company_name }))
+                          setNewWaiver(f => ({ ...f, subcontract_id: e.target.value, company_name: c?.vendor_name || f.company_name }))
                         }}>
                           <option value="">— Select or type below —</option>
                           {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
@@ -1869,7 +1967,7 @@ export default function ResidentialJobDetail() {
                           <div>
                             <div style={{ fontSize: '14px', fontWeight: '600', color: p.status === 'done' ? '#555' : '#f1f1f1', textDecoration: p.status === 'done' ? 'line-through' : 'none', marginBottom: '3px' }}>{p.description}</div>
                             <div style={{ fontSize: '12px', color: '#555' }}>
-                              {(assignedSub?.company_name || p.assigned_to) && <span style={{ color: '#60a5fa' }}>{assignedSub?.company_name || p.assigned_to}</span>}
+                              {(assignedSub?.vendor_name || p.assigned_to) && <span style={{ color: '#60a5fa' }}>{assignedSub?.vendor_name || p.assigned_to}</span>}
                               {p.due_date && <span> · Due {fmtDate(p.due_date)}</span>}
                               {p.notes && <span> · {p.notes}</span>}
                               {p.completed_date && <span style={{ color: '#4ade80' }}> · Completed {fmtDate(p.completed_date)}</span>}

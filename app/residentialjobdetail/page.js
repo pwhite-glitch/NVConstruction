@@ -95,7 +95,7 @@ export default function ResidentialJobDetail() {
   const [contracts, setContracts] = useState([])
   const [subDirectory, setSubDirectory] = useState([])
   const [showAddSubForm, setShowAddSubForm] = useState(false)
-  const [newSubForm, setNewSubForm] = useState({ dir_id: '', company_name: '', trade: '', email: '', contract_value: '', budget_item_id: '' })
+  const [newSubForm, setNewSubForm] = useState({ dir_id: '', company_name: '', trade: '', contract_value: '', budget_item_id: '' })
   const [addingSub, setAddingSub] = useState(false)
   const [subMsg, setSubMsg] = useState('')
   const [editingSubId, setEditingSubId] = useState(null)
@@ -234,7 +234,7 @@ export default function ResidentialJobDetail() {
   }
 
   async function loadContracts() {
-    const { data } = await supabase.from('subcontracts').select('*, budget_allocations:subcontract_budget_allocations(*)').eq('job_id', id).order('created_at')
+    const { data } = await supabase.from('subcontracts').select('*').eq('job_id', id).order('created_at')
     setContracts(data || [])
   }
 
@@ -396,8 +396,7 @@ export default function ResidentialJobDetail() {
       body: JSON.stringify({
         job_id: id,
         vendor_name: company_name,
-        trade: dirEntry?.trade || newSubForm.trade || null,
-        sub_email: dirEntry?.email || newSubForm.email || null,
+        description: dirEntry?.trade || newSubForm.trade || null,
         contract_value: parseFloat(newSubForm.contract_value) || 0,
         budget_item_id: newSubForm.budget_item_id || null,
         status: 'active',
@@ -405,19 +404,22 @@ export default function ResidentialJobDetail() {
     })
     const result = await res.json()
     if (result.error) { setSubMsg('Error: ' + result.error); setAddingSub(false); return }
-    setNewSubForm({ dir_id: '', company_name: '', trade: '', email: '', contract_value: '', budget_item_id: '' })
+    setNewSubForm({ dir_id: '', company_name: '', trade: '', contract_value: '', budget_item_id: '' })
     setShowAddSubForm(false)
     await loadContracts()
     setAddingSub(false)
   }
 
   async function saveSubEdit(contractId) {
-    await fetch('/api/subcontracts', {
+    const res = await fetch('/api/subcontracts', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: contractId, vendor_name: editSubForm.vendor_name, trade: editSubForm.trade, contract_value: parseFloat(editSubForm.contract_value) || 0, budget_item_id: editSubForm.budget_item_id || null }),
+      body: JSON.stringify({ id: contractId, vendor_name: editSubForm.vendor_name, description: editSubForm.description, contract_value: parseFloat(editSubForm.contract_value) || 0, budget_item_id: editSubForm.budget_item_id || null }),
     })
+    const data = await res.json()
+    if (data.error) { setSubMsg('Error: ' + data.error); return }
     setEditingSubId(null)
+    setSubMsg('')
     await loadContracts()
   }
 
@@ -1197,7 +1199,7 @@ export default function ResidentialJobDetail() {
                 {subDirectory.length > 0 && (
                   <div style={{ marginBottom: '12px' }}>
                     <label style={s.label}>Pick from sub directory</label>
-                    <select style={s.select} value={newSubForm.dir_id} onChange={e => setNewSubForm(f => ({ ...f, dir_id: e.target.value, company_name: '', trade: '', email: '' }))}>
+                    <select style={s.select} value={newSubForm.dir_id} onChange={e => setNewSubForm(f => ({ ...f, dir_id: e.target.value, company_name: '', trade: '' }))}>
                       <option value="">— Select company —</option>
                       {subDirectory.map(d => (
                         <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>
@@ -1206,10 +1208,9 @@ export default function ResidentialJobDetail() {
                   </div>
                 )}
                 {!newSubForm.dir_id && (
-                  <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
                     <div><label style={s.label}>Company Name *</label><input style={s.input} value={newSubForm.company_name} onChange={e => setNewSubForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing..." /></div>
-                    <div><label style={s.label}>Trade</label><input style={s.input} value={newSubForm.trade} onChange={e => setNewSubForm(f => ({ ...f, trade: e.target.value }))} placeholder="Framing, Electrical..." /></div>
-                    <div><label style={s.label}>Email</label><input style={s.input} type="email" value={newSubForm.email} onChange={e => setNewSubForm(f => ({ ...f, email: e.target.value }))} placeholder="sub@company.com" /></div>
+                    <div><label style={s.label}>Trade / Scope</label><input style={s.input} value={newSubForm.trade} onChange={e => setNewSubForm(f => ({ ...f, trade: e.target.value }))} placeholder="Framing, Electrical..." /></div>
                   </div>
                 )}
                 <div style={{ ...s.grid2, marginBottom: '12px' }}>
@@ -1245,7 +1246,7 @@ export default function ResidentialJobDetail() {
                   return isEditing ? (
                     <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
                       <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.vendor_name || ''} onChange={e => setEditSubForm(f => ({ ...f, vendor_name: e.target.value }))} />
-                      <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.trade || ''} onChange={e => setEditSubForm(f => ({ ...f, trade: e.target.value }))} />
+                      <input style={{ ...s.input, fontSize: '12px' }} placeholder="Trade / scope" value={editSubForm.description || ''} onChange={e => setEditSubForm(f => ({ ...f, description: e.target.value }))} />
                       <select style={{ ...s.select, fontSize: '12px' }} value={editSubForm.budget_item_id || ''} onChange={e => setEditSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
                         <option value="">— None —</option>
                         {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
@@ -1258,8 +1259,8 @@ export default function ResidentialJobDetail() {
                     </div>
                   ) : (
                     <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.vendor_name || c.sub_name || '—'}</span>
-                      <span style={{ fontSize: '12px', color: '#aaa' }}>{c.trade || '—'}</span>
+                      <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.vendor_name || '—'}</span>
+                      <span style={{ fontSize: '12px', color: '#aaa' }}>{c.description || '—'}</span>
                       <span style={{ fontSize: '12px', color: budgetLine ? '#60a5fa' : '#444' }}>{budgetLine?.description || '—'}</span>
                       <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.contract_value)}</span>
                       <div style={{ display: 'flex', gap: '6px' }}>

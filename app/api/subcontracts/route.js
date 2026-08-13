@@ -5,9 +5,19 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+const ALLOWED_COLUMNS = new Set([
+  'job_id','sub_id','company_id','vendor_name','description','contract_value',
+  'budget_item_id','budget_allocations','retainage_pct','status','onedrive_url',
+  'bid_proposal_url','signed_contract_url','created_by',
+])
+
+function pick(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([k]) => ALLOWED_COLUMNS.has(k)))
+}
+
 export async function POST(request) {
   try {
-    const body = await request.json()
+    const body = pick(await request.json())
     const { error, data } = await adminSupabase.from('subcontracts').insert(body).select('id').single()
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true, id: data.id })
@@ -18,8 +28,10 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const { id, ...fields } = await request.json()
+    const raw = await request.json()
+    const { id } = raw
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const fields = pick(raw)
     const { error } = await adminSupabase.from('subcontracts').update(fields).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

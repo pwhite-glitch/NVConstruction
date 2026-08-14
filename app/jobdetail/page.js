@@ -448,6 +448,8 @@ export default function JobDetail() {
   const [newEqName, setNewEqName] = useState('')
   const [newEqCategory, setNewEqCategory] = useState('')
   const [addingEquipment, setAddingEquipment] = useState(false)
+  const [newCoName, setNewCoName] = useState('')
+  const [newCoManpower, setNewCoManpower] = useState('')
 
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -2833,18 +2835,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   function openCOAssignPanel(co) {
     const total = Number(co.amount) || 0
-    const markupPct = 6
-    const profitAmount = Math.round(total * markupPct / (100 + markupPct) * 100) / 100
-    const netCost = Math.round((total - profitAmount) * 100) / 100
     const existingLines = (co.sov || [])
       .filter(s => s.budget_item_id)
       .map((s, i) => ({ uid: i, description: s.description || '', budget_item_id: s.budget_item_id, amount: String(s.amount || '') }))
     setCoAssignPanel({
       coId: co.id,
       total,
-      markupPct,
-      profitAmount,
-      netCost,
+      netCost: total,
       lines: existingLines.length > 0 ? existingLines : [{ uid: 0, description: '', budget_item_id: '', amount: '' }],
     })
   }
@@ -3953,9 +3950,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       location: '',
       responsible_type: 'own_crew',
       sub_id: '',
+      other_company_name: '',
       manpower: '',
       equipment: '',
       company_equipment_ids: [],
+      additional_companies: [],
       materials_status: 'needed',
       inspection_required: false,
       inspection_scheduled: false,
@@ -3963,12 +3962,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       committed: false,
       constraints_notes: '',
     })
+    setNewCoName('')
+    setNewCoManpower('')
     setShowActivityModal(true)
   }
 
   function openEditActivity(act) {
     setEditingActivity(act)
-    setActivityForm({ ...act })
+    setActivityForm({ ...act, additional_companies: act.additional_companies || [] })
+    setNewCoName('')
+    setNewCoManpower('')
     setShowActivityModal(true)
   }
 
@@ -6586,7 +6589,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )}
 
                     {coAssignPanel?.coId === co.id && (() => {
-                      const { total, markupPct, profitAmount, netCost, lines } = coAssignPanel
+                      const { total, netCost, lines } = coAssignPanel
                       const assigned = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
                       const remaining = Math.round((netCost - assigned) * 100) / 100
                       const isBalanced = Math.abs(remaining) < 0.02
@@ -6599,26 +6602,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
 
                           {/* Breakdown */}
-                          <div style={{ background: '#080808', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '6px', columnGap: '24px' }}>
-                            <span style={{ fontSize: '13px', color: '#777' }}>CO Total</span>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1', textAlign: 'right' }}>{fmt(total)}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '13px', color: '#777' }}>Profit / GC Overhead</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <input type="number" value={coAssignPanel.markupPct} min="0" max="100" step="0.5"
-                                  style={{ width: '48px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#e8590c', fontSize: '12px', padding: '2px 6px', textAlign: 'center' }}
-                                  onChange={e => {
-                                    const pct = parseFloat(e.target.value) || 0
-                                    const newProfit = Math.round(total * pct / (100 + pct) * 100) / 100
-                                    const newNet = Math.round((total - newProfit) * 100) / 100
-                                    setCoAssignPanel(prev => ({ ...prev, markupPct: pct, profitAmount: newProfit, netCost: newNet }))
-                                  }} />
-                                <span style={{ fontSize: '12px', color: '#555' }}>%</span>
-                              </div>
-                            </div>
-                            <span style={{ fontSize: '13px', fontWeight: '600', color: '#e8590c', textAlign: 'right' }}>{fmt(profitAmount)}</span>
-                            <span style={{ fontSize: '13px', color: '#777', borderTop: '1px solid #1e1e1e', paddingTop: '6px' }}>Net Cost to Assign</span>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#60a5fa', textAlign: 'right', borderTop: '1px solid #1e1e1e', paddingTop: '6px' }}>{fmt(netCost)}</span>
+                          <div style={{ background: '#080808', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '13px', color: '#777' }}>CO Total to Assign</span>
+                            <span style={{ fontSize: '15px', fontWeight: '700', color: '#60a5fa' }}>{fmt(total)}</span>
                           </div>
 
                           {/* Assignment rows */}
@@ -9919,9 +9905,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
                             {act.responsible_type === 'sub'
                               ? <span style={{ fontSize: '10px', background: '#1a2e4a', color: '#60a5fa', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub'}</span>
-                              : <span style={{ fontSize: '10px', background: '#0f2215', color: '#4ade80', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
+                              : act.responsible_type === 'other'
+                                ? <span style={{ fontSize: '10px', background: '#2a1a0a', color: '#fb923c', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.other_company_name || 'Other'}</span>
+                                : <span style={{ fontSize: '10px', background: '#0f2215', color: '#4ade80', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
                             }
                             {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#666' }}>👷{act.manpower}</span>}
+                            {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#a78bfa' }} title={(act.additional_companies || []).map(c => c.name).join(', ')}>+{(act.additional_companies || []).length}</span>}
                             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block', flexShrink: 0 }} title={`Materials: ${act.materials_status || 'none'}`} />
                             {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍</span>}
                             {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
@@ -10034,9 +10023,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                           <label style={s.label}>Responsible</label>
-                          <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.responsible_type || 'own_crew'} onChange={e => setActivityForm(f => ({ ...f, responsible_type: e.target.value, sub_id: '' }))}>
+                          <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.responsible_type || 'own_crew'} onChange={e => setActivityForm(f => ({ ...f, responsible_type: e.target.value, sub_id: '', other_company_name: '' }))}>
                             <option value="own_crew">Own Crew</option>
                             <option value="sub">Subcontractor</option>
+                            <option value="other">Other Company</option>
                           </select>
                         </div>
                         <div>
@@ -10048,6 +10038,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                               </select>
                             </>
+                          ) : activityForm.responsible_type === 'other' ? (
+                            <>
+                              <label style={s.label}>Company Name</label>
+                              <input style={s.input} value={activityForm.other_company_name || ''} onChange={e => setActivityForm(f => ({ ...f, other_company_name: e.target.value }))} placeholder="Xcel Energy, AT&T, City Inspector..." />
+                            </>
                           ) : (
                             <>
                               <label style={s.label}>Manpower (headcount)</label>
@@ -10056,7 +10051,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                         </div>
                       </div>
-                      {activityForm.responsible_type === 'sub' && (
+                      {(activityForm.responsible_type === 'sub' || activityForm.responsible_type === 'other') && (
                         <div>
                           <label style={s.label}>Manpower (headcount)</label>
                           <input style={s.input} type="number" min="0" value={activityForm.manpower || ''} onChange={e => setActivityForm(f => ({ ...f, manpower: parseInt(e.target.value) || 0 }))} placeholder="4" />
@@ -10065,6 +10060,32 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div>
                         <label style={s.label}>Rented / External Equipment</label>
                         <input style={s.input} value={activityForm.equipment || ''} onChange={e => setActivityForm(f => ({ ...f, equipment: e.target.value }))} placeholder="Concrete pump, scissor lift, forklift..." />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <label style={{ ...s.label, margin: 0 }}>Additional Companies on Site</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!newCoName.trim()) return
+                              setActivityForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newCoName.trim(), manpower: parseInt(newCoManpower) || 0 }] }))
+                              setNewCoName('')
+                              setNewCoManpower('')
+                            }}
+                            style={{ background: '#1a2e4a', border: '1px solid #2d4a6a', color: '#60a5fa', borderRadius: '6px', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
+                            + Add Company
+                          </button>
+                        </div>
+                        {(activityForm.additional_companies || []).map((co, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '6px 10px', marginBottom: '6px', fontSize: '13px', color: '#ccc' }}>
+                            <span>{co.name}{co.manpower > 0 ? <span style={{ color: '#666', marginLeft: '6px' }}>👷{co.manpower}</span> : null}</span>
+                            <button type="button" onClick={() => setActivityForm(f => ({ ...f, additional_companies: (f.additional_companies || []).filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>×</button>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          <input style={{ ...s.input, flex: 1 }} value={newCoName} onChange={e => setNewCoName(e.target.value)} placeholder="Company name (Xcel Energy, AT&T...)" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (newCoName.trim()) { setActivityForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newCoName.trim(), manpower: parseInt(newCoManpower) || 0 }] })); setNewCoName(''); setNewCoManpower('') } } }} />
+                          <input style={{ ...s.input, width: '70px', flexShrink: 0 }} type="number" min="0" value={newCoManpower} onChange={e => setNewCoManpower(e.target.value)} placeholder="# ppl" />
+                        </div>
                       </div>
                       <div>
                         <label style={s.label}>Company Equipment Needed</label>

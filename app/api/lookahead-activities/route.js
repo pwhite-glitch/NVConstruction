@@ -7,10 +7,10 @@ const adminSupabase = createClient(
 
 const ALLOWED = new Set([
   'lookahead_id', 'planned_date', 'description', 'location',
-  'responsible_type', 'sub_id', 'manpower', 'equipment',
+  'responsible_type', 'sub_id', 'other_company_name', 'manpower', 'equipment',
   'materials_status', 'inspection_required', 'inspection_scheduled',
   'preceding_work_complete', 'committed', 'constraints_notes',
-  'company_equipment_ids',
+  'company_equipment_ids', 'additional_companies',
 ])
 
 function pick(obj) {

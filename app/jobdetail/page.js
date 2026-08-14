@@ -8776,6 +8776,38 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               </>
                             })()}
 
+                            {/* General conditions for this draw / period */}
+                            {(() => {
+                              const linkedDrawId = activeAia?.linked_draw_request_id
+                              const pFrom = activeAia?.period_from
+                              const pTo = activeAia?.period_to
+                              const gcEntries = linkedDrawId
+                                ? generalConditions.filter(e => e.draw_request_id === linkedDrawId)
+                                : generalConditions.filter(e => pFrom && pTo && e.entry_date >= pFrom && e.entry_date <= pTo)
+                              if (!gcEntries.length) return null
+                              const gcTotal = gcEntries.reduce((a, e) => a + Number(e.amount || 0), 0)
+                              return (
+                                <div style={{ background: '#0a1a0a', border: '1px solid #1a4a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                    General conditions — {linkedDrawId ? 'this draw' : 'this period'} — ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({gcEntries.length} entr{gcEntries.length !== 1 ? 'ies' : 'y'})
+                                  </p>
+                                  {gcEntries.map((e, i) => (
+                                    <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < gcEntries.length - 1 ? '1px solid #1a3a2a' : 'none' }}>
+                                      <div>
+                                        <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{e.entry_date}</span>
+                                        <span style={{ fontSize: '13px', color: '#aaa' }}>{e.description}</span>
+                                        <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{e.category}</span>
+                                      </div>
+                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#4ade80', fontWeight: '700', flexShrink: 0 }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  ))}
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px', fontSize: '12px', fontWeight: '800', color: '#4ade80' }}>
+                                    Total: ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                  </div>
+                                </div>
+                              )
+                            })()}
+
                             {aiaLines.length === 0 ? (
                               <p style={{ color: '#444', fontSize: '14px' }}>No budget line items found. Add them in the Budget tab.</p>
                             ) : (

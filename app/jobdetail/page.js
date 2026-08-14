@@ -3276,12 +3276,27 @@ ${sovHtml}
       } else if (c.budget_item_id === budgetItemId) {
         baseAmount = base
       }
-      // Add approved CO amounts from this subcontract that explicitly target this budget item via SOV
+      // Add approved CO amounts from this subcontract
       const coAmount = allCOs
         .filter(co => co.subcontract_id === c.id && co.status === 'approved')
         .reduce((coTotal, co) => {
-          const sovMatch = (co.sov || []).find(s => s.budget_item_id === budgetItemId)
-          return coTotal + (sovMatch ? Number(sovMatch.amount || 0) : 0)
+          const sovLines = (co.sov || []).filter(s => s.budget_item_id)
+          if (sovLines.length > 0) {
+            // Explicit SOV assignment — use only the matching line
+            const sovMatch = sovLines.find(s => s.budget_item_id === budgetItemId)
+            return coTotal + (sovMatch ? Number(sovMatch.amount || 0) : 0)
+          }
+          // No explicit SOV — fall back to parent subcontract's budget allocation
+          const coAmt = Number(co.amount || 0)
+          if (allocs && allocs.length > 0) {
+            const match = allocs.find(a => a.budget_item_id === budgetItemId)
+            if (!match) return coTotal
+            const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+            const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
+            return coTotal + pct * coAmt
+          }
+          if (c.budget_item_id === budgetItemId) return coTotal + coAmt
+          return coTotal
         }, 0)
       return total + baseAmount + coAmount
     }, 0)
@@ -3312,13 +3327,31 @@ ${sovHtml}
         baseAmount = base
         matched = true
       }
-      // Approved CO SOV amounts explicitly targeting this budget item
+      // Approved CO amounts for this subcontract
       const coLines = allCOs
         .filter(co => co.subcontract_id === c.id && co.status === 'approved')
         .flatMap(co => {
-          const sovMatch = (co.sov || []).find(s => s.budget_item_id === budgetItemId)
-          if (!sovMatch) return []
-          return [{ type: 'co', name: `CO: ${co.description || 'Change Order'}`, amount: Number(sovMatch.amount || 0), id: co.id, vendor: c.vendor_name }]
+          const sovLines = (co.sov || []).filter(s => s.budget_item_id)
+          if (sovLines.length > 0) {
+            const sovMatch = sovLines.find(s => s.budget_item_id === budgetItemId)
+            if (!sovMatch) return []
+            return [{ type: 'co', name: `CO: ${co.description || 'Change Order'}`, amount: Number(sovMatch.amount || 0), id: co.id, vendor: c.vendor_name }]
+          }
+          // No explicit SOV — fall back to parent subcontract's allocation
+          const coAmt = Number(co.amount || 0)
+          let fallbackAmt = 0
+          if (allocs && allocs.length > 0) {
+            const match = allocs.find(a => a.budget_item_id === budgetItemId)
+            if (!match) return []
+            const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+            const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
+            fallbackAmt = pct * coAmt
+          } else if (c.budget_item_id === budgetItemId) {
+            fallbackAmt = coAmt
+          } else {
+            return []
+          }
+          return [{ type: 'co', name: `CO: ${co.description || 'Change Order'}`, amount: fallbackAmt, id: co.id, vendor: c.vendor_name }]
         })
       const hasCoLines = coLines.length > 0
       if (matched) {

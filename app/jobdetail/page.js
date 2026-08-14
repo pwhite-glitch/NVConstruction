@@ -296,6 +296,9 @@ export default function JobDetail() {
   const [appliedBillings, setAppliedBillings] = useState(new Set())
   const [manualMapBillingId, setManualMapBillingId] = useState(null)
   const [manualMapBudgetItemId, setManualMapBudgetItemId] = useState('')
+  const [appliedGCs, setAppliedGCs] = useState(new Set())
+  const [gcManualMapId, setGcManualMapId] = useState(null)
+  const [gcManualBudgetItemId, setGcManualBudgetItemId] = useState('')
   const [pinnedLineIds, setPinnedLineIds] = useState(new Set())
 
   // Contract SOV state
@@ -899,10 +902,11 @@ export default function JobDetail() {
   }
 
   async function openAiaApp(app) {
-    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); setPeriodDirectCosts([]); return }
+    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); setAppliedGCs(new Set()); setPeriodDirectCosts([]); return }
     setAiaLoading(true)
     setActiveAia(app)
     setAppliedBillings(new Set())
+    setAppliedGCs(new Set())
 
     if (app.nv_subcontract_id) {
       const { data: prevAppsData } = await supabase.from('aia_applications')
@@ -1098,6 +1102,50 @@ export default function JobDetail() {
   function applyBillingManual(billing) {
     if (!manualMapBudgetItemId) return
     applyAmountsToAiaLines({ [manualMapBudgetItemId]: Number(billing.amount_billed || 0) }, billing.id)
+  }
+
+  function applyGCToAia(gcEntry) {
+    if (gcEntry.budget_item_id) {
+      const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
+      const addAmt = Math.round(Number(gcEntry.amount) * markupMultiplier * 100) / 100
+      setAiaLines(lines => {
+        const updated = lines.map(line => {
+          if (line.budget_item_id !== gcEntry.budget_item_id) return line
+          const budgetAmt = Number(line.budget_amount || 0)
+          if (budgetAmt === 0) return line
+          const prevDollar = Number(line.dollar_this) || 0
+          const newDollar = Math.min(budgetAmt, prevDollar + addAmt)
+          const newPct = newDollar / budgetAmt * 100
+          return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
+        })
+        return recalcPinnedLines(updated, pinnedLineIds)
+      })
+      setAppliedGCs(prev => new Set([...prev, gcEntry.id]))
+    } else {
+      setGcManualMapId(gcEntry.id)
+      setGcManualBudgetItemId('')
+    }
+  }
+
+  function applyGCManual(gcEntry) {
+    if (!gcManualBudgetItemId) return
+    const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
+    const addAmt = Math.round(Number(gcEntry.amount) * markupMultiplier * 100) / 100
+    setAiaLines(lines => {
+      const updated = lines.map(line => {
+        if (line.budget_item_id !== gcManualBudgetItemId) return line
+        const budgetAmt = Number(line.budget_amount || 0)
+        if (budgetAmt === 0) return line
+        const prevDollar = Number(line.dollar_this) || 0
+        const newDollar = Math.min(budgetAmt, prevDollar + addAmt)
+        const newPct = newDollar / budgetAmt * 100
+        return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
+      })
+      return recalcPinnedLines(updated, pinnedLineIds)
+    })
+    setAppliedGCs(prev => new Set([...prev, gcEntry.id]))
+    setGcManualMapId(null)
+    setGcManualBudgetItemId('')
   }
 
   function autoCalcProRataLine(lineIndex) {
@@ -8791,16 +8839,67 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                     General conditions — {linkedDrawId ? 'this draw' : 'this period'} — ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({gcEntries.length} entr{gcEntries.length !== 1 ? 'ies' : 'y'})
                                   </p>
-                                  {gcEntries.map((e, i) => (
-                                    <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < gcEntries.length - 1 ? '1px solid #1a3a2a' : 'none' }}>
-                                      <div>
-                                        <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{e.entry_date}</span>
-                                        <span style={{ fontSize: '13px', color: '#aaa' }}>{e.description}</span>
-                                        <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{e.category}</span>
+                                  {gcEntries.map((e, i) => {
+                                    const applied = appliedGCs.has(e.id)
+                                    const needsManual = gcManualMapId === e.id
+                                    return (
+                                      <div key={e.id} style={{ padding: '6px 0', borderBottom: i < gcEntries.length - 1 ? '1px solid #1a3a2a' : 'none' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <div>
+                                            <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{e.entry_date}</span>
+                                            <span style={{ fontSize: '13px', color: '#aaa' }}>{e.description}</span>
+                                            <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{e.category}</span>
+                                          </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{ textAlign: 'right' }}>
+                                              <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                              {parseFloat(activeAia?.markup_pct) > 0 && (
+                                                <div style={{ fontSize: '10px', color: '#e8590c', marginTop: '1px' }}>
+                                                  +{activeAia.markup_pct}% = ${(Math.round(Number(e.amount) * (1 + parseFloat(activeAia.markup_pct) / 100) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} billed
+                                                </div>
+                                              )}
+                                            </div>
+                                            <button
+                                              style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                              disabled={applied}
+                                              onClick={() => applyGCToAia(e)}
+                                            >
+                                              {applied ? '✓ Applied' : 'Apply to G703'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                        {needsManual && (
+                                          <div style={{ marginTop: '8px', background: '#0f1a0f', border: '1px solid #2a4a1a', borderRadius: '6px', padding: '10px' }}>
+                                            <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked — pick one manually</p>
+                                            <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>Assign a budget line to this GC entry to auto-map in future.</p>
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                              <select
+                                                style={{ ...s.input, flex: 1, fontSize: '12px', padding: '7px 10px' }}
+                                                value={gcManualBudgetItemId}
+                                                onChange={ev => setGcManualBudgetItemId(ev.target.value)}
+                                              >
+                                                <option value="">— Select a budget line —</option>
+                                                {budgetItems.map(item => (
+                                                  <option key={item.id} value={item.id}>
+                                                    {item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              <button
+                                                style={{ padding: '7px 14px', background: '#1a3a0a', color: '#a3e635', border: '1px solid #3a5a1a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: gcManualBudgetItemId ? 'pointer' : 'default', opacity: gcManualBudgetItemId ? 1 : 0.4, whiteSpace: 'nowrap' }}
+                                                disabled={!gcManualBudgetItemId}
+                                                onClick={() => applyGCManual(e)}
+                                              >Confirm</button>
+                                              <button
+                                                style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                                                onClick={() => { setGcManualMapId(null); setGcManualBudgetItemId('') }}
+                                              >Cancel</button>
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
-                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#4ade80', fontWeight: '700', flexShrink: 0 }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                   <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px', fontSize: '12px', fontWeight: '800', color: '#4ade80' }}>
                                     Total: ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                   </div>

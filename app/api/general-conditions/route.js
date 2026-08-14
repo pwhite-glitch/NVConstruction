@@ -23,7 +23,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { job_id, description, amount, category, entry_date, budget_item_id, notes, created_by } = body
+    const { job_id, description, amount, category, entry_date, budget_item_id, notes, created_by, draw_request_id } = body
     if (!job_id || !description || !amount) {
       return Response.json({ error: 'job_id, description, and amount are required' }, { status: 400 })
     }
@@ -39,6 +39,8 @@ export async function POST(request) {
         budget_item_id: budget_item_id || null,
         notes: notes || null,
         created_by: created_by || null,
+        draw_request_id: draw_request_id || null,
+        drawn_at: draw_request_id ? new Date().toISOString() : null,
       })
       .select()
       .single()

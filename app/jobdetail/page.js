@@ -196,7 +196,7 @@ export default function JobDetail() {
   const [drawAddPOIds, setDrawAddPOIds] = useState([])
   const [savingDrawPOs, setSavingDrawPOs] = useState(false)
   const [generalConditions, setGeneralConditions] = useState([])
-  const [gcForm, setGcForm] = useState({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '' })
+  const [gcForm, setGcForm] = useState({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
   const [savingGC, setSavingGC] = useState(false)
   const [editingGCId, setEditingGCId] = useState(null)
   const [drawAddGCIds, setDrawAddGCIds] = useState([])
@@ -10920,8 +10920,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </select>
                           </div>
                           <div>
-                            <label style={s.label}>Date</label>
-                            <input type="date" style={s.input} value={gcForm.entry_date} onChange={e => setGcForm(f => ({ ...f, entry_date: e.target.value }))} />
+                            <label style={s.label}>Draw Request</label>
+                            <select style={s.input} value={gcForm.draw_request_id} onChange={e => setGcForm(f => ({ ...f, draw_request_id: e.target.value }))}>
+                              <option value="">— none —</option>
+                              {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                            </select>
                           </div>
                           <div>
                             <label style={s.label}>Budget item</label>
@@ -10941,7 +10944,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           onClick={async () => {
                             setSavingGC(true)
                             await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
-                            setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '' })
+                            setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
                             await loadGeneralConditions()
                             setSavingGC(false)
                           }}
@@ -10976,8 +10979,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </select>
                                     </div>
                                     <div>
-                                      <label style={s.label}>Date</label>
-                                      <input type="date" style={s.input} value={gcForm.entry_date} onChange={e2 => setGcForm(f => ({ ...f, entry_date: e2.target.value }))} />
+                                      <label style={s.label}>Draw Request</label>
+                                      <select style={s.input} value={gcForm.draw_request_id} onChange={e2 => setGcForm(f => ({ ...f, draw_request_id: e2.target.value }))}>
+                                        <option value="">— none —</option>
+                                        {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                                      </select>
                                     </div>
                                     <div>
                                       <label style={s.label}>Budget item</label>
@@ -11015,7 +11021,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
                                       <button style={s.btnSmallOrange} onClick={() => {
                                         setEditingGCId(e.id)
-                                        setGcForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '' })
+                                        setGcForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '', draw_request_id: e.draw_request_id || '' })
                                       }}>Edit</button>
                                       <button style={s.btnSmallRed} onClick={async () => {
                                         if (!window.confirm('Delete this entry?')) return

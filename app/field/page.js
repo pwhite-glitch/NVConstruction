@@ -33,6 +33,7 @@ const IC = {
   punch:     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
   photos:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
   camera:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+  lookahead: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>,
 }
 
 const s = {
@@ -181,6 +182,24 @@ export default function Field() {
   const [showSavePreset, setShowSavePreset] = useState(false)
   const [presetNameDraft, setPresetNameDraft] = useState('')
 
+  const [lookahead, setLookahead] = useState(null)
+  const [lookaheadActivities, setLookaheadActivities] = useState([])
+  const [lookaheadContracts, setLookaheadContracts] = useState([])
+  const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => {
+    const d = new Date()
+    const day = d.getDay()
+    const daysToMon = day === 0 ? 1 : day === 1 ? 0 : 8 - day
+    const mon = new Date(d); mon.setDate(d.getDate() + daysToMon)
+    return mon.toISOString().split('T')[0]
+  })
+  const [showLAModal, setShowLAModal] = useState(false)
+  const [editingLAActivity, setEditingLAActivity] = useState(null)
+  const [laForm, setLaForm] = useState({})
+  const [savingLA, setSavingLA] = useState(false)
+  const [submittingLA, setSubmittingLA] = useState(false)
+  const [newLACoName, setNewLACoName] = useState('')
+  const [newLACoManpower, setNewLACoManpower] = useState('')
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -220,6 +239,7 @@ export default function Field() {
     else if (activeTab === 'docs') loadJobDocs()
     else if (activeTab === 'punch') loadPunchItems()
     else if (activeTab === 'photos') loadPhotoGallery()
+    else if (activeTab === 'lookahead') { loadLookaheadData(); loadLookaheadContracts() }
   }, [selectedJobId, activeTab])
 
   async function checkTodayReport() {
@@ -489,6 +509,116 @@ export default function Field() {
     const json = await res.json()
     const mine = (json.data || []).filter(t => t.assigned_to === userId)
     setMyTools(mine)
+  }
+
+  async function loadLookaheadData(weekOverride) {
+    const wk = weekOverride || lookaheadWeekStart
+    const res = await fetch(`/api/lookaheads?job_id=${selectedJobId}&week_start=${wk}`)
+    const { data } = await res.json()
+    if (data && data.length > 0) {
+      setLookahead(data[0])
+      setLookaheadActivities(data[0].lookahead_activities || [])
+    } else {
+      setLookahead(null)
+      setLookaheadActivities([])
+    }
+  }
+
+  async function loadLookaheadContracts() {
+    const { data } = await supabase.from('subcontracts').select('id, vendor_name').eq('job_id', selectedJobId).order('vendor_name')
+    setLookaheadContracts(data || [])
+  }
+
+  async function createLookahead() {
+    const res = await fetch('/api/lookaheads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: selectedJobId, week_start_date: lookaheadWeekStart, submitted_by: user?.id }),
+    })
+    const { data, error } = await res.json()
+    if (error) { alert(error); return }
+    setLookahead(data)
+    setLookaheadActivities([])
+  }
+
+  function openAddLAActivity(date) {
+    setEditingLAActivity(null)
+    setLaForm({
+      planned_date: date, description: '', location: '',
+      responsible_type: 'own_crew', sub_id: '', other_company_name: '',
+      manpower: '', equipment: '', additional_companies: [],
+      materials_status: 'needed', inspection_required: false,
+      inspection_scheduled: false, preceding_work_complete: false,
+      committed: false, constraints_notes: '',
+    })
+    setNewLACoName('')
+    setNewLACoManpower('')
+    setShowLAModal(true)
+  }
+
+  function openEditLAActivity(act) {
+    setEditingLAActivity(act)
+    setLaForm({ ...act, additional_companies: act.additional_companies || [] })
+    setNewLACoName('')
+    setNewLACoManpower('')
+    setShowLAModal(true)
+  }
+
+  async function saveLAActivity() {
+    if (!laForm.description) return
+    setSavingLA(true)
+    if (editingLAActivity) {
+      const res = await fetch('/api/lookahead-activities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingLAActivity.id, ...laForm }),
+      })
+      const { data } = await res.json()
+      if (data) setLookaheadActivities(prev => prev.map(a => a.id === data.id ? data : a))
+    } else {
+      const res = await fetch('/api/lookahead-activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lookahead_id: lookahead.id, ...laForm }),
+      })
+      const { data } = await res.json()
+      if (data) setLookaheadActivities(prev => [...prev, data])
+    }
+    setSavingLA(false)
+    setShowLAModal(false)
+  }
+
+  async function deleteLAActivity(actId) {
+    if (!confirm('Delete this activity?')) return
+    await fetch('/api/lookahead-activities', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: actId }),
+    })
+    setLookaheadActivities(prev => prev.filter(a => a.id !== actId))
+  }
+
+  async function submitLookaheadFromField() {
+    if (!lookahead) return
+    setSubmittingLA(true)
+    const res = await fetch('/api/lookaheads', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: lookahead.id, status: 'submitted' }),
+    })
+    const { data } = await res.json()
+    if (data) setLookahead(prev => ({ ...prev, ...data }))
+    setSubmittingLA(false)
+  }
+
+  function shiftLookaheadWeek(delta) {
+    const d = new Date(lookaheadWeekStart + 'T12:00:00Z')
+    d.setDate(d.getDate() + delta * 7)
+    const newStart = d.toISOString().split('T')[0]
+    setLookaheadWeekStart(newStart)
+    setLookahead(null)
+    setLookaheadActivities([])
+    loadLookaheadData(newStart)
   }
 
   async function loadToolLogsForTool(toolId) {
@@ -765,6 +895,7 @@ export default function Field() {
                       { key: 'photos', icon: IC.photos, label: 'Site Photos', count: totalGalleryPhotos || null },
                       { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
                       { key: 'tools', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>, label: 'My Tools', count: myTools.length || null },
+                      { key: 'lookahead', icon: IC.lookahead, label: '2-Week Lookahead', count: lookaheadActivities.length || null },
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: item.alert ? '#e8590c' : '#555', display: 'flex', lineHeight: 1 }}>{item.icon}</span>
@@ -806,7 +937,7 @@ export default function Field() {
                   <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
                     <button style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>← Back</button>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools' }[activeTab]}
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead' }[activeTab]}
                     </span>
                   </div>
                 )}
@@ -2114,6 +2245,218 @@ export default function Field() {
                     </>
                   )
                 })()}
+
+                {/* ── 2-WEEK LOOKAHEAD ── */}
+                {activeTab === 'lookahead' && (() => {
+                  const weekDays = []
+                  const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
+                  for (let w = 0; w < 2; w++) {
+                    for (let d = 0; d < 5; d++) {
+                      const day = new Date(wkBase)
+                      day.setDate(wkBase.getDate() + w * 7 + d)
+                      weekDays.push(day.toISOString().split('T')[0])
+                    }
+                  }
+                  const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+                  const todayStr = new Date().toISOString().split('T')[0]
+                  const week2Start = new Date(wkBase); week2Start.setDate(wkBase.getDate() + 7)
+                  return (
+                    <div>
+                      {/* Week navigation */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                        <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>← Prev</button>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#666', textAlign: 'center' }}>
+                          {wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                          {' – '}
+                          {new Date(wkBase.getTime() + 11 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
+                        </span>
+                        <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Next →</button>
+                      </div>
+
+                      {!lookahead ? (
+                        <div style={s.card}>
+                          <p style={{ color: '#666', fontSize: '14px', marginBottom: '1rem', textAlign: 'center', margin: '0 0 1rem' }}>No lookahead created for this week yet.</p>
+                          <button onClick={createLookahead} style={{ ...s.btn, width: '100%', textAlign: 'center' }}>Start This Week's Lookahead</button>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: lookahead.status === 'submitted' ? '#0a2a0a' : '#1a1a0a', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', border: `1px solid ${lookahead.status === 'submitted' ? '#1a4a1a' : '#3a3a0a'}` }}>
+                              {lookahead.status === 'submitted' ? '✓ Submitted to PM' : 'Draft'}
+                            </span>
+                            {lookahead.status !== 'submitted' && (
+                              <button
+                                onClick={submitLookaheadFromField}
+                                disabled={submittingLA || lookaheadActivities.length === 0}
+                                style={{ padding: '7px 16px', background: submittingLA || lookaheadActivities.length === 0 ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '8px', color: submittingLA || lookaheadActivities.length === 0 ? '#555' : '#fff', fontSize: '13px', fontWeight: '700', cursor: submittingLA || lookaheadActivities.length === 0 ? 'default' : 'pointer' }}
+                              >
+                                {submittingLA ? 'Submitting...' : 'Submit to PM'}
+                              </button>
+                            )}
+                          </div>
+
+                          {[0, 1].map(w => (
+                            <div key={w} style={{ marginBottom: '1.25rem' }}>
+                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1a1a1a' }}>
+                                Week {w + 1} — {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                              </div>
+                              {DAY_LABELS.map((dayLabel, di) => {
+                                const dateStr = weekDays[w * 5 + di]
+                                const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
+                                const isToday = dateStr === todayStr
+                                return (
+                                  <div key={dateStr} style={{ background: '#141414', border: `1px solid ${isToday ? '#3a2200' : '#222'}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dayActs.length ? '10px' : 0 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: '700', color: isToday ? '#e8590c' : '#aaa' }}>{dayLabel}</span>
+                                        <span style={{ fontSize: '12px', color: '#444' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                                        {isToday && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '1px 6px' }}>TODAY</span>}
+                                      </div>
+                                      {lookahead.status !== 'submitted' && (
+                                        <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
+                                      )}
+                                    </div>
+                                    {dayActs.map(act => {
+                                      const tc = act.responsible_type === 'sub' ? { bg: '#0a1a2a', fg: '#38bdf8', bd: '#1a3a4a' } : act.responsible_type === 'other' ? { bg: '#2a1a0a', fg: '#fb923c', bd: '#4a2a1a' } : { bg: '#0a1a0a', fg: '#4ade80', bd: '#1a3a1a' }
+                                      return (
+                                        <div key={act.id} style={{ background: tc.bg, border: `1px solid ${tc.bd}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '6px' }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1', marginBottom: '4px' }}>{act.description}</div>
+                                              {act.location && <div style={{ fontSize: '11px', color: '#555', marginBottom: '6px' }}>{act.location}</div>}
+                                              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                                                <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
+                                                  {act.responsible_type === 'sub' ? (lookaheadContracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : act.responsible_type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'}
+                                                </span>
+                                                {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#555', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', border: '1px solid #2a2a2a' }}>{act.manpower} ppl</span>}
+                                                {act.inspection_required && <span style={{ fontSize: '10px', color: '#f59e0b', padding: '2px 7px', borderRadius: '99px', background: '#1a1400', border: '1px solid #3a3000' }}>Inspection</span>}
+                                                {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', border: '1px solid #1a3a1a' }}>Committed</span>}
+                                                {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#a855f7', padding: '2px 7px', borderRadius: '99px', background: '#1a0a2a', border: '1px solid #3a1a4a' }}>+{act.additional_companies.length} co</span>}
+                                              </div>
+                                              {act.constraints_notes && <div style={{ fontSize: '11px', color: '#555', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
+                                            </div>
+                                            {lookahead.status !== 'submitted' && (
+                                              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                                <button onClick={() => openEditLAActivity(act)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
+                                                <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                {/* ── LOOKAHEAD ACTIVITY MODAL ── */}
+                {showLAModal && (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 9000, display: 'flex', alignItems: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) setShowLAModal(false) }}>
+                    <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '760px', margin: '0 auto', padding: '1.75rem', maxHeight: '85vh', overflowY: 'auto' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{editingLAActivity ? 'Edit Activity' : 'Add Activity'}</h3>
+                        <button onClick={() => setShowLAModal(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+                      </div>
+
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Description *</label>
+                        <input value={laForm.description || ''} onChange={e => setLaForm(f => ({ ...f, description: e.target.value }))} style={s.input} placeholder="What work is being done?" />
+                      </div>
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Location</label>
+                        <input value={laForm.location || ''} onChange={e => setLaForm(f => ({ ...f, location: e.target.value }))} style={s.input} placeholder="Area / zone on site" />
+                      </div>
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Responsible</label>
+                        <select value={laForm.responsible_type || 'own_crew'} onChange={e => setLaForm(f => ({ ...f, responsible_type: e.target.value, sub_id: '', other_company_name: '' }))} style={s.input}>
+                          <option value="own_crew">Own Crew (NV)</option>
+                          <option value="sub">Subcontractor</option>
+                          <option value="other">Other Company</option>
+                        </select>
+                      </div>
+                      {laForm.responsible_type === 'sub' && (
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Subcontractor</label>
+                          <select value={laForm.sub_id || ''} onChange={e => setLaForm(f => ({ ...f, sub_id: e.target.value }))} style={s.input}>
+                            <option value="">Select subcontractor...</option>
+                            {lookaheadContracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {laForm.responsible_type === 'other' && (
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Company Name</label>
+                          <input value={laForm.other_company_name || ''} onChange={e => setLaForm(f => ({ ...f, other_company_name: e.target.value }))} style={s.input} placeholder="Utility, city crew, other GC, etc." />
+                        </div>
+                      )}
+                      {(laForm.responsible_type === 'own_crew' || laForm.responsible_type === 'sub') && (
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={s.label}>Manpower</label>
+                          <input type="number" value={laForm.manpower || ''} onChange={e => setLaForm(f => ({ ...f, manpower: e.target.value }))} style={s.input} placeholder="# of workers" min="0" />
+                        </div>
+                      )}
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Equipment / Notes</label>
+                        <input value={laForm.equipment || ''} onChange={e => setLaForm(f => ({ ...f, equipment: e.target.value }))} style={s.input} placeholder="Equipment or materials needed" />
+                      </div>
+
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Additional Companies on Site</label>
+                        {(laForm.additional_companies || []).map((co, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                            <span style={{ flex: 1, fontSize: '13px', color: '#ccc', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` — ${co.manpower} ppl` : ''}</span>
+                            <button onClick={() => setLaForm(f => ({ ...f, additional_companies: f.additional_companies.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '4px' }}>✕</button>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <input value={newLACoName} onChange={e => setNewLACoName(e.target.value)} style={{ ...s.input, flex: 2 }} placeholder="Company name" />
+                          <input type="number" value={newLACoManpower} onChange={e => setNewLACoManpower(e.target.value)} style={{ ...s.input, flex: 1 }} placeholder="# ppl" min="0" />
+                          <button
+                            onClick={() => { if (!newLACoName.trim()) return; setLaForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newLACoName.trim(), manpower: newLACoManpower ? parseInt(newLACoManpower) : null }] })); setNewLACoName(''); setNewLACoManpower('') }}
+                            style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                          >+ Add</button>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '1rem' }}>
+                        {[
+                          { key: 'inspection_required', label: 'Inspection Required' },
+                          { key: 'inspection_scheduled', label: 'Inspection Scheduled' },
+                          { key: 'preceding_work_complete', label: 'Preceding Work Complete' },
+                          { key: 'committed', label: 'Committed' },
+                        ].map(({ key, label }) => (
+                          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={!!laForm[key]} onChange={e => setLaForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
+                            <span style={{ fontSize: '13px', color: '#aaa' }}>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div style={{ marginBottom: '1.5rem' }}>
+                        <label style={s.label}>Constraints / Notes</label>
+                        <textarea value={laForm.constraints_notes || ''} onChange={e => setLaForm(f => ({ ...f, constraints_notes: e.target.value }))} style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} placeholder="Blockers, dependencies, or other notes" />
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => setShowLAModal(false)} style={{ flex: 1, padding: '12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '10px', color: '#888', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
+                        <button
+                          onClick={saveLAActivity}
+                          disabled={savingLA || !laForm.description}
+                          style={{ flex: 2, padding: '12px', background: savingLA || !laForm.description ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '10px', color: savingLA || !laForm.description ? '#555' : '#fff', fontSize: '14px', fontWeight: '700', cursor: savingLA || !laForm.description ? 'default' : 'pointer' }}
+                        >
+                          {savingLA ? 'Saving...' : editingLAActivity ? 'Update Activity' : 'Add Activity'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
           </>
         )}

@@ -119,7 +119,7 @@ export default function ResidentialJobDetail() {
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
   const [billingBilling, setBillingBillingTab] = useState('submissions')
   const [showBillingForm, setShowBillingForm] = useState(false)
-  const [billingForm, setBillingForm] = useState({ company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
+  const [billingForm, setBillingForm] = useState({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
   const [addingBilling, setAddingBilling] = useState(false)
   const [billingMsg, setBillingMsg] = useState('')
 
@@ -460,7 +460,7 @@ export default function ResidentialJobDetail() {
   }
 
   async function submitBilling() {
-    if (!billingForm.amount_billed || (!billingForm.sub_id && !billingForm.company_name)) return
+    if (!billingForm.amount_billed || (!billingForm._contract_id && !billingForm.company_name)) return
     setAddingBilling(true)
     setBillingMsg('')
     const amount = parseFloat(billingForm.amount_billed) || 0
@@ -481,7 +481,7 @@ export default function ResidentialJobDetail() {
     const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const result = await res.json()
     if (result.error) { setBillingMsg('Error: ' + result.error); setAddingBilling(false); return }
-    setBillingForm({ company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
+    setBillingForm({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
     setShowBillingForm(false)
     await loadBillingSubmissions()
     setAddingBilling(false)
@@ -1411,14 +1411,14 @@ export default function ResidentialJobDetail() {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Subcontractor</label>
-                        <select style={s.select} value={billingForm.sub_id} onChange={e => {
+                        <select style={s.select} value={billingForm._contract_id} onChange={e => {
                           const c = contracts.find(x => x.id === e.target.value)
-                          setBillingForm(f => ({ ...f, sub_id: e.target.value, company_name: c?.vendor_name || f.company_name }))
+                          setBillingForm(f => ({ ...f, _contract_id: e.target.value, sub_id: c?.sub_id || '', company_name: c?.vendor_name || f.company_name }))
                         }}>
                           <option value="">— Select or enter below —</option>
                           {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                         </select>
-                        {!billingForm.sub_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Company name" value={billingForm.company_name} onChange={e => setBillingForm(f => ({ ...f, company_name: e.target.value }))} />}
+                        {!billingForm._contract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Company name" value={billingForm.company_name} onChange={e => setBillingForm(f => ({ ...f, company_name: e.target.value }))} />}
                       </div>
                       <div>
                         <label style={s.label}>Billing Period</label>
@@ -1438,7 +1438,7 @@ export default function ResidentialJobDetail() {
                       </div>
                     </div>
                     {billingMsg && <div style={{ ...s.errMsg, marginBottom: '8px' }}>{billingMsg}</div>}
-                    <button style={s.btn} onClick={submitBilling} disabled={addingBilling || !billingForm.amount_billed || (!billingForm.sub_id && !billingForm.company_name)}>
+                    <button style={s.btn} onClick={submitBilling} disabled={addingBilling || !billingForm.amount_billed || (!billingForm._contract_id && !billingForm.company_name)}>
                       {addingBilling ? 'Submitting...' : 'Add Submission'}
                     </button>
                   </div>

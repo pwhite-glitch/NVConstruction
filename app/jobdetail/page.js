@@ -3465,6 +3465,7 @@ ${sovHtml}
       work_description: createBillingForm.work_description || null,
       billing_period: createBillingForm.billing_period ? createBillingForm.billing_period + '-01' : null,
       draw_request_id: createBillingForm.draw_request_id || null,
+      sub_id: createBillingForm.sub_id || null,
       status,
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,

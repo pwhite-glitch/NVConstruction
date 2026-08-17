@@ -18,7 +18,7 @@ const TABS = [
   { id: 'subs',         label: 'Subs' },
   { id: 'changeorders', label: 'Change Orders' },
   { id: 'billing',      label: 'Billing' },
-  { id: 'ownerdraw',    label: 'Owner Draw' },
+  { id: 'ownerdraw',    label: 'Owner/Lender Draw' },
   { id: 'inspections',  label: 'Inspections' },
   { id: 'lienWaivers',  label: 'Lien Waivers' },
   { id: 'punchlist',    label: 'Punch List' },
@@ -1841,7 +1841,7 @@ export default function ResidentialJobDetail() {
               </div>
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <p style={{ ...s.cardTitle, margin: 0 }}>Owner Draw Requests ({ownerDraws.length})</p>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Owner/Lender Draw Requests ({ownerDraws.length})</p>
                   <button style={s.btnSm} onClick={() => setShowAddOwnerDraw(v => !v)}>{showAddOwnerDraw ? 'Cancel' : '+ New Draw'}</button>
                 </div>
                 {showAddOwnerDraw && (

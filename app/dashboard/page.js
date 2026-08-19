@@ -1374,9 +1374,9 @@ export default function Dashboard() {
     const lines = estimate.estimate_line_items || []
     const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
     const taxAmt = estimate.taxable ? rawTotal * 0.0825 : 0
-    const taxedTotal = rawTotal + taxAmt
     const markupMult = 1 + (Number(estimate.markup_pct || 0) / 100)
-    const total = taxedTotal * markupMult
+    const markupAmt = rawTotal * (markupMult - 1)
+    const total = rawTotal * markupMult + taxAmt
     const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const estDate = new Date(estimate.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -1492,9 +1492,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     ${lines.map((l, i) => `<tr>
       <td class="num">${i + 1}</td>
       <td>${l.description}</td>
-      <td class="right">${fmt(Number(l.amount) * (rawTotal > 0 ? taxedTotal / rawTotal : 1) * markupMult)}</td>
+      <td class="right">${fmt(Number(l.amount) * markupMult)}</td>
     </tr>`).join('')}
-    ${estimate.taxable ? `<tr style="background:#fffbf5"><td></td><td style="color:#888;font-size:11px">Sales Tax (8.25%)</td><td class="right" style="color:#888;font-size:11px">${fmt(taxAmt * markupMult)}</td></tr>` : ''}
+    ${estimate.taxable ? `<tr style="background:#fffbf5"><td></td><td style="color:#888;font-size:11px">Sales Tax (8.25%)</td><td class="right" style="color:#888;font-size:11px">${fmt(taxAmt)}</td></tr>` : ''}
     <tr class="total-row">
       <td></td>
       <td><span class="total-label">Total Estimate</span></td>
@@ -1817,8 +1817,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
     const lines = estimate.estimate_line_items || []
     const markupMult = 1 + (Number(estimate.markup_pct || 0) / 100)
     const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-    const taxFactor = estimate.taxable ? 1.0825 : 1
-    const total = Math.round(rawTotal * taxFactor * markupMult * 100) / 100
+    const taxAmt2 = estimate.taxable ? rawTotal * 0.0825 : 0
+    const total = Math.round(rawTotal * markupMult * 100) / 100 + taxAmt2
     const { data: job, error: jobError } = await supabase.from('jobs').insert({
       job_number: convertJobForm.job_number.trim(),
       project_name: estimate.project_name,
@@ -1834,7 +1834,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
           job_id: job.id,
           description: l.description,
           budget_amount: Number(l.amount) || 0,
-          owner_amount: Math.round(Number(l.amount) * taxFactor * markupMult * 100) / 100,
+          owner_amount: Math.round(Number(l.amount) * markupMult * 100) / 100,
           category: 'General',
         }))
       )
@@ -3749,10 +3749,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         {(() => {
                           const rawTotal = estimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
                           const taxAmt = estimateForm.taxable ? rawTotal * 0.0825 : 0
-                          const taxedTotal = rawTotal + taxAmt
                           const markupPct = parseFloat(estimateForm.markup_pct) || 0
-                          const markupAmt = taxedTotal * markupPct / 100
-                          const grandTotal = taxedTotal + markupAmt
+                          const markupAmt = rawTotal * markupPct / 100
+                          const grandTotal = rawTotal + markupAmt + taxAmt
                           const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                           const hasExtra = estimateForm.taxable || markupPct > 0
                           return (
@@ -3821,8 +3820,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   const lines = est.estimate_line_items || []
                   const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
                   const estMarkupPct = Number(est.markup_pct || 0)
+                  const estTaxAmt = est.taxable ? rawTotal * 0.0825 : 0
                   const estTaxFactor = est.taxable ? 1.0825 : 1
-                  const total = Math.round(rawTotal * estTaxFactor * (1 + estMarkupPct / 100) * 100) / 100
+                  const total = Math.round((rawTotal * (1 + estMarkupPct / 100) + estTaxAmt) * 100) / 100
                   const isEditingEst = editingEstimate === est.id
                   return (
                     <div key={est.id} style={s.rowBorder}>
@@ -3892,10 +3892,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   {(() => {
                                     const editRaw = editEstimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
                                     const editTaxAmt = editEstimateForm.taxable ? editRaw * 0.0825 : 0
-                                    const editTaxed = editRaw + editTaxAmt
                                     const editMarkupPct = parseFloat(editEstimateForm.markup_pct) || 0
-                                    const editMarkupAmt = editTaxed * editMarkupPct / 100
-                                    const editGrand = editTaxed + editMarkupAmt
+                                    const editMarkupAmt = editRaw * editMarkupPct / 100
+                                    const editGrand = editRaw + editMarkupAmt + editTaxAmt
                                     const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                     const editHasExtra = editEstimateForm.taxable || editMarkupPct > 0
                                     return (
@@ -3998,7 +3997,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                     {estMarkupPct > 0 && (
                                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#0a0a0a', borderTop: '1px solid #1a1a1a', fontSize: '12px' }}>
                                         <span style={{ color: '#e8590c' }}>Markup ({estMarkupPct}%)</span>
-                                        <span style={{ color: '#e8590c', fontFamily: 'monospace' }}>+${Math.round(rawTotal * estTaxFactor * estMarkupPct / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                        <span style={{ color: '#e8590c', fontFamily: 'monospace' }}>+${Math.round(rawTotal * estMarkupPct / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                       </div>
                                     )}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e', fontWeight: '800' }}>

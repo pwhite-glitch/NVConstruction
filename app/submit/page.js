@@ -196,13 +196,13 @@ export default function Submit() {
       }
       const companyId = prof?.company_id
       const jobQueries = [
-        supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('sub_id', session.user.id),
-        supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('sub_id', session.user.id),
+        supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
+        supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
       ]
       if (companyId) {
         jobQueries.push(
-          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('company_id', companyId),
-          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start)').eq('company_id', companyId),
+          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
+          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
         )
       }
       const jobResults = await Promise.all(jobQueries)
@@ -221,7 +221,7 @@ export default function Submit() {
         billingQuery = billingQuery.eq('sub_id', session.user.id)
       }
       const { data: subs } = await billingQuery
-      setSubmissions(subs || [])
+      setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || mergedJobs.find(j => j.id === s.job_id) || null })))
       await loadMyContracts(session.user.id, prof?.company_id, prof?.company_name)
       const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
       if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
@@ -714,7 +714,7 @@ export default function Submit() {
       setSignerName('')
       setWaiverMsg('')
       const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
-      setSubmissions(subs || [])
+      setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
     }
     setSavingWaiver(false)
   }
@@ -786,8 +786,8 @@ export default function Submit() {
       setSovRetainageMap({})
       setJobDrawRequests([])
       setBillingFile(null)
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
-      setSubmissions(subs || [])
+      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
+      setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
     }
     setLoading(false)
   }

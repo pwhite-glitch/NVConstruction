@@ -33,6 +33,12 @@ export async function POST(request) {
       row = await request.json()
     }
 
+    // Validate sub_id against auth.users — stale UUIDs (deleted/re-invited subs) would violate the FK
+    if (row.sub_id) {
+      const { data: authUser } = await adminSupabase.auth.admin.getUserById(row.sub_id)
+      if (!authUser?.user) row.sub_id = null
+    }
+
     const { error } = await adminSupabase
       .from('billing_submissions')
       .insert({ ...row, doc_url })

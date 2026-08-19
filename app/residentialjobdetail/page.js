@@ -304,6 +304,7 @@ export default function ResidentialJobDetail() {
 
   async function loadDirectCosts() {
     const res = await fetch(`/api/direct-costs?job_id=${id}`)
+    if (!res.ok) return
     const json = await res.json()
     setDirectCosts(json.data || [])
   }
@@ -504,16 +505,16 @@ export default function ResidentialJobDetail() {
 
   async function saveDrawCosts(drawId) {
     setSavingDrawCosts(true)
-    if (drawAddCostIds.length > 0) {
-      await supabase.from('direct_costs').update({ draw_request_id: drawId }).in('id', drawAddCostIds)
-    }
+    await Promise.all(drawAddCostIds.map(costId =>
+      fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: drawId }) })
+    ))
     await Promise.all([loadDrawRequests(), loadDirectCosts()])
     setDrawAddCostIds([])
     setSavingDrawCosts(false)
   }
 
   async function removeCostFromDraw(costId) {
-    await supabase.from('direct_costs').update({ draw_request_id: null }).eq('id', costId)
+    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: null }) })
     await Promise.all([loadDrawRequests(), loadDirectCosts()])
   }
 
@@ -904,8 +905,11 @@ export default function ResidentialJobDetail() {
                     </div>
                     <div><label style={s.label}>Notes</label><input style={s.input} value={detailsForm.notes || ''} onChange={e => setDetailsForm(f => ({ ...f, notes: e.target.value }))} /></div>
                   </div>
-                  <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-2">
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Owner name</label><input style={s.input} value={detailsForm.owner_name || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_name: e.target.value }))} /></div>
+                    <div><label style={s.label}>Owner company</label><input style={s.input} value={detailsForm.owner_company || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_company: e.target.value }))} /></div>
+                  </div>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Owner email</label><input style={s.input} type="email" value={detailsForm.owner_email || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_email: e.target.value }))} /></div>
                     <div><label style={s.label}>Owner phone</label><input style={s.input} value={detailsForm.owner_phone || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_phone: e.target.value }))} /></div>
                   </div>
@@ -1079,10 +1083,10 @@ export default function ResidentialJobDetail() {
                     <span />
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(budgetTotal)}</span>
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committedTotal)}</span>
-                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(directCosts.filter(c => c.status === 'approved' && budgetItems.some(b => b.id === c.budget_item_id)).reduce((a, c) => a + Number(c.amount || 0), 0))}</span>
-                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: (() => { const v = budgetTotal - committedTotal - directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0); return v < 0 ? '#f87171' : '#4ade80' })() }}>
-                      {(() => { const v = budgetTotal - committedTotal - directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0); return `${v < 0 ? '-' : ''}$${fmt(Math.abs(v))}` })()}
-                    </span>
+                    {(() => { const spentTotal = directCosts.filter(c => c.status === 'approved' && budgetItems.some(b => b.id === c.budget_item_id)).reduce((a, c) => a + Number(c.amount || 0), 0); const v = budgetTotal - committedTotal - spentTotal; return (<>
+                      <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spentTotal)}</span>
+                      <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: v < 0 ? '#f87171' : '#4ade80' }}>{v < 0 ? '-' : ''}${fmt(Math.abs(v))}</span>
+                    </>) })()}
                     <span />
                   </div>
                   </div>
@@ -1242,7 +1246,10 @@ export default function ResidentialJobDetail() {
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Subcontractors ({contracts.length})</p>
-              <button style={s.btnSm} onClick={() => { setShowAddSubForm(v => !v); setSubMsg('') }}>{showAddSubForm ? 'Cancel' : '+ Add Sub'}</button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {subMsg && !showAddSubForm && <span style={subMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{subMsg}</span>}
+                <button style={s.btnSm} onClick={() => { setShowAddSubForm(v => !v); setSubMsg('') }}>{showAddSubForm ? 'Cancel' : '+ Add Sub'}</button>
+              </div>
             </div>
 
             {showAddSubForm && (

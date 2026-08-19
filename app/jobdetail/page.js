@@ -266,6 +266,8 @@ export default function JobDetail() {
   const [editingPOId, setEditingPOId] = useState(null)
   const [editPOForm, setEditPOForm] = useState({})
   const [savingPOEdit, setSavingPOEdit] = useState(false)
+  const [poFile, setPOFile] = useState(null)
+  const [editPOFile, setEditPOFile] = useState(null)
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
@@ -1592,7 +1594,7 @@ ${sovLines.length > 0 ? `
     setSavingPO(true)
     const { data: { session } } = await supabase.auth.getSession()
     const validItems = poForm.items.filter(i => i.description && i.unit_price)
-    await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    const payload = {
       job_id: id,
       vendor_name: poForm.vendor_name,
       description: poForm.description || null,
@@ -1601,9 +1603,18 @@ ${sovLines.length > 0 ? `
       status: issueImmediately ? 'issued' : 'draft',
       created_by: session.user.id,
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
-    }) })
+    }
+    if (poFile) {
+      const fd = new FormData()
+      fd.append('file', poFile)
+      fd.append('data', JSON.stringify(payload))
+      await fetch('/api/purchase-orders', { method: 'POST', body: fd })
+    } else {
+      await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    }
     setShowNewPO(false)
     setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
+    setPOFile(null)
     await loadPurchaseOrders()
     await loadBudgetItems()
     setSavingPO(false)
@@ -1620,18 +1631,33 @@ ${sovLines.length > 0 ? `
   async function savePOEdit() {
     setSavingPOEdit(true)
     const validItems = editPOForm.items.filter(i => i.description && i.unit_price)
-    await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    const payload = {
       id: editingPOId,
+      job_id: id,
       vendor_name: editPOForm.vendor_name,
       description: editPOForm.description || null,
       budget_item_id: editPOForm.budget_item_id || null,
       notes: editPOForm.notes || null,
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
-    }) })
+    }
+    if (editPOFile) {
+      const fd = new FormData()
+      fd.append('file', editPOFile)
+      fd.append('data', JSON.stringify(payload))
+      await fetch('/api/purchase-orders', { method: 'PUT', body: fd })
+    } else {
+      await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    }
     setEditingPOId(null)
+    setEditPOFile(null)
     await loadPurchaseOrders()
     await loadBudgetItems()
     setSavingPOEdit(false)
+  }
+
+  async function openPOAttachment(attachmentUrl) {
+    const { data } = await supabase.storage.from('purchase-order-docs').createSignedUrl(attachmentUrl, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
   async function deletePO(poId) {
@@ -10924,6 +10950,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <label style={s.label}>Notes</label>
                             <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={poForm.notes} onChange={e => setPOForm(f => ({ ...f, notes: e.target.value }))} placeholder="Delivery instructions, payment terms..." />
                           </div>
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <label style={s.label}>Attachment</label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '7px 14px', background: '#0a0a0a', border: '1px dashed #2a2a2a', borderRadius: '6px', fontSize: '12px', color: poFile ? '#f1f1f1' : '#555' }}>
+                              {poFile ? poFile.name : '+ Attach file (PDF, image, etc.)'}
+                              <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setPOFile(e.target.files[0] || null)} />
+                            </label>
+                            {poFile && <button onClick={() => setPOFile(null)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '12px' }}>Remove</button>}
+                          </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button style={{ ...s.btnSmallGreen, padding: '8px 20px', opacity: (savingPO || !poForm.vendor_name) ? 0.6 : 1 }} disabled={savingPO || !poForm.vendor_name} onClick={() => savePO(true)}>{savingPO ? 'Saving...' : 'Issue PO'}</button>
                             <button style={{ ...s.btnSmall, padding: '8px 20px', opacity: (savingPO || !poForm.vendor_name) ? 0.6 : 1 }} disabled={savingPO || !poForm.vendor_name} onClick={() => savePO(false)}>Save as Draft</button>
@@ -10988,6 +11022,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <label style={s.label}>Notes</label>
                                   <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editPOForm.notes} onChange={e => setEditPOForm(f => ({ ...f, notes: e.target.value }))} />
                                 </div>
+                                <div style={{ marginBottom: '1rem' }}>
+                                  <label style={s.label}>Replace attachment</label>
+                                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '7px 14px', background: '#0a0a0a', border: '1px dashed #2a2a2a', borderRadius: '6px', fontSize: '12px', color: editPOFile ? '#f1f1f1' : '#555' }}>
+                                    {editPOFile ? editPOFile.name : '+ Attach file (PDF, image, etc.)'}
+                                    <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setEditPOFile(e.target.files[0] || null)} />
+                                  </label>
+                                  {editPOFile && <button onClick={() => setEditPOFile(null)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '12px' }}>Remove</button>}
+                                </div>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button style={{ ...s.btnSmall, opacity: savingPOEdit ? 0.6 : 1 }} disabled={savingPOEdit} onClick={savePOEdit}>{savingPOEdit ? 'Saving...' : 'Save changes'}</button>
                                   <button style={s.btnGray} onClick={() => setEditingPOId(null)}>Cancel</button>
@@ -11019,6 +11061,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {isExpanded && (
                                   <div style={{ paddingBottom: '14px' }}>
                                     {po.notes && <p style={{ fontSize: '13px', color: '#666', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
+                                    {po.attachment_url && (
+                                      <button onClick={() => openPOAttachment(po.attachment_url)} style={{ marginBottom: '10px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px solid #3a1a00', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}>
+                                        📎 View Attachment
+                                      </button>
+                                    )}
                                     <POLineItemsTable items={po.purchase_order_items} />
                                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                                       {po.status === 'draft' && <>

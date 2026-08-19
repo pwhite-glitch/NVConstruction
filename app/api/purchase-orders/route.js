@@ -5,6 +5,17 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+async function uploadPOAttachment(file, jobId) {
+  const ext = file.name.split('.').pop()
+  const path = `${jobId}/${Date.now()}.${ext}`
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const { error } = await adminSupabase.storage
+    .from('purchase-order-docs')
+    .upload(path, buffer, { contentType: file.type })
+  if (error) throw new Error('File upload failed: ' + error.message)
+  return path
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
@@ -28,12 +39,25 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const body = await request.json()
+    const contentType = request.headers.get('content-type') || ''
+    let body = {}
+    let attachment_url = null
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      body = JSON.parse(formData.get('data') || '{}')
+      if (file && file.size > 0) {
+        attachment_url = await uploadPOAttachment(file, body.job_id)
+      }
+    } else {
+      body = await request.json()
+    }
+
     const { job_id, vendor_name, description, budget_item_id, notes, status = 'draft', items = [], created_by } = body
 
     if (!job_id || !vendor_name) return Response.json({ error: 'job_id and vendor_name required' }, { status: 400 })
 
-    // Generate PO number
     const { data: jobRow } = await adminSupabase.from('jobs').select('job_number').eq('id', job_id).single()
     const { count } = await adminSupabase.from('purchase_orders').select('id', { count: 'exact', head: true }).eq('job_id', job_id)
     const seq = String((count || 0) + 1).padStart(3, '0')
@@ -43,7 +67,7 @@ export async function POST(request) {
 
     const { data: po, error: poErr } = await adminSupabase
       .from('purchase_orders')
-      .insert({ job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null })
+      .insert({ job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url })
       .select()
       .single()
 
@@ -70,7 +94,21 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const body = await request.json()
+    const contentType = request.headers.get('content-type') || ''
+    let body = {}
+    let newAttachmentUrl = undefined
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      body = JSON.parse(formData.get('data') || '{}')
+      if (file && file.size > 0) {
+        newAttachmentUrl = await uploadPOAttachment(file, body.job_id)
+      }
+    } else {
+      body = await request.json()
+    }
+
     const { id, items, ...fields } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
@@ -85,6 +123,7 @@ export async function PUT(request) {
     if (fields.notes !== undefined) updates.notes = fields.notes || null
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
+    if (newAttachmentUrl !== undefined) updates.attachment_url = newAttachmentUrl
 
     if (items !== undefined) {
       updates.amount = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)

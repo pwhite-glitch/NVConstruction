@@ -81,12 +81,36 @@ export async function POST(request) {
       if (key in body) updates[key] = body[key] || null
     }
 
+    // Cascade rename: if company_name is changing, grab the old name first
+    let oldName = null
+    if ('company_name' in updates && updates.company_name) {
+      const { data: existing } = await adminSupabase
+        .from('sub_directory')
+        .select('company_name')
+        .eq('id', directory_id)
+        .single()
+      oldName = existing?.company_name || null
+    }
+
     const { error } = await adminSupabase
       .from('sub_directory')
       .update(updates)
       .eq('id', directory_id)
 
     if (error) return Response.json({ error: error.message }, { status: 500 })
+
+    // Propagate the rename to subcontracts and companies
+    if (oldName && updates.company_name && oldName !== updates.company_name) {
+      await adminSupabase
+        .from('subcontracts')
+        .update({ vendor_name: updates.company_name })
+        .eq('vendor_name', oldName)
+      await adminSupabase
+        .from('companies')
+        .update({ name: updates.company_name })
+        .ilike('name', oldName)
+    }
+
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

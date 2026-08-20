@@ -99,7 +99,7 @@ export async function POST(request) {
 
     if (error) return Response.json({ error: error.message }, { status: 500 })
 
-    // Propagate the rename to subcontracts and companies
+    // Propagate the rename to subcontracts, companies, and prime CO descriptions
     if (oldName && updates.company_name && oldName !== updates.company_name) {
       await adminSupabase
         .from('subcontracts')
@@ -109,6 +109,19 @@ export async function POST(request) {
         .from('companies')
         .update({ name: updates.company_name })
         .ilike('name', oldName)
+      // Fix prime CO descriptions that were written as "OldName — co description"
+      const { data: primeCOs } = await adminSupabase
+        .from('prime_change_orders')
+        .select('id, description')
+        .like('description', `${oldName} — %`)
+      if (primeCOs?.length > 0) {
+        await Promise.all(primeCOs.map(co =>
+          adminSupabase
+            .from('prime_change_orders')
+            .update({ description: co.description.replace(oldName, updates.company_name) })
+            .eq('id', co.id)
+        ))
+      }
     }
 
     return Response.json({ ok: true })

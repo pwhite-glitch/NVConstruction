@@ -287,6 +287,8 @@ export default function JobDetail() {
   const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
   const [savingAia, setSavingAia] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
+  const [relinkDrawOpen, setRelinkDrawOpen] = useState(false)
+  const [relinkDrawId, setRelinkDrawId] = useState('')
   // Per-subcontract AIA (nv_role === 'sub')
   const [showNewNvSubAia, setShowNewNvSubAia] = useState(null) // nv_subcontract_id | null
   const [newNvSubAiaForm, setNewNvSubAiaForm] = useState({ period_from: '', period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
@@ -1313,6 +1315,17 @@ export default function JobDetail() {
     const { error } = await supabase.from('aia_applications').delete().eq('id', appId)
     if (error) { alert('Delete failed: ' + error.message); return }
     if (activeAia?.id === appId) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]) }
+    await loadAiaApplications()
+  }
+
+  async function relinkAiaDraw() {
+    if (!activeAia) return
+    await supabase.from('aia_applications').update({ linked_draw_request_id: relinkDrawId || null }).eq('id', activeAia.id)
+    setRelinkDrawOpen(false)
+    setRelinkDrawId('')
+    setActiveAia(null)
+    setAiaLines([])
+    setPeriodBilling([])
     await loadAiaApplications()
   }
 
@@ -8690,7 +8703,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {relinkDrawOpen ? (
+                          <>
+                            <select value={relinkDrawId} onChange={e => setRelinkDrawId(e.target.value)} style={{ padding: '5px 8px', background: '#0a0a0a', border: '1px solid #333', borderRadius: '6px', color: '#f1f1f1', fontSize: '11px' }}>
+                              <option value="">— No draw —</option>
+                              {drawRequests.map(d => <option key={d.id} value={d.id}>Draw #{d.draw_number}{d.title ? ` · ${d.title}` : ''}</option>)}
+                            </select>
+                            <button style={s.btnSmallGreen} onClick={relinkAiaDraw}>Save</button>
+                            <button style={s.btnSmall} onClick={() => { setRelinkDrawOpen(false); setRelinkDrawId('') }}>Cancel</button>
+                          </>
+                        ) : (
+                          <button style={s.btnSmall} onClick={() => { setRelinkDrawOpen(true); setRelinkDrawId(activeAia.linked_draw_request_id || '') }}>Relink draw</button>
+                        )}
                         <button
                           style={activeAia.payment_received ? s.btnSmallGreen : s.btnSmall}
                           onClick={() => markPaymentReceived(activeAia.id, activeAia.payment_received)}>

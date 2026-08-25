@@ -5,10 +5,18 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-// GET: fetch all direct costs for a job (bypasses RLS)
+// GET: fetch all direct costs for a job, or generate a signed receipt URL
+// ?job_id=uuid  → list of costs
+// ?receipt_path=...  → { url } signed URL for the receipt (uses service role so super role works)
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
+    const receipt_path = searchParams.get('receipt_path')
+    if (receipt_path) {
+      const { data, error } = await adminSupabase.storage.from('receipts').createSignedUrl(receipt_path, 300)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ url: data.signedUrl })
+    }
     const job_id = searchParams.get('job_id')
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
     const { data, error } = await adminSupabase.from('direct_costs').select('*').eq('job_id', job_id).order('cost_date', { ascending: false })

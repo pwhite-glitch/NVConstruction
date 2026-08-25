@@ -231,7 +231,11 @@ export async function DELETE(request) {
     await adminSupabase.from('deliveries').update({ super_id: null }).eq('super_id', user_id)
     await adminSupabase.from('milestones').update({ created_by: null }).eq('created_by', user_id)
     await adminSupabase.from('punch_list').update({ created_by: null }).eq('created_by', user_id)
-    await adminSupabase.from('profiles').delete().eq('id', user_id)
+    // Unassign tools and vehicles — these FK to profiles.id and block profile deletion
+    await adminSupabase.from('tools').update({ assigned_to: null }).eq('assigned_to', user_id)
+    await adminSupabase.from('vehicles').update({ assigned_to: null }).eq('assigned_to', user_id)
+    const { error: profileErr } = await adminSupabase.from('profiles').delete().eq('id', user_id)
+    if (profileErr) return Response.json({ error: 'Could not delete profile: ' + profileErr.message }, { status: 500 })
 
     const { error } = await adminSupabase.auth.admin.deleteUser(user_id)
     if (error) return Response.json({ error: error.message }, { status: 400 })

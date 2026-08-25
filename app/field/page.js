@@ -493,8 +493,10 @@ export default function Field() {
   }
 
   async function openReceiptUrl(path) {
-    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 60)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    const res = await fetch(`/api/direct-costs?receipt_path=${encodeURIComponent(path)}`)
+    const json = await res.json()
+    if (json.url) window.open(json.url, '_blank')
+    else alert('Could not open receipt: ' + (json.error || 'unknown error'))
   }
 
   async function loadAssignedVehicles(userId) {

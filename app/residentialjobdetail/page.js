@@ -547,40 +547,72 @@ export default function ResidentialJobDetail() {
     const grandTotal = costTotal + billingTotal
     const fmtN = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const jobName = job?.name || job?.address || 'Project'
+    const jobAddress = job?.address && job?.name ? job.address : ''
+    const logoUrl = `${window.location.origin}/logo.png`
+    const drawNumStr = `Draw #${String(dr.draw_number || '').padStart(3, '0')}`
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${dr.title}</title><style>
-      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:32px;font-size:13px}
-      h1{font-size:22px;margin:0 0 4px}
-      .sub{color:#666;font-size:13px;margin:0 0 24px}
+      *{box-sizing:border-box}
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:0;font-size:13px;background:#fff}
+      .brand-bar{display:flex;align-items:center;justify-content:space-between;padding:20px 32px 16px;border-bottom:3px solid #e8590c}
+      .brand-left{display:flex;align-items:center;gap:12px}
+      .brand-name{font-size:15px;font-weight:700;color:#111;line-height:1.1}
+      .brand-tagline{font-size:11px;color:#888;letter-spacing:.5px;margin-top:1px}
+      .draw-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#aaa;text-align:right}
+      .draw-num{font-size:22px;font-weight:800;color:#e8590c;line-height:1;text-align:right}
+      .accent-bar{height:4px;background:linear-gradient(90deg,#e8590c,#f97316 60%,transparent)}
+      .content{padding:24px 32px 40px}
+      .doc-title{font-size:20px;font-weight:700;margin:0 0 4px}
+      .doc-meta{color:#666;font-size:12px;margin:0 0 24px}
       .section{margin-bottom:24px}
-      .section-title{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#888;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:10px}
+      .section-title{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#888;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:10px}
       table{width:100%;border-collapse:collapse}
-      td,th{padding:7px 8px;text-align:left;border-bottom:1px solid #eee;font-size:13px}
-      th{font-weight:600;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+      td,th{padding:7px 8px;text-align:left;border-bottom:1px solid #eee;font-size:12.5px}
+      th{font-weight:600;color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.5px;background:#f9f9f9}
       .num{text-align:right;font-variant-numeric:tabular-nums}
-      .total-row td{font-weight:700;border-top:2px solid #111;padding-top:10px}
-      .grand-total{margin-top:24px;border-top:2px solid #111;padding-top:12px;display:flex;justify-content:space-between;font-size:16px;font-weight:700}
-      @media print{body{padding:16px}}
+      .total-row td{font-weight:700;border-top:2px solid #111;border-bottom:none;padding-top:10px;background:#f5f5f5}
+      .grand-total{margin-top:24px;border-top:3px solid #e8590c;padding-top:14px;display:flex;justify-content:space-between;align-items:baseline}
+      .grand-total .label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+      .grand-total .amount{font-size:22px;font-weight:800;color:#e8590c;font-variant-numeric:tabular-nums}
+      .print-btn{position:fixed;top:12px;right:12px;background:#e8590c;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;z-index:999}
+      @media print{.print-btn{display:none}.accent-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
     </style></head><body>
-    <h1>${dr.title}</h1>
-    <p class="sub">${jobName}${job?.address && job?.name ? ' · ' + job.address : ''} · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-    ${drCosts.length > 0 ? `<div class="section">
-      <div class="section-title">Direct Costs</div>
-      <table><thead><tr><th>Description</th><th>Date</th><th class="num">Amount</th></tr></thead><tbody>
-        ${drCosts.map(c => `<tr><td>${c.description || '—'}</td><td>${c.cost_date ? new Date(c.cost_date + 'T12:00:00Z').toLocaleDateString() : '—'}</td><td class="num">$${fmtN(c.amount)}</td></tr>`).join('')}
-        <tr class="total-row"><td colspan="2">Direct Costs Total</td><td class="num">$${fmtN(costTotal)}</td></tr>
-      </tbody></table>
-    </div>` : ''}
-    ${drBillings.length > 0 ? `<div class="section">
-      <div class="section-title">Sub Billing Submissions</div>
-      <table><thead><tr><th>Subcontractor</th><th>Period</th><th>Description</th><th class="num">Amount Billed</th><th>Status</th></tr></thead><tbody>
-        ${drBillings.map(b => {
-          const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '—'
-          return '<tr><td>' + (b.company_name || '—') + '</td><td>' + period + '</td><td>' + (b.work_description || '—') + '</td><td class="num">$' + fmtN(b.amount_billed) + '</td><td>' + b.status + '</td></tr>'
-        }).join('')}
-        <tr class="total-row"><td colspan="3">Sub Billings Total</td><td class="num">$${fmtN(billingTotal)}</td><td></td></tr>
-      </tbody></table>
-    </div>` : ''}
-    ${drCosts.length > 0 && drBillings.length > 0 ? `<div class="grand-total"><span>Grand Total</span><span>$${fmtN(grandTotal)}</span></div>` : ''}
+    <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+    <div class="brand-bar">
+      <div class="brand-left">
+        <img src="${logoUrl}" alt="NV Construction" width="40" height="40" style="object-fit:contain;border-radius:4px">
+        <div>
+          <div class="brand-name">NV Construction</div>
+          <div class="brand-tagline">Draw Request</div>
+        </div>
+      </div>
+      <div>
+        <div class="draw-label">Draw Request No.</div>
+        <div class="draw-num">${drawNumStr}</div>
+      </div>
+    </div>
+    <div class="accent-bar"></div>
+    <div class="content">
+      <p class="doc-title">${dr.title}</p>
+      <p class="doc-meta">${jobName}${jobAddress ? ' · ' + jobAddress : ''} · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+      ${drCosts.length > 0 ? `<div class="section">
+        <div class="section-title">Direct Costs</div>
+        <table><thead><tr><th>Description</th><th>Date</th><th class="num">Amount</th></tr></thead><tbody>
+          ${drCosts.map(c => `<tr><td>${c.description || '—'}</td><td>${c.cost_date ? new Date(c.cost_date + 'T12:00:00Z').toLocaleDateString() : '—'}</td><td class="num">$${fmtN(c.amount)}</td></tr>`).join('')}
+          <tr class="total-row"><td colspan="2">Direct Costs Total</td><td class="num">$${fmtN(costTotal)}</td></tr>
+        </tbody></table>
+      </div>` : ''}
+      ${drBillings.length > 0 ? `<div class="section">
+        <div class="section-title">Sub Billing Submissions</div>
+        <table><thead><tr><th>Subcontractor</th><th>Period</th><th>Description</th><th class="num">Amount Billed</th><th>Status</th></tr></thead><tbody>
+          ${drBillings.map(b => {
+            const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '—'
+            return '<tr><td>' + (b.company_name || '—') + '</td><td>' + period + '</td><td>' + (b.work_description || '—') + '</td><td class="num">$' + fmtN(b.amount_billed) + '</td><td>' + b.status + '</td></tr>'
+          }).join('')}
+          <tr class="total-row"><td colspan="3">Sub Billings Total</td><td class="num">$${fmtN(billingTotal)}</td><td></td></tr>
+        </tbody></table>
+      </div>` : ''}
+      ${(drCosts.length > 0 || drBillings.length > 0) ? `<div class="grand-total"><span class="label">Grand Total</span><span class="amount">$${fmtN(grandTotal)}</span></div>` : ''}
+    </div>
     <script>window.onload=()=>window.print()</script></body></html>`
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close() }

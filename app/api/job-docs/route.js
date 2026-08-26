@@ -5,6 +5,33 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+export async function GET(request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const job_id = searchParams.get('job_id')
+    const path   = searchParams.get('path')
+
+    if (path) {
+      const { data, error } = await adminSupabase.storage
+        .from('job-documents')
+        .createSignedUrl(path, 3600)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ url: data.signedUrl })
+    }
+
+    if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+    const { data, error } = await adminSupabase
+      .from('job_docs')
+      .select('*')
+      .eq('job_id', job_id)
+      .order('created_at', { ascending: false })
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ data })
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 })
+  }
+}
+
 export async function POST(request) {
   try {
     const body = await request.json()
@@ -25,8 +52,7 @@ export async function POST(request) {
         .from('job-documents')
         .createSignedUploadUrl(filePath)
       if (error) return Response.json({ error: error.message }, { status: 500 })
-      const { data: { publicUrl } } = adminSupabase.storage.from('job-documents').getPublicUrl(filePath)
-      return Response.json({ signedUrl: data.signedUrl, publicUrl })
+      return Response.json({ signedUrl: data.signedUrl, path: filePath })
     }
 
     if (action === 'insert-doc') {

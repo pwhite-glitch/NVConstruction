@@ -273,8 +273,9 @@ export default function ResidentialJobDetail() {
   }
 
   async function loadDocuments() {
-    const { data } = await supabase.from('job_docs').select('*').eq('job_id', id).order('created_at', { ascending: false })
-    setDocuments(data || [])
+    const res = await fetch(`/api/job-docs?job_id=${id}`)
+    const json = await res.json()
+    setDocuments(json.data || [])
   }
 
   async function loadContacts() {
@@ -565,14 +566,14 @@ export default function ResidentialJobDetail() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'upload-url-residential', path }),
       })
-      const { signedUrl, publicUrl, error: urlErr } = await urlRes.json()
+      const { signedUrl, path: storagePath, error: urlErr } = await urlRes.json()
       if (urlErr || !signedUrl) throw new Error(urlErr || 'Could not get upload URL')
       const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
       if (!up.ok) throw new Error('File upload failed')
       const insertRes = await fetch('/api/job-docs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'insert-doc', job_id: id, url: publicUrl, name: file.name, doc_type: 'general' }),
+        body: JSON.stringify({ action: 'insert-doc', job_id: id, url: storagePath, name: file.name, doc_type: 'general' }),
       })
       const insertData = await insertRes.json()
       if (insertData.error) throw new Error(insertData.error)
@@ -582,6 +583,17 @@ export default function ResidentialJobDetail() {
     }
     setUploadingDoc(false)
     if (docInputRef.current) docInputRef.current.value = ''
+  }
+
+  async function openJobDoc(path) {
+    try {
+      const res = await fetch(`/api/job-docs?path=${encodeURIComponent(path)}`)
+      const json = await res.json()
+      if (json.url) window.open(json.url, '_blank')
+      else alert('Could not open document: ' + (json.error || 'unknown error'))
+    } catch (e) {
+      alert('Could not open document: ' + e.message)
+    }
   }
 
   async function addContact() {
@@ -1668,7 +1680,7 @@ export default function ResidentialJobDetail() {
                     <div style={{ fontSize: '13px', color: '#f1f1f1' }}>{doc.name}</div>
                     <div style={{ fontSize: '11px', color: '#555' }}>{doc.doc_type || 'general'}{doc.created_at ? ' · ' + new Date(doc.created_at).toLocaleDateString() : ''}</div>
                   </div>
-                  <a href={doc.url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#60a5fa', textDecoration: 'none' }}>View →</a>
+                  <button onClick={() => openJobDoc(doc.url)} style={{ fontSize: '12px', color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View →</button>
                 </div>
               ))
             )}

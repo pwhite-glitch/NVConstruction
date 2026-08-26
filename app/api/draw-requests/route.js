@@ -56,7 +56,7 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { id, status, title, add_dc_ids, remove_dc_ids, add_po_ids, remove_po_ids, add_gc_ids, remove_gc_ids } = await request.json()
+  const { id, status, title, add_dc_ids, remove_dc_ids, add_po_ids, remove_po_ids, add_gc_ids, remove_gc_ids, add_billing_ids, remove_billing_ids } = await request.json()
   const updates = {}
   if (status !== undefined) updates.status = status
   if (title !== undefined) updates.title = title
@@ -82,16 +82,22 @@ export async function PATCH(request) {
   if (remove_gc_ids && remove_gc_ids.length > 0) {
     await adminSupabase.from('general_conditions').update({ draw_request_id: null, drawn_at: null }).in('id', remove_gc_ids)
   }
+  if (add_billing_ids && add_billing_ids.length > 0) {
+    await adminSupabase.from('billing_submissions').update({ draw_request_id: id }).in('id', add_billing_ids)
+  }
+  if (remove_billing_ids && remove_billing_ids.length > 0) {
+    await adminSupabase.from('billing_submissions').update({ draw_request_id: null }).in('id', remove_billing_ids)
+  }
   return Response.json({ ok: true })
 }
 
 export async function DELETE(request) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
-  // Unlink direct costs, POs, and general conditions first
   await adminSupabase.from('direct_costs').update({ draw_request_id: null }).eq('draw_request_id', id)
   await adminSupabase.from('purchase_orders').update({ draw_request_id: null, drawn_at: null }).eq('draw_request_id', id)
   await adminSupabase.from('general_conditions').update({ draw_request_id: null, drawn_at: null }).eq('draw_request_id', id)
+  await adminSupabase.from('billing_submissions').update({ draw_request_id: null }).eq('draw_request_id', id)
   const { error } = await adminSupabase.from('draw_requests').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

@@ -117,6 +117,8 @@ export default function ResidentialJobDetail() {
   const [expandedDrawId, setExpandedDrawId] = useState(null)
   const [drawAddCostIds, setDrawAddCostIds] = useState([])
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
+  const [drawAddBillingIds, setDrawAddBillingIds] = useState([])
+  const [savingDrawBillings, setSavingDrawBillings] = useState(false)
   const [billingBilling, setBillingBillingTab] = useState('submissions')
   const [showBillingForm, setShowBillingForm] = useState(false)
   const [billingForm, setBillingForm] = useState({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
@@ -517,6 +519,68 @@ export default function ResidentialJobDetail() {
   async function removeCostFromDraw(costId) {
     await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: null }) })
     await Promise.all([loadDrawRequests(), loadDirectCosts()])
+  }
+
+  async function saveDrawBillings(drawId) {
+    setSavingDrawBillings(true)
+    await Promise.all(drawAddBillingIds.map(bid =>
+      fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
+    ))
+    setDrawAddBillingIds([])
+    await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
+    setSavingDrawBillings(false)
+  }
+
+  async function removeBillingFromDraw(billingId) {
+    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId, draw_request_id: null }) })
+    await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
+  }
+
+  function printDraw(dr) {
+    const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
+    const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
+    const costTotal = drCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+    const billingTotal = drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+    const grandTotal = costTotal + billingTotal
+    const fmtN = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const jobName = job?.name || job?.address || 'Project'
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${dr.title}</title><style>
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:32px;font-size:13px}
+      h1{font-size:22px;margin:0 0 4px}
+      .sub{color:#666;font-size:13px;margin:0 0 24px}
+      .section{margin-bottom:24px}
+      .section-title{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#888;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:10px}
+      table{width:100%;border-collapse:collapse}
+      td,th{padding:7px 8px;text-align:left;border-bottom:1px solid #eee;font-size:13px}
+      th{font-weight:600;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+      .num{text-align:right;font-variant-numeric:tabular-nums}
+      .total-row td{font-weight:700;border-top:2px solid #111;padding-top:10px}
+      .grand-total{margin-top:24px;border-top:2px solid #111;padding-top:12px;display:flex;justify-content:space-between;font-size:16px;font-weight:700}
+      @media print{body{padding:16px}}
+    </style></head><body>
+    <h1>${dr.title}</h1>
+    <p class="sub">${jobName}${job?.address && job?.name ? ' · ' + job.address : ''} · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+    ${drCosts.length > 0 ? `<div class="section">
+      <div class="section-title">Direct Costs</div>
+      <table><thead><tr><th>Description</th><th>Date</th><th class="num">Amount</th></tr></thead><tbody>
+        ${drCosts.map(c => `<tr><td>${c.description || '—'}</td><td>${c.cost_date ? new Date(c.cost_date + 'T12:00:00Z').toLocaleDateString() : '—'}</td><td class="num">$${fmtN(c.amount)}</td></tr>`).join('')}
+        <tr class="total-row"><td colspan="2">Direct Costs Total</td><td class="num">$${fmtN(costTotal)}</td></tr>
+      </tbody></table>
+    </div>` : ''}
+    ${drBillings.length > 0 ? `<div class="section">
+      <div class="section-title">Sub Billing Submissions</div>
+      <table><thead><tr><th>Subcontractor</th><th>Period</th><th>Description</th><th class="num">Amount Billed</th><th>Status</th></tr></thead><tbody>
+        ${drBillings.map(b => {
+          const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '—'
+          return '<tr><td>' + (b.company_name || '—') + '</td><td>' + period + '</td><td>' + (b.work_description || '—') + '</td><td class="num">$' + fmtN(b.amount_billed) + '</td><td>' + b.status + '</td></tr>'
+        }).join('')}
+        <tr class="total-row"><td colspan="3">Sub Billings Total</td><td class="num">$${fmtN(billingTotal)}</td><td></td></tr>
+      </tbody></table>
+    </div>` : ''}
+    ${drCosts.length > 0 && drBillings.length > 0 ? `<div class="grand-total"><span>Grand Total</span><span>$${fmtN(grandTotal)}</span></div>` : ''}
+    <script>window.onload=()=>window.print()</script></body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
   }
 
   async function addMilestone() {
@@ -1521,18 +1585,21 @@ export default function ResidentialJobDetail() {
                 ) : (
                   drawRequests.map(dr => {
                     const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
-                    const drTotal = drCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+                    const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
+                    const drTotal = drCosts.reduce((a, c) => a + Number(c.amount || 0), 0) + drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
                     const isExpanded = expandedDrawId === dr.id
                     const undrawnCosts = directCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
+                    const undrawnBillings = billingSubmissions.filter(b => !b.draw_request_id)
                     return (
                       <div key={dr.id} style={{ marginBottom: '12px', border: '1px solid #1e1e1e', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', cursor: 'pointer' }} onClick={() => setExpandedDrawId(isExpanded ? null : dr.id)}>
                           <div>
                             <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{dr.title}</div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>{drCosts.length} costs · ${fmt(drTotal)}</div>
+                            <div style={{ fontSize: '12px', color: '#555' }}>{drCosts.length} costs · {drBillings.length} billings · ${fmt(drTotal)}</div>
                           </div>
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <span style={s.badge(dr.status === 'open' ? 'orange' : 'gray')}>{dr.status}</span>
+                            <button style={s.btnSmGray} onClick={e => { e.stopPropagation(); printDraw(dr) }}>Download</button>
                             {profile?.role === 'pm' && (
                               <>
                                 {dr.status === 'open'
@@ -1547,7 +1614,7 @@ export default function ResidentialJobDetail() {
 
                         {isExpanded && (
                           <div style={{ padding: '0 14px 14px', borderTop: '1px solid #1a1a1a' }}>
-                            <p style={{ ...s.cardTitle, marginTop: '12px' }}>Included costs</p>
+                            <p style={{ ...s.cardTitle, marginTop: '12px' }}>Direct Costs</p>
                             {drCosts.length === 0 ? <div style={{ fontSize: '13px', color: '#444', marginBottom: '10px' }}>No costs added to this draw.</div> : drCosts.map(c => (
                               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #111' }}>
                                 <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
@@ -1570,6 +1637,38 @@ export default function ResidentialJobDetail() {
                                 ))}
                                 <button style={{ ...s.btnGreen, marginTop: '10px' }} onClick={() => saveDrawCosts(dr.id)} disabled={savingDrawCosts || drawAddCostIds.length === 0}>
                                   {savingDrawCosts ? 'Saving...' : `Add ${drawAddCostIds.length} cost${drawAddCostIds.length !== 1 ? 's' : ''}`}
+                                </button>
+                              </>
+                            )}
+
+                            <p style={{ ...s.cardTitle, marginTop: '16px' }}>Sub Billings</p>
+                            {drBillings.length === 0 ? <div style={{ fontSize: '13px', color: '#444', marginBottom: '10px' }}>No sub billings added to this draw.</div> : drBillings.map(b => (
+                              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #111' }}>
+                                <div>
+                                  <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
+                                  {b.work_description ? <span style={{ fontSize: '11px', color: '#444', marginLeft: '8px' }}>{b.work_description}</span> : null}
+                                </div>
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(b.amount_billed)}</span>
+                                  <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status}</span>
+                                  {dr.status === 'open' && <button style={{ ...s.btnSmGray, fontSize: '11px' }} onClick={() => removeBillingFromDraw(b.id)}>Remove</button>}
+                                </div>
+                              </div>
+                            ))}
+
+                            {dr.status === 'open' && undrawnBillings.length > 0 && (
+                              <>
+                                <p style={{ ...s.cardTitle, marginTop: '14px' }}>Add sub billings</p>
+                                {undrawnBillings.map(b => (
+                                  <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', cursor: 'pointer' }}>
+                                    <input type="checkbox" checked={drawAddBillingIds.includes(b.id)} onChange={e => setDrawAddBillingIds(ids => e.target.checked ? [...ids, b.id] : ids.filter(x => x !== b.id))} />
+                                    <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
+                                    {b.work_description ? <span style={{ fontSize: '11px', color: '#555' }}>{b.work_description}</span> : null}
+                                    <span style={{ fontSize: '13px', fontFamily: 'monospace', marginLeft: 'auto' }}>${fmt(b.amount_billed)}</span>
+                                  </label>
+                                ))}
+                                <button style={{ ...s.btnGreen, marginTop: '10px' }} onClick={() => saveDrawBillings(dr.id)} disabled={savingDrawBillings || drawAddBillingIds.length === 0}>
+                                  {savingDrawBillings ? 'Saving...' : `Add ${drawAddBillingIds.length} billing${drawAddBillingIds.length !== 1 ? 's' : ''}`}
                                 </button>
                               </>
                             )}

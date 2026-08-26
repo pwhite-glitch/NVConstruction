@@ -3055,7 +3055,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   }
 
   async function deletePrimeCO(coId) {
-    if (!window.confirm('Delete this prime contract change order?')) return
+    if (!window.confirm('Delete this contract modification?')) return
     const co = primeCOs.find(c => c.id === coId)
     await supabase.from('prime_change_orders').delete().eq('id', coId)
     if (co?.status === 'approved') {
@@ -3175,7 +3175,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       : ''
     w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} — Job #${job.job_number}</title>
 <style>@page{margin:0.45in}*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;background:#fff;font-size:11px;line-height:1.4}.print-btn{padding:6px 16px;background:#e8590c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;display:block;margin:12px auto}.brand-bar{background:#e8590c;padding:12px 32px;display:flex;justify-content:space-between;align-items:center}.brand-logo{display:flex;align-items:center;gap:10px}.brand-name{color:#fff;font-size:14px;font-weight:800;letter-spacing:-0.5px}.brand-tagline{color:rgba(255,255,255,0.7);font-size:9px;margin-top:1px;letter-spacing:1px;text-transform:uppercase}.co-label{text-align:right;color:rgba(255,255,255,0.75);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:2px}.co-num{color:#fff;font-size:20px;font-weight:800}.content{padding:20px 32px;max-width:800px;margin:0 auto}.lbl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:2px}.val{font-size:11px;font-weight:600;color:#111}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8e8e8}.amt-box{background:#fff8f5;border:2px solid #e8590c;border-radius:7px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}.amt-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#e8590c;margin-bottom:2px}.amt{font-size:22px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:6px;padding:10px 12px;margin-bottom:10px}.notes{background:#fafafa;border-left:3px solid #e8590c;padding:8px 10px;margin-bottom:12px;font-size:11px;color:#555;border-radius:0 4px 4px 0}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:22px}.sig-block{border-top:1.5px solid #111;padding-top:10px}.sig-lbl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:6px}.sig-line{height:26px;border-bottom:1px solid #ccc;margin-bottom:4px}.sig-field{font-size:10px;color:#aaa}.footer{margin-top:18px;padding:10px 32px;border-top:1px solid #eee;font-size:9px;color:#aaa;text-align:center;background:#fafafa}@media print{.print-btn{display:none}}</style></head><body>
-<div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="34" height="34" style="object-fit:contain;border-radius:3px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Change Order — Prime Contract</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
+<div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="34" height="34" style="object-fit:contain;border-radius:3px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Contract Modification</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
 <div class="content">
 <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
 <div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div>${job.owner_company||job.owner_name?`<div><div class="lbl">Owner</div><div class="val">${[job.owner_company,job.owner_name].filter(Boolean).join(' · ')}</div></div>`:''}<div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
@@ -4484,7 +4484,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           type="button"
                           style={{ ...s.btnSmall, whiteSpace: 'nowrap', flexShrink: 0 }}
                           onClick={() => {
-                            if (window.confirm('The original contract value is locked because it is used as the base for all change order calculations.\n\nUnlock only to correct a data entry mistake — do NOT use this to apply change orders (use Prime COs for that).\n\nUnlock to edit?')) {
+                            if (window.confirm('The original contract value is locked because it is used as the base for all change order calculations.\n\nUnlock only to correct a data entry mistake — do NOT use this to apply change orders (use Contract Modifications for that).\n\nUnlock to edit?')) {
                               setContractValueUnlocked(true)
                             }
                           }}
@@ -4498,7 +4498,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                       </div>
                     )}
-                    {contractValueUnlocked && <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Correction mode — use Prime COs to apply change orders, not this field.</p>}
+                    {contractValueUnlocked && <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Correction mode — use Contract Modifications to apply change orders, not this field.</p>}
                   </div>
                   <div><label style={s.label}>Default markup %</label><input type="number" style={s.input} placeholder="0" value={form.markup_pct || ''} onChange={e => update('markup_pct', e.target.value)} /></div>
                   <div>
@@ -6186,8 +6186,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.statRow} className="rx-stats">
                   <div style={s.statCard}><div style={s.statLabel}>Sub COs pending</div><div style={s.statValue(pendingCOs > 0 ? '#e8590c' : undefined)}>{pendingCOs}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Sub CO approved value</div><div style={s.statValue('#4ade80')}>{approvedCOValue >= 0 ? '+' : ''}${approvedCOValue.toLocaleString()}</div></div>
-                  <div style={s.statCard}><div style={s.statLabel}>Prime COs pending</div><div style={s.statValue(pendingPrimeCOs > 0 ? '#e8590c' : undefined)}>{pendingPrimeCOs}</div></div>
-                  <div style={s.statCard}><div style={s.statLabel}>Prime CO approved value</div><div style={s.statValue('#4ade80')}>{approvedPrimeCOVal >= 0 ? '+' : ''}${approvedPrimeCOVal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Modifications pending</div><div style={s.statValue(pendingPrimeCOs > 0 ? '#e8590c' : undefined)}>{pendingPrimeCOs}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Approved modifications</div><div style={s.statValue('#4ade80')}>{approvedPrimeCOVal >= 0 ? '+' : ''}${approvedPrimeCOVal.toLocaleString()}</div></div>
                 </div>
               )
             })()}
@@ -6195,8 +6195,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             {/* Prime Contract Change Orders */}
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Prime Contract Change Orders ({primeCOs.length})</p>
-                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems(); setPrimeCOForm({ ...emptyPrimeCO, sov: [{ ...emptySOVRow }] }); setPrimeCOBillingLink(null) }}>+ Add Prime CO</button>}
+                <p style={{ ...s.cardTitle, margin: 0 }}>Contract Modifications ({primeCOs.length})</p>
+                {!showAddPrimeCO && <button style={s.btnSmallOrange} onClick={() => { setShowAddPrimeCO(true); loadBudgetItems(); setPrimeCOForm({ ...emptyPrimeCO, sov: [{ ...emptySOVRow }] }); setPrimeCOBillingLink(null) }}>+ Add Modification</button>}
               </div>
 
               {showAddPrimeCO && (() => {
@@ -6206,7 +6206,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const allLinesAssigned = primeCOForm.sov.length > 0 && primeCOForm.sov.every(r => r.budget_item_id && r.amount)
                 return (
                 <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
-                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New prime contract change order</p>
+                  <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New contract modification</p>
 
                   {(() => {
                     const approvedBillings = billingSubmissions.filter(b => b.status === 'approved')
@@ -6298,7 +6298,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <button style={{ ...s.btn, opacity: (addingPrimeCO || !primeCOForm.description || !amountEntered) ? 0.6 : 1 }}
                       disabled={addingPrimeCO || !primeCOForm.description || !amountEntered}
                       onClick={addPrimeCO}>
-                      {addingPrimeCO ? 'Saving...' : 'Save Prime CO'}
+                      {addingPrimeCO ? 'Saving...' : 'Save Modification'}
                     </button>
                     <button style={s.btnGray} onClick={() => { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO); setPrimeCOBillingLink(null) }}>Cancel</button>
                   </div>
@@ -6306,7 +6306,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )
               })()}
 
-              {primeCOs.length === 0 && !showAddPrimeCO && <p style={{ color: '#444', fontSize: '14px' }}>No prime contract change orders yet.</p>}
+              {primeCOs.length === 0 && !showAddPrimeCO && <p style={{ color: '#444', fontSize: '14px' }}>No contract modifications yet.</p>}
 
               {primeCOs.map(co => {
                 const isExpanded = expandedPrimeCOId === co.id
@@ -6691,7 +6691,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         {(
                           <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup(''); setPushAdditional('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')); setPushAdditional('') } }}>
-                            {isPushing ? '✕ Cancel' : '↑ Push to Prime'}
+                            {isPushing ? '✕ Cancel' : '↑ Push to Mod'}
                           </button>
                         )}
                         <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const num = allCOs.length - coIdx; printSubCO(co, subName, scope, num) }}>Print CO</button>
@@ -6752,7 +6752,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     })()}
                     {isPushing && (
                       <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px 16px', marginTop: '8px' }}>
-                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>Push to Prime Contract CO</p>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>Push to Contract Modification</p>
                         <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                           <div>
                             <label style={s.label}>Sub amount</label>
@@ -6768,12 +6768,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           {markedUpPreview != null && (
                             <div>
-                              <label style={s.label}>Prime CO total</label>
+                              <label style={s.label}>Modification total</label>
                               <div style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80', paddingTop: '6px' }}>${markedUpPreview.toLocaleString()}</div>
                             </div>
                           )}
                           <button style={{ ...s.btn, opacity: pushingToPrime ? 0.6 : 1, flexShrink: 0 }} disabled={pushingToPrime} onClick={() => pushSubCOToPrime(co, subName)}>
-                            {pushingToPrime ? 'Creating...' : 'Create Prime CO'}
+                            {pushingToPrime ? 'Creating...' : 'Create Modification'}
                           </button>
                         </div>
                       </div>

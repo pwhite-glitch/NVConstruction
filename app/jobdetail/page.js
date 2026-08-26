@@ -10947,11 +10947,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <label style={s.label}>Line items</label>
                             <div>
                               <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
                                   <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
                                 </div>
                                 {poForm.items.map((item, idx) => (
-                                  <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < poForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
+                                  <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', borderBottom: idx < poForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
                                     <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
                                     <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
                                     <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
@@ -10959,7 +10959,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
                                   </div>
                                 ))}
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
                                   <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
                                   <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(poForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
                                   <span />
@@ -11019,11 +11019,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <label style={s.label}>Line items</label>
                                   <div>
                                     <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
                                         <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
                                       </div>
                                       {editPOForm.items.map((item, idx) => (
-                                        <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', borderBottom: idx < editPOForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
+                                        <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', borderBottom: idx < editPOForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
                                           <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
                                           <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
                                           <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
@@ -11031,7 +11031,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           <button onClick={() => setEditPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
                                         </div>
                                       ))}
-                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 70px 100px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
                                         <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
                                         <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(editPOForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
                                         <span />

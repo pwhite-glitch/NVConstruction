@@ -119,6 +119,9 @@ export default function ResidentialJobDetail() {
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
   const [drawAddBillingIds, setDrawAddBillingIds] = useState([])
   const [savingDrawBillings, setSavingDrawBillings] = useState(false)
+  const [editingCostId, setEditingCostId] = useState(null)
+  const [editCostForm, setEditCostForm] = useState({})
+  const [savingEditCost, setSavingEditCost] = useState(false)
   const [billingBilling, setBillingBillingTab] = useState('submissions')
   const [showBillingForm, setShowBillingForm] = useState(false)
   const [billingForm, setBillingForm] = useState({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
@@ -744,6 +747,18 @@ export default function ResidentialJobDetail() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  async function saveEditedCost() {
+    setSavingEditCost(true)
+    await fetch('/api/direct-costs', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: editingCostId, ...editCostForm, budget_item_id: editCostForm.budget_item_id || null }),
+    })
+    setEditingCostId(null)
+    await loadDirectCosts()
+    setSavingEditCost(false)
+  }
+
   // ── Inspections ──
   async function addInspection() {
     if (!newInspection.inspection_type) return
@@ -1282,6 +1297,7 @@ export default function ResidentialJobDetail() {
                             {c.receipt_url && (
                               <button style={s.btnSmGray} onClick={() => openDCReceipt(c.receipt_url)}>Receipt</button>
                             )}
+                            <button style={s.btnSmGray} onClick={() => { setEditingCostId(editingCostId === c.id ? null : c.id); setEditCostForm({ cost_date: c.cost_date || '', description: c.description || '', category: c.category || 'Materials', amount: c.amount || '', notes: c.notes || '', budget_item_id: c.budget_item_id || '' }) }}>Edit</button>
                             {!c.budget_item_id && (
                               <select style={{ ...s.select, width: '160px', fontSize: '12px', padding: '4px 8px' }} defaultValue="" onChange={e => assignDCBudgetItem(c.id, e.target.value)}>
                                 <option value="">Assign budget line</option>
@@ -1306,6 +1322,26 @@ export default function ResidentialJobDetail() {
                           <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <input style={{ ...s.input, flex: 1, fontSize: '12px' }} placeholder="Rejection reason (optional)" value={costRejectNote} onChange={e => setCostRejectNote(e.target.value)} autoFocus />
                             <button style={s.btnRed} onClick={() => updateDCStatus(c.id, 'rejected')}>Confirm Reject</button>
+                          </div>
+                        )}
+                        {editingCostId === c.id && (
+                          <div style={{ marginTop: '12px', padding: '14px', background: '#0f0f0f', borderRadius: '8px', border: '1px solid #222' }}>
+                            <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                              <div><label style={s.label}>Date</label><input type="date" style={s.input} value={editCostForm.cost_date} onChange={e => setEditCostForm(f => ({ ...f, cost_date: e.target.value }))} /></div>
+                              <div><label style={s.label}>Category</label><select style={s.select} value={editCostForm.category} onChange={e => setEditCostForm(f => ({ ...f, category: e.target.value }))}>{['Materials','Labor','Equipment','Subcontractor','Permits','Fees','Meals/Entertainment','Other'].map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" min="0" style={s.input} value={editCostForm.amount} onChange={e => setEditCostForm(f => ({ ...f, amount: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                              <div><label style={s.label}>Description</label><input style={s.input} value={editCostForm.description} onChange={e => setEditCostForm(f => ({ ...f, description: e.target.value }))} /></div>
+                              <div><label style={s.label}>Budget Line</label><select style={s.select} value={editCostForm.budget_item_id} onChange={e => setEditCostForm(f => ({ ...f, budget_item_id: e.target.value }))}><option value="">— Unassigned —</option>{budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}</select></div>
+                            </div>
+                            <div style={{ ...s.grid2 }}>
+                              <div><label style={s.label}>Notes</label><input style={s.input} value={editCostForm.notes} onChange={e => setEditCostForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+                                <button style={s.btn} onClick={saveEditedCost} disabled={savingEditCost}>{savingEditCost ? 'Saving…' : 'Save Changes'}</button>
+                                <button style={s.btnSmGray} onClick={() => setEditingCostId(null)}>Cancel</button>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>

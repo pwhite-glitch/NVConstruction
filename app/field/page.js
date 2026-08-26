@@ -208,7 +208,7 @@ export default function Field() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       const devRole = localStorage.getItem('nvc_dev_role')
       const devIsSuperOverride = devRole === 'super' && (prof?.role === 'pm' || prof?.role === 'apm')
-      if (!devIsSuperOverride && (!prof || prof.role !== 'super')) { router.push('/login'); return }
+      if (!devIsSuperOverride && (!prof || (prof.role !== 'super' && prof.role !== 'apm'))) { router.push('/login'); return }
       setProfile(devIsSuperOverride ? { ...prof, role: 'super' } : prof)
       const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id, jobs(*)').eq('user_id', session.user.id)
       const jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
@@ -621,6 +621,86 @@ export default function Field() {
     setLookahead(null)
     setLookaheadActivities([])
     loadLookaheadData(newStart)
+  }
+
+  function printLookahead() {
+    if (!lookahead) return
+    const selectedJob = assignedJobs.find(j => j.id === selectedJobId)
+    const jobName = selectedJob?.name || selectedJob?.address || 'Project'
+    const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
+    const weekEnd = new Date(wkBase.getTime() + 11 * 86400000)
+    const dateRange = wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    const weekDays = []
+    for (let w = 0; w < 2; w++) for (let d = 0; d < 5; d++) { const day = new Date(wkBase); day.setDate(day.getDate() + w * 7 + d); weekDays.push(day.toISOString().split('T')[0]) }
+    const todayStr = new Date().toISOString().split('T')[0]
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead — ${jobName}</title><style>
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:32px;font-size:13px}
+      h1{font-size:20px;font-weight:800;margin:0 0 4px}
+      .sub{color:#666;font-size:13px;margin:0 0 28px}
+      .week{margin-bottom:32px;page-break-inside:avoid}
+      .week-header{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px}
+      .week-title{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#555}
+      .week-stats{font-size:11px;color:#888;display:flex;gap:12px}
+      .day{margin-bottom:12px}
+      .day-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+      .day-name{font-size:13px;font-weight:700}
+      .day-date{font-size:11px;color:#888}
+      .today .day-name{color:#e8590c}
+      .activity{border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;margin-bottom:5px}
+      .act-own{border-left:3px solid #22c55e}
+      .act-sub{border-left:3px solid #38bdf8}
+      .act-other{border-left:3px solid #fb923c}
+      .act-title{font-size:13px;font-weight:600;margin-bottom:4px}
+      .act-meta{display:flex;flex-wrap:wrap;gap:5px;font-size:11px;color:#555;align-items:center}
+      .tag{padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap}
+      .tag-own{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+      .tag-sub{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+      .tag-other{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+      .tag-inspect{background:#fffbeb;color:#b45309;border:1px solid #fde68a}
+      .tag-commit{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+      .act-notes{font-size:11px;color:#888;margin-top:5px;font-style:italic;padding-top:5px;border-top:1px solid #f3f4f6}
+      .empty{font-size:12px;color:#ccc;padding:4px 0 6px}
+      @media print{body{padding:16px}@page{margin:1.5cm}}
+    </style></head><body>
+    <h1>2-Week Lookahead</h1>
+    <p class="sub">${jobName} · ${dateRange}${lookahead.status === 'submitted' ? ' · Submitted' : ' · Draft'}</p>
+    ${[0, 1].map(w => {
+      const wkStart = new Date(wkBase.getTime() + w * 7 * 86400000)
+      const wkDays = weekDays.slice(w * 5, w * 5 + 5)
+      const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
+      const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
+      const inspections = wkActs.filter(a => a.inspection_required).length
+      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + (w + 1) + ' — ' + wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' + (totalManpower > 0 ? '<span>' + totalManpower + ' workers</span>' : '') + (inspections > 0 ? '<span>⚠️ ' + inspections + ' inspection' + (inspections > 1 ? 's' : '') + '</span>' : '') + (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
+        dayNames.map((dayName, di) => {
+          const dateStr = wkDays[di]
+          const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
+          const dateLabel = new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
+          const isToday = dateStr === todayStr
+          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + '</span><span class="day-date">' + dateLabel + (isToday ? ' · TODAY' : '') + '</span></div>' +
+            (dayActs.length === 0 ? '<div class="empty">No activities scheduled</div>' :
+              dayActs.map(act => {
+                const type = act.responsible_type === 'sub' ? 'sub' : act.responsible_type === 'other' ? 'other' : 'own'
+                const responsible = type === 'sub' ? (lookaheadContracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'
+                const mp = parseInt(act.manpower) || 0
+                const addlCos = (act.additional_companies || [])
+                return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + '</div><div class="act-meta"><span class="tag tag-' + type + '">' + responsible + '</span>' +
+                  (mp > 0 ? '<span>' + mp + ' workers</span>' : '') +
+                  (act.location ? '<span>📍 ' + act.location + '</span>' : '') +
+                  (act.equipment ? '<span>⚙️ ' + act.equipment + '</span>' : '') +
+                  (act.inspection_required ? '<span class="tag tag-inspect">Inspection Required</span>' : '') +
+                  (act.inspection_scheduled ? '<span class="tag tag-inspect">Scheduled</span>' : '') +
+                  (act.committed ? '<span class="tag tag-commit">Committed</span>' : '') +
+                  (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding ✓</span>' : '') +
+                  addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
+                  '</div>' + (act.constraints_notes ? '<div class="act-notes">⚠ ' + act.constraints_notes + '</div>' : '') + '</div>'
+              }).join('')
+            ) + '</div>'
+        }).join('') + '</div>'
+    }).join('')}
+    <script>window.onload=()=>window.print()</script></body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
   }
 
   async function loadToolLogsForTool(toolId) {
@@ -2282,25 +2362,35 @@ export default function Field() {
                         </div>
                       ) : (
                         <>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: '10px', flexWrap: 'wrap' }}>
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: lookahead.status === 'submitted' ? '#0a2a0a' : '#1a1a0a', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', border: `1px solid ${lookahead.status === 'submitted' ? '#1a4a1a' : '#3a3a0a'}` }}>
                               {lookahead.status === 'submitted' ? '✓ Submitted to PM' : 'Draft'}
                             </span>
-                            {lookahead.status !== 'submitted' && (
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>⬇ Download PDF</button>
                               <button
                                 onClick={submitLookaheadFromField}
                                 disabled={submittingLA || lookaheadActivities.length === 0}
                                 style={{ padding: '7px 16px', background: submittingLA || lookaheadActivities.length === 0 ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '8px', color: submittingLA || lookaheadActivities.length === 0 ? '#555' : '#fff', fontSize: '13px', fontWeight: '700', cursor: submittingLA || lookaheadActivities.length === 0 ? 'default' : 'pointer' }}
                               >
-                                {submittingLA ? 'Submitting...' : 'Submit to PM'}
+                                {submittingLA ? 'Submitting...' : lookahead.status === 'submitted' ? 'Re-submit' : 'Submit to PM'}
                               </button>
-                            )}
+                            </div>
                           </div>
 
-                          {[0, 1].map(w => (
+                          {[0, 1].map(w => {
+                            const wkDays = weekDays.slice(w * 5, w * 5 + 5)
+                            const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
+                            const wkManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
+                            const wkInspections = wkActs.filter(a => a.inspection_required).length
+                            return (
                             <div key={w} style={{ marginBottom: '1.25rem' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1a1a1a' }}>
-                                Week {w + 1} — {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1a1a1a' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} — {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                                <span style={{ display: 'flex', gap: '10px' }}>
+                                  {wkManpower > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{wkManpower} workers</span>}
+                                  {wkInspections > 0 && <span style={{ fontSize: '11px', color: '#f59e0b' }}>⚠ {wkInspections} inspection{wkInspections > 1 ? 's' : ''}</span>}
+                                </span>
                               </div>
                               {DAY_LABELS.map((dayLabel, di) => {
                                 const dateStr = weekDays[w * 5 + di]
@@ -2314,9 +2404,7 @@ export default function Field() {
                                         <span style={{ fontSize: '12px', color: '#444' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
                                         {isToday && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '1px 6px' }}>TODAY</span>}
                                       </div>
-                                      {lookahead.status !== 'submitted' && (
-                                        <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
-                                      )}
+                                      <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
                                     </div>
                                     {dayActs.map(act => {
                                       const tc = act.responsible_type === 'sub' ? { bg: '#0a1a2a', fg: '#38bdf8', bd: '#1a3a4a' } : act.responsible_type === 'other' ? { bg: '#2a1a0a', fg: '#fb923c', bd: '#4a2a1a' } : { bg: '#0a1a0a', fg: '#4ade80', bd: '#1a3a1a' }
@@ -2337,12 +2425,10 @@ export default function Field() {
                                               </div>
                                               {act.constraints_notes && <div style={{ fontSize: '11px', color: '#555', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
                                             </div>
-                                            {lookahead.status !== 'submitted' && (
-                                              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                                                <button onClick={() => openEditLAActivity(act)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
-                                                <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
-                                              </div>
-                                            )}
+                                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                              <button onClick={() => openEditLAActivity(act)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
+                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
+                                            </div>
                                           </div>
                                         </div>
                                       )
@@ -2351,7 +2437,7 @@ export default function Field() {
                                 )
                               })}
                             </div>
-                          ))}
+                          )})}
                         </>
                       )}
                     </div>

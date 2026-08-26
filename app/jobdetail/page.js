@@ -4006,6 +4006,97 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     loadLookaheadData(mon)
   }
 
+  function printLookaheadPM() {
+    if (!lookahead) return
+    const jobName = job?.name || job?.address || 'Project'
+    const jobNum = job?.job_number ? ` #${job.job_number}` : ''
+    const start = new Date(lookaheadWeekStart + 'T12:00:00Z')
+    const allDays = []
+    for (let i = 0; allDays.length < 10 && i < 20; i++) {
+      const d = new Date(start); d.setUTCDate(start.getUTCDate() + i)
+      const dow = d.getUTCDay()
+      if (dow !== 0 && dow !== 6) allDays.push(d.toISOString().split('T')[0])
+    }
+    const week1 = allDays.slice(0, 5); const week2 = allDays.slice(5, 10)
+    const endDate = new Date(allDays[9] + 'T12:00:00Z')
+    const dateRange = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    const todayStr = new Date().toISOString().split('T')[0]
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    const renderWeek = (wkDays, wkNum) => {
+      const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
+      const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
+      const inspections = wkActs.filter(a => a.inspection_required)
+      const constraints = wkActs.filter(a => a.constraints_notes)
+      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + wkNum + ' — ' + new Date(wkDays[0] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + new Date(wkDays[4] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' +
+        (totalManpower > 0 ? '<span>' + totalManpower + ' workers total</span>' : '') +
+        (inspections.length > 0 ? '<span class="warn">⚠ ' + inspections.length + ' inspection' + (inspections.length > 1 ? 's' : '') + '</span>' : '') +
+        (constraints.length > 0 ? '<span class="alert">⛔ ' + constraints.length + ' constraint' + (constraints.length > 1 ? 's' : '') + '</span>' : '') +
+        (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
+        dayNames.map((dayName, di) => {
+          const dateStr = wkDays[di]
+          const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
+          const dateLabel = new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+          const isToday = dateStr === todayStr
+          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + ' <span class="day-date">' + dateLabel + (isToday ? ' · TODAY' : '') + '</span></span></div>' +
+            (dayActs.length === 0 ? '<div class="empty">No activities</div>' :
+              dayActs.map(act => {
+                const type = act.responsible_type === 'sub' ? 'sub' : act.responsible_type === 'other' ? 'other' : 'own'
+                const responsible = type === 'sub' ? (contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'
+                const mp = parseInt(act.manpower) || 0
+                const addlCos = (act.additional_companies || [])
+                const matStatus = act.materials_status === 'on_site' ? null : act.materials_status === 'ordered' ? '<span class="tag tag-warn">Materials: Ordered</span>' : '<span class="tag tag-alert">Materials: Need to Order</span>'
+                return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + (act.location ? '<span class="act-loc"> · ' + act.location + '</span>' : '') + '</div>' +
+                  '<div class="act-meta"><span class="tag tag-' + type + '">' + responsible + '</span>' +
+                  (mp > 0 ? '<span class="tag">' + mp + ' workers</span>' : '') +
+                  (act.equipment ? '<span>⚙ ' + act.equipment + '</span>' : '') +
+                  (act.inspection_required ? '<span class="tag tag-warn">🔍 Inspection' + (act.inspection_scheduled ? ' ✓ Sched' : ' — Not Sched') + '</span>' : '') +
+                  (act.committed ? '<span class="tag tag-green">Committed ✓</span>' : '') +
+                  (act.preceding_work_complete ? '<span class="tag tag-green">Preceding ✓</span>' : '') +
+                  (matStatus || '') +
+                  addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
+                  '</div>' + (act.constraints_notes ? '<div class="act-constraint">⛔ ' + act.constraints_notes + '</div>' : '') + '</div>'
+              }).join('')
+            ) + '</div>'
+        }).join('') + '</div>'
+    }
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead — ${jobName}${jobNum}</title><style>
+      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:36px;font-size:13px}
+      h1{font-size:22px;font-weight:800;margin:0 0 2px}h2{font-size:13px;font-weight:400;color:#666;margin:0 0 28px}
+      .week{margin-bottom:32px}
+      .week-header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:14px;flex-wrap:wrap;gap:6px}
+      .week-title{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#111}
+      .week-stats{display:flex;gap:12px;font-size:11px;color:#666;align-items:center}
+      .warn{color:#b45309}.alert{color:#991b1b}
+      .day{margin-bottom:12px}
+      .day-header{margin-bottom:6px}
+      .day-name{font-size:13px;font-weight:700;color:#111}
+      .day-date{font-size:11px;font-weight:400;color:#888}
+      .today .day-name{color:#e8590c}
+      .activity{border:1px solid #e5e7eb;border-radius:6px;padding:9px 12px;margin-bottom:6px;background:#fff}
+      .act-own{border-left:3px solid #22c55e}.act-sub{border-left:3px solid #38bdf8}.act-other{border-left:3px solid #fb923c}
+      .act-title{font-size:13px;font-weight:600;margin-bottom:5px;line-height:1.3}
+      .act-loc{font-weight:400;color:#888;font-size:12px}
+      .act-meta{display:flex;flex-wrap:wrap;gap:5px;font-size:11px;color:#555;align-items:center;margin-bottom:3px}
+      .tag{padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;border:1px solid #e5e7eb;background:#f9fafb}
+      .tag-own{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+      .tag-sub{background:#f0f9ff;color:#0369a1;border-color:#bae6fd}
+      .tag-other{background:#fff7ed;color:#c2410c;border-color:#fed7aa}
+      .tag-warn{background:#fffbeb;color:#b45309;border-color:#fde68a}
+      .tag-alert{background:#fef2f2;color:#991b1b;border-color:#fecaca}
+      .tag-green{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+      .act-constraint{font-size:11px;color:#991b1b;margin-top:5px;padding-top:5px;border-top:1px solid #fecaca;font-style:italic}
+      .empty{font-size:12px;color:#d1d5db;padding:2px 0 6px}
+      @media print{body{padding:18px}@page{margin:1.5cm;size:letter portrait}}
+    </style></head><body>
+    <h1>2-Week Lookahead${jobNum ? ' — ' + jobNum : ''}</h1>
+    <h2>${jobName} · ${dateRange} · ${lookahead.status === 'submitted' ? 'Submitted by superintendent' : 'Draft'}</h2>
+    ${renderWeek(week1, 1)}
+    ${renderWeek(week2, 2)}
+    <script>window.onload=()=>window.print()</script></body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
+  }
+
   async function loadCompanyEquipment() {
     const res = await fetch('/api/company-equipment')
     const { data } = await res.json()
@@ -4132,10 +4223,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   async function submitLookahead() {
     if (!lookahead) return
     setSubmittingLookahead(true)
+    const newStatus = lookahead.status === 'submitted' ? 'approved' : 'submitted'
     const res = await fetch('/api/lookaheads', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: lookahead.id, status: 'submitted' }),
+      body: JSON.stringify({ id: lookahead.id, status: newStatus }),
     })
     const { data } = await res.json()
     if (data) setLookahead(prev => ({ ...prev, ...data }))
@@ -10101,9 +10193,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           const isLocked = lookahead?.status === 'submitted'
           const mColor = { needed: '#ef4444', ordered: '#f59e0b', on_site: '#4ade80' }
 
-          const renderWeekGrid = (weekDays, weekLabel) => (
+          const renderWeekGrid = (weekDays, weekLabel) => {
+            const wkActs = weekDays.flatMap(dt => activitiesForDay(dt))
+            const wkManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
+            const wkInspect = wkActs.filter(a => a.inspection_required).length
+            const wkConstraints = wkActs.filter(a => a.constraints_notes).length
+            return (
             <div style={s.card}>
-              <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '12px' }}>{weekLabel}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em' }}>{weekLabel}</div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#555' }}>
+                  {wkManpower > 0 && <span>👷 {wkManpower} workers</span>}
+                  {wkInspect > 0 && <span style={{ color: '#f59e0b' }}>🔍 {wkInspect} inspection{wkInspect > 1 ? 's' : ''}</span>}
+                  {wkConstraints > 0 && <span style={{ color: '#ef4444' }}>⚠ {wkConstraints} constraint{wkConstraints > 1 ? 's' : ''}</span>}
+                  <span style={{ color: '#444' }}>{wkActs.length} activities</span>
+                </div>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
                 {weekDays.map(dt => {
                   const acts = activitiesForDay(dt)
@@ -10112,9 +10217,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ fontSize: '11px', fontWeight: '700', color: '#666', textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'center', borderBottom: '1px solid #1a1a1a', paddingBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dayLabel(dt)}</div>
                       {acts.length === 0 && <div style={{ fontSize: '11px', color: '#2a2a2a', textAlign: 'center', padding: '6px 0' }}>—</div>}
                       {acts.map(act => (
-                        <div key={act.id} onClick={() => !isLocked && openEditActivity(act)}
-                          style={{ background: '#141414', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: isLocked ? 'default' : 'pointer', fontSize: '12px' }}
-                          onMouseEnter={e => { if (!isLocked) e.currentTarget.style.borderColor = '#3a3a3a' }}
+                        <div key={act.id} onClick={() => openEditActivity(act)}
+                          style={{ background: '#141414', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '12px' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a3a3a' }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = '#252525' }}>
                           <div style={{ fontWeight: '600', color: '#e8e8e8', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
                           {act.location && <div style={{ fontSize: '11px', color: '#555', marginBottom: '5px' }}>{act.location}</div>}
@@ -10135,18 +10240,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         </div>
                       ))}
-                      {!isLocked && (
-                        <button onClick={() => openAddActivity(dt)}
-                          style={{ background: 'transparent', border: '1px dashed #222', borderRadius: '6px', color: '#444', fontSize: '11px', padding: '6px', cursor: 'pointer', marginTop: 'auto' }}>
-                          + Add
-                        </button>
-                      )}
+                      <button onClick={() => openAddActivity(dt)}
+                        style={{ background: 'transparent', border: '1px dashed #222', borderRadius: '6px', color: '#444', fontSize: '11px', padding: '6px', cursor: 'pointer', marginTop: 'auto' }}>
+                        + Add
+                      </button>
                     </div>
                   )
                 })}
               </div>
             </div>
-          )
+          )}
 
           return (
             <>
@@ -10154,9 +10257,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                   <div>
                     <p style={s.cardTitle}>2-Week Lookahead</p>
-                    {lookahead && <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', marginTop: '-8px', fontWeight: 600 }}>{lookahead.status === 'submitted' ? '✓ Submitted' : '● Draft'}</div>}
+                    {lookahead && (
+                      <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', marginTop: '-8px', fontWeight: 600 }}>
+                        {lookahead.status === 'submitted' ? '✓ Submitted by superintendent' : lookahead.status === 'approved' ? '✓ Approved' : '● Draft'}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>←</button>
                       <div style={{ textAlign: 'center', minWidth: '155px' }}>
@@ -10166,14 +10273,54 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>→</button>
                     </div>
                     {!lookahead && <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>}
-                    {lookahead?.status === 'draft' && (
+                    {lookahead && <button onClick={printLookaheadPM} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>⬇ Download PDF</button>}
+                    {lookahead?.status === 'submitted' && (
                       <button style={{ ...s.btn, background: '#16a34a', borderColor: '#166534' }} onClick={submitLookahead} disabled={submittingLookahead}>
-                        {submittingLookahead ? 'Submitting…' : 'Submit to PM'}
+                        {submittingLookahead ? 'Approving…' : '✓ Mark Approved'}
                       </button>
                     )}
                     <button onClick={() => setShowEquipmentMgr(v => !v)} style={{ ...s.btn, background: showEquipmentMgr ? '#2a2a2a' : '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', fontSize: '12px' }}>⚙ Equipment</button>
                   </div>
                 </div>
+
+                {lookahead && lookaheadActivities.length > 0 && (() => {
+                  const totalWorkers = lookaheadActivities.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
+                  const inspections = lookaheadActivities.filter(a => a.inspection_required)
+                  const unscheduled = inspections.filter(a => !a.inspection_scheduled)
+                  const constraints = lookaheadActivities.filter(a => a.constraints_notes)
+                  const materialsNeeded = lookaheadActivities.filter(a => a.materials_status === 'needed')
+                  return (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #1a1a1a' }}>
+                      {totalWorkers > 0 && <div style={{ background: '#0f1a0f', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#4ade80', fontVariantNumeric: 'tabular-nums' }}>{totalWorkers}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Workers</div></div>}
+                      {lookaheadActivities.length > 0 && <div style={{ background: '#111', border: '1px solid #222', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{lookaheadActivities.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Activities</div></div>}
+                      {inspections.length > 0 && <div style={{ background: '#1a1400', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f59e0b', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections ✓'}</div></div>}
+                      {constraints.length > 0 && <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ef4444', fontVariantNumeric: 'tabular-nums' }}>{constraints.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Constraints</div></div>}
+                      {materialsNeeded.length > 0 && <div style={{ background: '#1a0f0a', border: '1px solid #3a2a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#fb923c', fontVariantNumeric: 'tabular-nums' }}>{materialsNeeded.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Need Materials</div></div>}
+                    </div>
+                  )
+                })()}
+
+                {lookahead && lookaheadActivities.some(a => a.inspection_required || a.constraints_notes) && (
+                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #1a1a1a' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '8px' }}>Attention Items</div>
+                    {lookaheadActivities.filter(a => a.inspection_required || a.constraints_notes).map(act => (
+                      <div key={act.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #111', fontSize: '12px' }}>
+                        <span style={{ color: act.constraints_notes ? '#ef4444' : act.inspection_scheduled ? '#4ade80' : '#f59e0b', flexShrink: 0, fontSize: '13px' }}>
+                          {act.constraints_notes ? '⚠' : act.inspection_scheduled ? '🔍✓' : '🔍'}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, color: '#e8e8e8', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.description}</div>
+                          <div style={{ color: '#555' }}>
+                            {new Date(act.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                            {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#4ade80' : '#f59e0b', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
+                            {act.constraints_notes && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints_notes}</span>}
+                          </div>
+                        </div>
+                        <button onClick={() => openEditActivity(act)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '5px', color: '#555', fontSize: '11px', cursor: 'pointer', padding: '3px 8px', flexShrink: 0 }}>Edit</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {showEquipmentMgr && (

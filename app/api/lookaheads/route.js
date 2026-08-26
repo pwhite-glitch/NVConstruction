@@ -51,6 +51,9 @@ export async function PUT(request) {
     if (status === 'submitted') {
       updates.status = 'submitted'
       updates.submitted_at = new Date().toISOString()
+    } else if (status === 'approved') {
+      updates.status = 'approved'
+      updates.approved_at = new Date().toISOString()
     } else if (status === 'draft') {
       updates.status = 'draft'
     }

@@ -204,6 +204,7 @@ export default function JobDetail() {
   const [editBillingForm, setEditBillingForm] = useState({})
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [togglingReadyToPay, setTogglingReadyToPay] = useState(null)
+  const [approvingBillingId, setApprovingBillingId] = useState(null)
   const [dcSearch, setDcSearch] = useState('')
   const [dcBudgetFilter, setDcBudgetFilter] = useState('')
   const [dcAmountMin, setDcAmountMin] = useState('')
@@ -3596,6 +3597,17 @@ ${sovHtml}
     setTogglingReadyToPay(billingId)
     await supabase.from('billing_submissions').update({ ready_to_pay: !current }).eq('id', billingId)
     setTogglingReadyToPay(null)
+    await loadBillingForJob()
+  }
+
+  async function approveBilling(billingId) {
+    setApprovingBillingId(billingId)
+    await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: billingId, status: 'approved', reviewed_at: new Date().toISOString() }),
+    })
+    setApprovingBillingId(null)
     await loadBillingForJob()
   }
 
@@ -7530,6 +7542,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                         </div>
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {b.status !== 'approved' && b.status !== 'rejected' && (
+                            <button
+                              disabled={approvingBillingId === b.id}
+                              onClick={() => approveBilling(b.id)}
+                              style={{ fontSize: '11px', padding: '4px 10px', background: '#0a2a0a', border: '1px solid #1a4a1a', color: '#4ade80', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: approvingBillingId === b.id ? 0.5 : 1 }}
+                            >
+                              {approvingBillingId === b.id ? 'Approving…' : '✓ Approve'}
+                            </button>
+                          )}
                           {b.status === 'approved' && (
                             <button
                               title={b.ready_to_pay ? 'Mark as not ready' : 'Mark as ready to pay'}

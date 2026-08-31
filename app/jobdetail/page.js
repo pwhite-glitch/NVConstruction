@@ -299,8 +299,12 @@ export default function JobDetail() {
   const [periodDirectCosts, setPeriodDirectCosts] = useState([])
   const [periodBilling, setPeriodBilling] = useState([])
   const [appliedBillings, setAppliedBillings] = useState(new Set())
+  const [periodPOs, setPeriodPOs] = useState([])
+  const [appliedPOs, setAppliedPOs] = useState(new Set())
   const [manualMapBillingId, setManualMapBillingId] = useState(null)
   const [manualMapBudgetItemId, setManualMapBudgetItemId] = useState('')
+  const [manualMapPOId, setManualMapPOId] = useState(null)
+  const [manualMapPOBudgetItemId, setManualMapPOBudgetItemId] = useState('')
   const [appliedGCs, setAppliedGCs] = useState(new Set())
   const [gcManualMapId, setGcManualMapId] = useState(null)
   const [gcManualBudgetItemId, setGcManualBudgetItemId] = useState('')
@@ -907,7 +911,7 @@ export default function JobDetail() {
   }
 
   async function openAiaApp(app) {
-    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); setAppliedGCs(new Set()); setPeriodDirectCosts([]); return }
+    if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); setAppliedGCs(new Set()); setPeriodDirectCosts([]); setPeriodPOs([]); setAppliedPOs(new Set()); return }
     setAiaLoading(true)
     setActiveAia(app)
     setAppliedBillings(new Set())
@@ -1010,7 +1014,25 @@ export default function JobDetail() {
     }))
     setPeriodBilling(bills || [])
     setPeriodDirectCosts(dcs || [])
+    const linkedPOs = linkedDrawId
+      ? purchaseOrders.filter(po => po.draw_request_id === linkedDrawId)
+      : []
+    setPeriodPOs(linkedPOs)
+    setAppliedPOs(new Set())
     setAiaLoading(false)
+  }
+
+  function applyPOToAia(po, budgetItemId) {
+    const bid = budgetItemId || po.budget_item_id
+    if (!bid) {
+      setManualMapPOId(po.id)
+      setManualMapPOBudgetItemId('')
+      return
+    }
+    applyAmountsToAiaLines({ [bid]: Number(po.amount || 0) }, po.id)
+    setAppliedPOs(s => new Set([...s, po.id]))
+    setManualMapPOId(null)
+    setManualMapPOBudgetItemId('')
   }
 
   async function applyBillingToAia(billing) {
@@ -1315,7 +1337,7 @@ export default function JobDetail() {
     await supabase.from('aia_application_lines').delete().eq('application_id', appId)
     const { error } = await supabase.from('aia_applications').delete().eq('id', appId)
     if (error) { alert('Delete failed: ' + error.message); return }
-    if (activeAia?.id === appId) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]) }
+    if (activeAia?.id === appId) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setPeriodPOs([]); setAppliedPOs(new Set()) }
     await loadAiaApplications()
   }
 
@@ -1327,6 +1349,8 @@ export default function JobDetail() {
     setActiveAia(null)
     setAiaLines([])
     setPeriodBilling([])
+    setPeriodPOs([])
+    setAppliedPOs(new Set())
     await loadAiaApplications()
   }
 
@@ -1573,7 +1597,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
-    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests(); loadNvSubcontracts() }
+    if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests(); loadNvSubcontracts(); loadPurchaseOrders() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'contacts') { loadJobContacts() }
@@ -8928,6 +8952,74 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <button
                                               style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
                                               onClick={() => { setManualMapBillingId(null); setManualMapBudgetItemId('') }}
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+
+                            {periodPOs.length > 0 && (
+                              <div style={{ background: '#1a1200', border: '1px solid #4a3000', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                  Purchase orders on this draw — ${periodPOs.reduce((a, p) => a + Number(p.amount || 0), 0).toLocaleString()} across {periodPOs.length} PO{periodPOs.length !== 1 ? 's' : ''}
+                                </p>
+                                {periodPOs.map((po, i) => {
+                                  const applied = appliedPOs.has(po.id)
+                                  const needsManual = manualMapPOId === po.id
+                                  const budgetLine = budgetItems.find(b => b.id === po.budget_item_id)
+                                  return (
+                                    <div key={po.id} style={{ padding: '6px 0', borderBottom: i < periodPOs.length - 1 ? '1px solid #4a3000' : 'none' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                          <span style={{ fontSize: '13px', color: '#aaa' }}>{po.vendor_name}</span>
+                                          <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{po.po_number}</span>
+                                          {budgetLine && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px' }}>→ {budgetLine.description}</span>}
+                                          {!budgetLine && <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px' }}>No budget line — pick one</span>}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(po.amount || 0).toLocaleString()}</span>
+                                          <button
+                                            style={{ padding: '4px 10px', background: applied ? '#1a1200' : '#2a1a00', color: applied ? '#f59e0b' : '#fbbf24', border: `1px solid ${applied ? '#4a3000' : '#92400e'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+                                            disabled={applied}
+                                            onClick={() => applyPOToAia(po)}
+                                          >
+                                            {applied ? '✓ Applied' : 'Apply to G703'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {needsManual && (
+                                        <div style={{ marginTop: '8px', background: '#150f00', border: '1px solid #4a3000', borderRadius: '6px', padding: '10px' }}>
+                                          <p style={{ fontSize: '11px', color: '#f59e0b', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line on this PO — pick one</p>
+                                          <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>To auto-map in future, set a budget line on the PO in the PO tab.</p>
+                                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                            <select
+                                              style={{ ...s.input, flex: 1, fontSize: '12px', padding: '7px 10px' }}
+                                              value={manualMapPOBudgetItemId}
+                                              onChange={e => setManualMapPOBudgetItemId(e.target.value)}
+                                            >
+                                              <option value="">— Select a budget line —</option>
+                                              {budgetItems.map(item => (
+                                                <option key={item.id} value={item.id}>
+                                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <button
+                                              style={{ padding: '7px 14px', background: '#2a1a00', color: '#fbbf24', border: '1px solid #92400e', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: manualMapPOBudgetItemId ? 'pointer' : 'default', opacity: manualMapPOBudgetItemId ? 1 : 0.4, whiteSpace: 'nowrap' }}
+                                              disabled={!manualMapPOBudgetItemId}
+                                              onClick={() => applyPOToAia(po, manualMapPOBudgetItemId)}
+                                            >
+                                              Confirm
+                                            </button>
+                                            <button
+                                              style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                                              onClick={() => { setManualMapPOId(null); setManualMapPOBudgetItemId('') }}
                                             >
                                               Cancel
                                             </button>

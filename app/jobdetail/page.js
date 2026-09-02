@@ -522,13 +522,14 @@ export default function JobDetail() {
     const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
     if (!summary) { setContracts([]); return [] }
     // Fetch budget_item_id from the base table — the view may predate this column
-    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct').eq('job_id', id)
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
       budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
       budget_allocations: raw?.find(r => r.id === c.id)?.budget_allocations ?? [],
       vendor_name: raw?.find(r => r.id === c.id)?.vendor_name ?? null,
       retainage_pct: raw?.find(r => r.id === c.id)?.retainage_pct ?? 10,
+      signed_contract_url: raw?.find(r => r.id === c.id)?.signed_contract_url ?? null,
     }))
     setContracts(merged)
     return merged
@@ -708,6 +709,11 @@ export default function JobDetail() {
 
   async function openBidProposalUrl(path) {
     const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(path, 300)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function openSignedContractUrl(path) {
+    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 300)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -5879,6 +5885,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </button>
                           <button style={{ ...s.btnSmall, background: '#1a3a1a', color: '#4ade80', border: '1px solid #1a3a1a' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
                           {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#1a2a3a', color: '#60a5fa', border: '1px solid #1a2a3a' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
+                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #1a3a1a' }} onClick={() => openSignedContractUrl(c.signed_contract_url)}>Signed Contract ↗</button>}
                           {(() => {
                             const req = signingRequests.find(r => r.subcontract_id === c.id)
                             if (!req) return null

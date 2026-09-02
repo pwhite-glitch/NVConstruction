@@ -7365,43 +7365,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       onChange={e => {
                         const val = e.target.value
                         if (!val) { setCreateBillingForm(f => ({ ...f, _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '' })); return }
-                        if (val.startsWith('sub:')) {
-                          const assignmentId = val.slice(4)
-                          const assignment = subs.find(s => s.id === assignmentId)
-                          setCreateBillingForm(f => ({
-                            ...f,
-                            _contract_id: val,
-                            _contract_value: '',
-                            _retainage_pct: '0',
-                            sub_id: assignment?.sub_id || '',
-                            company_name: assignment?.profiles?.company_name || '',
-                            contact_name: assignment?.profiles?.full_name || '',
-                            contact_info: assignment?.profiles?.phone || '',
-                          }))
-                        } else {
-                          const contract = contracts.find(c => c.id === val)
-                          const regSub = contract?.sub_id ? subs.find(s => s.sub_id === contract.sub_id) : null
-                          setCreateBillingForm(f => ({
-                            ...f,
-                            _contract_id: val,
-                            _contract_value: String(contract?.adjusted_contract_value || contract?.contract_value || ''),
-                            _retainage_pct: String(contract?.retainage_pct ?? 0),
-                            sub_id: contract?.sub_id || '',
-                            company_name: contract?.vendor_name || regSub?.profiles?.company_name || '',
-                            contact_name: regSub?.profiles?.full_name || '',
-                            contact_info: regSub?.profiles?.phone || '',
-                          }))
-                        }
+                        const contract = contracts.find(c => c.id === val)
+                        const regSub = contract?.sub_id ? subs.find(s => s.sub_id === contract.sub_id) : null
+                        setCreateBillingForm(f => ({
+                          ...f,
+                          _contract_id: val,
+                          _contract_value: String(contract?.adjusted_contract_value || contract?.contract_value || ''),
+                          _retainage_pct: String(contract?.retainage_pct ?? 0),
+                          sub_id: contract?.sub_id || '',
+                          company_name: contract?.vendor_name || regSub?.profiles?.company_name || '',
+                          contact_name: regSub?.profiles?.full_name || '',
+                          contact_info: regSub?.profiles?.phone || '',
+                        }))
                       }}>
-                      <option value="">— Select a contractor —</option>
-                      {contracts.length > 0 && contracts.map(c => (
+                      <option value="">— Select a subcontract —</option>
+                      {contracts.length === 0 && (
+                        <option value="" disabled>No subcontracts on this job yet</option>
+                      )}
+                      {contracts.map(c => (
                         <option key={c.id} value={c.id}>
-                          {c.vendor_name || 'Unknown'}{c.description ? ` — ${c.description}` : ''}
-                        </option>
-                      ))}
-                      {subs.filter(s => s.profiles?.company_name).map(s => (
-                        <option key={`sub:${s.id}`} value={`sub:${s.id}`}>
-                          {s.profiles.company_name}{s.profiles.full_name ? ` — ${s.profiles.full_name}` : ''}
+                          {c.vendor_name || 'Unknown'}{c.description ? ` — ${c.description}` : ''}{c.adjusted_contract_value || c.contract_value ? ` ($${Number(c.adjusted_contract_value || c.contract_value).toLocaleString()})` : ''}
                         </option>
                       ))}
                     </select>

@@ -1594,7 +1594,7 @@ ${sovLines.length > 0 ? `
   useEffect(() => {
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
-    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob() }
+    if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob(); reloadSubs() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
@@ -5739,10 +5739,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Subcontractor</label>
-                      <select style={s.input} value={contractForm.dir_id} onChange={e => setContractForm(f => ({ ...f, dir_id: e.target.value }))}>
-                        <option value="">Select a sub...</option>
-                        {subDirectory.map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
-                      </select>
+                      {(() => {
+                        const assignedEmails = new Set(subs.map(s => s.sub_email?.toLowerCase()).filter(Boolean))
+                        const assignedDirs = subDirectory.filter(d => assignedEmails.has(d.email?.toLowerCase()))
+                        return (
+                          <>
+                            <select style={s.input} value={contractForm.dir_id} onChange={e => setContractForm(f => ({ ...f, dir_id: e.target.value }))}>
+                              <option value="">{assignedDirs.length === 0 ? 'No subs assigned to this project yet' : 'Select a sub...'}</option>
+                              {assignedDirs.map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
+                            </select>
+                            {assignedDirs.length === 0 && (
+                              <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Assign companies to this project in the Subs tab first.</p>
+                            )}
+                          </>
+                        )
+                      })()}
                     </div>
                     <div>
                       <label style={s.label}>Contract value ($)</label>

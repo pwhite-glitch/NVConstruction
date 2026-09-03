@@ -4722,9 +4722,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               </div>
 
-              {(form.billing_due_day !== undefined && form.billing_due_day !== '' && form.billing_due_day !== null) && (() => {
-                const freq = form.billing_frequency || 'monthly'
-                const dueDay = parseInt(form.billing_due_day)
+              {(() => {
+                const rawDue = form.sub_billing_due !== undefined && form.sub_billing_due !== '' && form.sub_billing_due !== null
+                  ? form.sub_billing_due
+                  : (form.billing_due_day !== undefined && form.billing_due_day !== '' && form.billing_due_day !== null ? form.billing_due_day : null)
+                if (rawDue === null) return null
+                const freq = form.sub_billing_frequency || form.billing_frequency || 'monthly'
+                const dueDay = parseInt(rawDue)
+                const anchorRaw = form.sub_billing_anchor || form.billing_anchor_date
                 const today = new Date(); today.setHours(0,0,0,0)
                 const DOW = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
                 const ord = n => n + (n===1?'st':n===2?'nd':n===3?'rd':'th')
@@ -4742,7 +4747,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   let cur = new Date(today); cur.setDate(today.getDate() + diff)
                   for (let i = 0; i < 12; i++) { dates.push(new Date(cur)); cur.setDate(cur.getDate() + 7) }
                 } else if (freq === 'biweekly') {
-                  const anchor = form.billing_anchor_date ? new Date(form.billing_anchor_date) : (() => { const d = new Date(today); const diff2 = (dueDay - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff2); return d })()
+                  const anchor = anchorRaw ? new Date(anchorRaw) : (() => { const d = new Date(today); const diff2 = (dueDay - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff2); return d })()
                   anchor.setHours(0,0,0,0)
                   let cur = new Date(anchor)
                   while (cur <= today) cur.setDate(cur.getDate() + 14)

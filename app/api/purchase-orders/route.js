@@ -18,6 +18,14 @@ async function uploadPOAttachment(file, jobId) {
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
+
+  const sign = searchParams.get('sign')
+  if (sign) {
+    const { data, error } = await adminSupabase.storage.from('purchase-order-docs').createSignedUrl(sign, 3600)
+    if (error || !data?.signedUrl) return Response.json({ error: error?.message || 'Could not generate URL' }, { status: 500 })
+    return Response.json({ signedUrl: data.signedUrl })
+  }
+
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ purchase_orders: [] })
 

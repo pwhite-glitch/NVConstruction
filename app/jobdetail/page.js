@@ -1711,8 +1711,10 @@ ${sovLines.length > 0 ? `
   }
 
   async function openPOAttachment(attachmentUrl) {
-    const { data } = await supabase.storage.from('purchase-order-docs').createSignedUrl(attachmentUrl, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    const res = await fetch(`/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
+    const json = await res.json()
+    if (json.signedUrl) window.open(json.signedUrl, '_blank')
+    else alert('Could not open attachment: ' + (json.error || 'Unknown error'))
   }
 
   async function deletePO(poId) {

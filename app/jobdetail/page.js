@@ -1628,7 +1628,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
-    if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems() }
+    if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems(); loadDrawRequests() }
     if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment() }
   }, [activeTab, id])
 
@@ -11365,6 +11365,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       {bi && <span style={{ fontSize: '11px', color: '#555' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
                                       {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
                                       <span style={{ fontSize: '11px', color: '#444' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
+                                      {po.draw_request_id && (() => { const dr = drawRequests.find(d => d.id === po.draw_request_id); return dr ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#0a1f2e', color: '#38bdf8', border: '1px solid #0c2d42' }}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span> : null })()}
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>

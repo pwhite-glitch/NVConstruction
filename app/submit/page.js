@@ -118,7 +118,11 @@ export default function Submit() {
   const [savingSov, setSavingSov] = useState(false)
   const [sovSaved, setSovSaved] = useState(false)
   const [rfiSuccess, setRfiSuccess] = useState(false)
+  const [rfiError, setRfiError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [docError, setDocError] = useState('')
   const [hasSigned, setHasSigned] = useState(false)
+  const memberIdsRef = useRef([])
 
   // RFI state
   const [rfis, setRfis] = useState([])
@@ -216,12 +220,15 @@ export default function Submit() {
         const { data: companyMembers } = await supabase.from('profiles').select('id').eq('company_id', companyId)
         const memberIds = (companyMembers || []).map(m => m.id)
         if (!memberIds.includes(session.user.id)) memberIds.push(session.user.id)
+        memberIdsRef.current = memberIds
         billingQuery = billingQuery.in('sub_id', memberIds)
       } else {
+        memberIdsRef.current = [session.user.id]
         billingQuery = billingQuery.eq('sub_id', session.user.id)
       }
       const { data: subs } = await billingQuery
       setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || mergedJobs.find(j => j.id === s.job_id) || null })))
+      await loadMyPunchItems(session.user.id, mergedJobs)
       await loadMyContracts(session.user.id, prof?.company_id, prof?.company_name)
       const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
       if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
@@ -239,8 +246,22 @@ export default function Submit() {
     load()
   }, [router])
 
+  async function loadSubmissions() {
+    let q = supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').order('submitted_at', { ascending: false })
+    const ids = memberIdsRef.current
+    if (ids.length > 1) {
+      q = q.in('sub_id', ids)
+    } else if (ids.length === 1) {
+      q = q.eq('sub_id', ids[0])
+    } else {
+      q = q.eq('sub_id', user.id)
+    }
+    const { data: subs } = await q
+    setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
+  }
+
   async function loadBidInvitations(email) {
-    const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*)').ilike('sub_email', email).order('sent_at', { ascending: false })
+    const { data } = await supabase.from('bid_invitations').select('*, bid_packages(*), bid_submissions(*)').ilike('sub_email', email).order('sent_at', { ascending: false })
     setBidInvitations(data || [])
   }
 
@@ -252,11 +273,13 @@ export default function Submit() {
   async function submitRfi() {
     if (!rfiForm.job_id || !rfiForm.question || !rfiForm.title) return
     setSubmittingRfi(true)
+    setRfiError('')
     const { data: existing } = await supabase.from('rfis').select('number').eq('job_id', rfiForm.job_id).order('number', { ascending: false }).limit(1)
     const nextNum = ((existing?.[0]?.number) || 0) + 1
-    await supabase.from('rfis').insert({ job_id: rfiForm.job_id, sub_id: user.id, title: rfiForm.title, question: rfiForm.question, status: 'open', number: nextNum })
-    setRfiForm({ job_id: rfiForm.job_id, question: '', title: '' })
+    const { error: rfiInsertErr } = await supabase.from('rfis').insert({ job_id: rfiForm.job_id, sub_id: user.id, title: rfiForm.title, question: rfiForm.question, status: 'open', number: nextNum })
     setSubmittingRfi(false)
+    if (rfiInsertErr) { setRfiError('Submission failed. Please try again.'); return }
+    setRfiForm({ job_id: rfiForm.job_id, question: '', title: '' })
     setRfiSuccess(true)
     setTimeout(() => setRfiSuccess(false), 5000)
     await loadMyRfis(user.id)
@@ -264,6 +287,7 @@ export default function Submit() {
 
   async function loadMessages(jobId) {
     const res = await fetch(`/api/messages?job_id=${jobId}&sub_id=${user.id}`)
+    if (!res.ok) return
     const { messages } = await res.json()
     setJobMessages(prev => ({ ...prev, [jobId]: messages || [] }))
   }
@@ -272,22 +296,24 @@ export default function Submit() {
     const msg = messageDraft[jobId]?.trim()
     if (!msg) return
     setSendingMessageFor(jobId)
-    await fetch('/api/messages', {
+    const res = await fetch('/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: jobId, sub_id: user.id, sender_id: user.id, sender_name: profile?.company_name || profile?.full_name || 'Sub', sender_role: 'sub', message: msg }),
     })
-    setMessageDraft(prev => ({ ...prev, [jobId]: '' }))
     setSendingMessageFor(null)
+    if (!res.ok) { alert('Failed to send message. Please try again.'); return }
+    setMessageDraft(prev => ({ ...prev, [jobId]: '' }))
     await loadMessages(jobId)
   }
 
-  async function loadMyPunchItems(userId) {
-    const jobIds = jobs.map(j => j.id)
+  async function loadMyPunchItems(userId, jobsList) {
+    const jobIds = (jobsList || jobs).map(j => j.id)
     if (jobIds.length === 0) { setMyPunchItems([]); return }
     const results = []
     for (const jid of jobIds) {
       const res = await fetch(`/api/punch-list?job_id=${jid}&sub_id=${userId}`)
+      if (!res.ok) continue
       const { items } = await res.json()
       results.push(...(items || []))
     }
@@ -363,11 +389,13 @@ export default function Submit() {
       setSavingDocs(false)
       return
     }
-    await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, w9_url, coi_url, coi_expiration: docsCoiExpiry || null }) })
+    const saveRes = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, w9_url, coi_url, coi_expiration: docsCoiExpiry || null }) })
+    setSavingDocs(false)
+    if (!saveRes.ok) { setDocError('Save failed. Please try again.'); return }
+    setDocError('')
     setDirEntry(prev => ({ ...prev, w9_url, coi_url, coi_expiration: docsCoiExpiry }))
     setDocsW9File(null)
     setDocsCoiFile(null)
-    setSavingDocs(false)
     setDocsSaved(true)
     setTimeout(() => setDocsSaved(false), 3000)
   }
@@ -386,8 +414,10 @@ export default function Submit() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'signed-url', path: storagePath }),
     })
+    if (!res.ok) { alert('Could not load the plan. Please try again.'); return }
     const { url } = await res.json()
-    if (url) window.open(url, '_blank')
+    if (!url) { alert('Plan not available.'); return }
+    window.open(url, '_blank')
   }
 
   async function openBidDoc(storagePath) {
@@ -422,7 +452,7 @@ export default function Submit() {
       await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).ilike('sub_email', user.email)
       const inv = bidInvitations.find(i => i.bid_packages?.id === bidPackageId)
       const pkgTitle = inv?.bid_packages?.title || 'Bid Package'
-      sendEmail(PM_EMAIL, `Bid received — ${profile?.company_name || user.email}`,
+      await sendEmail(PM_EMAIL, `Bid received — ${profile?.company_name || user.email}`,
         emailWrap(`
           <h2 style="color:#f1f1f1;margin:0 0 1rem">New bid submitted</h2>
           <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted a bid for <strong style="color:#f1f1f1">${pkgTitle}</strong>.</p>
@@ -472,12 +502,14 @@ export default function Submit() {
       })
       const { token, error: signErr } = await res.json()
       if (signErr) { alert('Error: ' + signErr); return }
+      if (!token) { alert('Signing session not found. Please try again.'); return }
       const srRes = await fetch(`/api/signing-requests?sub_id=${user.id}`)
       if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
       const htmlRes = await fetch(`/api/signing-requests/${token}?html=1`)
       const { data: reqData } = await htmlRes.json()
       if (!reqData?.document_html) return
       const win = window.open('', '_blank')
+      if (!win) { alert('Please allow popups for this site to view your contract.'); return }
       win.document.write(reqData.document_html)
       win.document.close()
       win.focus()
@@ -560,10 +592,12 @@ export default function Submit() {
   async function loadJobSov(jobId) {
     if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setJobDrawRequests([]); return }
     const drRes = await fetch(`/api/draw-requests?job_id=${jobId}`)
+    if (!drRes.ok) { setJobDrawRequests([]); return }
     const { draws } = await drRes.json()
     const openDraws = (draws || []).filter(d => d.status === 'open')
     setJobDrawRequests(openDraws)
     const _cRes = await fetch(`/api/sub-contracts?job_id=${jobId}&user_id=${user.id}&company_id=${encodeURIComponent(profile?.company_id || '')}&company_name=${encodeURIComponent(profile?.company_name || '')}`)
+    if (!_cRes.ok) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); return }
     const { contracts } = await _cRes.json()
     if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
     setNoContract(false)
@@ -604,8 +638,9 @@ export default function Submit() {
     const valid = sovDraftLines.filter(l => l.description.trim() && l.amount)
     if (valid.length === 0) return
     setSavingSov(true)
+    setSovError('')
     for (const contract of jobSovContracts) {
-      await supabase.from('subcontract_sov_lines').insert(
+      const { error: sovInsErr } = await supabase.from('subcontract_sov_lines').insert(
         valid.map((l, idx) => ({
           subcontract_id: contract.id,
           description: l.description.trim(),
@@ -613,6 +648,7 @@ export default function Submit() {
           sort_order: idx + 1,
         }))
       )
+      if (sovInsErr) { setSavingSov(false); setSovError('Save failed. Please try again.'); return }
     }
     setSavingSov(false)
     await loadJobSov(form.job_id)
@@ -713,8 +749,7 @@ export default function Submit() {
       setLienWaiverSub(null)
       setSignerName('')
       setWaiverMsg('')
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
-      setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
+      await loadSubmissions()
     }
     setSavingWaiver(false)
   }
@@ -759,36 +794,39 @@ export default function Submit() {
       draw_request_id: form.draw_request_id || null,
       doc_url,
     }).select().single()
-    if (!error) {
-      const sovInserts = sovForm.filter(l => l.amount_this > 0).map(l => ({
-        billing_submission_id: newSub.id,
-        sov_line_id: l.sov_line_id,
-        amount: l.amount_this,
-        pct_this_period: parseFloat(l.pct_this) || 0,
-      }))
-      if (sovInserts.length > 0) {
-        await supabase.from('billing_sov_lines').insert(sovInserts)
-      }
-      sendEmail(selectedJob?.pm_email || PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
-        emailWrap(`
-          <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
-          <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
-          <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(form.amount_billed).toLocaleString()}</p>
-          ${form.pct_complete ? `<p style="color:#888;font-size:13px">${form.pct_complete}% complete on scope</p>` : ''}
-          <p style="color:#888;font-size:13px;line-height:1.6">${form.work_description}</p>
-          ${doc_url ? `<p style="color:#888;font-size:13px">📎 Attachment included</p>` : ''}
-        `)
-      )
-      setSuccess(true)
-      setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
-      setSovForm([])
-      setJobSovContracts([])
-      setSovRetainageMap({})
-      setJobDrawRequests([])
-      setBillingFile(null)
-      const { data: subs } = await supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').eq('sub_id', user.id).order('submitted_at', { ascending: false })
-      setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
+    if (error) {
+      setSubmitError(error.message || 'Submission failed. Please try again.')
+      setLoading(false)
+      return
     }
+    setSubmitError('')
+    const sovInserts = sovForm.filter(l => l.amount_this > 0).map(l => ({
+      billing_submission_id: newSub.id,
+      sov_line_id: l.sov_line_id,
+      amount: l.amount_this,
+      pct_this_period: parseFloat(l.pct_this) || 0,
+    }))
+    if (sovInserts.length > 0) {
+      await supabase.from('billing_sov_lines').insert(sovInserts)
+    }
+    await sendEmail(selectedJob?.pm_email || PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
+      emailWrap(`
+        <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
+        <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
+        <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(form.amount_billed).toLocaleString()}</p>
+        ${form.pct_complete ? `<p style="color:#888;font-size:13px">${form.pct_complete}% complete on scope</p>` : ''}
+        <p style="color:#888;font-size:13px;line-height:1.6">${form.work_description}</p>
+        ${doc_url ? `<p style="color:#888;font-size:13px">📎 Attachment included</p>` : ''}
+      `)
+    )
+    setSuccess(true)
+    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
+    setSovForm([])
+    setJobSovContracts([])
+    setSovRetainageMap({})
+    setJobDrawRequests([])
+    setBillingFile(null)
+    await loadSubmissions()
     setLoading(false)
   }
 
@@ -818,7 +856,10 @@ export default function Submit() {
   const totalRevised = myContracts.reduce((a, c) => a + Number(c.adjusted_contract_value || 0), 0)
   const totalApprovedBilling = submissions.filter(sub => sub.status === 'approved').reduce((a, sub) => a + (sub.amount_billed || 0), 0)
 
-  const pendingBids = bidInvitations.filter(b => !b.bid_submissions?.length && b.bid_packages?.status === 'open').length
+  const pendingBids = bidInvitations.filter(inv =>
+    inv.bid_packages?.status === 'open' &&
+    !inv.bid_submissions?.some(s => s.sub_id === user?.id || s.company_id === profile?.company_id)
+  ).length
   const openRfis = rfis.filter(r => r.status === 'open').length
   const openPunch = myPunchItems.filter(p => p.status === 'open').length
 
@@ -827,6 +868,7 @@ export default function Submit() {
     const today = new Date().toISOString().split('T')[0]
     const twoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     const res = await fetch(`/api/lookahead-activities?sub_user_id=${user.id}&from=${today}&to=${twoWeeks}`)
+    if (!res.ok) return
     const { data } = await res.json()
     setMyLookaheadActivities(data || [])
     setMyLookaheadLoaded(true)
@@ -1295,6 +1337,7 @@ export default function Submit() {
                       {billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {billingFile.name}</div>}
                     </div>
                     {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
+                    {submitError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{submitError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                       <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Submitting...' : 'Submit billing'}</button>
                     </div>
@@ -1817,6 +1860,7 @@ export default function Submit() {
                     {savingDocs ? 'Saving...' : 'Save documents'}
                   </button>
                   {docsSaved && <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Saved — NV Construction can now view your documents.</span>}
+                  {docError && <span style={{ fontSize: '13px', color: '#ff6b6b' }}>{docError}</span>}
                 </div>
               </>
             )}
@@ -1852,6 +1896,7 @@ export default function Submit() {
                 onClick={submitRfi}
               >{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
               {rfiSuccess && <p style={{ fontSize: '13px', color: '#4ade80', marginTop: '10px', marginBottom: 0 }}>✓ RFI submitted — NV Construction will respond within 1–2 business days.</p>}
+              {rfiError && <p style={{ fontSize: '13px', color: '#ff6b6b', marginTop: '10px', marginBottom: 0 }}>{rfiError}</p>}
             </div>
 
             {/* RFI list */}

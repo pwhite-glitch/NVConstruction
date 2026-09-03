@@ -73,6 +73,7 @@ const s = {
   billingEntryRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
   billingEntryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' },
   billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
+  emptyMsg: { fontSize: '13px', color: '#555', textAlign: 'center', padding: '2rem 1rem', fontStyle: 'italic' },
 }
 
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10', budget_allocations: [] }
@@ -86,7 +87,7 @@ function CoAttachmentLink({ path, supabase }) {
   const [url, setUrl] = useState(null)
   useEffect(() => {
     supabase.storage.from('receipts').createSignedUrl(path, 3600).then(({ data }) => { if (data?.signedUrl) setUrl(data.signedUrl) })
-  }, [path])
+  }, [path, supabase])
   if (!url) return null
   return <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#e8590c', textDecoration: 'none', marginTop: '3px', display: 'inline-block' }}>📎 Attachment</a>
 }
@@ -197,6 +198,7 @@ export default function JobDetail() {
   const [savingDrawPOs, setSavingDrawPOs] = useState(false)
   const [generalConditions, setGeneralConditions] = useState([])
   const [gcForm, setGcForm] = useState({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
+  const [gcEditForm, setGcEditForm] = useState({})
   const [savingGC, setSavingGC] = useState(false)
   const [editingGCId, setEditingGCId] = useState(null)
   const [drawAddGCIds, setDrawAddGCIds] = useState([])
@@ -272,9 +274,7 @@ export default function JobDetail() {
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
-  const [dismissedDupIds, setDismissedDupIds] = useState(() => {
-    try { const s = localStorage.getItem(`dc_nodups_${id}`); return s ? new Set(JSON.parse(s)) : new Set() } catch { return new Set() }
-  })
+  const [dismissedDupIds, setDismissedDupIds] = useState([])
 
   const [billingByItem, setBillingByItem] = useState({})
 
@@ -481,6 +481,14 @@ export default function JobDetail() {
   }, [id])
 
   useEffect(() => {
+    if (!id) return
+    try {
+      const saved = JSON.parse(localStorage.getItem('dc_nodups_' + id))
+      if (Array.isArray(saved) && saved.length) setDismissedDupIds(saved)
+    } catch {}
+  }, [id])
+
+  useEffect(() => {
     if (!fieldLightbox) return
     const onKey = e => { if (e.key === 'Escape') setFieldLightbox(null) }
     window.addEventListener('keydown', onKey)
@@ -511,8 +519,7 @@ export default function JobDetail() {
       const { data: initialCOs } = await supabase.from('prime_change_orders').select('*').eq('job_id', id).order('created_at', { ascending: false })
       setPrimeCOs(initialCOs || [])
       const teamRes = await fetch('/api/team-members')
-      const teamJson = await teamRes.json()
-      setTeamMembers(teamJson.members || [])
+      if (teamRes.ok) { const teamJson = await teamRes.json(); setTeamMembers(teamJson.members || []) }
       setLoading(false)
     }
     load()
@@ -607,6 +614,7 @@ export default function JobDetail() {
   async function respondToRfi(rfiId) {
     setSavingRfiResponse(true)
     const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
     const rfi = fieldRfis.find(r => r.id === rfiId)
     await supabase.from('rfis').update({ response: rfiResponse, status: 'answered', responded_at: new Date().toISOString(), responded_by: session.user.id }).eq('id', rfiId)
     if (rfi?.super_id) {
@@ -685,7 +693,7 @@ export default function JobDetail() {
       const costs = json.data || []
       const userIds = [...new Set(costs.map(c => c.submitted_by).filter(Boolean))]
       if (userIds.length > 0) {
-        const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', userIds)
+        const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds)
         const pmap = {}
         profiles?.forEach(p => { pmap[p.id] = p })
         costs.forEach(c => { c._profile = pmap[c.submitted_by] || null })
@@ -802,12 +810,13 @@ export default function JobDetail() {
     if (!valid.length) return
     setImportingCsv(true)
     const { data: { session } } = await supabase.auth.getSession()
-    await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid.map(r => ({
+    const res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(valid.map(r => ({
       job_id: id, submitted_by: session.user.id,
       cost_date: r.cost_date, description: r.description,
       category: r.category, amount: r.amount,
       notes: r.notes || null, budget_item_id: null, status: 'approved',
     }))) })
+    if (!res.ok) { alert('Import failed. Please try again.'); setImportingCsv(false); return }
     setShowCsvImport(false); setCsvRows([]); setImportingCsv(false)
     await loadDirectCosts()
   }
@@ -906,7 +915,9 @@ export default function JobDetail() {
   }
 
   async function openPrimeContractUrl() {
-    const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(job.prime_contract_url, 60)
+    const path = job?.prime_contract_url
+    if (!path) return
+    const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(path, 60)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -1467,6 +1478,7 @@ export default function JobDetail() {
     setAiaBalanceWarning(null)
 
     const w = window.open('', '_blank')
+    if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     w.document.write(`<!DOCTYPE html><html><head>
 <title>AIA G702/G703 — App #${app.app_number} — Job #${job.job_number}</title>
 <style>
@@ -1599,7 +1611,6 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
     if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }
-    if (activeTab === 'subs') { loadSubDirectory() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
     if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
@@ -1872,6 +1883,7 @@ ${sovLines.length > 0 ? `
     const coNumber = (sc.change_orders || []).filter(c => c.status !== 'rejected').findIndex(c => c.id === co.id) + 1
 
     const w = window.open('', '_blank')
+    if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     w.document.write(`<!DOCTYPE html><html><head>
 <title>Change Order — ${sc.gc_name || 'GC'} — ${job.project_name}</title>
 <style>
@@ -3197,6 +3209,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   function printPrimeCO(co, coNum) {
     const w = window.open('', '_blank')
+    if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
     const amount = Number(co.amount)
     const logoUrl = `${window.location.origin}/logo.png`
@@ -3223,6 +3236,7 @@ ${sovHtml}
 
   function printSubCO(co, subName, scope, coNum) {
     const w = window.open('', '_blank')
+    if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
     const amount = Number(co.amount)
     const isPmToSub = co.direction === 'pm_to_sub'
@@ -3744,6 +3758,7 @@ ${sovHtml}
       const pmName = pmMember?.full_name || job.pm_email || '—'
 
       const w = window.open('', '_blank')
+      if (!w) { alert('Please allow popups for this site to generate PDFs.'); setGeneratingReport(false); return; }
       w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
 <title>Job Completion Report — #${job.job_number}</title>
@@ -3957,6 +3972,7 @@ ${(budgets || []).length > 0 ? `
   // ── PDF exports ──────────────────────────────────────────────
   function exportContractsPDF() {
     const w = window.open('', '_blank')
+    if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = new Date().toLocaleDateString()
     const rows = contracts.map(c => ({ c, subName: c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown' }))
     w.document.write(`<!DOCTYPE html><html><head>
@@ -3986,6 +4002,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; }
 
   function exportBudgetPDF() {
     const w = window.open('', '_blank')
+    if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = new Date().toLocaleDateString()
     w.document.write(`<!DOCTYPE html><html><head>
 <title>Budget Report — Job #${job.job_number}</title>
@@ -5143,8 +5160,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 ))}
                               </div>
                               <div style={{ display: 'flex', gap: '8px' }}>
-                                <input style={{ ...s.input, flex: 1 }} value={messageDraft[a.sub_id] || ''} onChange={e => setMessageDraft(prev => ({ ...prev, [a.sub_id]: e.target.value }))} placeholder="Type a message..." onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(a.sub_id, profile?.full_name)} />
-                                <button style={{ ...s.btn, padding: '11px 20px', opacity: sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim() ? 0.6 : 1 }} disabled={sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim()} onClick={() => sendMessage(a.sub_id, profile?.full_name)}>{sendingMessageFor === a.sub_id ? '...' : 'Send'}</button>
+                                <input style={{ ...s.input, flex: 1 }} value={messageDraft[a.sub_id] || ''} onChange={e => setMessageDraft(prev => ({ ...prev, [a.sub_id]: e.target.value }))} placeholder="Type a message..." onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(a.sub_id, currentUserName)} />
+                                <button style={{ ...s.btn, padding: '11px 20px', opacity: sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim() ? 0.6 : 1 }} disabled={sendingMessageFor === a.sub_id || !messageDraft[a.sub_id]?.trim()} onClick={() => sendMessage(a.sub_id, currentUserName)}>{sendingMessageFor === a.sub_id ? '...' : 'Send'}</button>
                               </div>
                             </div>
                           )}
@@ -7055,11 +7072,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...s.btn, opacity: creatingDraw ? 0.5 : 1 }} disabled={creatingDraw} onClick={async () => {
                         setCreatingDraw(true)
-                        await fetch('/api/draw-requests', {
+                        const res = await fetch('/api/draw-requests', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids, po_ids: drawForm.po_ids, gc_ids: drawForm.gc_ids }),
                         })
+                        if (!res.ok) { alert('Failed to create draw. Please try again.'); setCreatingDraw(false); return; }
                         setDrawForm({ title: '', dc_ids: [], po_ids: [], gc_ids: [] })
                         setShowCreateDraw(false)
                         await loadDrawRequests()
@@ -7112,18 +7130,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                         {dr.status === 'open' ? (
                           <button style={s.btnSmall} onClick={async () => {
-                            await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'closed' }) })
+                            const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'closed' }) })
+                            if (!res.ok) { alert('Action failed. Please try again.'); return; }
                             await loadDrawRequests()
                           }}>Close</button>
                         ) : (
                           <button style={s.btnSmall} onClick={async () => {
-                            await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'open' }) })
+                            const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'open' }) })
+                            if (!res.ok) { alert('Action failed. Please try again.'); return; }
                             await loadDrawRequests()
                           }}>Reopen</button>
                         )}
                         <button style={s.btnSmallRed} onClick={async () => {
                           if (!window.confirm('Delete this draw? Billing submissions linked to it will be unlinked.')) return
-                          await fetch(`/api/draw-requests?id=${dr.id}`, { method: 'DELETE' })
+                          const res = await fetch(`/api/draw-requests?id=${dr.id}`, { method: 'DELETE' })
+                          if (!res.ok) { alert('Action failed. Please try again.'); return; }
                           await loadDrawRequests()
                           await loadBillingForJob()
                         }}>Delete</button>
@@ -7154,6 +7175,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     onClick={async () => {
                                       await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_dc_ids: [dc.id] }) })
                                       await loadDirectCosts()
+                                      await loadDrawRequests()
                                     }}
                                   >Remove</button>
                                 </div>
@@ -7192,6 +7214,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_dc_ids: drawAddCostIds }) })
                                 setDrawAddCostIds([])
                                 await loadDirectCosts()
+                                await loadDrawRequests()
                                 setSavingDrawCosts(false)
                               }}
                             >{savingDrawCosts ? 'Saving...' : `Draw ${drawAddCostIds.length > 0 ? drawAddCostIds.length + ' ' : ''}selected cost${drawAddCostIds.length !== 1 ? 's' : ''}`}</button>
@@ -7603,6 +7626,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const amt = parseFloat(b.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
                               const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
                               const w = window.open('', '_blank')
+                              if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
                               w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Signed Lien Waiver</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:0 24px;color:#000}.grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #ccc;border-radius:4px;overflow:hidden;margin-bottom:16px;font-size:13px}.cell{padding:10px 12px;border-bottom:1px solid #ddd}.cell:nth-child(odd){border-right:1px solid #ddd}.cell label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;margin-bottom:3px}.body{font-size:12px;line-height:1.8;color:#333;margin-bottom:24px;border:1px solid #ccc;padding:16px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}.sig-img{max-width:200px;max-height:60px}.sig-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-top:4px}@media print{.no-print{display:none}}</style></head><body>
 <button class="no-print" onclick="window.print()" style="margin-bottom:24px;padding:10px 20px;background:#000;color:#fff;border:none;cursor:pointer;font-size:13px;">Print / Save as PDF</button>
 <p style="text-align:center;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#888;margin-bottom:8px;">Conditional Waiver and Release on Progress Payment</p>
@@ -8686,7 +8710,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   {showNewAia && (() => {
                     const isDrawType = job.billing_type === 'draw_request'
-                    const isBiweekly = !isDrawType && (form.owner_billing_frequency || form.billing_frequency || 'monthly') === 'biweekly'
+                    const isBiweekly = !isDrawType && (job?.owner_billing_frequency || job?.billing_frequency || 'monthly') === 'biweekly'
                     const canCreate = !savingAia && budgetItems.length > 0 && (isDrawType ? !!newAiaForm.linked_draw_request_id : newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from))
                     return (
                     <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
@@ -10984,10 +11008,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                             {order.status === 'open' && (
-                              <button style={s.btnSmall} onClick={async () => { await fetch('/api/warranty-orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: order.id, status: 'in_progress' }) }); loadWarranty() }}>Start</button>
+                              <button style={s.btnSmall} onClick={async () => { await fetch('/api/warranty-orders', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: order.id, status: 'in_progress' }) }); await loadWarranty() }}>Start</button>
                             )}
                             <button style={s.btnSmallGreen} onClick={() => setResolvingOrder({ id: order.id, is_billable: false, billable_amount: '', resolution_notes: '', photos: [] })}>Resolve</button>
-                            <button style={s.btnSmallRed} onClick={async () => { if (!confirm('Delete this warranty order?')) return; await fetch(`/api/warranty-orders?id=${order.id}`, { method: 'DELETE' }); loadWarranty() }}>Del</button>
+                            <button style={s.btnSmallRed} onClick={async () => { if (!confirm('Delete this warranty order?')) return; await fetch(`/api/warranty-orders?id=${order.id}`, { method: 'DELETE' }); await loadWarranty() }}>Del</button>
                           </div>
                         </div>
 
@@ -11441,7 +11465,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           disabled={savingGC || !gcForm.description.trim() || !gcForm.amount}
                           onClick={async () => {
                             setSavingGC(true)
-                            await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
+                            const res = await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
+                            if (!res.ok) { alert('Failed to save. Try again.'); setSavingGC(false); return; }
                             setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
                             await loadGeneralConditions()
                             setSavingGC(false)
@@ -11464,28 +11489,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingBottom: '8px' }}>
                                     <div style={{ gridColumn: '1 / -1' }}>
                                       <label style={s.label}>Description</label>
-                                      <input style={s.input} value={gcForm.description} onChange={e2 => setGcForm(f => ({ ...f, description: e2.target.value }))} />
+                                      <input style={s.input} value={gcEditForm.description} onChange={e2 => setGcEditForm(f => ({ ...f, description: e2.target.value }))} />
                                     </div>
                                     <div>
                                       <label style={s.label}>Amount</label>
-                                      <input type="number" step="0.01" style={s.input} value={gcForm.amount} onChange={e2 => setGcForm(f => ({ ...f, amount: e2.target.value }))} />
+                                      <input type="number" step="0.01" style={s.input} value={gcEditForm.amount} onChange={e2 => setGcEditForm(f => ({ ...f, amount: e2.target.value }))} />
                                     </div>
                                     <div>
                                       <label style={s.label}>Category</label>
-                                      <select style={s.input} value={gcForm.category} onChange={e2 => setGcForm(f => ({ ...f, category: e2.target.value }))}>
+                                      <select style={s.input} value={gcEditForm.category} onChange={e2 => setGcEditForm(f => ({ ...f, category: e2.target.value }))}>
                                         {GC_CATEGORIES.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
                                       </select>
                                     </div>
                                     <div>
                                       <label style={s.label}>Draw Request</label>
-                                      <select style={s.input} value={gcForm.draw_request_id} onChange={e2 => setGcForm(f => ({ ...f, draw_request_id: e2.target.value }))}>
+                                      <select style={s.input} value={gcEditForm.draw_request_id} onChange={e2 => setGcEditForm(f => ({ ...f, draw_request_id: e2.target.value }))}>
                                         <option value="">— none —</option>
                                         {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
                                       </select>
                                     </div>
                                     <div>
                                       <label style={s.label}>Budget item</label>
-                                      <select style={s.input} value={gcForm.budget_item_id} onChange={e2 => setGcForm(f => ({ ...f, budget_item_id: e2.target.value }))}>
+                                      <select style={s.input} value={gcEditForm.budget_item_id} onChange={e2 => setGcEditForm(f => ({ ...f, budget_item_id: e2.target.value }))}>
                                         <option value="">— none —</option>
                                         {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
                                       </select>
@@ -11493,12 +11518,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                                       <button style={s.btn} onClick={async () => {
                                         setSavingGC(true)
-                                        await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcForm }) })
+                                        const res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcEditForm }) })
+                                        if (!res.ok) { alert('Failed to save. Try again.'); setSavingGC(false); return; }
                                         setEditingGCId(null)
+                                        setGcEditForm({})
                                         await loadGeneralConditions()
                                         setSavingGC(false)
                                       }}>{savingGC ? 'Saving...' : 'Save'}</button>
-                                      <button style={s.btnGray} onClick={() => setEditingGCId(null)}>Cancel</button>
+                                      <button style={s.btnGray} onClick={() => { setEditingGCId(null); setGcEditForm({}) }}>Cancel</button>
                                     </div>
                                   </div>
                                 ) : (
@@ -11519,11 +11546,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
                                       <button style={s.btnSmallOrange} onClick={() => {
                                         setEditingGCId(e.id)
-                                        setGcForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '', draw_request_id: e.draw_request_id || '' })
+                                        setGcEditForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '', draw_request_id: e.draw_request_id || '' })
                                       }}>Edit</button>
                                       <button style={s.btnSmallRed} onClick={async () => {
                                         if (!window.confirm('Delete this entry?')) return
-                                        await fetch('/api/general-conditions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id }) })
+                                        const res = await fetch('/api/general-conditions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id }) })
+                                        if (!res.ok) { alert('Failed to save. Try again.'); return; }
                                         await loadGeneralConditions()
                                       }}>Delete</button>
                                     </div>

@@ -53,7 +53,7 @@ const s = {
   btnRed: { padding: '6px 14px', background: '#1a0a0a', color: '#f87171', border: '1px solid #3a1a1a', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   inlineForm: { background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '16px', marginBottom: '16px' },
   badge: (color) => {
-    const map = { orange: ['#2a1200','#e8590c','#4a2200'], green: ['#0a2a0a','#4ade80','#1a4a1a'], red: ['#1a0a0a','#f87171','#3a1a1a'], blue: ['#0a1020','#60a5fa','#1a2a40'], gray: ['#111','#555','#222'] }
+    const map = { orange: ['#2a1200','#e8590c','#4a2200'], green: ['#0a2a0a','#4ade80','#1a4a1a'], red: ['#1a0a0a','#f87171','#3a1a1a'], blue: ['#0a1020','#60a5fa','#1a2a40'], gray: ['#111','#555','#222'], amber: ['#2a2000','#fbbf24','#4a3800'] }
     const [bg, fg, border] = map[color] || map.gray
     return { display: 'inline-block', padding: '2px 9px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', background: bg, color: fg, border: `1px solid ${border}` }
   },
@@ -72,6 +72,7 @@ export default function ResidentialJobDetail() {
   const router = useRouter()
   const [id, setId] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [profileLoadError, setProfileLoadError] = useState(false)
   const [job, setJob] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('details')
@@ -213,7 +214,7 @@ export default function ResidentialJobDetail() {
       supabase.from('profiles').select('*').eq('id', session.user.id).single(),
       supabase.from('jobs').select('*').eq('id', id).single(),
     ])
-    setProfile(profileRes.data)
+    if (profileRes.data) { setProfile(profileRes.data) } else { setProfileLoadError(true) }
     setJob(jobRes.data)
     if (jobRes.data) setDetailsForm(jobRes.data)
 
@@ -264,7 +265,9 @@ export default function ResidentialJobDetail() {
 
   async function loadDrawRequests() {
     const res = await fetch(`/api/draw-requests?job_id=${id}`)
-    if (res.ok) { const { draws } = await res.json(); setDrawRequests(draws || []) }
+    if (!res.ok) return
+    const { draws } = await res.json()
+    setDrawRequests(draws || [])
   }
 
   async function loadMilestones() {
@@ -278,9 +281,12 @@ export default function ResidentialJobDetail() {
   }
 
   async function loadDocuments() {
-    const res = await fetch(`/api/job-docs?job_id=${id}`)
-    const json = await res.json()
-    setDocuments(json.data || [])
+    try {
+      const res = await fetch(`/api/job-docs?job_id=${id}`)
+      if (!res.ok) return
+      const json = await res.json()
+      setDocuments(json.docs || json.data || [])
+    } catch {}
   }
 
   async function loadContacts() {
@@ -335,8 +341,7 @@ export default function ResidentialJobDetail() {
     if (error) { setDetailsMsg('Error: ' + error.message) }
     else {
       const { data } = await supabase.from('jobs').select('*').eq('id', id).single()
-      setJob(data)
-      setDetailsForm(data)
+      if (data) { setJob(data); setDetailsForm(data) }
       setEditingDetails(false)
       setDetailsMsg('Saved')
       setTimeout(() => setDetailsMsg(''), 3000)
@@ -347,7 +352,8 @@ export default function ResidentialJobDetail() {
   async function addBudgetItem() {
     if (!newBudget.description || !newBudget.budget_amount) return
     setAddingBudget(true)
-    await supabase.from('budget_items').insert({ job_id: id, description: newBudget.description, budget_amount: parseFloat(newBudget.budget_amount), cost_code: newBudget.cost_code || null, notes: newBudget.notes || null })
+    const { error: budgetErr } = await supabase.from('budget_items').insert({ job_id: id, description: newBudget.description, budget_amount: parseFloat(newBudget.budget_amount), cost_code: newBudget.cost_code || null, notes: newBudget.notes || null })
+    if (budgetErr) { alert('Failed to add item. Please try again.'); setAddingBudget(false); return }
     await loadBudget()
     setNewBudget({ description: '', budget_amount: '', cost_code: '', notes: '' })
     setShowAddBudget(false)
@@ -355,7 +361,8 @@ export default function ResidentialJobDetail() {
   }
 
   async function saveBudgetEdit(itemId) {
-    await supabase.from('budget_items').update({ description: editBudgetForm.description, budget_amount: parseFloat(editBudgetForm.budget_amount) || 0, cost_code: editBudgetForm.cost_code || null }).eq('id', itemId)
+    const { error: budgetEditErr } = await supabase.from('budget_items').update({ description: editBudgetForm.description, budget_amount: parseFloat(editBudgetForm.budget_amount) || 0, cost_code: editBudgetForm.cost_code || null }).eq('id', itemId)
+    if (budgetEditErr) { alert('Failed to save changes. Please try again.'); return }
     await loadBudget()
     setEditingBudgetId(null)
   }
@@ -401,25 +408,30 @@ export default function ResidentialJobDetail() {
     const dirEntry = newSubForm.dir_id ? subDirectory.find(d => d.id === newSubForm.dir_id) : null
     const company_name = dirEntry?.company_name || newSubForm.company_name
     if (!company_name) { setSubMsg('Company name required'); setAddingSub(false); return }
-    const res = await fetch('/api/subcontracts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        job_id: id,
-        vendor_name: company_name,
-        description: dirEntry?.trade || newSubForm.trade || null,
-        contract_value: parseFloat(newSubForm.contract_value) || 0,
-        budget_item_id: newSubForm.budget_item_id || null,
-        status: 'active',
-        created_by: profile?.id || null,
-      }),
-    })
-    const result = await res.json()
-    if (result.error) { setSubMsg('Error: ' + result.error); setAddingSub(false); return }
-    setNewSubForm({ dir_id: '', company_name: '', trade: '', contract_value: '', budget_item_id: '' })
-    setShowAddSubForm(false)
-    await loadContracts()
-    setAddingSub(false)
+    try {
+      const res = await fetch('/api/subcontracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_id: id,
+          vendor_name: company_name,
+          description: dirEntry?.trade || newSubForm.trade || null,
+          contract_value: parseFloat(newSubForm.contract_value) || 0,
+          budget_item_id: newSubForm.budget_item_id || null,
+          status: 'active',
+          created_by: profile?.id || null,
+        }),
+      })
+      const result = await res.json()
+      if (result.error) { setSubMsg('Error: ' + result.error); return }
+      setNewSubForm({ dir_id: '', company_name: '', trade: '', contract_value: '', budget_item_id: '' })
+      setShowAddSubForm(false)
+      await loadContracts()
+    } catch {
+      setSubMsg('Network error. Please try again.')
+    } finally {
+      setAddingSub(false)
+    }
   }
 
   async function saveSubEdit(contractId) {
@@ -444,13 +456,18 @@ export default function ResidentialJobDetail() {
   async function createDraw() {
     if (creatingDraw) return
     setCreatingDraw(true)
-    const title = drawForm.title || `Draw Request ${drawRequests.length + 1}`
-    const res = await fetch('/api/draw-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, title, dc_ids: [], po_ids: [], gc_ids: [] }) })
-    if (!res.ok) { const j = await res.json(); alert(j.error || 'Failed to create draw'); setCreatingDraw(false); return }
-    await loadDrawRequests()
-    setDrawForm({ title: '' })
-    setShowCreateDraw(false)
-    setCreatingDraw(false)
+    try {
+      const title = drawForm.title || `Draw Request ${drawRequests.length + 1}`
+      const res = await fetch('/api/draw-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, title, dc_ids: [], po_ids: [], gc_ids: [] }) })
+      if (!res.ok) { const j = await res.json(); alert(j.error || 'Failed to create draw'); return }
+      await loadDrawRequests()
+      setDrawForm({ title: '' })
+      setShowCreateDraw(false)
+    } catch {
+      alert('Network error. Please try again.')
+    } finally {
+      setCreatingDraw(false)
+    }
   }
 
   async function updateDrawStatus(drawId, status) {
@@ -470,28 +487,33 @@ export default function ResidentialJobDetail() {
     if (!billingForm.amount_billed || (!billingForm._contract_id && !billingForm.company_name)) return
     setAddingBilling(true)
     setBillingMsg('')
-    const amount = parseFloat(billingForm.amount_billed) || 0
-    const pct = parseFloat(billingForm.retainage_pct) || 0
-    const retainage_held = pct > 0 ? +(amount * pct / 100).toFixed(2) : 0
-    const body = {
-      job_id: id,
-      sub_id: billingForm.sub_id || null,
-      company_name: billingForm.company_name || '',
-      amount_billed: amount,
-      retainage_held: retainage_held || null,
-      retainage_pct: pct || null,
-      work_description: billingForm.work_description || null,
-      billing_period: billingForm.billing_period ? billingForm.billing_period + '-01' : null,
-      status: 'pending',
-      submitted_at: new Date().toISOString(),
+    try {
+      const amount = parseFloat(billingForm.amount_billed) || 0
+      const pct = parseFloat(billingForm.retainage_pct) || 0
+      const retainage_held = pct > 0 ? +(amount * pct / 100).toFixed(2) : 0
+      const body = {
+        job_id: id,
+        sub_id: billingForm.sub_id || null,
+        company_name: billingForm.company_name || '',
+        amount_billed: amount,
+        retainage_held: retainage_held || null,
+        retainage_pct: pct || null,
+        work_description: billingForm.work_description || null,
+        billing_period: billingForm.billing_period ? billingForm.billing_period + '-01' : null,
+        status: 'pending',
+        submitted_at: new Date().toISOString(),
+      }
+      const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const result = await res.json()
+      if (result.error) { setBillingMsg('Error: ' + result.error); return }
+      setBillingForm({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
+      setShowBillingForm(false)
+      await loadBillingSubmissions()
+    } catch {
+      setBillingMsg('Network error. Please try again.')
+    } finally {
+      setAddingBilling(false)
     }
-    const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const result = await res.json()
-    if (result.error) { setBillingMsg('Error: ' + result.error); setAddingBilling(false); return }
-    setBillingForm({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
-    setShowBillingForm(false)
-    await loadBillingSubmissions()
-    setAddingBilling(false)
   }
 
   async function updateBillingStatus(billingId, status) {
@@ -511,12 +533,17 @@ export default function ResidentialJobDetail() {
 
   async function saveDrawCosts(drawId) {
     setSavingDrawCosts(true)
-    await Promise.all(drawAddCostIds.map(costId =>
-      fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: drawId }) })
-    ))
-    await Promise.all([loadDrawRequests(), loadDirectCosts()])
-    setDrawAddCostIds([])
-    setSavingDrawCosts(false)
+    try {
+      await Promise.all(drawAddCostIds.map(costId =>
+        fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: drawId }) })
+      ))
+      await Promise.all([loadDrawRequests(), loadDirectCosts()])
+      setDrawAddCostIds([])
+    } catch {
+      alert('Failed to save costs to draw. Please try again.')
+    } finally {
+      setSavingDrawCosts(false)
+    }
   }
 
   async function removeCostFromDraw(costId) {
@@ -526,12 +553,17 @@ export default function ResidentialJobDetail() {
 
   async function saveDrawBillings(drawId) {
     setSavingDrawBillings(true)
-    await Promise.all(drawAddBillingIds.map(bid =>
-      fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
-    ))
-    setDrawAddBillingIds([])
-    await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
-    setSavingDrawBillings(false)
+    try {
+      await Promise.all(drawAddBillingIds.map(bid =>
+        fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
+      ))
+      setDrawAddBillingIds([])
+      await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
+    } catch {
+      alert('Failed to save billings to draw. Please try again.')
+    } finally {
+      setSavingDrawBillings(false)
+    }
   }
 
   async function removeBillingFromDraw(billingId) {
@@ -546,8 +578,8 @@ export default function ResidentialJobDetail() {
     const billingTotal = drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
     const grandTotal = costTotal + billingTotal
     const fmtN = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const jobName = job?.name || job?.address || 'Project'
-    const jobAddress = job?.address && job?.name ? job.address : ''
+    const jobName = job?.project_name || job?.location || 'Project'
+    const jobAddress = job?.location && job?.project_name ? job.location : ''
     const logoUrl = `${window.location.origin}/logo.png`
     const drawNumStr = `Draw #${String(dr.draw_number || '').padStart(3, '0')}`
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${dr.title}</title><style>
@@ -621,7 +653,8 @@ export default function ResidentialJobDetail() {
   async function addMilestone() {
     if (!newMilestone.title) return
     setAddingMilestone(true)
-    await supabase.from('milestones').insert({ job_id: id, title: newMilestone.title, planned_date: newMilestone.planned_date || null, status: newMilestone.status, notes: newMilestone.notes || null })
+    const { error: milestoneErr } = await supabase.from('milestones').insert({ job_id: id, title: newMilestone.title, planned_date: newMilestone.planned_date || null, status: newMilestone.status, notes: newMilestone.notes || null })
+    if (milestoneErr) { alert('Failed to add milestone. Please try again.'); setAddingMilestone(false); return }
     await loadMilestones()
     setNewMilestone({ title: '', planned_date: '', status: 'planned', notes: '' })
     setShowAddMilestone(false)
@@ -646,11 +679,14 @@ export default function ResidentialJobDetail() {
     const ext = file.name.split('.').pop()
     const path = `${id}/${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from('job-photos').upload(path, file)
-    if (!upErr) {
-      const { data: { publicUrl } } = supabase.storage.from('job-photos').getPublicUrl(path)
-      await supabase.from('job_photos').insert({ job_id: id, url: publicUrl, caption: file.name })
-      await loadPhotos()
+    if (upErr) {
+      setUploadingPhoto(false)
+      alert('Photo upload failed. Please try again.')
+      return
     }
+    const { data: { publicUrl } } = supabase.storage.from('job-photos').getPublicUrl(path)
+    await supabase.from('job_photos').insert({ job_id: id, url: publicUrl, caption: file.name })
+    await loadPhotos()
     setUploadingPhoto(false)
   }
 
@@ -715,6 +751,7 @@ export default function ResidentialJobDetail() {
     e.preventDefault()
     setSubmittingDc(true)
     const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { alert('Session expired. Please refresh the page.'); setSubmittingDc(false); return }
     const rowData = {
       job_id: id,
       submitted_by: session.user.id,
@@ -735,12 +772,21 @@ export default function ResidentialJobDetail() {
     } else {
       res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
     }
+    if (!res.ok) {
+      let errMsg = 'Failed to save cost. Please try again.'
+      try { const j = await res.json(); if (j.error) errMsg = 'Error: ' + j.error } catch {}
+      alert(errMsg)
+      setSubmittingDc(false)
+      return
+    }
     json = await res.json()
     if (!json.error) {
       setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
+    } else {
+      alert('Error: ' + json.error)
     }
     setSubmittingDc(false)
   }
@@ -777,6 +823,7 @@ export default function ResidentialJobDetail() {
   async function openDCReceipt(path) {
     const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    else alert('Could not open receipt. The file may not be available.')
   }
 
   async function saveEditedCost() {
@@ -962,6 +1009,7 @@ export default function ResidentialJobDetail() {
       {/* HEADER */}
       <div style={s.header}>
         <button style={s.backBtn} onClick={() => router.push('/dashboard?tab=residential')}>← Back to Residential</button>
+        {profileLoadError && <div style={{ ...s.errMsg, marginBottom: '10px' }}>Could not load your profile — please refresh the page.</div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
           <div>
             <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
@@ -972,7 +1020,7 @@ export default function ResidentialJobDetail() {
               {job.status ? ' · ' + job.status.toUpperCase() : ''}
             </p>
           </div>
-          <span style={s.badge(job.status === 'complete' ? 'gray' : 'green')}>{job.status === 'complete' ? 'COMPLETE' : 'ACTIVE'}</span>
+          <span style={s.badge(job.status === 'complete' ? 'gray' : job.status === 'on-hold' ? 'amber' : 'green')}>{job.status === 'complete' ? 'COMPLETE' : job.status === 'on-hold' ? 'ON HOLD' : 'ACTIVE'}</span>
         </div>
         <div style={s.tabs}>
           {TABS.map(t => <button key={t.id} style={s.tab(activeTab === t.id)} onClick={() => setActiveTab(t.id)}>{t.label}</button>)}
@@ -1285,7 +1333,7 @@ export default function ResidentialJobDetail() {
                         </div>
                         <div>
                           <label style={s.label}>Receipt (PDF / photo)</label>
-                          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 12px' }} onChange={e => setDcFile(e.target.files[0])} />
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 12px' }} onChange={e => setDcFile(e.target.files?.[0] || null)} />
                         </div>
                       </div>
                       <button type="submit" style={s.btn} disabled={submittingDc}>{submittingDc ? 'Saving…' : 'Save Cost'}</button>

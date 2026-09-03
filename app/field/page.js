@@ -214,8 +214,8 @@ export default function Field() {
       const jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
       setAssignedJobs(jobs)
       if (jobs.length === 1) setSelectedJobId(jobs[0].id)
-      loadAssignedVehicles(session.user.id)
-      loadMyTools(session.user.id)
+      await loadAssignedVehicles(session.user.id)
+      await loadMyTools(session.user.id)
     }
     load()
   }, [router])
@@ -313,9 +313,12 @@ export default function Field() {
   }
 
   async function loadPunchItems() {
-    const res = await fetch(`/api/punch-list?job_id=${selectedJobId}`)
-    const { items } = await res.json()
-    setPunchItems(items || [])
+    try {
+      const res = await fetch(`/api/punch-list?job_id=${selectedJobId}`)
+      if (!res.ok) return
+      const { items } = await res.json()
+      setPunchItems(items || [])
+    } catch {}
   }
 
   async function compressImage(file, maxWidth = 1200, quality = 0.82) {
@@ -459,37 +462,41 @@ export default function Field() {
     e.preventDefault()
     setSubmittingDc(true)
     setDcError('')
-    const rowData = {
-      job_id: selectedJobId, submitted_by: user.id,
-      cost_date: dcForm.cost_date, description: dcForm.description,
-      category: dcForm.category, amount: parseFloat(dcForm.amount),
-      reason: dcForm.reason || null,
-      notes: dcForm.notes || null,
-      assigned_to: profile?.full_name || null,
-      status: 'pending',
-    }
-    let res, json
-    if (dcFile) {
-      const fd = new FormData()
-      fd.append('file', dcFile)
-      fd.append('data', JSON.stringify(rowData))
-      res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
-    } else {
-      res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
-    }
-    json = await res.json()
-    if (json.error) {
-      setDcError('Failed to save cost: ' + json.error)
+    try {
+      const rowData = {
+        job_id: selectedJobId, submitted_by: user.id,
+        cost_date: dcForm.cost_date, description: dcForm.description,
+        category: dcForm.category, amount: parseFloat(dcForm.amount),
+        reason: dcForm.reason || null,
+        notes: dcForm.notes || null,
+        assigned_to: profile?.full_name || null,
+        status: 'pending',
+      }
+      let res, json
+      if (dcFile) {
+        const fd = new FormData()
+        fd.append('file', dcFile)
+        fd.append('data', JSON.stringify(rowData))
+        res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
+      } else {
+        res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+      }
+      json = await res.json()
+      if (json.error) {
+        setDcError('Failed to save cost: ' + json.error)
+        return
+      }
+      setDcSuccess(true)
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '' })
+      setDcFile(null)
+      setShowDcForm(false)
+      await loadDirectCosts()
+      setTimeout(() => setDcSuccess(false), 3000)
+    } catch {
+      setDcError('Network error. Please try again.')
+    } finally {
       setSubmittingDc(false)
-      return
     }
-    setDcSuccess(true)
-    setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '' })
-    setDcFile(null)
-    setShowDcForm(false)
-    await loadDirectCosts()
-    setTimeout(() => setDcSuccess(false), 3000)
-    setSubmittingDc(false)
   }
 
   async function openReceiptUrl(path) {
@@ -569,48 +576,63 @@ export default function Field() {
   async function saveLAActivity() {
     if (!laForm.description) return
     setSavingLA(true)
-    if (editingLAActivity) {
-      const res = await fetch('/api/lookahead-activities', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingLAActivity.id, ...laForm }),
-      })
-      const { data } = await res.json()
-      if (data) setLookaheadActivities(prev => prev.map(a => a.id === data.id ? data : a))
-    } else {
-      const res = await fetch('/api/lookahead-activities', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lookahead_id: lookahead.id, ...laForm }),
-      })
-      const { data } = await res.json()
-      if (data) setLookaheadActivities(prev => [...prev, data])
+    try {
+      if (editingLAActivity) {
+        const res = await fetch('/api/lookahead-activities', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingLAActivity.id, ...laForm }),
+        })
+        const { data } = await res.json()
+        if (data) setLookaheadActivities(prev => prev.map(a => a.id === data.id ? data : a))
+      } else {
+        const res = await fetch('/api/lookahead-activities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lookahead_id: lookahead.id, ...laForm }),
+        })
+        const { data } = await res.json()
+        if (data) setLookaheadActivities(prev => [...prev, data])
+      }
+      setShowLAModal(false)
+    } catch {
+      alert('Failed to save activity. Please try again.')
+    } finally {
+      setSavingLA(false)
     }
-    setSavingLA(false)
-    setShowLAModal(false)
   }
 
   async function deleteLAActivity(actId) {
     if (!confirm('Delete this activity?')) return
-    await fetch('/api/lookahead-activities', {
+    const backup = lookaheadActivities.find(a => a.id === actId)
+    setLookaheadActivities(prev => prev.filter(a => a.id !== actId))
+    const res = await fetch('/api/lookahead-activities', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: actId }),
     })
-    setLookaheadActivities(prev => prev.filter(a => a.id !== actId))
+    if (!res.ok) {
+      setLookaheadActivities(prev => backup ? [...prev, backup] : prev)
+      alert('Failed to delete activity.')
+    }
   }
 
   async function submitLookaheadFromField() {
     if (!lookahead) return
     setSubmittingLA(true)
-    const res = await fetch('/api/lookaheads', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: lookahead.id, status: 'submitted' }),
-    })
-    const { data } = await res.json()
-    if (data) setLookahead(prev => ({ ...prev, ...data }))
-    setSubmittingLA(false)
+    try {
+      const res = await fetch('/api/lookaheads', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: lookahead.id, status: 'submitted' }),
+      })
+      const { data } = await res.json()
+      if (data) setLookahead(prev => ({ ...prev, ...data }))
+    } catch {
+      alert('Failed to submit lookahead. Please try again.')
+    } finally {
+      setSubmittingLA(false)
+    }
   }
 
   function shiftLookaheadWeek(delta) {
@@ -848,7 +870,7 @@ export default function Field() {
       setReportPhotos([])
       setWizardStep(1)
       await loadDailyReports()
-      checkTodayReport()
+      await checkTodayReport()
       setTimeout(() => setDailySuccess(false), 3000)
     }
     setSubmittingDaily(false)
@@ -863,13 +885,16 @@ export default function Field() {
       job_id: selectedJobId, super_id: user.id,
       title, description: description || null,
     })
-    if (!error) {
-      setRfiSuccess(true)
-      setRfiForm({ title: '', description: '' })
-      await loadRfis()
-      setTimeout(() => setRfiSuccess(false), 3000)
-      fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'submitted', job_id: selectedJobId, title, description, super_name: profile?.full_name || profile?.email || 'Superintendent' }) })
+    if (error) {
+      alert('Failed to submit RFI. Please try again.')
+      setSubmittingRfi(false)
+      return
     }
+    setRfiSuccess(true)
+    setRfiForm({ title: '', description: '' })
+    await loadRfis()
+    setTimeout(() => setRfiSuccess(false), 3000)
+    fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'submitted', job_id: selectedJobId, title, description, super_name: profile?.full_name || profile?.email || 'Superintendent' }) })
     setSubmittingRfi(false)
   }
 
@@ -885,13 +910,16 @@ export default function Field() {
       notes: deliveryForm.notes || null,
       status: 'pending',
     })
-    if (!error) {
-      setDeliverySuccess(true)
-      setDeliveryForm({ material: '', vendor: '', expected_date: '', quantity: '', notes: '' })
-      setShowDeliveryForm(false)
-      await loadDeliveries()
-      setTimeout(() => setDeliverySuccess(false), 3000)
+    if (error) {
+      alert('Failed to log delivery. Please try again.')
+      setSubmittingDelivery(false)
+      return
     }
+    setDeliverySuccess(true)
+    setDeliveryForm({ material: '', vendor: '', expected_date: '', quantity: '', notes: '' })
+    setShowDeliveryForm(false)
+    await loadDeliveries()
+    setTimeout(() => setDeliverySuccess(false), 3000)
     setSubmittingDelivery(false)
   }
 
@@ -1156,7 +1184,7 @@ export default function Field() {
                                       <input style={s.input} placeholder="Company name" value={row.company} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                     ) : (
                                       <select style={s.input} value={row.subId} onChange={e => {
-                                        const chosen = subContacts.find(sc => sc.id === e.target.value)
+                                        const chosen = subContacts.find(sc => String(sc.id) === e.target.value)
                                         setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, subId: e.target.value, company: chosen ? chosen.company_name : '', trade: chosen ? (chosen.trade || r.trade) : r.trade } : r))
                                       }}>
                                         <option value="">Select sub...</option>
@@ -1598,7 +1626,7 @@ export default function Field() {
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{c.description}</span>
-                              <span style={s.badge(c.category.toLowerCase())}>{c.category}</span>
+                              <span style={s.badge((c.category || 'uncategorized').toLowerCase())}>{c.category}</span>
                               <span style={s.badge(c.status)}>{c.status}</span>
                             </div>
                             <div style={{ fontSize: '12px', color: '#555' }}>
@@ -1828,11 +1856,12 @@ export default function Field() {
                         <form onSubmit={async e => {
                           e.preventDefault()
                           setSubmittingPunch(true)
-                          await fetch('/api/punch-list', {
+                          const res = await fetch('/api/punch-list', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ job_id: selectedJobId, title: punchForm.title, description: punchForm.description || null, due_date: punchForm.due_date || null, created_by: user.id })
                           })
+                          if (!res.ok) { alert('Failed to add item. Please try again.'); setSubmittingPunch(false); return }
                           setPunchForm({ title: '', description: '', due_date: '' })
                           setShowPunchForm(false)
                           await loadPunchItems()
@@ -1889,7 +1918,8 @@ export default function Field() {
                                 disabled={updatingPunch === item.id}
                                 onClick={async () => {
                                   setUpdatingPunch(item.id)
-                                  await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'sub_complete' }) })
+                                  const res = await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'sub_complete' }) })
+                                  if (!res.ok) { alert('Update failed. Please try again.'); setUpdatingPunch(null); return }
                                   await loadPunchItems()
                                   setUpdatingPunch(null)
                                 }}
@@ -1903,7 +1933,8 @@ export default function Field() {
                                 disabled={updatingPunch === item.id}
                                 onClick={async () => {
                                   setUpdatingPunch(item.id)
-                                  await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'open' }) })
+                                  const res = await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'open' }) })
+                                  if (!res.ok) { alert('Update failed. Please try again.'); setUpdatingPunch(null); return }
                                   await loadPunchItems()
                                   setUpdatingPunch(null)
                                 }}
@@ -2188,24 +2219,26 @@ export default function Field() {
                             try {
                               const userId = (await supabase.auth.getSession()).data.session?.user.id
                               // Add to tool inventory
-                              await fetch('/api/tools', {
+                              const toolRes = await fetch('/api/tools', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ name: purchaseToolForm.name, brand: purchaseToolForm.brand || null, category: purchaseToolForm.category, purchase_date: purchaseToolForm.purchase_date, purchase_cost: purchaseToolForm.purchase_cost ? parseFloat(purchaseToolForm.purchase_cost) : null, condition: 'good', assigned_to: userId, notes: purchaseToolForm.notes || null })
                               })
+                              if (!toolRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
                               // Log as job expense if cost entered and job selected
                               if (purchaseToolForm.purchase_cost && selectedJobId) {
                                 const fd = new FormData()
                                 fd.append('data', JSON.stringify({ job_id: selectedJobId, cost_date: purchaseToolForm.purchase_date, description: `Tool purchase: ${purchaseToolForm.name}${purchaseToolForm.brand ? ' (' + purchaseToolForm.brand + ')' : ''}`, category: 'Tools', amount: parseFloat(purchaseToolForm.purchase_cost), status: 'approved' }))
                                 if (purchaseToolFile) fd.append('file', purchaseToolFile)
-                                await fetch('/api/direct-costs', { method: 'POST', body: fd })
+                                const costRes = await fetch('/api/direct-costs', { method: 'POST', body: fd })
+                                if (!costRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
                               }
                               setPurchaseToolMsg(`${purchaseToolForm.name} logged.${purchaseToolForm.purchase_cost && selectedJobId ? ' Cost posted to job.' : ''}`)
                               setPurchaseToolForm({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: new Date().toISOString().split('T')[0], notes: '' })
                               setPurchaseToolFile(null)
                               setShowPurchaseToolForm(false)
                               setTimeout(() => setPurchaseToolMsg(''), 4000)
-                            } catch { }
+                            } catch { setPurchaseToolMsg('Failed to log tool purchase. Please try again.') }
                             setPurchasingTool(false)
                           }}>
                             <div style={{ ...s.grid2, marginBottom: '1rem' }}>

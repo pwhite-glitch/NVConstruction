@@ -210,8 +210,14 @@ export default function Field() {
       const devIsSuperOverride = devRole === 'super' && (prof?.role === 'pm' || prof?.role === 'apm')
       if (!devIsSuperOverride && (!prof || (prof.role !== 'super' && prof.role !== 'apm'))) { router.push('/login'); return }
       setProfile(devIsSuperOverride ? { ...prof, role: 'super' } : prof)
-      const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id, jobs(*)').eq('user_id', session.user.id)
-      const jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
+      let jobs
+      if (devIsSuperOverride) {
+        const { data: allJobs } = await supabase.from('jobs').select('*').eq('status', 'active').order('project_name')
+        jobs = allJobs || []
+      } else {
+        const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id, jobs(*)').eq('user_id', session.user.id)
+        jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
+      }
       setAssignedJobs(jobs)
       if (jobs.length === 1) setSelectedJobId(jobs[0].id)
       await loadAssignedVehicles(session.user.id)

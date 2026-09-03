@@ -199,20 +199,26 @@ export default function Submit() {
         })
       }
       const companyId = prof?.company_id
-      const jobQueries = [
-        supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
-        supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
-      ]
-      if (companyId) {
-        jobQueries.push(
-          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
-          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
-        )
+      let mergedJobs
+      if (devIsSubOverride) {
+        const { data: allJobs } = await supabase.from('jobs').select('id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location').eq('status', 'active').order('project_name')
+        mergedJobs = allJobs || []
+      } else {
+        const jobQueries = [
+          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
+          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
+        ]
+        if (companyId) {
+          jobQueries.push(
+            supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
+            supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
+          )
+        }
+        const jobResults = await Promise.all(jobQueries)
+        const allJobRecords = jobResults.flatMap(r => (r.data || []).map(x => x.jobs).filter(j => j && j.status === 'active'))
+        const seenJobIds = new Set()
+        mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
       }
-      const jobResults = await Promise.all(jobQueries)
-      const allJobRecords = jobResults.flatMap(r => (r.data || []).map(x => x.jobs).filter(j => j && j.status === 'active'))
-      const seenJobIds = new Set()
-      const mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
       setJobs(mergedJobs)
       // Fetch billing for this user AND all teammates in the same company
       let billingQuery = supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').order('submitted_at', { ascending: false })

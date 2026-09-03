@@ -274,7 +274,7 @@ export default function JobDetail() {
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
-  const [dismissedDupIds, setDismissedDupIds] = useState([])
+  const [dismissedDupIds, setDismissedDupIds] = useState(new Set())
 
   const [billingByItem, setBillingByItem] = useState({})
 
@@ -484,7 +484,7 @@ export default function JobDetail() {
     if (!id) return
     try {
       const saved = JSON.parse(localStorage.getItem('dc_nodups_' + id))
-      if (Array.isArray(saved) && saved.length) setDismissedDupIds(saved)
+      if (Array.isArray(saved) && saved.length) setDismissedDupIds(new Set(saved))
     } catch {}
   }, [id])
 

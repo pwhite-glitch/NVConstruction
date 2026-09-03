@@ -10,6 +10,7 @@ const ROLES = [
   { value: 'subcontractor', label: 'Sub',          color: '#22c55e', portal: '/submit' },
   { value: 'sub_pm',        label: 'Sub PM',       color: '#a78bfa', portal: '/submit' },
   { value: 'sub_admin',     label: 'Sub Admin',    color: '#ec4899', portal: '/submit' },
+  { value: 'owner',         label: 'Owner',        color: '#10b981', portal: '/owner' },
 ]
 
 export default function DevRoleSwitcher() {

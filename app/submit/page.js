@@ -771,13 +771,23 @@ export default function Submit() {
       }
     }
     setSovError('')
-    setLoading(true)
-    let doc_url = null
-    if (billingFile) {
-      const path = `${user.id}/${Date.now()}-${billingFile.name}`
-      const { error: upErr } = await supabase.storage.from('billing-docs').upload(path, billingFile)
-      if (!upErr) doc_url = path
+    if (!billingFile) {
+      setSubmitError('Please attach your invoice PDF. An invoice is required to process payment.')
+      return
     }
+    if (billingFile.type !== 'application/pdf') {
+      setSubmitError('Only PDF files are accepted. Please attach a PDF invoice.')
+      return
+    }
+    setLoading(true)
+    const path = `${user.id}/${Date.now()}-${billingFile.name}`
+    const { error: upErr } = await supabase.storage.from('billing-docs').upload(path, billingFile)
+    if (upErr) {
+      setSubmitError('Failed to upload your invoice. Please try again.')
+      setLoading(false)
+      return
+    }
+    const doc_url = path
     const selectedJob = jobs.find(j => j.id === form.job_id)
     const totalAmtBilled = parseFloat(form.amount_billed) || 0
     const retainageHeld = sovForm.length > 0
@@ -815,14 +825,16 @@ export default function Submit() {
     if (sovInserts.length > 0) {
       await supabase.from('billing_sov_lines').insert(sovInserts)
     }
-    await sendEmail(selectedJob?.pm_email || PM_EMAIL, `Billing submitted — ${profile?.company_name || user.email}`,
+    const pmEmail = selectedJob?.pm_email || PM_EMAIL
+    await sendEmail(pmEmail, `Billing submitted — ${profile?.company_name || user.email}`,
       emailWrap(`
         <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
         <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
         <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(form.amount_billed).toLocaleString()}</p>
         ${form.pct_complete ? `<p style="color:#888;font-size:13px">${form.pct_complete}% complete on scope</p>` : ''}
         <p style="color:#888;font-size:13px;line-height:1.6">${form.work_description}</p>
-        ${doc_url ? `<p style="color:#888;font-size:13px">📎 Attachment included</p>` : ''}
+        <p style="color:#888;font-size:13px">📎 Invoice PDF attached</p>
+        <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
       `)
     )
     setSuccess(true)
@@ -1338,9 +1350,10 @@ export default function Submit() {
                       <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this billing period..." style={{ ...s.input, resize: 'vertical' }} />
                     </div>
                     <div style={{ marginBottom: '1.5rem' }}>
-                      <label style={s.label}>Attach document (optional)</label>
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
-                      {billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {billingFile.name}</div>}
+                      <label style={s.label}>Invoice PDF <span style={{ color: '#e8590c' }}>*</span></label>
+                      <input type="file" accept=".pdf" required onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
+                      {billingFile && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>📎 {billingFile.name}</div>}
+                      {!billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required — attach your invoice to receive payment</div>}
                     </div>
                     {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
                     {submitError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{submitError}</div>}

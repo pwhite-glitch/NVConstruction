@@ -76,8 +76,9 @@ export async function PATCH(request) {
 
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-    // amount_billed is immutable once submitted — never allow it to be overwritten
-    delete fields.amount_billed
+    // Only lock amount_billed on approved submissions — pending/rejected allow PM correction
+    const { data: current } = await adminSupabase.from('billing_submissions').select('status').eq('id', id).single()
+    if (current?.status === 'approved') delete fields.amount_billed
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
     const { error } = await adminSupabase
       .from('billing_submissions')

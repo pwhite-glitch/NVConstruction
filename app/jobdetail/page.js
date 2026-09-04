@@ -3590,6 +3590,7 @@ ${sovHtml}
     const editRetPct = isNaN(retPctRaw) ? 0 : retPctRaw
     const patchData = {
       id: editingBilling,
+      amount_billed: origAmt,
       company_name: editBillingForm.company_name,
       contact_name: editBillingForm.contact_name || null,
       contact_info: editBillingForm.contact_info || null,
@@ -7706,7 +7707,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Amount billed ($)</label>
-                            <input type="number" step="0.01" style={{ ...s.input, color: '#888', cursor: 'default' }} value={editBillingForm.amount_billed} readOnly tabIndex={-1} />
+                            <input type="number" step="0.01" style={{ ...s.input, ...(editBillingForm.status === 'approved' ? { color: '#888', cursor: 'default' } : {}) }} value={editBillingForm.amount_billed} readOnly={editBillingForm.status === 'approved'} tabIndex={editBillingForm.status === 'approved' ? -1 : undefined} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
                           </div>
                           <div>
                             <label style={s.label}>Retainage %</label>

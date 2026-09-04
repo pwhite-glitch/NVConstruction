@@ -4975,15 +4975,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── SUBS TAB ── */}
         {activeTab === 'subs' && (
           <>
+            {(() => {
+              const companyKeys = subs.map(a => a.company_id || a.profiles?.company_id || a.profiles?.company_name || a.sub_email || 'Unknown')
+              const uniqueCompanyCount = new Set(companyKeys).size
+              const registeredCompanyCount = new Set(registeredSubs.map(a => a.company_id || a.profiles?.company_id || a.profiles?.company_name || a.sub_email || 'Unknown')).size
+              return (
             <div style={s.statRow} className="rx-stats">
-              <div style={s.statCard}><div style={s.statLabel}>Assigned</div><div style={s.statValue()}>{subs.length}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#4ade80')}>{registeredSubs.length}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Not registered</div><div style={s.statValue(subs.length - registeredSubs.length > 0 ? '#e8590c' : undefined)}>{subs.length - registeredSubs.length}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Assigned</div><div style={s.statValue()}>{uniqueCompanyCount}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#4ade80')}>{registeredCompanyCount}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Not registered</div><div style={s.statValue(uniqueCompanyCount - registeredCompanyCount > 0 ? '#e8590c' : undefined)}>{uniqueCompanyCount - registeredCompanyCount}</div></div>
             </div>
+              )
+            })()}
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned ({subs.length})</p>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned ({new Set(subs.map(a => a.company_id || a.profiles?.company_id || a.profiles?.company_name || a.sub_email || 'Unknown')).size} companies, {subs.length} contacts)</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {subs.some(a => !a.sub_id && a.sub_email) && (
                     <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Notify all unregistered</button>

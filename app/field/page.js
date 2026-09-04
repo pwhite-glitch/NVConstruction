@@ -466,6 +466,26 @@ export default function Field() {
     else { win.close(); alert('Could not open document. Please try again.') }
   }
 
+  function toJpegFile(file) {
+    if (file.type === 'application/pdf') return Promise.resolve(file)
+    return new Promise(resolve => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext('2d').drawImage(img, 0, 0)
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url)
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
+        }, 'image/jpeg', 0.92)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.src = url
+    })
+  }
+
   async function submitDirectCost(e) {
     e.preventDefault()
     setSubmittingDc(true)
@@ -482,8 +502,9 @@ export default function Field() {
       }
       let res, json
       if (dcFile) {
+        const uploadFile = await toJpegFile(dcFile)
         const fd = new FormData()
-        fd.append('file', dcFile)
+        fd.append('file', uploadFile)
         fd.append('data', JSON.stringify(rowData))
         res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
       } else {
@@ -1621,7 +1642,7 @@ export default function Field() {
                             </div>
                             <div>
                               <label style={s.label}>Receipt (photo / PDF)</label>
-                              <input type="file" accept="image/jpeg,image/png,application/pdf" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
+                              <input type="file" accept="image/*,application/pdf" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
                             </div>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

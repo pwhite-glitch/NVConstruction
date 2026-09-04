@@ -42,12 +42,14 @@ export async function POST(request) {
       row = JSON.parse(formData.get('data') || '{}')
 
       if (file && file.size > 0) {
-        const ext = file.name.split('.').pop()
+        const mimeToExt = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/heic': 'jpg', 'image/heif': 'jpg', 'application/pdf': 'pdf' }
+        const ext = mimeToExt[file.type] || file.name.split('.').pop()?.toLowerCase() || 'jpg'
+        const contentType = (file.type === 'image/heic' || file.type === 'image/heif') ? 'image/jpeg' : file.type
         const path = `${row.job_id}/${Date.now()}.${ext}`
         const buffer = Buffer.from(await file.arrayBuffer())
         const { error: uploadError } = await adminSupabase.storage
           .from('receipts')
-          .upload(path, buffer, { contentType: file.type })
+          .upload(path, buffer, { contentType })
         if (uploadError) return Response.json({ error: 'Receipt upload failed: ' + uploadError.message }, { status: 500 })
         receipt_url = path
       }

@@ -1621,7 +1621,7 @@ export default function Field() {
                             </div>
                             <div>
                               <label style={s.label}>Receipt (photo / PDF)</label>
-                              <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
+                              <input type="file" accept="image/jpeg,image/png,application/pdf" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
                             </div>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

@@ -2065,6 +2065,10 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   // ── Sub SOV ─────────────────────────────────────────────────
   async function loadContractSov(contractId) {
+    // Backfill any approved COs that are missing an SOV line before loading
+    try {
+      await fetch('/api/sov-co-backfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subcontract_ids: [contractId] }) })
+    } catch {}
     const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, budget_items(id, description, cost_code)').eq('subcontract_id', contractId).order('sort_order').order('created_at')
     if (!lines || lines.length === 0) { setContractSovLines(prev => ({ ...prev, [contractId]: [] })); return }
     const lineIds = lines.map(l => l.id)

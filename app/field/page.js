@@ -188,7 +188,7 @@ export default function Field() {
   const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => {
     const d = new Date()
     const day = d.getDay()
-    const daysToMon = day === 0 ? 1 : day === 1 ? 0 : 8 - day
+    const daysToMon = day === 0 ? -6 : 1 - day
     const mon = new Date(d); mon.setDate(d.getDate() + daysToMon)
     return mon.toISOString().split('T')[0]
   })
@@ -460,8 +460,10 @@ export default function Field() {
   }
 
   async function openJobDoc(storagePath) {
+    const win = window.open('', '_blank')
     const { data } = await supabase.storage.from('job-documents').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) { win.location.href = data.signedUrl }
+    else { win.close(); alert('Could not open document. Please try again.') }
   }
 
   async function submitDirectCost(e) {
@@ -506,10 +508,11 @@ export default function Field() {
   }
 
   async function openReceiptUrl(path) {
+    const win = window.open('', '_blank')
     const res = await fetch(`/api/direct-costs?receipt_path=${encodeURIComponent(path)}`)
     const json = await res.json()
-    if (json.url) window.open(json.url, '_blank')
-    else alert('Could not open receipt: ' + (json.error || 'unknown error'))
+    if (json.url) { win.location.href = json.url }
+    else { win.close(); alert('Could not open receipt: ' + (json.error || 'unknown error')) }
   }
 
   async function loadAssignedVehicles(userId) {
@@ -822,8 +825,10 @@ export default function Field() {
   }
 
   async function openReportPhoto(path) {
+    const win = window.open('', '_blank')
     const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) { win.location.href = data.signedUrl }
+    else { win.close(); alert('Could not open photo. Please try again.') }
   }
 
   async function submitDailyReport(e) {

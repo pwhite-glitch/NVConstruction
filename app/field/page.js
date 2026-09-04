@@ -467,21 +467,28 @@ export default function Field() {
   }
 
   function toJpegFile(file) {
-    if (file.type === 'application/pdf') return Promise.resolve(file)
+    if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) return Promise.resolve(file)
     return new Promise(resolve => {
       const img = new Image()
       const url = URL.createObjectURL(file)
       img.onload = () => {
-        const canvas = document.createElement('canvas')
-        canvas.width = img.naturalWidth
-        canvas.height = img.naturalHeight
-        canvas.getContext('2d').drawImage(img, 0, 0)
-        canvas.toBlob(blob => {
-          URL.revokeObjectURL(url)
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
-        }, 'image/jpeg', 0.92)
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = img.naturalWidth || 1920
+          canvas.height = img.naturalHeight || 1080
+          canvas.getContext('2d').drawImage(img, 0, 0)
+          canvas.toBlob(blob => {
+            URL.revokeObjectURL(url)
+            const safeName = (file.name || 'receipt').replace(/\.[^.]+$/, '') + '.jpg'
+            resolve(blob ? new File([blob], safeName, { type: 'image/jpeg' }) : file)
+          }, 'image/jpeg', 0.92)
+        } catch { URL.revokeObjectURL(url); resolve(file) }
       }
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        // canvas failed — pass file through; server will force-label it image/jpeg
+        resolve(file)
+      }
       img.src = url
     })
   }

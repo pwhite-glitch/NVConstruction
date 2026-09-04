@@ -611,8 +611,20 @@ export default function Submit() {
     const contractIds = contracts.map(c => c.id)
     const retMap = Object.fromEntries(contracts.map(c => [c.id, parseFloat(c.retainage_pct) || 0]))
     setSovRetainageMap(retMap)
-    const { data: lines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description, retainage_pct)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
-    const lineIds = (lines || []).map(l => l.id)
+    const { data: rawLines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description, retainage_pct)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
+    let lines = rawLines || []
+    // Backfill SOV lines for any approved CO that doesn't have one yet
+    const { data: approvedCOs } = await supabase.from('change_orders').select('id, subcontract_id, description, amount').in('subcontract_id', contractIds).eq('status', 'approved')
+    if (approvedCOs?.length) {
+      const existingCoDescs = new Set(lines.map(l => l.description).filter(d => d?.startsWith('CO:')))
+      for (const co of approvedCOs) {
+        if (!co.amount || existingCoDescs.has(`CO: ${co.description}`)) continue
+        const maxSort = lines.filter(l => l.subcontract_id === co.subcontract_id).reduce((m, l) => Math.max(m, l.sort_order || 0), 0)
+        const { data: newLine } = await supabase.from('subcontract_sov_lines').insert({ subcontract_id: co.subcontract_id, description: `CO: ${co.description}`, scheduled_value: parseFloat(co.amount), sort_order: maxSort + 1 }).select('*, subcontracts(description, retainage_pct)').single()
+        if (newLine) { lines.push(newLine); existingCoDescs.add(`CO: ${co.description}`) }
+      }
+    }
+    const lineIds = lines.map(l => l.id)
     const prevPctMap = {}
     if (lineIds.length > 0) {
       const { data: prevBilled } = await supabase

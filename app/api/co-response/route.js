@@ -43,6 +43,23 @@ export async function POST(request) {
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
 
+  // Add CO as a new SOV line so it appears in the sub's billing schedule of values
+  if (response === 'approved' && co.subcontract_id && co.amount) {
+    const { data: lastLine } = await adminSupabase
+      .from('subcontract_sov_lines')
+      .select('sort_order')
+      .eq('subcontract_id', co.subcontract_id)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    const nextSort = (lastLine?.[0]?.sort_order || 0) + 1
+    await adminSupabase.from('subcontract_sov_lines').insert({
+      subcontract_id: co.subcontract_id,
+      description: `CO: ${co.description}`,
+      scheduled_value: parseFloat(co.amount),
+      sort_order: nextSort,
+    })
+  }
+
   // Notify PM
   const job = co.subcontracts?.jobs
   const vendor = co.subcontracts?.vendor_name || 'Subcontractor'

@@ -3646,7 +3646,11 @@ ${sovHtml}
 
   async function toggleReadyToPay(billingId, current) {
     setTogglingReadyToPay(billingId)
-    await supabase.from('billing_submissions').update({ ready_to_pay: !current }).eq('id', billingId)
+    await fetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: billingId, ready_to_pay: !current }),
+    })
     setTogglingReadyToPay(null)
     await loadBillingForJob()
   }

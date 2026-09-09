@@ -878,6 +878,26 @@ export default function AdminPortal() {
                 {payMsg && (
                   <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>
                 )}
+                {(() => {
+                  const readyChecks = billing.filter(b => !b.paid_at && b.ready_to_pay)
+                  if (!readyChecks.length) return null
+                  const totalNet = readyChecks.reduce((s, b) => s + parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0), 0)
+                  const fmt = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  return (
+                    <div style={{ background: '#071a07', border: '1px solid #1a4a1a', borderRadius: '10px', padding: '14px 18px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <span style={{ fontSize: '22px', fontWeight: '800', color: '#4ade80', fontFamily: 'monospace' }}>{readyChecks.length}</span>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>Check{readyChecks.length !== 1 ? 's' : ''} ready to pay</div>
+                          <div style={{ fontSize: '12px', color: '#555' }}>Total net: <span style={{ color: '#f1f1f1', fontFamily: 'monospace' }}>{fmt(totalNet)}</span></div>
+                        </div>
+                      </div>
+                      <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>
+                        {filterBillReadyToPay ? '✓ Showing ready only' : 'Show ready only'}
+                      </button>
+                    </div>
+                  )
+                })()}
                 <div style={s.filterRow}>
                   <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
                     <option value="">All jobs</option>

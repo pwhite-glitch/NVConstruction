@@ -899,7 +899,7 @@ export default function AdminPortal() {
                           {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
                           {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Invoice</span>}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}{sub.submitted_at ? ' · ' + new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
+                        <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}{sub.submitted_at ? ' · ' + new Date(sub.submitted_at).toLocaleDateString() : ''}{sub.invoice_number ? <span style={{ color: '#888', marginLeft: '6px' }}>· INV# {sub.invoice_number}</span> : null}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ textAlign: 'right' }}>
@@ -939,6 +939,7 @@ export default function AdminPortal() {
                         ) : (
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
+                            {sub.doc_url && <button style={s.btnSm('blue')} onClick={async () => { const { data } = await supabase.storage.from('billing-docs').createSignedUrl(sub.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>View Invoice</button>}
                           </div>
                         )}
                       </div>

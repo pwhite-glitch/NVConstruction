@@ -87,7 +87,7 @@ export default function Submit() {
   const [expandedContract, setExpandedContract] = useState(null)
   const [uploadingSignedContract, setUploadingSignedContract] = useState(null)
   const [contractUploadMsg, setContractUploadMsg] = useState({})
-  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
+  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' })
   const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -778,6 +778,10 @@ export default function Submit() {
       }
     }
     setSovError('')
+    if (!form.invoice_number?.trim()) {
+      setSubmitError('Please enter your invoice number before submitting.')
+      return
+    }
     if (!billingFile) {
       setSubmitError('Please attach your invoice PDF. An invoice is required to process payment.')
       return
@@ -813,6 +817,7 @@ export default function Submit() {
       retainage_held: retainageHeld,
       pct_complete: parseInt(form.pct_complete) || null,
       work_description: form.work_description,
+      invoice_number: form.invoice_number.trim(),
       billing_period: form.billing_period ? form.billing_period + '-01' : null,
       draw_request_id: form.draw_request_id || null,
       doc_url,
@@ -1355,6 +1360,11 @@ export default function Submit() {
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={s.label}>Work description</label>
                       <textarea value={form.work_description} onChange={e => update('work_description', e.target.value)} required rows={4} placeholder="Describe work completed this billing period..." style={{ ...s.input, resize: 'vertical' }} />
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={s.label}>Invoice # <span style={{ color: '#e8590c' }}>*</span></label>
+                      <input style={s.input} value={form.invoice_number} onChange={e => update('invoice_number', e.target.value)} placeholder="e.g. INV-2024-001" />
+                      {!form.invoice_number.trim() && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required — enter the invoice number from your invoice</div>}
                     </div>
                     <div style={{ marginBottom: '1.5rem' }}>
                       <label style={s.label}>Invoice PDF <span style={{ color: '#e8590c' }}>*</span></label>

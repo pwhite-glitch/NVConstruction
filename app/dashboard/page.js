@@ -247,7 +247,7 @@ export default function Dashboard() {
   const [expandedEstimate, setExpandedEstimate] = useState(null)
   const [showNewEstimate, setShowNewEstimate] = useState(false)
   const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false })
-  const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '' }])
+  const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '', scope: '' }])
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [editingEstimate, setEditingEstimate] = useState(null)
   const [editEstimateForm, setEditEstimateForm] = useState({})
@@ -1315,11 +1315,11 @@ export default function Dashboard() {
     if (!error && est) {
       const validLines = estimateLines.filter(l => l.description)
       if (validLines.length > 0) {
-        await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, sort_order: i })))
+        await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i })))
       }
       setShowNewEstimate(false)
       setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false })
-      setEstimateLines([{ description: '', amount: '' }])
+      setEstimateLines([{ description: '', amount: '', scope: '' }])
       await loadEstimates()
     }
     setSavingEstimate(false)
@@ -1343,7 +1343,7 @@ export default function Dashboard() {
     await supabase.from('estimate_line_items').delete().eq('estimate_id', editingEstimate)
     const validLines = editEstimateLines.filter(l => l.description)
     if (validLines.length > 0) {
-      await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: editingEstimate, description: l.description, amount: parseFloat(l.amount) || 0, sort_order: i })))
+      await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: editingEstimate, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i })))
     }
     setEditingEstimate(null)
     await loadEstimates()
@@ -1491,7 +1491,10 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
   <tbody>
     ${lines.map((l, i) => `<tr>
       <td class="num">${i + 1}</td>
-      <td>${l.description}</td>
+      <td>
+        ${l.description}
+        ${l.scope ? `<span style="display:block;font-size:10px;color:#777;margin-top:3px;white-space:pre-wrap;line-height:1.6">${l.scope.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>` : ''}
+      </td>
       <td class="right">${fmt(Number(l.amount) * markupMult)}</td>
     </tr>`).join('')}
     ${estimate.taxable ? `<tr style="background:#fffbf5"><td></td><td style="color:#888;font-size:11px">Sales Tax (8.25%)</td><td class="right" style="color:#888;font-size:11px">${fmt(taxAmt)}</td></tr>` : ''}
@@ -3708,7 +3711,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''} · {estimates.filter(e => e.status === 'won').length} won · {estimates.filter(e => e.status === 'lost').length} lost</p>
-                  {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
+                  {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
                 {showNewEstimate && (
@@ -3733,17 +3736,27 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     <div style={{ marginBottom: '1.25rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <label style={s.label}>Schedule of values <span style={{ color: '#555', fontWeight: '400' }}>(enter your costs)</span></label>
-                        <button type="button" style={s.btnSm('green')} onClick={() => setEstimateLines(l => [...l, { description: '', amount: '' }])}>+ Add line</button>
+                        <button type="button" style={s.btnSm('green')} onClick={() => setEstimateLines(l => [...l, { description: '', amount: '', scope: '' }])}>+ Add line</button>
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
                           <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div></div>
                         </div>
                         {estimateLines.map((line, idx) => (
-                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderBottom: idx < estimateLines.length - 1 ? '1px solid #1a1a1a' : 'none', alignItems: 'center' }}>
-                            <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
-                            <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
-                            <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                          <div key={idx} style={{ borderBottom: idx < estimateLines.length - 1 ? '1px solid #1a1a1a' : 'none' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', alignItems: 'center' }}>
+                              <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
+                              <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
+                              <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                            </div>
+                            <textarea
+                              rows={1}
+                              value={line.scope || ''}
+                              onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, scope: e.target.value } : x))}
+                              onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                              placeholder="Scope of work (optional)"
+                              style={{ display: 'block', width: '100%', padding: '5px 12px', background: 'transparent', border: 'none', borderTop: '1px solid #111', color: '#666', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: '1.5', minHeight: '28px', overflow: 'hidden' }}
+                            />
                           </div>
                         ))}
                         {(() => {
@@ -3808,7 +3821,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...s.btn, opacity: savingEstimate || !estimateForm.project_name ? 0.6 : 1 }} disabled={savingEstimate || !estimateForm.project_name} onClick={saveEstimate}>{savingEstimate ? 'Saving...' : 'Save estimate'}</button>
-                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '' }); setEstimateLines([{ description: '', amount: '' }]) }}>Cancel</button>
+                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>Cancel</button>
                     </div>
                   </div>
                 )}
@@ -3876,17 +3889,27 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               <div style={{ marginBottom: '1.25rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                   <label style={s.label}>Schedule of values <span style={{ color: '#555', fontWeight: '400' }}>(enter your costs)</span></label>
-                                  <button type="button" style={s.btnSm('green')} onClick={() => setEditEstimateLines(l => [...l, { description: '', amount: '' }])}>+ Add line</button>
+                                  <button type="button" style={s.btnSm('green')} onClick={() => setEditEstimateLines(l => [...l, { description: '', amount: '', scope: '' }])}>+ Add line</button>
                                 </div>
                                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
                                     <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div></div>
                                   </div>
                                   {editEstimateLines.map((line, idx) => (
-                                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderBottom: idx < editEstimateLines.length - 1 ? '1px solid #1a1a1a' : 'none', alignItems: 'center' }}>
-                                      <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
-                                      <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
-                                      <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEditEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                                    <div key={idx} style={{ borderBottom: idx < editEstimateLines.length - 1 ? '1px solid #1a1a1a' : 'none' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', alignItems: 'center' }}>
+                                        <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
+                                        <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
+                                        <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEditEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                                      </div>
+                                      <textarea
+                                        rows={1}
+                                        value={line.scope || ''}
+                                        onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, scope: e.target.value } : x))}
+                                        onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                                        placeholder="Scope of work (optional)"
+                                        style={{ display: 'block', width: '100%', padding: '5px 12px', background: 'transparent', border: 'none', borderTop: '1px solid #111', color: '#666', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: '1.5', minHeight: '28px', overflow: 'hidden' }}
+                                      />
                                     </div>
                                   ))}
                                   {(() => {
@@ -4051,7 +4074,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
                                     setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft', markup_pct: String(est.markup_pct || ''), taxable: !!est.taxable })
-                                    setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount) })))
+                                    setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '' })))
                                   }}>Edit</button>
                                   {est.status !== 'won' && (
                                     <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }) }}>Convert to Job</button>

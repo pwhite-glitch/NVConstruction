@@ -877,20 +877,11 @@ export default function AdminPortal() {
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (() => {
               const fmtAmt = n => '$' + parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              const netOf = b => parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0)
 
+              // Ready to pay first, then pending — both always visible
               const readyBills = filteredBilling.filter(b => b.ready_to_pay)
               const pendingBills = filteredBilling.filter(b => !b.ready_to_pay)
-
-              const groupByJob = bills => {
-                const map = {}
-                bills.forEach(b => {
-                  const k = b.job_id || '__'
-                  if (!map[k]) map[k] = { jobId: k, job: b.jobs, items: [] }
-                  map[k].items.push(b)
-                })
-                return Object.values(map)
-              }
+              const sorted = [...readyBills, ...pendingBills]
 
               const renderCard = sub => {
                 const isExpanded = expandedBill === sub.id
@@ -899,22 +890,23 @@ export default function AdminPortal() {
                 const netAmt = grossAmt - retainageAmt
                 const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
                 return (
-                  <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a3a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '6px', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', background: sub.ready_to_pay ? '#091209' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '8px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
-                      <div style={{ flex: 1, minWidth: '160px' }}>
+                  <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a4a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.ready_to_pay ? '#071207' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
+                      <div style={{ flex: 1, minWidth: '200px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
+                          {sub.ready_to_pay && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 8px', fontWeight: '800', letterSpacing: '0.5px' }}>✓ Ready to Pay</span>}
                           {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
                           {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Invoice</span>}
                         </div>
-                        <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}{sub.billing_period ? ' · ' + new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : ''}</div>
+                        <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}{sub.submitted_at ? ' · ' + new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '17px', fontWeight: '800', color: '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
-                          {retainageAmt > 0 && <div style={{ fontSize: '10px', color: '#555' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
+                          <div style={{ fontSize: '18px', fontWeight: '800', color: sub.ready_to_pay ? '#4ade80' : '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
+                          {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#555' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
                         </div>
-                        <span style={{ color: '#444', fontSize: '16px' }}>{isExpanded ? '∧' : '∨'}</span>
+                        <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
                       </div>
                     </div>
                     {isExpanded && (
@@ -955,24 +947,6 @@ export default function AdminPortal() {
                 )
               }
 
-              const renderJobGroup = group => {
-                const isCollapsed = collapsedBillJobs.has(group.jobId)
-                const groupNet = group.items.reduce((s, b) => s + netOf(b), 0)
-                const toggleJob = () => setCollapsedBillJobs(prev => { const n = new Set(prev); n.has(group.jobId) ? n.delete(group.jobId) : n.add(group.jobId); return n })
-                return (
-                  <div key={group.jobId} style={{ marginBottom: '10px' }}>
-                    <div onClick={toggleJob} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '6px', marginBottom: isCollapsed ? 0 : '5px', cursor: 'pointer' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#666' }}>#{group.job?.job_number} — {group.job?.project_name}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <span style={{ fontSize: '11px', color: '#3a3a3a', fontFamily: 'monospace' }}>{group.items.length} invoice{group.items.length !== 1 ? 's' : ''} · {fmtAmt(groupNet)}</span>
-                        <span style={{ fontSize: '12px', color: '#333' }}>{isCollapsed ? '▼' : '▲'}</span>
-                      </div>
-                    </div>
-                    {!isCollapsed && <div style={{ paddingLeft: '8px', borderLeft: '2px solid #1e1e1e', marginLeft: '4px' }}>{group.items.map(renderCard)}</div>}
-                  </div>
-                )
-              }
-
               return (
                 <>
                   {payMsg && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>}
@@ -985,34 +959,33 @@ export default function AdminPortal() {
                     <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
                   </div>
 
-                  {filteredBilling.length === 0 && <div style={s.emptyMsg}>No billing submissions found.</div>}
+                  {sorted.length === 0 && <div style={s.emptyMsg}>No billing submissions found.</div>}
 
-                  {/* ── Checks to Cut ── */}
                   {readyBills.length > 0 && (
-                    <div style={{ marginBottom: '1.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#071a07', border: '1px solid #1a4a1a', borderRadius: '8px', marginBottom: '12px' }}>
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', letterSpacing: '0.5px' }}>Checks to Cut</div>
-                          <div style={{ fontSize: '11px', color: '#3a6a3a', marginTop: '2px' }}>{readyBills.length} invoice{readyBills.length !== 1 ? 's' : ''} · {fmtAmt(readyBills.reduce((s, b) => s + netOf(b), 0))} total net</div>
-                        </div>
-                      </div>
-                      {groupByJob(readyBills).map(renderJobGroup)}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#4ade80', letterSpacing: '2px', textTransform: 'uppercase' }}>✓ Ready to Pay — {readyBills.length}</span>
+                      <div style={{ flex: 1, height: '1px', background: '#1a4a1a' }} />
+                      <span style={{ fontSize: '11px', color: '#3a6a3a', fontFamily: 'monospace' }}>{fmtAmt(readyBills.reduce((s, b) => s + parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0), 0))} net</span>
                     </div>
                   )}
 
-                  {/* ── Pending (not yet ready) ── */}
-                  {pendingBills.length > 0 && (
-                    <div>
-                      <div onClick={() => setShowPendingBills(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: showPendingBills ? '12px' : 0, cursor: 'pointer' }}>
-                        <div>
-                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#666' }}>Pending Invoices</div>
-                          <div style={{ fontSize: '11px', color: '#3a3a3a', marginTop: '2px' }}>{pendingBills.length} invoice{pendingBills.length !== 1 ? 's' : ''} — not yet marked ready to pay</div>
-                        </div>
-                        <span style={{ fontSize: '18px', color: '#333' }}>{showPendingBills ? '∧' : '∨'}</span>
-                      </div>
-                      {showPendingBills && groupByJob(pendingBills).map(renderJobGroup)}
+                  {readyBills.map(renderCard)}
+
+                  {readyBills.length > 0 && pendingBills.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '16px 0 10px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Pending — {pendingBills.length}</span>
+                      <div style={{ flex: 1, height: '1px', background: '#1e1e1e' }} />
                     </div>
                   )}
+
+                  {pendingBills.length > 0 && !readyBills.length && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Pending — {pendingBills.length}</span>
+                      <div style={{ flex: 1, height: '1px', background: '#1e1e1e' }} />
+                    </div>
+                  )}
+
+                  {pendingBills.map(renderCard)}
                 </>
               )
             })()}

@@ -82,6 +82,8 @@ export default function AdminPortal() {
   const [filterBillReadyToPay, setFilterBillReadyToPay] = useState(false)
   const [togglingNvCheck, setTogglingNvCheck] = useState(null)
   const [editingCheckFor, setEditingCheckFor] = useState(null)
+  const [collapsedBillJobs, setCollapsedBillJobs] = useState(new Set())
+  const [showPendingBills, setShowPendingBills] = useState(false)
   const [editCheckNum, setEditCheckNum] = useState('')
   const [togglingQb, setTogglingQb] = useState(null)
 
@@ -873,127 +875,147 @@ export default function AdminPortal() {
             )}
 
             {/* ── BILLING ── */}
-            {activeTab === 'billing' && (
-              <>
-                {payMsg && (
-                  <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>
-                )}
-                {(() => {
-                  const readyChecks = billing.filter(b => !b.paid_at && b.ready_to_pay)
-                  if (!readyChecks.length) return null
-                  const totalNet = readyChecks.reduce((s, b) => s + parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0), 0)
-                  const fmt = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                  return (
-                    <div style={{ background: '#071a07', border: '1px solid #1a4a1a', borderRadius: '10px', padding: '14px 18px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+            {activeTab === 'billing' && (() => {
+              const fmtAmt = n => '$' + parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              const netOf = b => parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0)
+
+              const readyBills = filteredBilling.filter(b => b.ready_to_pay)
+              const pendingBills = filteredBilling.filter(b => !b.ready_to_pay)
+
+              const groupByJob = bills => {
+                const map = {}
+                bills.forEach(b => {
+                  const k = b.job_id || '__'
+                  if (!map[k]) map[k] = { jobId: k, job: b.jobs, items: [] }
+                  map[k].items.push(b)
+                })
+                return Object.values(map)
+              }
+
+              const renderCard = sub => {
+                const isExpanded = expandedBill === sub.id
+                const grossAmt = parseFloat(sub.amount_billed || 0)
+                const retainageAmt = parseFloat(sub.retainage_held || 0)
+                const netAmt = grossAmt - retainageAmt
+                const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
+                return (
+                  <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a3a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '6px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', background: sub.ready_to_pay ? '#091209' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '8px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
+                      <div style={{ flex: 1, minWidth: '160px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
+                          {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
+                          {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Invoice</span>}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}{sub.billing_period ? ' · ' + new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : ''}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '17px', fontWeight: '800', color: '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
+                          {retainageAmt > 0 && <div style={{ fontSize: '10px', color: '#555' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
+                        </div>
+                        <span style={{ color: '#444', fontSize: '16px' }}>{isExpanded ? '∧' : '∨'}</span>
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px', marginBottom: '1rem' }}>
+                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>% Complete</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.pct_complete ?? '—'}%</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#ccc' }}>{fmtAmt(grossAmt)}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>−{fmtAmt(retainageAmt)}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div></div>
+                        </div>
+                        {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
+                        {payingId === sub.id ? (
+                          <div style={{ ...s.formBox, marginTop: 0 }}>
+                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
+                            <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
+                              <div><label style={s.label}>Payment date</label><input type="date" style={{ ...s.input, colorScheme: 'dark' }} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} /></div>
+                              <div><label style={s.label}>Amount paid</label><input type="number" style={s.input} placeholder={netAmt} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} /></div>
+                              <div><label style={s.label}>Payment method</label><select style={s.input} value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>{PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                              <div><label style={s.label}>Check / reference #</label><input style={s.input} placeholder="Optional" value={payForm.check_number} onChange={e => setPayForm(f => ({ ...f, check_number: e.target.value }))} /></div>
+                              <div><label style={s.label}>Notes</label><input style={s.input} placeholder="Optional" value={payForm.payment_notes} onChange={e => setPayForm(f => ({ ...f, payment_notes: e.target.value }))} /></div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <button style={{ ...s.btn, opacity: savingPay ? 0.6 : 1 }} disabled={savingPay} onClick={() => markPaid(sub.id)}>{savingPay ? 'Saving...' : 'Save payment'}</button>
+                              <button style={s.btnGray} onClick={() => { setPayingId(null); setPayMsg('') }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
+              const renderJobGroup = group => {
+                const isCollapsed = collapsedBillJobs.has(group.jobId)
+                const groupNet = group.items.reduce((s, b) => s + netOf(b), 0)
+                const toggleJob = () => setCollapsedBillJobs(prev => { const n = new Set(prev); n.has(group.jobId) ? n.delete(group.jobId) : n.add(group.jobId); return n })
+                return (
+                  <div key={group.jobId} style={{ marginBottom: '10px' }}>
+                    <div onClick={toggleJob} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '6px', marginBottom: isCollapsed ? 0 : '5px', cursor: 'pointer' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#666' }}>#{group.job?.job_number} — {group.job?.project_name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <span style={{ fontSize: '22px', fontWeight: '800', color: '#4ade80', fontFamily: 'monospace' }}>{readyChecks.length}</span>
+                        <span style={{ fontSize: '11px', color: '#3a3a3a', fontFamily: 'monospace' }}>{group.items.length} invoice{group.items.length !== 1 ? 's' : ''} · {fmtAmt(groupNet)}</span>
+                        <span style={{ fontSize: '12px', color: '#333' }}>{isCollapsed ? '▼' : '▲'}</span>
+                      </div>
+                    </div>
+                    {!isCollapsed && <div style={{ paddingLeft: '8px', borderLeft: '2px solid #1e1e1e', marginLeft: '4px' }}>{group.items.map(renderCard)}</div>}
+                  </div>
+                )
+              }
+
+              return (
+                <>
+                  {payMsg && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>}
+
+                  <div style={s.filterRow}>
+                    <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
+                      <option value="">All jobs</option>
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    </select>
+                    <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
+                  </div>
+
+                  {filteredBilling.length === 0 && <div style={s.emptyMsg}>No billing submissions found.</div>}
+
+                  {/* ── Checks to Cut ── */}
+                  {readyBills.length > 0 && (
+                    <div style={{ marginBottom: '1.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#071a07', border: '1px solid #1a4a1a', borderRadius: '8px', marginBottom: '12px' }}>
                         <div>
-                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>Check{readyChecks.length !== 1 ? 's' : ''} ready to pay</div>
-                          <div style={{ fontSize: '12px', color: '#555' }}>Total net: <span style={{ color: '#f1f1f1', fontFamily: 'monospace' }}>{fmt(totalNet)}</span></div>
+                          <div style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', letterSpacing: '0.5px' }}>Checks to Cut</div>
+                          <div style={{ fontSize: '11px', color: '#3a6a3a', marginTop: '2px' }}>{readyBills.length} invoice{readyBills.length !== 1 ? 's' : ''} · {fmtAmt(readyBills.reduce((s, b) => s + netOf(b), 0))} total net</div>
                         </div>
                       </div>
-                      <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>
-                        {filterBillReadyToPay ? '✓ Showing ready only' : 'Show ready only'}
-                      </button>
+                      {groupByJob(readyBills).map(renderJobGroup)}
                     </div>
-                  )
-                })()}
-                <div style={s.filterRow}>
-                  <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
-                    <option value="">All jobs</option>
-                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
-                  </select>
-                  <button style={s.btnSm(filterBillReadyToPay ? 'green' : 'gray')} onClick={() => setFilterBillReadyToPay(v => !v)}>Ready to pay only</button>
-                  <button style={s.btnSm(filterBillNvCheck ? 'orange' : 'gray')} onClick={() => setFilterBillNvCheck(v => !v)}>NV cuts check only</button>
-                </div>
+                  )}
 
-                {filteredBilling.length === 0 ? <div style={s.emptyMsg}>No billing submissions found.</div> : filteredBilling.map(sub => {
-                  const isPaid = !!sub.paid_at
-                  const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
-                  const isExpanded = expandedBill === sub.id
-                  const grossAmt = parseFloat(sub.amount_billed || 0)
-                  const retainageAmt = parseFloat(sub.retainage_held || 0)
-                  const netAmt = grossAmt - retainageAmt
-                  return (
-                    <div key={sub.id} style={{ border: `1px solid ${isPaid ? '#1a4a1a' : sub.ready_to_pay ? '#1a3a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isPaid ? '#0a1a0a' : sub.ready_to_pay ? '#091209' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
-                        <div style={{ flex: 1, minWidth: '200px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
-                            {isPaid ? <span style={s.badge('paid')}>Paid</span> : <span style={s.badge('approved')}>Unpaid</span>}
-                            {sub.ready_to_pay && !isPaid && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Ready to Pay</span>}
-                            {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
-                            {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Paid Invoice</span>}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name} · {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : ''}</div>
+                  {/* ── Pending (not yet ready) ── */}
+                  {pendingBills.length > 0 && (
+                    <div>
+                      <div onClick={() => setShowPendingBills(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: showPendingBills ? '12px' : 0, cursor: 'pointer' }}>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: '700', color: '#666' }}>Pending Invoices</div>
+                          <div style={{ fontSize: '11px', color: '#3a3a3a', marginTop: '2px' }}>{pendingBills.length} invoice{pendingBills.length !== 1 ? 's' : ''} — not yet marked ready to pay</div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '18px', fontWeight: '800', color: isPaid ? '#4ade80' : '#f1f1f1' }}>${netAmt.toLocaleString()}</div>
-                            {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#555' }}>Gross ${grossAmt.toLocaleString()} · -${retainageAmt.toLocaleString()} ret.</div>}
-                          </div>
-                          <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
-                        </div>
+                        <span style={{ fontSize: '18px', color: '#333' }}>{showPendingBills ? '∧' : '∨'}</span>
                       </div>
-
-                      {isExpanded && (
-                        <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', marginBottom: '1rem' }}>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>% Complete</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.pct_complete ?? '—'}%</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#ccc' }}>${grossAmt.toLocaleString()}</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>-${retainageAmt.toLocaleString()}</div></div>
-                            <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>${netAmt.toLocaleString()}</div></div>
-                          </div>
-                          {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
-
-                          {payingId === sub.id ? (
-                            <div style={{ ...s.formBox, marginTop: 0 }}>
-                              <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
-                              <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
-                                <div>
-                                  <label style={s.label}>Payment date</label>
-                                  <input type="date" style={{ ...s.input, colorScheme: 'dark' }} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} />
-                                </div>
-                                <div>
-                                  <label style={s.label}>Amount paid</label>
-                                  <input type="number" style={s.input} placeholder={netAmt} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} />
-                                </div>
-                                <div>
-                                  <label style={s.label}>Payment method</label>
-                                  <select style={s.input} value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>
-                                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
-                                <div>
-                                  <label style={s.label}>Check / reference #</label>
-                                  <input style={s.input} placeholder="Optional" value={payForm.check_number} onChange={e => setPayForm(f => ({ ...f, check_number: e.target.value }))} />
-                                </div>
-                                <div>
-                                  <label style={s.label}>Notes</label>
-                                  <input style={s.input} placeholder="Optional" value={payForm.payment_notes} onChange={e => setPayForm(f => ({ ...f, payment_notes: e.target.value }))} />
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <button style={{ ...s.btn, opacity: savingPay ? 0.6 : 1 }} disabled={savingPay} onClick={() => markPaid(sub.id)}>{savingPay ? 'Saving...' : 'Save payment'}</button>
-                                <button style={s.btnGray} onClick={() => { setPayingId(null); setPayMsg('') }}>Cancel</button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              {!isPaid && <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>}
-                              {isPaid && <button style={s.btnSm('orange')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: sub.paid_at ? new Date(sub.paid_at).toISOString().split('T')[0] : '', payment_amount: sub.payment_amount || netAmt.toString(), payment_method: sub.payment_method || 'Check', check_number: sub.check_number || '', payment_notes: sub.payment_notes || '' }) }}>Edit payment</button>}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      {showPendingBills && groupByJob(pendingBills).map(renderJobGroup)}
                     </div>
-                  )
-                })}
-              </>
-            )}
+                  )}
+                </>
+              )
+            })()}
 
             {/* ── PAYMENTS (paid history) ── */}
             {activeTab === 'payments' && (() => {

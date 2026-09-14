@@ -75,6 +75,9 @@ export default function AdminPortal() {
   const [payForm, setPayForm] = useState({ paid_at: new Date().toISOString().split('T')[0], payment_amount: '', payment_method: 'Check', check_number: '', payment_notes: '' })
   const [savingPay, setSavingPay] = useState(false)
   const [payMsg, setPayMsg] = useState('')
+  const [editingBillId, setEditingBillId] = useState(null)
+  const [editBillForm, setEditBillForm] = useState({ invoice_number: '', amount_billed: '', retainage_held: '', work_description: '' })
+  const [savingBillEdit, setSavingBillEdit] = useState(false)
   const [filterBillJob, setFilterBillJob] = useState('')
   const [filterBillStatus, setFilterBillStatus] = useState('')
   const [filterBillPaid, setFilterBillPaid] = useState('')
@@ -217,6 +220,19 @@ export default function AdminPortal() {
     setSavingPay(false)
     if (!data?.ok) { setPayMsg('Error saving payment: ' + (data?.error || 'Unknown error')); return }
     setPayingId(null)
+    await loadBilling()
+  }
+
+  async function saveBillEdit(subId) {
+    setSavingBillEdit(true)
+    const body = { id: subId }
+    if (editBillForm.invoice_number !== '') body.invoice_number = editBillForm.invoice_number.trim()
+    if (editBillForm.amount_billed !== '') body.amount_billed = parseFloat(editBillForm.amount_billed)
+    if (editBillForm.retainage_held !== '') body.retainage_held = parseFloat(editBillForm.retainage_held)
+    if (editBillForm.work_description !== '') body.work_description = editBillForm.work_description
+    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    setSavingBillEdit(false)
+    setEditingBillId(null)
     await loadBilling()
   }
 
@@ -919,7 +935,21 @@ export default function AdminPortal() {
                           <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div></div>
                         </div>
                         {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
-                        {payingId === sub.id ? (
+                        {editingBillId === sub.id ? (
+                          <div style={{ ...s.formBox, marginTop: 0 }}>
+                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit billing</p>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                              <div><label style={s.label}>Invoice #</label><input style={s.input} value={editBillForm.invoice_number} onChange={e => setEditBillForm(f => ({ ...f, invoice_number: e.target.value }))} placeholder={sub.invoice_number || 'Invoice number'} /></div>
+                              <div><label style={s.label}>Amount billed ($)</label><input type="number" step="0.01" min="0" style={s.input} value={editBillForm.amount_billed} onChange={e => setEditBillForm(f => ({ ...f, amount_billed: e.target.value }))} placeholder={grossAmt.toFixed(2)} /></div>
+                              <div><label style={s.label}>Retainage held ($)</label><input type="number" step="0.01" min="0" style={s.input} value={editBillForm.retainage_held} onChange={e => setEditBillForm(f => ({ ...f, retainage_held: e.target.value }))} placeholder={retainageAmt.toFixed(2)} /></div>
+                              <div><label style={s.label}>Work description</label><input style={s.input} value={editBillForm.work_description} onChange={e => setEditBillForm(f => ({ ...f, work_description: e.target.value }))} placeholder={sub.work_description || 'Description'} /></div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <button style={{ ...s.btn, opacity: savingBillEdit ? 0.6 : 1 }} disabled={savingBillEdit} onClick={() => saveBillEdit(sub.id)}>{savingBillEdit ? 'Saving...' : 'Save changes'}</button>
+                              <button style={s.btnGray} onClick={() => setEditingBillId(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : payingId === sub.id ? (
                           <div style={{ ...s.formBox, marginTop: 0 }}>
                             <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
                             <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
@@ -939,6 +969,7 @@ export default function AdminPortal() {
                         ) : (
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
+                            {!sub.paid_at && <button style={s.btnSm('gray')} onClick={() => { setEditingBillId(sub.id); setEditBillForm({ invoice_number: sub.invoice_number || '', amount_billed: '', retainage_held: '', work_description: '' }) }}>Edit</button>}
                             {sub.doc_url && <button style={s.btnSm('blue')} onClick={async () => { const { data } = await supabase.storage.from('billing-docs').createSignedUrl(sub.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>View Invoice</button>}
                           </div>
                         )}

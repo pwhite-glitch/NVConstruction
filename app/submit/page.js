@@ -1181,7 +1181,7 @@ export default function Submit() {
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                   <input
-                                    type="number" min="0" max={remaining} step="1"
+                                    type="number" min="0" max={remaining} step="0.01"
                                     value={line.pct_this}
                                     placeholder="0"
                                     onChange={e => {

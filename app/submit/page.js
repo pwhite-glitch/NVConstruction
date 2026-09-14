@@ -1339,10 +1339,8 @@ export default function Submit() {
                     {sovSaved && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#4ade80', marginBottom: '1rem' }}>✓ Schedule of values saved — fill in the fields below to submit your billing.</div>}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }} className="rx-grid-3">
                       <div>
-                        <label style={s.label}>Amount billed</label>
-                        <div style={{ ...s.input, color: '#e8590c', fontWeight: '700', cursor: 'default' }}>
-                          ${parseFloat(form.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
+                        <label style={s.label}>Amount billed ($)</label>
+                        <input type="number" step="0.01" min="0" style={{ ...s.input, color: '#e8590c', fontWeight: '700' }} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} placeholder="0.00" />
                       </div>
                       <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
                       <div>

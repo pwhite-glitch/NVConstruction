@@ -3989,7 +3989,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   </div>
 
                   {/* Kanban columns */}
-                  <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '1rem' }}>
+                  <style>{`.kanban-scroll::-webkit-scrollbar{height:5px}.kanban-scroll::-webkit-scrollbar-track{background:#0a0a0a;border-radius:3px}.kanban-scroll::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}.kanban-scroll::-webkit-scrollbar-thumb:hover{background:#e8590c}`}</style>
+                  <div className="kanban-scroll" style={{ transform: 'rotateX(180deg)', overflowX: 'auto', paddingTop: '8px' }}>
+                  <div style={{ transform: 'rotateX(180deg)', display: 'flex', gap: '12px' }}>
                     {STAGES.map(stage => {
                       const cards = estimates.filter(e => getStage(e) === stage.key)
                       const colTotal = cards.reduce((a, e) => a + calcTotal(e), 0)
@@ -4064,6 +4066,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                         </div>
                       )
                     })()}
+                  </div>
                   </div>
                 </>
               )

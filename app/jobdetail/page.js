@@ -545,7 +545,9 @@ export default function JobDetail() {
   }
 
   async function loadBudgetItems() {
-    const { data } = await supabase.from('budget_items').select('*').eq('job_id', id).order('cost_code', { ascending: true })
+    const { data } = await supabase.from('budget_items').select('*').eq('job_id', id)
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('cost_code', { ascending: true })
     setBudgetItems(data || [])
   }
 
@@ -3312,16 +3314,57 @@ ${sovHtml}
     setCsvUploading(true)
     try {
       const text = await file.text()
-      const lines = text.trim().split(/\r?\n/)
-      const isHeader = isNaN(parseFloat(lines[0].split(',').slice(-1)[0].replace(/"/g, '')))
-      const rows = []
-      for (let i = isHeader ? 1 : 0; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''))
-        if (cols.length >= 2 && cols[1]) {
-          rows.push({ job_id: id, cost_code: cols[0] || null, description: cols[1], budget_amount: parseFloat(cols[2]) || 0 })
+      const rawLines = text.trim().split(/\r?\n/)
+
+      // Proper CSV field splitter — handles quoted fields containing commas
+      function splitCsvRow(line) {
+        const result = []
+        let cur = '', inQ = false
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i]
+          if (ch === '"') {
+            if (inQ && line[i + 1] === '"') { cur += '"'; i++ }
+            else inQ = !inQ
+          } else if (ch === ',' && !inQ) {
+            result.push(cur.trim()); cur = ''
+          } else { cur += ch }
         }
+        result.push(cur.trim())
+        return result
       }
-      if (rows.length > 0) { await fetch('/api/budget-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rows) }); await loadBudgetItems() }
+
+      // Strip $, commas, spaces from a number string before parsing
+      function parseAmt(str) {
+        if (!str) return 0
+        return parseFloat(str.replace(/[$,\s]/g, '')) || 0
+      }
+
+      // Detect header row: last column of first row is not a number
+      const firstCols = splitCsvRow(rawLines[0])
+      const isHeader = isNaN(parseAmt(firstCols[firstCols.length - 1])) || firstCols[firstCols.length - 1] === ''
+      const rows = []
+      let sortOrder = 0
+      for (let i = isHeader ? 1 : 0; i < rawLines.length; i++) {
+        const line = rawLines[i].trim()
+        if (!line) continue
+        const cols = splitCsvRow(line)
+        const description = cols[1]?.replace(/^"|"$/g, '') || ''
+        if (!description) continue
+        const budgetAmt = parseAmt(cols[2])
+        const ownerAmt = cols[3] ? parseAmt(cols[3]) : null
+        rows.push({
+          job_id: id,
+          cost_code: cols[0]?.replace(/^"|"$/g, '') || null,
+          description,
+          budget_amount: budgetAmt,
+          owner_amount: ownerAmt,
+          sort_order: sortOrder++,
+        })
+      }
+      if (rows.length > 0) {
+        await fetch('/api/budget-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rows) })
+        await loadBudgetItems()
+      }
     } catch (err) {
       setErrMsg('CSV import failed: ' + err.message)
       setTimeout(() => setErrMsg(''), 4000)

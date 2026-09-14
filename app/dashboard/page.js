@@ -763,7 +763,8 @@ export default function Dashboard() {
   }
 
   async function setBidStatus(bidId, status) {
-    await supabase.from('bid_packages').update({ status }).eq('id', bidId)
+    const { error } = await supabase.from('bid_packages').update({ status }).eq('id', bidId)
+    if (error) { alert('Could not update bid status: ' + error.message); return }
     await loadBidPackages()
   }
 

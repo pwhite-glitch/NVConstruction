@@ -32,9 +32,14 @@ export async function PUT(request) {
 
 export async function DELETE(request) {
   try {
-    const { id } = await request.json()
-    if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-    const { error } = await adminSupabase.from('budget_items').delete().eq('id', id)
+    const body = await request.json()
+    if (body.job_id) {
+      const { error } = await adminSupabase.from('budget_items').delete().eq('job_id', body.job_id)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ ok: true })
+    }
+    if (!body.id) return Response.json({ error: 'id or job_id required' }, { status: 400 })
+    const { error } = await adminSupabase.from('budget_items').delete().eq('id', body.id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   } catch (e) {

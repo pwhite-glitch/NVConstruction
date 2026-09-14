@@ -5240,6 +5240,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <p style={{ ...s.cardTitle, margin: 0 }}>Budget lines ({budgetItems.length})</p>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {budgetItems.length > 0 && <button style={s.btnSmall} onClick={exportBudgetPDF}>Export PDF</button>}
+                  {budgetItems.length > 0 && (
+                    <button style={s.btnSmallRed} onClick={async () => {
+                      if (!window.confirm(`Delete all ${budgetItems.length} budget line${budgetItems.length !== 1 ? 's' : ''}? This cannot be undone.`)) return
+                      await fetch('/api/budget-items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id }) })
+                      await loadBudgetItems()
+                    }}>Delete all</button>
+                  )}
                   <label style={{ ...s.btnSmall, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
                     {csvUploading ? 'Importing...' : 'Import CSV'}
                     <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCSVUpload} disabled={csvUploading} />

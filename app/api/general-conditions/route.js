@@ -5,6 +5,17 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+async function uploadGCDoc(file, jobId) {
+  const ext = file.name.split('.').pop()
+  const path = `${jobId}/${Date.now()}.${ext}`
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const { error } = await adminSupabase.storage
+    .from('gc-docs')
+    .upload(path, buffer, { contentType: file.type })
+  if (error) throw new Error('File upload failed: ' + error.message)
+  return path
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
@@ -22,7 +33,21 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const body = await request.json()
+    const contentType = request.headers.get('content-type') || ''
+    let body = {}
+    let doc_url = null
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      body = JSON.parse(formData.get('data') || '{}')
+      if (file && file.size > 0) {
+        doc_url = await uploadGCDoc(file, body.job_id)
+      }
+    } else {
+      body = await request.json()
+    }
+
     const { job_id, description, amount, category, entry_date, budget_item_id, notes, created_by, draw_request_id } = body
     if (!job_id || !description || !amount) {
       return Response.json({ error: 'job_id, description, and amount are required' }, { status: 400 })
@@ -41,6 +66,7 @@ export async function POST(request) {
         created_by: created_by || null,
         draw_request_id: draw_request_id || null,
         drawn_at: draw_request_id ? new Date().toISOString() : null,
+        doc_url,
       })
       .select()
       .single()
@@ -54,7 +80,21 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const body = await request.json()
+    const contentType = request.headers.get('content-type') || ''
+    let body = {}
+    let doc_url = undefined
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      body = JSON.parse(formData.get('data') || '{}')
+      if (file && file.size > 0) {
+        doc_url = await uploadGCDoc(file, body.job_id)
+      }
+    } else {
+      body = await request.json()
+    }
+
     const { id, ...fields } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
@@ -67,6 +107,7 @@ export async function PUT(request) {
     if (fields.notes !== undefined) updates.notes = fields.notes || null
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
+    if (doc_url !== undefined) updates.doc_url = doc_url
 
     const { error } = await adminSupabase.from('general_conditions').update(updates).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })

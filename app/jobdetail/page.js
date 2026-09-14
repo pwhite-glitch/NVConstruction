@@ -198,7 +198,9 @@ export default function JobDetail() {
   const [savingDrawPOs, setSavingDrawPOs] = useState(false)
   const [generalConditions, setGeneralConditions] = useState([])
   const [gcForm, setGcForm] = useState({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
+  const [gcFile, setGcFile] = useState(null)
   const [gcEditForm, setGcEditForm] = useState({})
+  const [gcEditFile, setGcEditFile] = useState(null)
   const [savingGC, setSavingGC] = useState(false)
   const [editingGCId, setEditingGCId] = useState(null)
   const [drawAddGCIds, setDrawAddGCIds] = useState([])
@@ -11480,18 +11482,34 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </select>
                           </div>
                         </div>
-                        <div style={{ marginBottom: '10px' }}>
-                          <label style={s.label}>Notes</label>
-                          <input style={s.input} value={gcForm.notes} onChange={e => setGcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div>
+                            <label style={s.label}>Notes</label>
+                            <input style={s.input} value={gcForm.notes} onChange={e => setGcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+                          </div>
+                          <div>
+                            <label style={s.label}>Attachment (PDF/image)</label>
+                            <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e => setGcFile(e.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#888' }} />
+                            {gcFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>📎 {gcFile.name}</div>}
+                          </div>
                         </div>
                         <button
                           style={{ ...s.btn, opacity: (savingGC || !gcForm.description.trim() || !gcForm.amount) ? 0.4 : 1 }}
                           disabled={savingGC || !gcForm.description.trim() || !gcForm.amount}
                           onClick={async () => {
                             setSavingGC(true)
-                            const res = await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
+                            let res
+                            if (gcFile) {
+                              const fd = new FormData()
+                              fd.append('file', gcFile)
+                              fd.append('data', JSON.stringify({ job_id: id, ...gcForm }))
+                              res = await fetch('/api/general-conditions', { method: 'POST', body: fd })
+                            } else {
+                              res = await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
+                            }
                             if (!res.ok) { alert('Failed to save. Try again.'); setSavingGC(false); return; }
                             setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
+                            setGcFile(null)
                             await loadGeneralConditions()
                             setSavingGC(false)
                           }}
@@ -11539,17 +11557,32 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
                                       </select>
                                     </div>
+                                    <div style={{ gridColumn: '1 / -1' }}>
+                                      <label style={s.label}>Replace attachment (optional)</label>
+                                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e2 => setGcEditFile(e2.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#888' }} />
+                                      {gcEditFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>📎 {gcEditFile.name}</div>}
+                                      {e.doc_url && !gcEditFile && <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>Current attachment on file — upload a new file to replace it</div>}
+                                    </div>
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                                       <button style={s.btn} onClick={async () => {
                                         setSavingGC(true)
-                                        const res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcEditForm }) })
+                                        let res
+                                        if (gcEditFile) {
+                                          const fd = new FormData()
+                                          fd.append('file', gcEditFile)
+                                          fd.append('data', JSON.stringify({ id: e.id, job_id: e.job_id, ...gcEditForm }))
+                                          res = await fetch('/api/general-conditions', { method: 'PUT', body: fd })
+                                        } else {
+                                          res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcEditForm }) })
+                                        }
                                         if (!res.ok) { alert('Failed to save. Try again.'); setSavingGC(false); return; }
                                         setEditingGCId(null)
                                         setGcEditForm({})
+                                        setGcEditFile(null)
                                         await loadGeneralConditions()
                                         setSavingGC(false)
                                       }}>{savingGC ? 'Saving...' : 'Save'}</button>
-                                      <button style={s.btnGray} onClick={() => { setEditingGCId(null); setGcEditForm({}) }}>Cancel</button>
+                                      <button style={s.btnGray} onClick={() => { setEditingGCId(null); setGcEditForm({}); setGcEditFile(null) }}>Cancel</button>
                                     </div>
                                   </div>
                                 ) : (
@@ -11568,8 +11601,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
+                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={async () => { const { data } = await supabase.storage.from('gc-docs').createSignedUrl(e.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>📎</button>}
                                       <button style={s.btnSmallOrange} onClick={() => {
                                         setEditingGCId(e.id)
+                                        setGcEditFile(null)
                                         setGcEditForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '', draw_request_id: e.draw_request_id || '' })
                                       }}>Edit</button>
                                       <button style={s.btnSmallRed} onClick={async () => {

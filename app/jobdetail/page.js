@@ -111,6 +111,7 @@ export default function JobDetail() {
   const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [hideBudget, setHideBudget] = useState(false)
 
   // Labor / employee state
   const [laborAllocations, setLaborAllocations] = useState([])
@@ -502,13 +503,14 @@ export default function JobDetail() {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const { data: prof } = await supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
+      const { data: prof } = await supabase.from('profiles').select('role, full_name, hide_budget').eq('id', session.user.id).single()
       if (prof?.role !== 'pm' && prof?.role !== 'apm') { router.push('/submit'); return }
       if (prof.role === 'pm') localStorage.setItem('nvc_pm_session', '1')
       const devRole = localStorage.getItem('nvc_dev_role')
       const effectiveRole = (devRole === 'apm' && prof.role === 'pm') ? 'apm' : prof.role
       setUserRole(effectiveRole)
       setCurrentUserName(prof.full_name || '')
+      if (prof.hide_budget) setHideBudget(true)
       const { data: jobData } = await supabase.from('jobs').select('*').eq('id', id).single()
       if (!jobData) { router.push('/dashboard'); return }
       setJob(jobData)
@@ -4456,7 +4458,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {
                 group: 'Financials',
                 items: [
-                  { key: 'budget', label: 'Budget' },
+                  ...(!hideBudget ? [{ key: 'budget', label: 'Budget' }] : []),
                   { key: 'changeorders', label: 'Change Orders', badge: pendingCOs > 0 ? `${pendingCOs} pending` : null, alert: pendingCOs > 0 },
                   { key: 'billing', label: 'Billing', badge: pendingBillingCount > 0 ? `${pendingBillingCount} pending` : null, alert: pendingBillingCount > 0 },
                   { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length > 0 ? `${directCosts.filter(c => c.status === 'pending').length} pending` : null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
@@ -5245,7 +5247,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         )}
 
         {/* ── BUDGET TAB ── */}
-        {activeTab === 'budget' && (
+        {activeTab === 'budget' && !hideBudget && (
           <>
             <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}>

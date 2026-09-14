@@ -136,6 +136,8 @@ export default function Dashboard() {
   const [updatingOrderId, setUpdatingOrderId] = useState(null)
   const [showNewJobForm, setShowNewJobForm] = useState(false)
   const [showCompletedJobs, setShowCompletedJobs] = useState(false)
+  const [showStarredJobs, setShowStarredJobs] = useState(false)
+  const [starredJobIds, setStarredJobIds] = useState(new Set())
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -143,6 +145,7 @@ export default function Dashboard() {
   const [showInviteForm, setShowInviteForm] = useState(false)
   const [showNewResJobForm, setShowNewResJobForm] = useState(false)
   const [showCompletedResJobs, setShowCompletedResJobs] = useState(false)
+  const [showStarredResJobs, setShowStarredResJobs] = useState(false)
   const [newResJob, setNewResJob] = useState({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' })
   const [resJobMsg, setResJobMsg] = useState('')
 
@@ -340,6 +343,10 @@ export default function Dashboard() {
       const devRole = localStorage.getItem('nvc_dev_role')
       const effectiveProf = (devRole && prof.role === 'pm') ? { ...prof, role: devRole } : prof
       setProfile(effectiveProf)
+      try {
+        const stored = localStorage.getItem(`nvc_starred_jobs_${prof.id}`)
+        if (stored) setStarredJobIds(new Set(JSON.parse(stored)))
+      } catch {}
       let jobIds = null
       if (prof.role === 'apm') {
         const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id').eq('user_id', session.user.id)
@@ -455,6 +462,15 @@ export default function Dashboard() {
     await fetch('/api/order-templates', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
     setOrderTemplates(prev => prev.filter(t => t.id !== id))
     if (expandedTpl === id) setExpandedTpl(null)
+  }
+
+  function toggleStar(jobId) {
+    setStarredJobIds(prev => {
+      const next = new Set(prev)
+      if (next.has(jobId)) next.delete(jobId); else next.add(jobId)
+      try { localStorage.setItem(`nvc_starred_jobs_${profile?.id}`, JSON.stringify([...next])) } catch {}
+      return next
+    })
   }
 
   async function loadAll(jobIds = null) {
@@ -2905,8 +2921,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => setShowCompletedJobs(false)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => setShowCompletedJobs(true)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedJobs && !showStarredJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
+                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredJobs ? '#1a1500' : '#0a0a0a', color: showStarredJobs ? '#facc15' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
+                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
@@ -3011,37 +3028,45 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 )}
 
                 {(() => {
-                  const visibleJobs = jobs.filter(j => j.job_type !== 'residential' && (showCompletedJobs ? j.status === 'complete' : j.status !== 'complete'))
-                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
+                  const visibleJobs = jobs.filter(j => {
+                    if (j.job_type === 'residential') return false
+                    if (showStarredJobs) return starredJobIds.has(j.id)
+                    return showCompletedJobs ? j.status === 'complete' : j.status !== 'complete'
+                  })
+                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
                   return visibleJobs.map(j => {
                     const billed = billedByJob[j.id] || 0
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
                     const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
                     const over = pct > 100
+                    const isStarred = starredJobIds.has(j.id)
                     return (
-                      <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                            <p style={s.meta}>{j.location}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                      <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this job'}>{isStarred ? '★' : '☆'}</button>
+                        <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                              <p style={s.meta}>{j.location}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              {contract > 0 && (
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
+                                  <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
+                                </div>
+                              )}
+                              {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
+                              <span style={s.jobBadge(j.status)}>{j.status}</span>
+                              <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            {contract > 0 && (
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
-                                <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
-                              </div>
-                            )}
-                            {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
-                            <span style={s.jobBadge(j.status)}>{j.status}</span>
-                            <span style={{ color: '#555', fontSize: '18px' }}>›</span>
-                          </div>
+                          {contract > 0 && (
+                            <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '10px' }}>
+                              <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
+                            </div>
+                          )}
                         </div>
-                        {contract > 0 && (
-                          <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '10px' }}>
-                            <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
-                          </div>
-                        )}
                       </div>
                     )
                   })
@@ -3054,8 +3079,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => setShowCompletedResJobs(false)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedResJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedResJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => setShowCompletedResJobs(true)} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedResJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedResJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredResJobs ? '#1a1500' : '#0a0a0a', color: showStarredResJobs ? '#facc15' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedResJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedResJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
                     {showNewResJobForm ? 'Cancel' : '+ New residential job'}
@@ -3125,21 +3151,29 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 )}
 
                 {(() => {
-                  const resJobs = jobs.filter(j => j.job_type === 'residential' && (showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete'))
-                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
+                  const resJobs = jobs.filter(j => {
+                    if (j.job_type !== 'residential') return false
+                    if (showStarredResJobs) return starredJobIds.has(j.id)
+                    return showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete'
+                  })
+                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
                   return resJobs.map(j => {
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                    const isStarred = starredJobIds.has(j.id)
                     return (
-                      <div key={j.id} onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', cursor: 'pointer', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                            <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', color: '#4ade80', border: '1px solid #1a4a1a', letterSpacing: '0.5px' }}>RESIDENTIAL</span>
-                            <span style={s.jobBadge(j.status)}>{j.status}</span>
-                            <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                      <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this project'}>{isStarred ? '★' : '☆'}</button>
+                        <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', color: '#4ade80', border: '1px solid #1a4a1a', letterSpacing: '0.5px' }}>RESIDENTIAL</span>
+                              <span style={s.jobBadge(j.status)}>{j.status}</span>
+                              <span style={{ color: '#555', fontSize: '18px' }}>›</span>
+                            </div>
                           </div>
                         </div>
                       </div>

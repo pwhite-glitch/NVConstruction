@@ -3187,7 +3187,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             {activeTab === 'estimator' && estimatorInnerTab === 'bids' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open{bidPackages.filter(b => b.status === 'won').length > 0 ? ` · ${bidPackages.filter(b => b.status === 'won').length} won` : ''}{bidPackages.filter(b => b.status === 'lost').length > 0 ? ` · ${bidPackages.filter(b => b.status === 'lost').length} lost` : ''}</p>
                   {profile?.role === 'pm' && <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>{showCreateBid ? 'Cancel' : '+ New bid package'}</button>}
                 </div>
 
@@ -3230,7 +3230,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   const plans = det.plans || []
                   const invitations = det.invitations || []
                   const submissions = det.submissions || []
-                  const bidStatusColor = pkg.status === 'awarded' ? 'approved' : pkg.status === 'closed' ? 'rejected' : 'pending'
+                  const bidStatusColor = (pkg.status === 'awarded' || pkg.status === 'won') ? 'approved' : (pkg.status === 'lost' || pkg.status === 'closed') ? 'rejected' : 'pending'
                   const approvedDir = directory.filter(d => d.status === 'approved')
                   const uninvited = approvedDir.filter(d => !invitations.some(i => i.sub_email === d.email))
 
@@ -3265,8 +3265,11 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
                           {profile?.role === 'pm' && (
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {pkg.status === 'open' && <button style={s.btnSm('gray')} onClick={() => setBidStatus(pkg.id, 'closed')}>Close bidding</button>}
-                            {pkg.status === 'closed' && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
+                            {pkg.status === 'open' && <>
+                              <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>✓ Won</button>
+                              <button style={s.btnSm('red')} onClick={() => setBidStatus(pkg.id, 'lost')}>✗ Lost</button>
+                            </>}
+                            {(pkg.status === 'won' || pkg.status === 'lost' || pkg.status === 'closed') && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
                             {editingBidId === pkg.id
                               ? <>
                                   <input type="date" style={{ ...s.input, width: 'auto', padding: '6px 10px', fontSize: '13px' }} value={editBidDueDate} onChange={e => setEditBidDueDate(e.target.value)} />
@@ -4178,7 +4181,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
               // Unified items
               const oppItems   = yearOpps.map(o => ({ ...o, _type: 'opp',  _stage: o.stage }))
-              const bidItems   = yearBids.map(b => ({ ...b, _type: 'bid',  _stage: 'bidding',  project_name: b.jobs?.project_name || b.title, _sub: b.jobs ? `Job #${b.jobs.job_number}` : 'No job linked', _val: null }))
+              const bidItems   = yearBids.map(b => ({ ...b, _type: 'bid',  _stage: b.status === 'won' ? 'won' : b.status === 'lost' ? 'lost' : 'bidding',  project_name: b.jobs?.project_name || b.title, _sub: b.jobs ? `Job #${b.jobs.job_number}` : 'No job linked', _val: null }))
               const activeItems= activeJobs.map(j => ({ ...j, _type: 'job', _stage: 'active',   project_name: j.project_name, _sub: `Job #${j.job_number}`, _val: j.contract_value }))
               const completeItems=completeJobs.map(j => ({ ...j, _type: 'job', _stage: 'complete', project_name: j.project_name, _sub: `Job #${j.job_number}`, _val: j.contract_value }))
               const allItems = [...oppItems, ...bidItems, ...activeItems, ...completeItems]
@@ -4190,10 +4193,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 : oppItems.filter(o => o._stage === bdFilterStage)
 
               // Stats
-              const biddingTotal = yearOpps.filter(o => o.stage === 'bidding').length + yearBids.length
+              const wonBids  = yearBids.filter(b => b.status === 'won')
+              const lostBids = yearBids.filter(b => b.status === 'lost')
+              const biddingTotal = yearOpps.filter(o => o.stage === 'bidding').length + yearBids.filter(b => b.status === 'open').length
               const wonOpps  = yearOpps.filter(o => o.stage === 'won')
               const lostOpps = yearOpps.filter(o => o.stage === 'lost')
-              const winRate  = (wonOpps.length + lostOpps.length) > 0 ? Math.round((wonOpps.length / (wonOpps.length + lostOpps.length)) * 100) : 0
+              const totalWon  = wonOpps.length  + wonBids.length
+              const totalLost = lostOpps.length + lostBids.length
+              const winRate  = (totalWon + totalLost) > 0 ? Math.round((totalWon / (totalWon + totalLost)) * 100) : 0
               const activeRev  = activeJobs.reduce((s, j) => s + (parseFloat(j.contract_value) || 0), 0)
               const completeRev= completeJobs.reduce((s, j) => s + (parseFloat(j.contract_value) || 0), 0)
               const totalRev   = activeRev + completeRev
@@ -4216,8 +4223,8 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 active:   activeJobs.length,
                 complete: completeJobs.length,
                 prospect: yearOpps.filter(o => o.stage === 'prospect').length,
-                won:      wonOpps.length,
-                lost:     lostOpps.length,
+                won:      totalWon,
+                lost:     totalLost,
               }
 
               return (

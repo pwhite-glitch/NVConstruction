@@ -249,19 +249,24 @@ export default function Dashboard() {
   const [estimates, setEstimates] = useState([])
   const [expandedEstimate, setExpandedEstimate] = useState(null)
   const [showNewEstimate, setShowNewEstimate] = useState(false)
-  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false })
+  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' })
   const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '', scope: '' }])
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [editingEstimate, setEditingEstimate] = useState(null)
   const [editEstimateForm, setEditEstimateForm] = useState({})
   const [editEstimateLines, setEditEstimateLines] = useState([])
   const [savingEstimateEdit, setSavingEstimateEdit] = useState(false)
-  const [estimatorInnerTab, setEstimatorInnerTab] = useState('estimates')
+  const [estimatorInnerTab, setEstimatorInnerTab] = useState('overview')
   const [convertingEst, setConvertingEst] = useState(null)
   const [convertJobForm, setConvertJobForm] = useState({ job_number: '', start_date: '' })
   const [convertingJob, setConvertingJob] = useState(false)
   const [uploadingEstDoc, setUploadingEstDoc] = useState(null)
   const [estDocs, setEstDocs] = useState({})
+  const [scopeItems, setScopeItems] = useState({})
+  const [levelingEntries, setLevelingEntries] = useState({})
+  const [showLeveling, setShowLeveling] = useState(null)
+  const [addingScopeItem, setAddingScopeItem] = useState(null)
+  const [newScopeItemForm, setNewScopeItemForm] = useState({ description: '', budget_amount: '' })
 
   // Business Development state
   const [bdBidPackages, setBdBidPackages] = useState([])
@@ -1327,7 +1332,9 @@ export default function Dashboard() {
       notes: estimateForm.notes || null,
       markup_pct: parseFloat(estimateForm.markup_pct) || 0,
       taxable: estimateForm.taxable || false,
-      status: 'draft',
+      square_footage: parseFloat(estimateForm.square_footage) || null,
+      project_type: estimateForm.project_type || null,
+      status: 'lead',
     }).select().single()
     if (!error && est) {
       const validLines = estimateLines.filter(l => l.description)
@@ -1335,7 +1342,7 @@ export default function Dashboard() {
         await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i })))
       }
       setShowNewEstimate(false)
-      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false })
+      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' })
       setEstimateLines([{ description: '', amount: '', scope: '' }])
       await loadEstimates()
     }
@@ -1354,6 +1361,8 @@ export default function Dashboard() {
       notes: editEstimateForm.notes || null,
       markup_pct: parseFloat(editEstimateForm.markup_pct) || 0,
       taxable: editEstimateForm.taxable || false,
+      square_footage: parseFloat(editEstimateForm.square_footage) || null,
+      project_type: editEstimateForm.project_type || null,
       status: editEstimateForm.status,
       updated_at: new Date().toISOString(),
     }).eq('id', editingEstimate)
@@ -1372,6 +1381,54 @@ export default function Dashboard() {
     await supabase.from('estimates').delete().eq('id', estimateId)
     if (expandedEstimate === estimateId) setExpandedEstimate(null)
     await loadEstimates()
+  }
+
+  async function moveEstimateStage(estimateId, newStage) {
+    const { error } = await supabase.from('estimates').update({ status: newStage, updated_at: new Date().toISOString() }).eq('id', estimateId)
+    if (error) { alert('Error: ' + error.message); return }
+    await loadEstimates()
+  }
+
+  async function loadScopeItems(bidId) {
+    const { data } = await supabase.from('bid_scope_items').select('*').eq('bid_package_id', bidId).order('sort_order')
+    setScopeItems(prev => ({ ...prev, [bidId]: data || [] }))
+  }
+
+  async function loadLevelingEntries(bidId) {
+    const detail = bidDetails[bidId]
+    if (!detail?.submissions?.length) return
+    const subIds = detail.submissions.map(s => s.id)
+    const { data } = await supabase.from('bid_leveling_entries').select('*').in('bid_submission_id', subIds)
+    setLevelingEntries(prev => ({ ...prev, [bidId]: data || [] }))
+  }
+
+  async function addScopeItem(bidId) {
+    if (!newScopeItemForm.description) return
+    const items = scopeItems[bidId] || []
+    const { error } = await supabase.from('bid_scope_items').insert({
+      bid_package_id: bidId,
+      description: newScopeItemForm.description,
+      budget_amount: parseFloat(newScopeItemForm.budget_amount) || 0,
+      sort_order: items.length,
+    })
+    if (error) { alert(error.message); return }
+    setNewScopeItemForm({ description: '', budget_amount: '' })
+    await loadScopeItems(bidId)
+  }
+
+  async function deleteScopeItem(itemId, bidId) {
+    await supabase.from('bid_scope_items').delete().eq('id', itemId)
+    await loadScopeItems(bidId)
+  }
+
+  async function upsertLevelingEntry(bidId, submissionId, scopeItemId, amount, included) {
+    await supabase.from('bid_leveling_entries').upsert({
+      bid_submission_id: submissionId,
+      bid_scope_item_id: scopeItemId,
+      amount: amount !== '' && amount != null ? parseFloat(amount) : null,
+      included: included !== false,
+    }, { onConflict: 'bid_submission_id,bid_scope_item_id' })
+    await loadLevelingEntries(bidId)
   }
 
   async function generateEstimatePDF(estimate) {
@@ -3238,7 +3295,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   return (
                     <div key={pkg.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', cursor: 'pointer' }}
-                        onClick={() => { if (isExp) { setExpandedBid(null) } else { setExpandedBid(pkg.id); loadBidDetail(pkg.id) } }}>
+                        onClick={() => { if (isExp) { setExpandedBid(null) } else { setExpandedBid(pkg.id); loadBidDetail(pkg.id); loadScopeItems(pkg.id) } }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{pkg.title}</span>
@@ -3521,6 +3578,134 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               </div>
                             ))}
                           </div>
+
+                          {/* ── BID LEVELING ── */}
+                          <div style={{ marginTop: '1rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Scope / Bid Leveling</span>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                {submissions.length >= 1 && <button style={s.btnSm(showLeveling === pkg.id ? 'orange' : 'gray')} onClick={() => {
+                                  if (showLeveling === pkg.id) { setShowLeveling(null) }
+                                  else { setShowLeveling(pkg.id); loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
+                                }}>{showLeveling === pkg.id ? 'Hide leveling' : 'Level bids'}</button>}
+                                <button style={s.btnSm(addingScopeItem === pkg.id ? 'gray' : 'green')} onClick={() => { setAddingScopeItem(addingScopeItem === pkg.id ? null : pkg.id); if (addingScopeItem !== pkg.id) loadScopeItems(pkg.id) }}>{addingScopeItem === pkg.id ? 'Cancel' : '+ Scope item'}</button>
+                              </div>
+                            </div>
+
+                            {addingScopeItem === pkg.id && (
+                              <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px auto', gap: '8px', alignItems: 'flex-end' }}>
+                                  <div>
+                                    <label style={s.label}>Scope item</label>
+                                    <input style={s.input} value={newScopeItemForm.description} onChange={e => setNewScopeItemForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Framing, Drywall, Electrical..." />
+                                  </div>
+                                  <div>
+                                    <label style={s.label}>Budget ($)</label>
+                                    <input type="number" step="0.01" style={s.input} value={newScopeItemForm.budget_amount} onChange={e => setNewScopeItemForm(f => ({ ...f, budget_amount: e.target.value }))} placeholder="0.00" />
+                                  </div>
+                                  <button style={s.btnSm('green')} onClick={() => addScopeItem(pkg.id)}>Add</button>
+                                </div>
+                                {(scopeItems[pkg.id] || []).length > 0 && (
+                                  <div style={{ marginTop: '10px' }}>
+                                    {(scopeItems[pkg.id] || []).map(item => (
+                                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #1a1a1a', fontSize: '13px' }}>
+                                        <span style={{ color: '#ccc' }}>{item.description}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                          {item.budget_amount > 0 && <span style={{ color: '#555', fontVariantNumeric: 'tabular-nums' }}>${Number(item.budget_amount).toLocaleString()}</span>}
+                                          <button style={{ background: 'none', border: 'none', color: '#5a1a1a', cursor: 'pointer', fontSize: '16px', padding: 0 }} onClick={() => deleteScopeItem(item.id, pkg.id)}>×</button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {showLeveling === pkg.id && (() => {
+                              const items = scopeItems[pkg.id] || []
+                              const subs = submissions.filter(s => s.status !== 'rejected')
+                              const entries = levelingEntries[pkg.id] || []
+                              if (items.length === 0) return <p style={{ fontSize: '13px', color: '#444' }}>Add scope items above to start leveling bids.</p>
+                              if (subs.length === 0) return <p style={{ fontSize: '13px', color: '#444' }}>No active bid submissions to level.</p>
+                              const getEntry = (subId, itemId) => entries.find(e => e.bid_submission_id === subId && e.bid_scope_item_id === itemId)
+                              const subLeveledTotal = (sub) => items.reduce((a, item) => {
+                                const e = getEntry(sub.id, item.id)
+                                return a + (e?.included !== false && e?.amount ? Number(e.amount) : 0)
+                              }, 0)
+                              const budgetTotal = items.reduce((a, i) => a + Number(i.budget_amount || 0), 0)
+                              const thStyle = { padding: '6px 10px', fontSize: '10px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', textAlign: 'right', whiteSpace: 'nowrap' }
+                              const tdStyle = { padding: '6px 10px', fontSize: '12px', color: '#ccc', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+                              return (
+                                <div style={{ overflowX: 'auto', marginTop: '4px' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
+                                    <thead>
+                                      <tr style={{ borderBottom: '2px solid #1a1a1a' }}>
+                                        <th style={{ ...thStyle, textAlign: 'left' }}>Scope Item</th>
+                                        <th style={thStyle}>Budget</th>
+                                        {subs.map(sub => (
+                                          <th key={sub.id} style={thStyle}>
+                                            <div style={{ color: sub.status === 'awarded' ? '#4ade80' : '#888' }}>{sub.company_name}</div>
+                                            <div style={{ fontSize: '9px', color: '#444', fontWeight: '400' }}>Bid: ${Number(sub.amount).toLocaleString()}</div>
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {items.map(item => (
+                                        <tr key={item.id} style={{ borderBottom: '1px solid #111' }}>
+                                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ccc' }}>{item.description}</td>
+                                          <td style={tdStyle}>{item.budget_amount > 0 ? `$${Number(item.budget_amount).toLocaleString()}` : '—'}</td>
+                                          {subs.map(sub => {
+                                            const entry = getEntry(sub.id, item.id)
+                                            const excluded = entry?.included === false
+                                            return (
+                                              <td key={sub.id} style={{ padding: '4px 6px', textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={!excluded}
+                                                    title={excluded ? 'Not included' : 'Included'}
+                                                    onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, entry?.amount ?? '', e.target.checked)}
+                                                    style={{ width: '12px', height: '12px', cursor: 'pointer', opacity: 0.6 }}
+                                                  />
+                                                  <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={entry?.amount ?? ''}
+                                                    placeholder="—"
+                                                    disabled={excluded}
+                                                    onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, e.target.value, !excluded)}
+                                                    style={{ width: '90px', background: excluded ? '#0a0a0a' : '#111', border: '1px solid #1a1a1a', borderRadius: '4px', color: excluded ? '#333' : '#ccc', padding: '3px 6px', fontSize: '12px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
+                                                  />
+                                                </div>
+                                              </td>
+                                            )
+                                          })}
+                                        </tr>
+                                      ))}
+                                      {/* Leveled totals row */}
+                                      <tr style={{ borderTop: '2px solid #2a2a2a', background: '#111' }}>
+                                        <td style={{ padding: '8px 10px', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
+                                        <td style={{ ...tdStyle, fontWeight: '700', color: '#555' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : '—'}</td>
+                                        {subs.map(sub => {
+                                          const levTotal = subLeveledTotal(sub)
+                                          const rawBid = Number(sub.amount)
+                                          const diff = levTotal - rawBid
+                                          return (
+                                            <td key={sub.id} style={{ padding: '8px 6px', textAlign: 'right' }}>
+                                              <div style={{ fontSize: '13px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
+                                              {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#facc15' : '#4ade80' }}>{diff > 0 ? '+' : ''}{Math.round(diff / rawBid * 100)}% vs bid</div>}
+                                            </td>
+                                          )
+                                        })}
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )
+                            })()}
+                          </div>
+
                         </div>
                       )}
                     </div>
@@ -3734,22 +3919,132 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
             {/* ── ESTIMATOR INNER NAV ── */}
             {activeTab === 'estimator' && (
-              <div style={{ display: 'flex', borderBottom: '1px solid #1a1a1a', marginBottom: '1.5rem' }}>
-                <button style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === 'estimates' ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === 'estimates' ? '700' : '500', color: estimatorInnerTab === 'estimates' ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab('estimates')}>
-                  Estimates ({estimates.length})
-                </button>
-                <button style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === 'bids' ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === 'bids' ? '700' : '500', color: estimatorInnerTab === 'bids' ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab('bids')}>
-                  Bid Packages ({bidPackages.length})
-                </button>
+              <div style={{ display: 'flex', borderBottom: '1px solid #1a1a1a', marginBottom: '1.5rem', overflowX: 'auto' }}>
+                {[
+                  { key: 'overview', label: 'Pipeline' },
+                  { key: 'estimates', label: `Estimates (${estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length})` },
+                  { key: 'bids', label: `Bid Packages (${bidPackages.length})` },
+                  { key: 'archive', label: `Archive (${estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status)).length})` },
+                ].map(tab => (
+                  <button key={tab.key} style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === tab.key ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === tab.key ? '700' : '500', color: estimatorInnerTab === tab.key ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab(tab.key)}>
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             )}
+
+            {/* ── ESTIMATOR PIPELINE OVERVIEW ── */}
+            {activeTab === 'estimator' && estimatorInnerTab === 'overview' && (() => {
+              const calcTotal = (est) => {
+                const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
+                return raw * (1 + Number(est.markup_pct || 0) / 100) + (est.taxable ? raw * 0.0825 : 0)
+              }
+              const getStage = (est) => {
+                const s = (est.status || 'lead').toLowerCase()
+                if (s === 'won' || s === 'accepted') return 'won'
+                if (s === 'lost' || s === 'declined') return 'lost'
+                if (s === 'sent' || s === 'bid_out') return 'bid_out'
+                if (s === 'negotiating') return 'negotiating'
+                if (s === 'lead') return 'lead'
+                return 'estimating'
+              }
+              const STAGES = [
+                { key: 'lead',        label: 'LEAD',        color: '#9ca3af', bg: '#111',    border: '#2a2a2a', hdr: '#161616' },
+                { key: 'estimating',  label: 'ESTIMATING',  color: '#60a5fa', bg: '#0a111e', border: '#1a2a3e', hdr: '#0d1828' },
+                { key: 'bid_out',     label: 'BID OUT',     color: '#e8590c', bg: '#1a0e00', border: '#3a1e00', hdr: '#1e1200' },
+                { key: 'negotiating', label: 'NEGOTIATING', color: '#facc15', bg: '#1a1400', border: '#3a2a00', hdr: '#1e1800' },
+                { key: 'won',         label: 'WON',         color: '#4ade80', bg: '#0a1a0e', border: '#1a3a1e', hdr: '#0d1e12' },
+              ]
+              const NEXT = { lead: 'estimating', estimating: 'bid_out', bid_out: 'negotiating', negotiating: 'won' }
+              const PREV = { estimating: 'lead', bid_out: 'estimating', negotiating: 'bid_out', won: 'negotiating' }
+              const active = estimates.filter(e => !['lost','declined'].includes(e.status))
+              const won = estimates.filter(e => ['won','accepted'].includes(e.status))
+              const lost = estimates.filter(e => ['lost','declined'].includes(e.status))
+              const pipeline = active.filter(e => !['won','accepted'].includes(e.status))
+              const pipelineVal = pipeline.reduce((a, e) => a + calcTotal(e), 0)
+              const wonVal = won.reduce((a, e) => a + calcTotal(e), 0)
+              const closed = won.length + lost.length
+              const winRate = closed > 0 ? Math.round(won.length / closed * 100) : 0
+              const withSqft = estimates.filter(e => e.square_footage > 0)
+              const avgPsf = withSqft.length > 0 ? Math.round(withSqft.reduce((a, e) => a + calcTotal(e) / e.square_footage, 0) / withSqft.length) : null
+              const fmtK = n => n >= 1000000 ? '$' + (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? '$' + Math.round(n / 1000) + 'K' : '$' + Math.round(n)
+              return (
+                <>
+                  {/* Metrics bar */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
+                    {[
+                      { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active`, color: '#f1f1f1', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} project${won.length !== 1 ? 's' : ''}`, color: '#4ade80', bg: '#0a1a0e', border: '#1a3a1e' },
+                      { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#4ade80' : winRate >= 25 ? '#facc15' : '#ff6b6b', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#0f0f0f', border: '#1e1e1e' },
+                    ].map(m => (
+                      <div key={m.label} style={{ background: m.bg, border: `1px solid ${m.border}`, borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>{m.label}</div>
+                        <div style={{ fontSize: '24px', fontWeight: '800', color: m.color, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{m.value}</div>
+                        <div style={{ fontSize: '11px', color: '#444', marginTop: '5px' }}>{m.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Kanban columns */}
+                  <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '1rem' }}>
+                    {STAGES.map(stage => {
+                      const cards = estimates.filter(e => getStage(e) === stage.key)
+                      const colTotal = cards.reduce((a, e) => a + calcTotal(e), 0)
+                      return (
+                        <div key={stage.key} style={{ minWidth: '230px', flex: '0 0 230px', background: stage.bg, border: `1px solid ${stage.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ background: stage.hdr, padding: '10px 14px', borderBottom: `1px solid ${stage.border}`, borderRadius: '10px 10px 0 0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '9px', fontWeight: '800', color: stage.color, letterSpacing: '2px' }}>{stage.label}</span>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '99px', padding: '1px 7px' }}>{cards.length}</span>
+                            </div>
+                            {colTotal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(colTotal)}</div>}
+                          </div>
+                          <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
+                            {cards.length === 0 && <div style={{ textAlign: 'center', color: '#2a2a2a', fontSize: '12px', paddingTop: '1.5rem' }}>Empty</div>}
+                            {cards.map(est => {
+                              const tot = calcTotal(est)
+                              const psf = est.square_footage > 0 ? tot / est.square_footage : null
+                              return (
+                                <div key={est.id} style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
+                                  onClick={() => { setEstimatorInnerTab('estimates'); setExpandedEstimate(est.id) }}>
+                                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3', marginBottom: '2px' }}>{est.project_name}</div>
+                                  {(est.owner_company || est.owner_name) && <div style={{ fontSize: '11px', color: '#555', marginBottom: '5px' }}>{est.owner_company || est.owner_name}</div>}
+                                  <div style={{ fontSize: '15px', fontWeight: '800', color: stage.color, fontVariantNumeric: 'tabular-nums' }}>{fmtK(tot)}</div>
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+                                    {psf && <span style={{ fontSize: '11px', color: '#555' }}>${Math.round(psf)}/sqft</span>}
+                                    {est.project_type && <span style={{ fontSize: '10px', color: '#444', background: '#111', border: '1px solid #1e1e1e', borderRadius: '3px', padding: '1px 5px' }}>{est.project_type}</span>}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                                    {PREV[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid #222', borderRadius: '4px', color: '#444', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, PREV[stage.key])}>← Back</button>}
+                                    {NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: `1px solid ${stage.border}`, borderRadius: '4px', color: stage.color, cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} →</button>}
+                                    {stage.key !== 'won' && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', color: '#4ade80', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'won')}>Won ✓</button>}
+                                    <button style={{ fontSize: '10px', padding: '2px 6px', background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '4px', color: '#ff6b6b', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost ✗</button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            {stage.key === 'lead' && ['pm', 'apm'].includes(profile?.role) && (
+                              <button style={{ background: 'transparent', border: `1px dashed ${stage.border}`, borderRadius: '8px', color: '#333', cursor: 'pointer', padding: '10px', fontSize: '12px', textAlign: 'center' }}
+                                onClick={() => { setEstimatorInnerTab('estimates'); setShowNewEstimate(true) }}>
+                                + New estimate
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )
+            })()}
 
             {/* ── ESTIMATES (inside Estimator) ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'estimates' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.length} estimate{estimates.length !== 1 ? 's' : ''} · {estimates.filter(e => e.status === 'won').length} won · {estimates.filter(e => e.status === 'lost').length} lost</p>
-                  {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} — won/lost are in Archive</p>
+                  {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
                 {showNewEstimate && (
@@ -3766,6 +4061,16 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                     <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                       <div><label style={s.label}>Email</label><input type="email" style={s.input} value={estimateForm.owner_email} onChange={e => setEstimateForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="owner@example.com" /></div>
                       <div><label style={s.label}>Phone</label><input style={s.input} value={estimateForm.owner_phone} onChange={e => setEstimateForm(f => ({ ...f, owner_phone: e.target.value }))} placeholder="555-0100" /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                      <div>
+                        <label style={s.label}>Project type</label>
+                        <select style={s.input} value={estimateForm.project_type} onChange={e => setEstimateForm(f => ({ ...f, project_type: e.target.value }))}>
+                          <option value="">— Select —</option>
+                          {['Office TI', 'Retail TI', 'Restaurant', 'Medical', 'Industrial', 'Warehouse', 'Multifamily', 'Ground-up', 'Renovation', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div><label style={s.label}>Square footage</label><input type="number" min="0" style={s.input} value={estimateForm.square_footage} onChange={e => setEstimateForm(f => ({ ...f, square_footage: e.target.value }))} placeholder="e.g. 5000" /></div>
                     </div>
                     <div style={{ marginBottom: '1.25rem' }}>
                       <label style={s.label}>Scope of work / notes</label>
@@ -3864,9 +4169,9 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   </div>
                 )}
 
-                {estimates.length === 0 && !showNewEstimate && <div style={s.emptyMsg}>No estimates yet. Click "New estimate" to get started.</div>}
+                {estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length === 0 && !showNewEstimate && <div style={s.emptyMsg}>No active estimates. Won/lost estimates are in Archive.</div>}
 
-                {estimates.map(est => {
+                {estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).map(est => {
                   const isExp = expandedEstimate === est.id
                   const lines = est.estimate_line_items || []
                   const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
@@ -3874,18 +4179,21 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   const estTaxAmt = est.taxable ? rawTotal * 0.0825 : 0
                   const estTaxFactor = est.taxable ? 1.0825 : 1
                   const total = Math.round((rawTotal * (1 + estMarkupPct / 100) + estTaxAmt) * 100) / 100
+                  const psf = est.square_footage > 0 ? Math.round(total / est.square_footage) : null
+                  const stageLabels = { lead: { label: 'Lead', color: '#9ca3af', bg: '#111', border: '#2a2a2a' }, estimating: { label: 'Estimating', color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' }, bid_out: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, negotiating: { label: 'Negotiating', color: '#facc15', bg: '#1a1400', border: '#3a2a00' }, sent: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, draft: { label: 'Estimating', color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' } }
+                  const stageCfg = stageLabels[est.status] || { label: est.status, color: '#888', bg: '#1a1a1a', border: '#2a2a2a' }
                   const isEditingEst = editingEstimate === est.id
                   return (
                     <div key={est.id} style={s.rowBorder}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }}
                         onClick={() => { const newId = isExp ? null : est.id; setExpandedEstimate(newId); if (newId) loadEstDocs(newId) }}>
                         <div>
-                          <p style={s.company}>{est.project_name}</p>
-                          <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}{estMarkupPct > 0 ? ` · ${estMarkupPct}% markup` : ''}</p>
+                          <p style={s.company}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#555', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
+                          <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}</p>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: est.status === 'won' ? '#0a2a0a' : est.status === 'lost' ? '#2a0a0a' : est.status === 'sent' ? '#1a2a00' : est.status === 'accepted' ? '#0a1a2a' : est.status === 'declined' ? '#2a0a0a' : '#1a1a1a', color: est.status === 'won' ? '#4ade80' : est.status === 'lost' ? '#ff6b6b' : est.status === 'sent' ? '#a3e635' : est.status === 'accepted' ? '#60a5fa' : est.status === 'declined' ? '#ff6b6b' : '#888', border: `1px solid ${est.status === 'won' ? '#1a4a1a' : est.status === 'lost' ? '#5a1a1a' : est.status === 'sent' ? '#2a4a00' : est.status === 'accepted' ? '#1a3a5a' : est.status === 'declined' ? '#5a1a1a' : '#2a2a2a'}` }}>{est.status}</span>
+                          <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: stageCfg.bg, color: stageCfg.color, border: `1px solid ${stageCfg.border}` }}>{stageCfg.label}</span>
                           <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                         </div>
                       </div>
@@ -3909,16 +4217,26 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               </div>
                               <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                                 <div>
-                                  <label style={s.label}>Status</label>
+                                  <label style={s.label}>Stage</label>
                                   <select style={s.input} value={editEstimateForm.status} onChange={e => setEditEstimateForm(f => ({ ...f, status: e.target.value }))}>
-                                    <option value="draft">Draft</option>
-                                    <option value="sent">Sent</option>
+                                    <option value="lead">Lead</option>
+                                    <option value="estimating">Estimating</option>
+                                    <option value="bid_out">Bid Out</option>
+                                    <option value="negotiating">Negotiating</option>
                                     <option value="won">Won</option>
                                     <option value="lost">Lost</option>
-                                    <option value="accepted">Accepted</option>
-                                    <option value="declined">Declined</option>
                                   </select>
                                 </div>
+                              </div>
+                              <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                                <div>
+                                  <label style={s.label}>Project type</label>
+                                  <select style={s.input} value={editEstimateForm.project_type || ''} onChange={e => setEditEstimateForm(f => ({ ...f, project_type: e.target.value }))}>
+                                    <option value="">— Select —</option>
+                                    {['Office TI', 'Retail TI', 'Restaurant', 'Medical', 'Industrial', 'Warehouse', 'Multifamily', 'Ground-up', 'Renovation', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                                  </select>
+                                </div>
+                                <div><label style={s.label}>Square footage</label><input type="number" min="0" style={s.input} value={editEstimateForm.square_footage || ''} onChange={e => setEditEstimateForm(f => ({ ...f, square_footage: e.target.value }))} placeholder="e.g. 5000" /></div>
                               </div>
                               <div style={{ marginBottom: '1.25rem' }}>
                                 <label style={s.label}>Scope / notes</label>
@@ -4111,7 +4429,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                                 {['pm', 'apm'].includes(profile?.role) && <>
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
-                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'draft', markup_pct: String(est.markup_pct || ''), taxable: !!est.taxable })
+                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), taxable: !!est.taxable, square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
                                     setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '' })))
                                   }}>Edit</button>
                                   {est.status !== 'won' && (
@@ -4153,6 +4471,97 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                 })}
               </>
             )}
+
+            {/* ── ESTIMATOR ARCHIVE ── */}
+            {activeTab === 'estimator' && estimatorInnerTab === 'archive' && (() => {
+              const calcTotal = (est) => {
+                const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
+                return raw * (1 + Number(est.markup_pct || 0) / 100) + (est.taxable ? raw * 0.0825 : 0)
+              }
+              const archived = estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status))
+              const won = archived.filter(e => ['won','accepted'].includes(e.status))
+              const lost = archived.filter(e => ['lost','declined'].includes(e.status))
+              const wonVal = won.reduce((a, e) => a + calcTotal(e), 0)
+              const withSqft = archived.filter(e => e.square_footage > 0)
+              const psfs = withSqft.map(e => ({ type: e.project_type || 'Other', psf: calcTotal(e) / e.square_footage }))
+              const fmtC = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              return (
+                <>
+                  {archived.length === 0 ? <div style={s.emptyMsg}>No archived estimates yet. Won/lost estimates will appear here.</div> : (
+                    <>
+                      {/* Summary */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '12px', marginBottom: '1.5rem' }} className="rx-grid-4">
+                        <div style={{ background: '#0a1a0e', border: '1px solid #1a3a1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '700', color: '#1a5a1a', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Won</div>
+                          <div style={{ fontSize: '22px', fontWeight: '800', color: '#4ade80' }}>${Math.round(wonVal / 1000)}K</div>
+                          <div style={{ fontSize: '11px', color: '#1a4a1a', marginTop: '4px' }}>{won.length} project{won.length !== 1 ? 's' : ''}</div>
+                        </div>
+                        <div style={{ background: '#1a0a0e', border: '1px solid #3a1a1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '700', color: '#5a1a1a', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Lost</div>
+                          <div style={{ fontSize: '22px', fontWeight: '800', color: '#ff6b6b' }}>{lost.length}</div>
+                          <div style={{ fontSize: '11px', color: '#3a1a1a', marginTop: '4px' }}>{lost.reduce((a, e) => a + calcTotal(e), 0) > 0 ? `$${Math.round(lost.reduce((a,e)=>a+calcTotal(e),0)/1000)}K walked away` : 'estimated value'}</div>
+                        </div>
+                        <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>$/SqFt Range</div>
+                          {psfs.length > 0 ? (
+                            <>
+                              <div style={{ fontSize: '22px', fontWeight: '800', color: '#e8590c' }}>${Math.round(Math.min(...psfs.map(p=>p.psf)))}–${Math.round(Math.max(...psfs.map(p=>p.psf)))}</div>
+                              <div style={{ fontSize: '11px', color: '#444', marginTop: '4px' }}>across {withSqft.length} estimate{withSqft.length !== 1?'s':''}</div>
+                            </>
+                          ) : <div style={{ fontSize: '22px', fontWeight: '800', color: '#333' }}>—</div>}
+                        </div>
+                      </div>
+
+                      {/* $/sqft by type */}
+                      {psfs.length > 0 && (() => {
+                        const byType = {}
+                        withSqft.forEach(e => {
+                          const t = e.project_type || 'Other'
+                          if (!byType[t]) byType[t] = []
+                          byType[t].push(calcTotal(e) / e.square_footage)
+                        })
+                        return (
+                          <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem' }}>
+                            <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>$/SqFt Baselines by Project Type</p>
+                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                              {Object.entries(byType).map(([type, psfList]) => (
+                                <div key={type} style={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: '6px', padding: '8px 14px' }}>
+                                  <div style={{ fontSize: '10px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>{type}</div>
+                                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#e8590c' }}>${Math.round(psfList.reduce((a,b)=>a+b,0)/psfList.length)}<span style={{ fontSize: '11px', color: '#555', fontWeight: '400' }}>/sqft</span></div>
+                                  <div style={{ fontSize: '11px', color: '#444' }}>{psfList.length} project{psfList.length !== 1 ? 's' : ''}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* Archived estimates list */}
+                      {archived.map(est => {
+                        const tot = calcTotal(est)
+                        const psf = est.square_footage > 0 ? Math.round(tot / est.square_footage) : null
+                        const isWon = ['won','accepted'].includes(est.status)
+                        return (
+                          <div key={est.id} style={{ ...s.rowBorder, opacity: 0.85 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 8px' }}>
+                              <div>
+                                <p style={{ ...s.company, color: isWon ? '#4ade80' : '#888' }}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#444', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
+                                <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}{est.square_footage ? ` · ${Number(est.square_footage).toLocaleString()} sqft` : ''}</p>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '16px', fontWeight: '800', color: isWon ? '#4ade80' : '#555' }}>{fmtC(tot)}</span>
+                                <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isWon ? '#0a2a0a' : '#2a0a0a', color: isWon ? '#4ade80' : '#ff6b6b', border: `1px solid ${isWon ? '#1a4a1a' : '#5a1a1a'}` }}>{isWon ? 'Won' : 'Lost'}</span>
+                                <button style={{ ...s.btnSm('orange'), fontSize: '11px' }} onClick={() => moveEstimateStage(est.id, 'lead')}>Restore →</button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </>
+                  )}
+                </>
+              )
+            })()}
 
             {/* ── BUSINESS DEVELOPMENT ── */}
             {activeTab === 'bd' && (() => {

@@ -79,7 +79,7 @@ CREATE POLICY "jobs_select" ON jobs
     OR EXISTS (
       SELECT 1 FROM job_assignments
       WHERE job_assignments.job_id = jobs.id
-        AND job_assignments.user_id = auth.uid()
+        AND job_assignments.sub_id = auth.uid()
     )
   );
 
@@ -158,7 +158,7 @@ CREATE POLICY "budget_items_select" ON budget_items
     OR EXISTS (
       SELECT 1 FROM job_assignments
       WHERE job_assignments.job_id = budget_items.job_id
-        AND job_assignments.user_id = auth.uid()
+        AND job_assignments.sub_id = auth.uid()
     )
   );
 

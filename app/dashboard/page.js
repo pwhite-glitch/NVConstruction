@@ -266,7 +266,8 @@ export default function Dashboard() {
   const [levelingEntries, setLevelingEntries] = useState({})
   const [showLeveling, setShowLeveling] = useState(null)
   const [addingScopeItem, setAddingScopeItem] = useState(null)
-  const [newScopeItemForm, setNewScopeItemForm] = useState({ description: '', budget_amount: '' })
+  const [newScopeItemForm, setNewScopeItemForm] = useState({ description: '', budget_amount: '', trade: '' })
+  const [showScopeTemplate, setShowScopeTemplate] = useState(null)
 
   // Business Development state
   const [bdBidPackages, setBdBidPackages] = useState([])
@@ -1409,10 +1410,26 @@ export default function Dashboard() {
       bid_package_id: bidId,
       description: newScopeItemForm.description,
       budget_amount: parseFloat(newScopeItemForm.budget_amount) || 0,
+      trade: newScopeItemForm.trade || null,
       sort_order: items.length,
     })
     if (error) { alert(error.message); return }
-    setNewScopeItemForm({ description: '', budget_amount: '' })
+    setNewScopeItemForm({ description: '', budget_amount: '', trade: '' })
+    await loadScopeItems(bidId)
+  }
+
+  async function bulkAddScopeItems(bidId, templateItems) {
+    const existing = scopeItems[bidId] || []
+    const inserts = templateItems.map((item, i) => ({
+      bid_package_id: bidId,
+      description: item.description,
+      trade: item.trade || null,
+      budget_amount: 0,
+      sort_order: existing.length + i,
+    }))
+    const { error } = await supabase.from('bid_scope_items').insert(inserts)
+    if (error) { alert(error.message); return }
+    setShowScopeTemplate(null)
     await loadScopeItems(bidId)
   }
 
@@ -3690,128 +3707,277 @@ ${estimate.notes ? `
                             ))}
                           </div>
 
-                          {/* ── BID LEVELING ── */}
-                          <div style={{ marginTop: '1rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Scope / Bid Leveling</span>
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                {submissions.length >= 1 && <button style={s.btnSm(showLeveling === pkg.id ? 'orange' : 'gray')} onClick={() => {
-                                  if (showLeveling === pkg.id) { setShowLeveling(null) }
-                                  else { setShowLeveling(pkg.id); loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
-                                }}>{showLeveling === pkg.id ? 'Hide leveling' : 'Level bids'}</button>}
-                                <button style={s.btnSm(addingScopeItem === pkg.id ? 'gray' : 'green')} onClick={() => { setAddingScopeItem(addingScopeItem === pkg.id ? null : pkg.id); if (addingScopeItem !== pkg.id) loadScopeItems(pkg.id) }}>{addingScopeItem === pkg.id ? 'Cancel' : '+ Scope item'}</button>
+                          {/* ── SCOPE BUILDER / BID LEVELING ── */}
+                          <div style={{ marginTop: '1.5rem', borderTop: '1px solid #1a1a1a', paddingTop: '1.5rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                              <div>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Scope Builder</span>
+                                {(scopeItems[pkg.id] || []).length > 0 && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#444' }}>{(scopeItems[pkg.id] || []).length} items</span>}
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                <button style={s.btnSm('gray')} onClick={() => { setShowScopeTemplate(showScopeTemplate === pkg.id ? null : pkg.id); if (showScopeTemplate !== pkg.id) loadScopeItems(pkg.id) }}>
+                                  {showScopeTemplate === pkg.id ? 'Close templates' : '📋 Templates'}
+                                </button>
+                                {submissions.length >= 1 && (scopeItems[pkg.id] || []).length >= 1 && (
+                                  <button style={s.btnSm(showLeveling === pkg.id ? 'orange' : 'gray')} onClick={() => {
+                                    if (showLeveling === pkg.id) { setShowLeveling(null) }
+                                    else { setShowLeveling(pkg.id); loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
+                                  }}>{showLeveling === pkg.id ? 'Close leveling' : '⊞ Level bids'}</button>
+                                )}
+                                <button style={s.btnSm(addingScopeItem === pkg.id ? 'gray' : 'green')} onClick={() => { setAddingScopeItem(addingScopeItem === pkg.id ? null : pkg.id); if (addingScopeItem !== pkg.id) loadScopeItems(pkg.id) }}>
+                                  {addingScopeItem === pkg.id ? 'Done' : '+ Scope item'}
+                                </button>
                               </div>
                             </div>
 
+                            {/* Template picker */}
+                            {showScopeTemplate === pkg.id && (() => {
+                              const TEMPLATES = {
+                                'Restaurant / QSR': [
+                                  { trade: 'Site Work', description: 'Site preparation & grading' },
+                                  { trade: 'Site Work', description: 'Paving & parking lot' },
+                                  { trade: 'Site Work', description: 'Landscaping & irrigation' },
+                                  { trade: 'Concrete', description: 'Foundation & slab' },
+                                  { trade: 'Concrete', description: 'Flatwork & exterior concrete' },
+                                  { trade: 'Structural Steel', description: 'Structural steel & erection' },
+                                  { trade: 'Rough Carpentry', description: 'Framing & blocking' },
+                                  { trade: 'Roofing', description: 'Roofing system' },
+                                  { trade: 'Exterior Envelope', description: 'Exterior cladding & EIFS' },
+                                  { trade: 'Doors & Hardware', description: 'Doors, frames & hardware' },
+                                  { trade: 'Glass & Glazing', description: 'Storefront & glazing' },
+                                  { trade: 'Drywall & Insulation', description: 'Drywall, insulation & ACT ceiling' },
+                                  { trade: 'Tile', description: 'Tile — kitchen & restrooms' },
+                                  { trade: 'Flooring', description: 'Flooring — dining & entry' },
+                                  { trade: 'Painting', description: 'Interior & exterior painting' },
+                                  { trade: 'Specialties', description: 'Restroom accessories' },
+                                  { trade: 'Mechanical/HVAC', description: 'HVAC system' },
+                                  { trade: 'Mechanical/HVAC', description: 'Kitchen hood & exhaust' },
+                                  { trade: 'Plumbing', description: 'Plumbing rough-in & fixtures' },
+                                  { trade: 'Plumbing', description: 'Grease trap' },
+                                  { trade: 'Electrical', description: 'Electrical rough-in & panels' },
+                                  { trade: 'Electrical', description: 'Lighting & devices' },
+                                  { trade: 'Fire Protection', description: 'Fire suppression system' },
+                                  { trade: 'General Conditions', description: 'Dumpster & temporary facilities' },
+                                ],
+                                'Office TI': [
+                                  { trade: 'Concrete', description: 'Slab patching & leveling' },
+                                  { trade: 'Rough Carpentry', description: 'Framing & blocking' },
+                                  { trade: 'Drywall & Insulation', description: 'Drywall, insulation & ceiling' },
+                                  { trade: 'Doors & Hardware', description: 'Doors, frames & hardware' },
+                                  { trade: 'Glass & Glazing', description: 'Interior glass & glazing' },
+                                  { trade: 'Flooring', description: 'Carpet & luxury vinyl tile' },
+                                  { trade: 'Tile', description: 'Restroom tile' },
+                                  { trade: 'Painting', description: 'Painting' },
+                                  { trade: 'Specialties', description: 'Restroom accessories' },
+                                  { trade: 'Specialties', description: 'Casework & millwork' },
+                                  { trade: 'Mechanical/HVAC', description: 'HVAC / VAV boxes' },
+                                  { trade: 'Plumbing', description: 'Plumbing rough-in & fixtures' },
+                                  { trade: 'Electrical', description: 'Electrical & lighting' },
+                                  { trade: 'Electrical', description: 'Data / low voltage' },
+                                  { trade: 'Fire Protection', description: 'Fire suppression modifications' },
+                                  { trade: 'General Conditions', description: 'Dumpster & temporary facilities' },
+                                ],
+                                'Retail Shell': [
+                                  { trade: 'Site Work', description: 'Site grading & utilities' },
+                                  { trade: 'Site Work', description: 'Paving & parking' },
+                                  { trade: 'Concrete', description: 'Foundation & slab' },
+                                  { trade: 'Structural Steel', description: 'Structural steel & erection' },
+                                  { trade: 'Rough Carpentry', description: 'Framing' },
+                                  { trade: 'Roofing', description: 'Roofing system' },
+                                  { trade: 'Exterior Envelope', description: 'Exterior walls & façade' },
+                                  { trade: 'Doors & Hardware', description: 'Storefront doors' },
+                                  { trade: 'Glass & Glazing', description: 'Storefront glazing' },
+                                  { trade: 'Mechanical/HVAC', description: 'HVAC rough-in to shell' },
+                                  { trade: 'Plumbing', description: 'Plumbing rough-in to shell' },
+                                  { trade: 'Electrical', description: 'Electrical service & distribution' },
+                                  { trade: 'Fire Protection', description: 'Fire suppression system' },
+                                ],
+                                'Medical / Clinic': [
+                                  { trade: 'Concrete', description: 'Slab patching' },
+                                  { trade: 'Rough Carpentry', description: 'Framing & blocking' },
+                                  { trade: 'Drywall & Insulation', description: 'Drywall, lead-lined walls & ceiling' },
+                                  { trade: 'Doors & Hardware', description: 'Doors, frames & hardware' },
+                                  { trade: 'Glass & Glazing', description: 'Interior glass' },
+                                  { trade: 'Tile', description: 'Tile — exam rooms & restrooms' },
+                                  { trade: 'Flooring', description: 'Sheet vinyl & carpet' },
+                                  { trade: 'Painting', description: 'Painting' },
+                                  { trade: 'Specialties', description: 'Casework & millwork' },
+                                  { trade: 'Specialties', description: 'Restroom accessories' },
+                                  { trade: 'Mechanical/HVAC', description: 'HVAC' },
+                                  { trade: 'Plumbing', description: 'Plumbing' },
+                                  { trade: 'Electrical', description: 'Electrical & lighting' },
+                                  { trade: 'Electrical', description: 'Data / nurse call / AV' },
+                                  { trade: 'Fire Protection', description: 'Fire suppression' },
+                                ],
+                              }
+                              return (
+                                <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px', marginBottom: '12px' }}>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Load scope template</p>
+                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                                    {Object.keys(TEMPLATES).map(tpl => (
+                                      <button key={tpl} style={{ ...s.btnSm('gray') }} onClick={() => bulkAddScopeItems(pkg.id, TEMPLATES[tpl])}>
+                                        {tpl}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <p style={{ fontSize: '11px', color: '#444', margin: 0 }}>Loads standard scope items for that project type. Delete any that don't apply.</p>
+                                </div>
+                              )
+                            })()}
+
+                            {/* Add scope item form */}
                             {addingScopeItem === pkg.id && (
-                              <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px auto', gap: '8px', alignItems: 'flex-end' }}>
+                              <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px', marginBottom: '12px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 120px auto', gap: '8px', alignItems: 'flex-end', marginBottom: '10px' }} className="rx-grid-2">
                                   <div>
-                                    <label style={s.label}>Scope item</label>
-                                    <input style={s.input} value={newScopeItemForm.description} onChange={e => setNewScopeItemForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Framing, Drywall, Electrical..." />
+                                    <label style={s.label}>Trade / Division</label>
+                                    <select style={s.input} value={newScopeItemForm.trade} onChange={e => setNewScopeItemForm(f => ({ ...f, trade: e.target.value }))}>
+                                      <option value="">— Trade —</option>
+                                      {['Site Work','Concrete','Masonry','Structural Steel','Rough Carpentry','Exterior Envelope','Roofing','Doors & Hardware','Glass & Glazing','Drywall & Insulation','Flooring','Tile','Painting','Specialties','Equipment','Mechanical/HVAC','Plumbing','Electrical','Fire Protection','General Conditions'].map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label style={s.label}>Description</label>
+                                    <input style={s.input} value={newScopeItemForm.description} onChange={e => setNewScopeItemForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Framing & blocking..." onKeyDown={e => e.key === 'Enter' && addScopeItem(pkg.id)} autoFocus />
                                   </div>
                                   <div>
                                     <label style={s.label}>Budget ($)</label>
                                     <input type="number" step="0.01" style={s.input} value={newScopeItemForm.budget_amount} onChange={e => setNewScopeItemForm(f => ({ ...f, budget_amount: e.target.value }))} placeholder="0.00" />
                                   </div>
-                                  <button style={s.btnSm('green')} onClick={() => addScopeItem(pkg.id)}>Add</button>
+                                  <button style={{ ...s.btnSm('green'), alignSelf: 'flex-end' }} onClick={() => addScopeItem(pkg.id)}>Add</button>
                                 </div>
-                                {(scopeItems[pkg.id] || []).length > 0 && (
-                                  <div style={{ marginTop: '10px' }}>
-                                    {(scopeItems[pkg.id] || []).map(item => (
-                                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #1a1a1a', fontSize: '13px' }}>
-                                        <span style={{ color: '#ccc' }}>{item.description}</span>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                          {item.budget_amount > 0 && <span style={{ color: '#555', fontVariantNumeric: 'tabular-nums' }}>${Number(item.budget_amount).toLocaleString()}</span>}
-                                          <button style={{ background: 'none', border: 'none', color: '#5a1a1a', cursor: 'pointer', fontSize: '16px', padding: 0 }} onClick={() => deleteScopeItem(item.id, pkg.id)}>×</button>
+                                {(scopeItems[pkg.id] || []).length > 0 && (() => {
+                                  const allItems = scopeItems[pkg.id] || []
+                                  const byTrade = {}
+                                  allItems.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
+                                  const budgetTotal = allItems.reduce((a, i) => a + Number(i.budget_amount || 0), 0)
+                                  return (
+                                    <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '10px' }}>
+                                      {Object.entries(byTrade).map(([trade, tradeItems]) => (
+                                        <div key={trade} style={{ marginBottom: '8px' }}>
+                                          <div style={{ fontSize: '9px', fontWeight: '800', color: '#e8590c', letterSpacing: '2px', textTransform: 'uppercase', padding: '4px 0 4px', borderBottom: '1px solid #1a1a1a', marginBottom: '4px' }}>{trade}</div>
+                                          {tradeItems.map(item => (
+                                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 4px', fontSize: '13px' }}>
+                                              <span style={{ color: '#ccc' }}>{item.description}</span>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                {item.budget_amount > 0 && <span style={{ color: '#555', fontVariantNumeric: 'tabular-nums' }}>${Number(item.budget_amount).toLocaleString()}</span>}
+                                                <button style={{ background: 'none', border: 'none', color: '#5a2a2a', cursor: 'pointer', fontSize: '18px', padding: '0 2px', lineHeight: 1 }} onClick={() => deleteScopeItem(item.id, pkg.id)}>×</button>
+                                              </div>
+                                            </div>
+                                          ))}
                                         </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                      ))}
+                                      {budgetTotal > 0 && <div style={{ textAlign: 'right', fontSize: '12px', color: '#555', marginTop: '8px', borderTop: '1px solid #1a1a1a', paddingTop: '6px' }}>Budget total: <strong style={{ color: '#f1f1f1' }}>${Number(budgetTotal).toLocaleString()}</strong></div>}
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             )}
 
+                            {/* Leveling matrix */}
                             {showLeveling === pkg.id && (() => {
                               const items = scopeItems[pkg.id] || []
                               const subs = submissions.filter(s => s.status !== 'rejected')
                               const entries = levelingEntries[pkg.id] || []
-                              if (items.length === 0) return <p style={{ fontSize: '13px', color: '#444' }}>Add scope items above to start leveling bids.</p>
-                              if (subs.length === 0) return <p style={{ fontSize: '13px', color: '#444' }}>No active bid submissions to level.</p>
+                              if (items.length === 0) return <p style={{ fontSize: '13px', color: '#444' }}>Add scope items to start leveling.</p>
+                              if (subs.length === 0) return <p style={{ fontSize: '13px', color: '#444' }}>No active bids to level.</p>
                               const getEntry = (subId, itemId) => entries.find(e => e.bid_submission_id === subId && e.bid_scope_item_id === itemId)
                               const subLeveledTotal = (sub) => items.reduce((a, item) => {
                                 const e = getEntry(sub.id, item.id)
                                 return a + (e?.included !== false && e?.amount ? Number(e.amount) : 0)
                               }, 0)
+                              const itemCovered = (item) => subs.some(sub => { const e = getEntry(sub.id, item.id); return e && e.included !== false })
+                              const gapItems = items.filter(item => subs.every(sub => { const e = getEntry(sub.id, item.id); return e && e.included === false }))
+                              const byTrade = {}
+                              items.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
                               const budgetTotal = items.reduce((a, i) => a + Number(i.budget_amount || 0), 0)
-                              const thStyle = { padding: '6px 10px', fontSize: '10px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', textAlign: 'right', whiteSpace: 'nowrap' }
-                              const tdStyle = { padding: '6px 10px', fontSize: '12px', color: '#ccc', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+                              const colW = 120
                               return (
-                                <div style={{ overflowX: 'auto', marginTop: '4px' }}>
-                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
-                                    <thead>
-                                      <tr style={{ borderBottom: '2px solid #1a1a1a' }}>
-                                        <th style={{ ...thStyle, textAlign: 'left' }}>Scope Item</th>
-                                        <th style={thStyle}>Budget</th>
-                                        {subs.map(sub => (
-                                          <th key={sub.id} style={thStyle}>
-                                            <div style={{ color: sub.status === 'awarded' ? '#4ade80' : '#888' }}>{sub.company_name}</div>
-                                            <div style={{ fontSize: '9px', color: '#444', fontWeight: '400' }}>Bid: ${Number(sub.amount).toLocaleString()}</div>
-                                          </th>
+                                <div style={{ marginTop: '8px' }}>
+                                  {gapItems.length > 0 && <div style={{ background: '#2a0a00', border: '1px solid #5a1a00', borderRadius: '6px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', color: '#ff6b6b' }}>⚠ {gapItems.length} scope item{gapItems.length !== 1 ? 's' : ''} excluded by all subs — potential gap in coverage</div>}
+                                  <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${300 + subs.length * colW}px` }}>
+                                      <thead>
+                                        <tr style={{ borderBottom: '2px solid #1a1a1a' }}>
+                                          <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', minWidth: '200px' }}>Scope Item</th>
+                                          <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '10px', fontWeight: '800', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', width: '90px' }}>Budget</th>
+                                          {subs.map(sub => (
+                                            <th key={sub.id} style={{ padding: '8px 10px', textAlign: 'center', width: `${colW}px` }}>
+                                              <div style={{ fontSize: '11px', fontWeight: '700', color: sub.status === 'awarded' ? '#4ade80' : '#aaa' }}>{sub.company_name}</div>
+                                              <div style={{ fontSize: '10px', color: '#444', fontWeight: '500', marginTop: '2px' }}>${Number(sub.amount).toLocaleString()} bid</div>
+                                            </th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {Object.entries(byTrade).map(([trade, tradeItems]) => (
+                                          <>
+                                            <tr key={`hdr-${trade}`}>
+                                              <td colSpan={2 + subs.length} style={{ padding: '8px 10px 3px', fontSize: '9px', fontWeight: '800', color: '#e8590c', letterSpacing: '2px', textTransform: 'uppercase', background: '#090909', borderTop: '1px solid #1a1a1a' }}>{trade}</td>
+                                            </tr>
+                                            {tradeItems.map(item => {
+                                              const isGap = subs.length > 0 && subs.every(sub => { const e = getEntry(sub.id, item.id); return e && e.included === false })
+                                              return (
+                                                <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,50,0,0.05)' : 'transparent' }}>
+                                                  <td style={{ padding: '8px 10px', color: isGap ? '#ff6b6b' : '#ccc', fontSize: '12px' }}>
+                                                    {isGap && <span style={{ marginRight: '5px', fontSize: '11px' }}>⚠</span>}
+                                                    {item.description}
+                                                  </td>
+                                                  <td style={{ padding: '8px 10px', textAlign: 'right', color: '#555', fontVariantNumeric: 'tabular-nums' }}>
+                                                    {item.budget_amount > 0 ? `$${Number(item.budget_amount).toLocaleString()}` : '—'}
+                                                  </td>
+                                                  {subs.map(sub => {
+                                                    const entry = getEntry(sub.id, item.id)
+                                                    const excluded = entry?.included === false
+                                                    const hasEntry = entry !== undefined
+                                                    return (
+                                                      <td key={sub.id} style={{ padding: '6px 8px', textAlign: 'center', background: excluded ? 'rgba(255,0,0,0.04)' : hasEntry ? 'rgba(74,222,128,0.03)' : 'transparent' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                                          <button
+                                                            onClick={() => upsertLevelingEntry(pkg.id, sub.id, item.id, entry?.amount ?? '', excluded)}
+                                                            title={excluded ? 'Click to mark included' : hasEntry ? 'Click to mark excluded' : 'Click to mark included'}
+                                                            style={{ width: '30px', height: '24px', border: `1px solid ${excluded ? '#5a1a1a' : hasEntry ? '#1a4a1a' : '#222'}`, borderRadius: '4px', background: excluded ? '#2a0808' : hasEntry ? '#081a08' : '#111', color: excluded ? '#ff6b6b' : hasEntry ? '#4ade80' : '#444', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.12s ease' }}
+                                                          >
+                                                            {excluded ? '✗' : hasEntry ? '✓' : '·'}
+                                                          </button>
+                                                          <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            value={entry?.amount ?? ''}
+                                                            placeholder="—"
+                                                            disabled={excluded}
+                                                            onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, e.target.value, !excluded)}
+                                                            style={{ width: `${colW - 24}px`, background: excluded ? '#080808' : '#111', border: '1px solid #1a1a1a', borderRadius: '4px', color: excluded ? '#2a2a2a' : '#ccc', padding: '3px 6px', fontSize: '11px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
+                                                          />
+                                                        </div>
+                                                      </td>
+                                                    )
+                                                  })}
+                                                </tr>
+                                              )
+                                            })}
+                                          </>
                                         ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {items.map(item => (
-                                        <tr key={item.id} style={{ borderBottom: '1px solid #111' }}>
-                                          <td style={{ padding: '6px 10px', fontSize: '12px', color: '#ccc' }}>{item.description}</td>
-                                          <td style={tdStyle}>{item.budget_amount > 0 ? `$${Number(item.budget_amount).toLocaleString()}` : '—'}</td>
+                                        <tr style={{ borderTop: '2px solid #2a2a2a', background: '#111' }}>
+                                          <td style={{ padding: '10px 10px', fontSize: '11px', fontWeight: '800', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
+                                          <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '700', color: '#555', fontVariantNumeric: 'tabular-nums' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : '—'}</td>
                                           {subs.map(sub => {
-                                            const entry = getEntry(sub.id, item.id)
-                                            const excluded = entry?.included === false
+                                            const levTotal = subLeveledTotal(sub)
+                                            const rawBid = Number(sub.amount)
+                                            const diff = levTotal - rawBid
                                             return (
-                                              <td key={sub.id} style={{ padding: '4px 6px', textAlign: 'right' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={!excluded}
-                                                    title={excluded ? 'Not included' : 'Included'}
-                                                    onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, entry?.amount ?? '', e.target.checked)}
-                                                    style={{ width: '12px', height: '12px', cursor: 'pointer', opacity: 0.6 }}
-                                                  />
-                                                  <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    value={entry?.amount ?? ''}
-                                                    placeholder="—"
-                                                    disabled={excluded}
-                                                    onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, e.target.value, !excluded)}
-                                                    style={{ width: '90px', background: excluded ? '#0a0a0a' : '#111', border: '1px solid #1a1a1a', borderRadius: '4px', color: excluded ? '#333' : '#ccc', padding: '3px 6px', fontSize: '12px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
-                                                  />
-                                                </div>
+                                              <td key={sub.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '15px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
+                                                {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#facc15' : '#4ade80', marginTop: '2px' }}>{diff > 0 ? '+' : '-'}${Math.round(Math.abs(diff)).toLocaleString()} vs bid</div>}
                                               </td>
                                             )
                                           })}
                                         </tr>
-                                      ))}
-                                      {/* Leveled totals row */}
-                                      <tr style={{ borderTop: '2px solid #2a2a2a', background: '#111' }}>
-                                        <td style={{ padding: '8px 10px', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
-                                        <td style={{ ...tdStyle, fontWeight: '700', color: '#555' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : '—'}</td>
-                                        {subs.map(sub => {
-                                          const levTotal = subLeveledTotal(sub)
-                                          const rawBid = Number(sub.amount)
-                                          const diff = levTotal - rawBid
-                                          return (
-                                            <td key={sub.id} style={{ padding: '8px 6px', textAlign: 'right' }}>
-                                              <div style={{ fontSize: '13px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
-                                              {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#facc15' : '#4ade80' }}>{diff > 0 ? '+' : ''}{Math.round(diff / rawBid * 100)}% vs bid</div>}
-                                            </td>
-                                          )
-                                        })}
-                                      </tr>
-                                    </tbody>
-                                  </table>
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
                               )
                             })()}

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,15 +7,16 @@ const adminSupabase = createClient(
 )
 
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+
   try {
     const { searchParams } = new URL(request.url)
     const job_id = searchParams.get('job_id')
-    const path   = searchParams.get('path')
+    const path = searchParams.get('path')
 
     if (path) {
-      const { data, error } = await adminSupabase.storage
-        .from('job-documents')
-        .createSignedUrl(path, 3600)
+      const { data, error } = await adminSupabase.storage.from('job-documents').createSignedUrl(path, 3600)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ url: data.signedUrl })
     }
@@ -33,24 +35,23 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+
   try {
     const body = await request.json()
     const { action, path: filePath } = body
 
     if (action === 'upload-url') {
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
-      const { data, error } = await adminSupabase.storage
-        .from('job-documents')
-        .createSignedUploadUrl(filePath)
+      const { data, error } = await adminSupabase.storage.from('job-documents').createSignedUploadUrl(filePath)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ signedUrl: data.signedUrl })
     }
 
     if (action === 'upload-url-residential') {
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
-      const { data, error } = await adminSupabase.storage
-        .from('job-documents')
-        .createSignedUploadUrl(filePath)
+      const { data, error } = await adminSupabase.storage.from('job-documents').createSignedUploadUrl(filePath)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ signedUrl: data.signedUrl, path: filePath })
     }
@@ -66,9 +67,7 @@ export async function POST(request) {
     if (action === 'signed-url') {
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
       const opts = body.download ? { download: true } : undefined
-      const { data, error } = await adminSupabase.storage
-        .from('job-documents')
-        .createSignedUrl(filePath, 3600, opts)
+      const { data, error } = await adminSupabase.storage.from('job-documents').createSignedUrl(filePath, 3600, opts)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ url: data.signedUrl })
     }

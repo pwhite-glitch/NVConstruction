@@ -8,7 +8,8 @@
     "start": "next start",
     "cap:sync": "npx cap sync",
     "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android"
+    "cap:android": "npx cap open android",
+    "test": "jest"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
@@ -22,7 +23,12 @@
     "resend": "^6.12.2"
   },
   "devDependencies": {
+    "@babel/core": "^8.0.5",
+    "@babel/preset-env": "^8.0.5",
+    "@jest/globals": "^30.5.1",
     "autoprefixer": "^10.0.1",
+    "babel-jest": "^30.5.1",
+    "jest": "^30.5.1",
     "postcss": "^8",
     "tailwindcss": "^3.3.0",
     "typescript": "^7.0.2"

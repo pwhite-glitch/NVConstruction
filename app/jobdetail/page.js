@@ -1,8 +1,9 @@
-'use client'
+﻿'use client'
 import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
+import { authFetch } from '../../lib/client-fetch'
 
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
@@ -89,7 +90,7 @@ function CoAttachmentLink({ path, supabase }) {
     supabase.storage.from('receipts').createSignedUrl(path, 3600).then(({ data }) => { if (data?.signedUrl) setUrl(data.signedUrl) })
   }, [path, supabase])
   if (!url) return null
-  return <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#e8590c', textDecoration: 'none', marginTop: '3px', display: 'inline-block' }}>📎 Attachment</a>
+  return <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#e8590c', textDecoration: 'none', marginTop: '3px', display: 'inline-block' }}>ðŸ“Ž Attachment</a>
 }
 
 function JobDetailInner() {
@@ -512,10 +513,10 @@ function JobDetailInner() {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const { data: prof, error: profErr } = await supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
+      const { data: prof, error: profErr } = await supabase.from('profiles').select('role, full_name, hide_budget').eq('id', session.user.id).single()
       const subRoles = ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin']
       if (!prof) {
-        setErrMsg(`Could not load your profile — ${profErr ? profErr.code + ': ' + profErr.message : 'no profile found'}. Contact your administrator.`)
+        setErrMsg(`Could not load your profile â€” ${profErr ? profErr.code + ': ' + profErr.message : 'no profile found'}. Contact your administrator.`)
         setLoading(false)
         return
       }
@@ -525,10 +526,10 @@ function JobDetailInner() {
       const effectiveRole = (devRole === 'apm' && prof.role === 'pm') ? 'apm' : prof.role
       setUserRole(effectiveRole)
       setCurrentUserName(prof.full_name || '')
-      // hide_budget column pending SQL migration — defaults to false
+      if (prof.hide_budget) setHideBudget(true)
       const { data: jobData, error: jobErr } = await supabase.from('jobs').select('*').eq('id', id).single()
       if (jobErr || !jobData) {
-        setErrMsg(`Job not found (id: ${id}) — ${jobErr ? jobErr.code + ': ' + jobErr.message : 'no data returned'}`)
+        setErrMsg(`Job not found (id: ${id}) â€” ${jobErr ? jobErr.code + ': ' + jobErr.message : 'no data returned'}`)
         setLoading(false)
         return
       }
@@ -551,7 +552,7 @@ function JobDetailInner() {
   async function loadContracts() {
     const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
     if (!summary) { setContracts([]); return [] }
-    // Fetch budget_item_id from the base table — the view may predate this column
+    // Fetch budget_item_id from the base table â€” the view may predate this column
     const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
@@ -586,7 +587,7 @@ function JobDetailInner() {
     for (const l of lines || []) {
       const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
       const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
-      // Store dollar amounts when available — accurate even when overbilled (>100%)
+      // Store dollar amounts when available â€” accurate even when overbilled (>100%)
       // Fall back to pct-based for legacy lines that never stored dollars
       map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
     }
@@ -858,10 +859,10 @@ function JobDetailInner() {
       const cost = directCosts.find(c => c.id === costId)
       const superEmail = cost?._profile?.email || null
       if (superEmail) {
-        sendEmail(superEmail, `Cost entry rejected — #${job?.job_number} ${job?.project_name}`,
+        sendEmail(superEmail, `Cost entry rejected â€” #${job?.job_number} ${job?.project_name}`,
           emailWrap(`
             <h2 style="color:#ff6b6b;margin:0 0 1rem">Cost entry rejected</h2>
-            <p style="color:#aaa">Your direct cost entry <strong style="color:#f1f1f1">${cost.description}</strong> ($${Number(cost.amount).toLocaleString()}) on <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong> has been rejected.</p>
+            <p style="color:#aaa">Your direct cost entry <strong style="color:#f1f1f1">${cost.description}</strong> ($${Number(cost.amount).toLocaleString()}) on <strong style="color:#f1f1f1">#${job?.job_number} â€” ${job?.project_name}</strong> has been rejected.</p>
             ${notes ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${notes}</p></div>` : '<p style="color:#888;font-size:13px;margin:1rem 0 0">Contact NV Construction if you have questions.</p>'}
           `)
         )
@@ -1078,7 +1079,7 @@ function JobDetailInner() {
   }
 
   async function applyBillingToAia(billing) {
-    // Try SOV lines first: billing_sov_lines → subcontract_sov_lines → subcontracts → budget_item_id
+    // Try SOV lines first: billing_sov_lines â†’ subcontract_sov_lines â†’ subcontracts â†’ budget_item_id
     const { data: sovLines } = await supabase
       .from('billing_sov_lines')
       .select('amount, subcontract_sov_lines(subcontract_id, subcontracts(budget_item_id))')
@@ -1103,7 +1104,7 @@ function JobDetailInner() {
       }
     }
 
-    // No automatic mapping found — open manual picker
+    // No automatic mapping found â€” open manual picker
     if (Object.keys(byBudgetItem).length === 0) {
       setManualMapBillingId(billing.id)
       setManualMapBudgetItemId('')
@@ -1466,7 +1467,7 @@ function JobDetailInner() {
         ? (subNvTotal > 0 ? subNvTotal : baseContract)
         : baseContract + approvedCOsVal
     const origContract = (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
-    const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
+    const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : 'â€”'
     const genDate = new Date().toLocaleDateString()
     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
@@ -1505,7 +1506,7 @@ function JobDetailInner() {
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     w.document.write(`<!DOCTYPE html><html><head>
-<title>AIA G702/G703 — App #${app.app_number} — Job #${job.job_number}</title>
+<title>AIA G702/G703 â€” App #${app.app_number} â€” Job #${job.job_number}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 24px; line-height: 1.5; }
@@ -1538,18 +1539,18 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
 <button class="btn" style="background:#666" onclick="window.close()">Close</button>
 
 <h1>Application and Certificate for Payment</h1>
-<div class="sub">AIA Document G702 &nbsp;·&nbsp; Application No. ${app.app_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+<div class="sub">AIA Document G702 &nbsp;Â·&nbsp; Application No. ${app.app_number} &nbsp;Â·&nbsp; Period to: ${periodDate}</div>
 
 <div class="hgrid">
   <div>
     <div class="hblock" style="margin-bottom:10px">
       <div class="hlabel">To Owner</div>
-      <div class="hval">${job.owner_company || '—'}</div>
+      <div class="hval">${job.owner_company || 'â€”'}</div>
       ${job.owner_name ? `<div class="hsub">${job.owner_name}</div>` : ''}
     </div>
     <div class="hblock">
       <div class="hlabel">Via Architect</div>
-      <div class="hval">${job.architect_name || job.architect_company || '—'}</div>
+      <div class="hval">${job.architect_name || job.architect_company || 'â€”'}</div>
       ${job.architect_company && job.architect_name ? `<div class="hsub">${job.architect_company}</div>` : ''}
     </div>
   </div>
@@ -1561,7 +1562,7 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
     <div class="hblock">
       <div class="hlabel">Project</div>
       <div class="hval">${job.project_name}</div>
-      <div class="hsub">Contract No. ${job.job_number}${job.location ? ' &nbsp;·&nbsp; ' + job.location : ''}</div>
+      <div class="hsub">Contract No. ${job.job_number}${job.location ? ' &nbsp;Â·&nbsp; ' + job.location : ''}</div>
     </div>
   </div>
 </div>
@@ -1570,7 +1571,7 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
 <table class="g702">
   <tr><td>1.</td><td>Original Contract Sum</td><td>${fmt(origContract)}</td></tr>
   <tr><td>2.</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
-  <tr><td>3.</td><td>Contract Sum to Date (Line 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
+  <tr><td>3.</td><td>Contract Sum to Date (Line 1 Â± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
   <tr><td>4.</td><td>Total Completed &amp; Stored to Date (column G, G703)</td><td>${fmt(totalCompleted)}</td></tr>
   <tr><td>5.</td><td>Retainage: ${app.retainage_pct}% of Completed Work</td><td>(${fmt(totalRetainage)})</td></tr>
   <tr><td>6.</td><td>Total Earned Less Retainage (Line 4 less 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
@@ -1582,12 +1583,12 @@ h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacin
 ${sovLines.length > 0 ? `
 <div class="page-break">
 <h1>Continuation Sheet</h1>
-<div class="sub">AIA Document G703 &nbsp;·&nbsp; Application No. ${app.app_number} &nbsp;·&nbsp; ${job.project_name} &nbsp;·&nbsp; Contract No. ${job.job_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+<div class="sub">AIA Document G703 &nbsp;Â·&nbsp; Application No. ${app.app_number} &nbsp;Â·&nbsp; ${job.project_name} &nbsp;Â·&nbsp; Contract No. ${job.job_number} &nbsp;Â·&nbsp; Period to: ${periodDate}</div>
 <table class="g703">
   <thead><tr>
     <th style="width:28px">A<br>No.</th>
     <th style="width:22px">B<br>Code</th>
-    <th>C — Description of Work</th>
+    <th>C â€” Description of Work</th>
     <th>D<br>Scheduled<br>Value</th>
     <th>E<br>Work Completed<br>From Previous<br>Application</th>
     <th>F<br>Work Completed<br>This Period</th>
@@ -1623,7 +1624,7 @@ ${sovLines.length > 0 ? `
 </table>
 </div>` : ''}
 
-<div class="foot">Generated ${genDate} &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Job #${job.job_number} — ${job.project_name}</div>
+<div class="foot">Generated ${genDate} &nbsp;Â·&nbsp; NV Construction &nbsp;Â·&nbsp; Job #${job.job_number} â€” ${job.project_name}</div>
 </body></html>`)
     w.document.close()
   }
@@ -1663,7 +1664,7 @@ ${sovLines.length > 0 ? `
     setNvSubcontracts(data || [])
   }
 
-  // ── Purchase Orders ──────────────────────────────────────────
+  // â”€â”€ Purchase Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function loadPurchaseOrders() {
     const res = await fetch(`/api/purchase-orders?job_id=${id}`)
     const data = await res.json()
@@ -1913,7 +1914,7 @@ ${sovLines.length > 0 ? `
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     w.document.write(`<!DOCTYPE html><html><head>
-<title>Change Order — ${sc.gc_name || 'GC'} — ${job.project_name}</title>
+<title>Change Order â€” ${sc.gc_name || 'GC'} â€” ${job.project_name}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 32px; max-width: 760px; margin: 0 auto; line-height: 1.6; }
@@ -1949,7 +1950,7 @@ body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 32
 <div class="header">
   <div>
     <div class="co-title">Change Order</div>
-    <div class="co-sub">NV Construction, Inc. &nbsp;·&nbsp; Subcontract Change Order</div>
+    <div class="co-sub">NV Construction, Inc. &nbsp;Â·&nbsp; Subcontract Change Order</div>
   </div>
   <div>
     <div class="co-number-label">Change Order No.</div>
@@ -1961,7 +1962,7 @@ body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 32
   <div>
     <div class="block">
       <div class="block-label">To (General Contractor)</div>
-      <div class="block-val">${sc.gc_name || '—'}</div>
+      <div class="block-val">${sc.gc_name || 'â€”'}</div>
     </div>
   </div>
   <div>
@@ -1971,8 +1972,8 @@ body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 32
     </div>
     <div class="block">
       <div class="block-label">Project</div>
-      <div class="block-val">${job.project_name || '—'}</div>
-      <div class="block-sub">Job #${job.job_number || '—'}${job.location ? ' &nbsp;·&nbsp; ' + job.location : ''}</div>
+      <div class="block-val">${job.project_name || 'â€”'}</div>
+      <div class="block-sub">Job #${job.job_number || 'â€”'}${job.location ? ' &nbsp;Â·&nbsp; ' + job.location : ''}</div>
     </div>
   </div>
 </div>
@@ -2010,22 +2011,22 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
 <div class="sig-grid">
   <div class="sig-block">
-    <div class="sig-label">Subcontractor — NV Construction, Inc.</div>
+    <div class="sig-label">Subcontractor â€” NV Construction, Inc.</div>
     <div class="sig-line"></div>
-    <div class="sig-name">Authorized Signature &nbsp;·&nbsp; Date</div>
+    <div class="sig-name">Authorized Signature &nbsp;Â·&nbsp; Date</div>
     <div style="margin-top:16px;height:28px;border-top:none;"></div>
     <div class="sig-name" style="border-top:1px solid #bbb;margin-top:12px;padding-top:4px;">Print Name &amp; Title</div>
   </div>
   <div class="sig-block">
-    <div class="sig-label">General Contractor — ${sc.gc_name || '________________'}</div>
+    <div class="sig-label">General Contractor â€” ${sc.gc_name || '________________'}</div>
     <div class="sig-line"></div>
-    <div class="sig-name">Authorized Signature &nbsp;·&nbsp; Date</div>
+    <div class="sig-name">Authorized Signature &nbsp;Â·&nbsp; Date</div>
     <div style="margin-top:16px;height:28px;border-top:none;"></div>
     <div class="sig-name" style="border-top:1px solid #bbb;margin-top:12px;padding-top:4px;">Print Name &amp; Title</div>
   </div>
 </div>
 
-<div class="foot">Generated ${new Date().toLocaleDateString()} &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; ${job.project_name}</div>
+<div class="foot">Generated ${new Date().toLocaleDateString()} &nbsp;Â·&nbsp; NV Construction &nbsp;Â·&nbsp; Job #${job.job_number} &nbsp;Â·&nbsp; ${job.project_name}</div>
 </body></html>`)
     w.document.close()
   }
@@ -2043,7 +2044,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
 
-  // ── Field Photos ────────────────────────────────────────────
+  // â”€â”€ Field Photos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function fpThumb(path) { return path?.replace(/\.jpg$/i, '_thumb.jpg') ?? null }
 
   async function fetchFieldPhotoUrls(paths) {
@@ -2089,7 +2090,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     }
   }
 
-  // ── Sub SOV ─────────────────────────────────────────────────
+  // â”€â”€ Sub SOV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function loadContractSov(contractId) {
     // Backfill any approved COs that are missing an SOV line before loading
     try {
@@ -2145,7 +2146,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setBillingSovData(prev => ({ ...prev, [submissionId]: data || [] }))
   }
 
-  // ── Schedule ────────────────────────────────────────────────
+  // â”€â”€ Schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function loadScheduleFiles() {
     const { data } = await supabase.from('job_schedule_files').select('*').eq('job_id', id).order('uploaded_at', { ascending: false })
     setScheduleFiles(data || [])
@@ -2195,7 +2196,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   async function uploadJobDoc(file) {
     setUploadingDoc(true)
     const path = `${id}/${docCategory}/${Date.now()}-${file.name}`
-    const res = await fetch('/api/job-docs', {
+    const res = await authFetch('/api/job-docs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'upload-url', path }),
@@ -2216,7 +2217,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function openJobDoc(storagePath) {
-    const res = await fetch('/api/job-docs', {
+    const res = await authFetch('/api/job-docs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'signed-url', path: storagePath }),
@@ -2240,7 +2241,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   async function uploadDrawing(file) {
     setUploadingDrawing(true)
     const path = `${id}/${Date.now()}-${file.name}`
-    const res = await fetch('/api/drawings', {
+    const res = await authFetch('/api/drawings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'upload-url', path }),
@@ -2268,7 +2269,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function openDrawing(storagePath) {
-    const res = await fetch('/api/drawings', {
+    const res = await authFetch('/api/drawings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'signed-url', path: storagePath }),
@@ -2279,7 +2280,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   async function deleteDrawing(drawingId, storagePath) {
     if (!window.confirm('Delete this drawing?')) return
-    await fetch('/api/drawings', {
+    await authFetch('/api/drawings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', storage_path: storagePath, drawing_id: drawingId }),
@@ -2391,7 +2392,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setSavingRelease(true)
     const { data: { session } } = await supabase.auth.getSession()
     const contract = contracts.find(c => c.id === releaseForm.subcontract_id)
-    await fetch('/api/retainage-release', {
+    await authFetch('/api/retainage-release', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...releaseForm, job_id: id, released_by: session.user.id, sub_id: contract?.sub_id || null }),
@@ -2541,7 +2542,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     } catch { return [] }
   }
 
-  // ── Contracts ──────────────────────────────────────────────
+  // â”€â”€ Contracts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function addContract() {
     if (!contractForm.dir_id || !contractForm.contract_value || !contractForm.description) return
     setAddingContract(true)
@@ -2594,7 +2595,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
         const firstName = dirEntry.contact_name?.split(' ')[0] || 'there'
         const contractAmt = parseFloat(contractForm.contract_value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
         const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
-        sendEmail(dirEntry.email, `Action required: Set up your Schedule of Values — ${job?.project_name || ''}`,
+        sendEmail(dirEntry.email, `Action required: Set up your Schedule of Values â€” ${job?.project_name || ''}`,
           emailWrap(`
             <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Hey ${firstName},</h2>
             <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
@@ -2602,7 +2603,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
               ${contractForm.description ? `(${contractForm.description})` : ''} for <strong style="color:#e8590c">${contractAmt}</strong>.
             </p>
             <p style="color:#aaa;margin:0 0 20px;font-size:14px;line-height:1.6">
-              Before you can submit billing, you need to create your <strong style="color:#f1f1f1">Schedule of Values</strong> — a breakdown of your contract into line items that you'll bill against each period.
+              Before you can submit billing, you need to create your <strong style="color:#f1f1f1">Schedule of Values</strong> â€” a breakdown of your contract into line items that you'll bill against each period.
             </p>
             <table cellpadding="0" cellspacing="0" style="margin:0 0 24px">
               <tr>
@@ -2684,7 +2685,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const scopeNoteLines = (f.scope_notes || '').split('\n').filter(Boolean).join('<br>')
     const subNoShort = f.subcontract_number.split('-').pop() || f.subcontract_number
     const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/logo.png'
-    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Subcontract — ${f.sub_name}</title>
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Subcontract â€” ${f.sub_name}</title>
 <style>
 @page{size:8.5in 11in;margin:.85in 1in}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -2778,7 +2779,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <p class="section-lg">CONTRACT DOCUMENTS:</p>
   <p>${contractDocLines}</p>
   <br>
-  <p><strong>SUBMITTALS</strong><br>Provide materials and equipment per plans and specifications. No substitutions allowed. Subcontractor is responsible for any delay arising from substitution requests. Submittal documents for Owner's records to be provided via overnight delivery to NV Construction, 2000 N. Eastman Road Longview, Texas 75601 – Phone: 903-331-8895.</p>
+  <p><strong>SUBMITTALS</strong><br>Provide materials and equipment per plans and specifications. No substitutions allowed. Subcontractor is responsible for any delay arising from substitution requests. Submittal documents for Owner's records to be provided via overnight delivery to NV Construction, 2000 N. Eastman Road Longview, Texas 75601 â€“ Phone: 903-331-8895.</p>
   <p>Completion of submittal requirements in their entirety is required within one week of contract issuance. Approval of submittals within one week of receipt will be requested from Architect.</p>
   <br>
   <p><span class="bu">SUPPLIER / MATERIAL NOTIFICATION REQUIREMENTS</span><br><strong>All supplies and materials purchased for above referenced job site must be listed on the Application &amp; Certificate for Payment form. Required information must include: Name of Company (ies), phone number(s) with area code, dollar amount furnished to date, amount paid to date and materials purchased. This information MUST be provided to NV Construction before the first draw is paid.</strong></p>
@@ -2811,7 +2812,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <div class="provision"><span class="pnum">7.&nbsp;&nbsp;&nbsp;&nbsp;CLAIMS AND DISPUTES:</span> All claims, including for increases in subcontract price or time, or for damages, and regardless of whether the claim is for delays, disruption, interference, differing site conditions, extras, changes, or administration of the Subcontract, which Subcontractor has or wishes to assert against Contractor must be presented in writing to Contractor not later than 10 days after Subcontractor is aware or should be aware that a claim will or does exist, even though the exact nature of the claim and the amount of the claim may not be determinable at that time. If Subcontractor fails to submit the claim in writing to Contractor within the time required in this paragraph, then Subcontractor waives the claim and any right to recover for the claim, including any damages in any way related to the claim. The nature of the claim and the amount of the claim, to the extent known at the time, must be presented to Contractor in the required writing.<br>&nbsp;&nbsp;&nbsp;&nbsp;(1)&nbsp;Subject to the foregoing requirements in this Paragraph 7, should any dispute or controversy arise between Contractor and Subcontractor concerning any matter involving or arising out of the Subcontract, the following procedures shall apply. If the claim results from action or acts by Owner, including without limitation, changes ordered, interpretation of the General Contract by Owner or its authorized representative, or any dispute arising out of inaccuracies, deficiencies, discrepancies or ambiguities in the General Contract, then Subcontractor shall make all claims promptly to Contractor for additional costs, extensions of time, and damages for delays or other causes in accordance with the General Contract. Any such claims which will affect or become part of a claim which Contractor is required to make under the General Contract within a specified time period or in a specified manner shall be made in a sufficient time to permit Contractor to satisfy the requirements of the General Contract. Failure of Subcontractor to make such a timely claim shall bind Subcontractor to the same consequences as those to which Contractor is bound. Subcontractor shall be bound by all procedural provisions, administrative determinations and final judgments which are binding on Contractor as to such claims. Subcontractor shall bear the expenses, including reimbursement of Contractor's attorney fees and providing a reasonable retainer to initiate a claim against the Owner, and the burden of prosecuting and proving any such claims against Owner and shall give Contractor adequate and timely notification in writing of any such claim or dispute action it desires Contractor to make on its behalf against Owner. The terms of the dispute resolution and claims procedure contained in the General Contract shall be binding upon Subcontractor, whether or not Subcontractor records or files a mechanic's lien, stop notice or prosecutes suit thereon or against any bond posted by Contractor; and Subcontractor hereby acknowledges that this Subcontract waives, affects and impairs rights it would otherwise have in connection with such liens, stop notices and suits on said bonds.<br>&nbsp;&nbsp;&nbsp;&nbsp;(2)&nbsp;Subject to the foregoing requirements in this Paragraph 7, if the dispute arises out of or relates to this Subcontract and is solely between Contractor and Subcontractor, then the following dispute resolution procedure shall apply: (1) The dispute or controversy shall be submitted by one party to the other in writing; (2) the parties shall make a good faith attempt to settle such dispute; (3) if the dispute is not settled under (1) and (2), then the parties shall submit to non-binding mediation with the parties agreeing on a neutral mediator. Any disputes or controversies not resolved or settled by the parties under the previous provisions shall be submitted to binding arbitration in accordance with the Construction Industry Rules of the American Arbitration Association and any judgment upon the award by the arbitrators may be entered by any court having jurisdiction. The venue for any hearing under this arbitration provision shall be in Dallas County, Texas. Each party shall bear their own attorney and expert fees in connection with such a dispute and no other provisions of this Subcontract shall be construed otherwise.<br>&nbsp;&nbsp;&nbsp;&nbsp;(3)&nbsp;If the dispute between the Contractor and Subcontractor involves claims or potential disputes by, with or against other subcontractors of Contractor, then Subcontractor agrees to the consolidation of all such related claims or disputes into one consolidated arbitration proceeding with Contractor and the other subcontractors as further provided for above.<br>&nbsp;&nbsp;&nbsp;&nbsp;(4)&nbsp;During the pendency of any dispute under this Subcontract, whether it involves Owner or only Contractor, Subcontractor shall continue working and will proceed on any disputed items of work without waiving its claims.</div>
   <div class="provision"><span class="pnum">8.&nbsp;&nbsp;&nbsp;&nbsp;CLAIMS AGAINST SUBCONTRACTOR:</span> Subcontractor shall settle all claims of its suppliers and subcontractors for labor, materials, and/or damages resulting from the Subcontract Work or take such other action as directed by Contractor in order to hold Contractor and Owner harmless from expense and/or liability for same. In addition, If any lien or bond claim is filed or if a claim of any nature is asserted against the Owner or the Contractor on account of any obligation of the Subcontractor, the Subcontractor shall, within five (5) days thereafter, cause such lien or claim to be satisfied, discharged or bonded off at the Subcontractor's sole cost and expense. The Subcontractor's failure so to do shall constitute a default hereunder. If suit be brought to enforce any such claim, whether valid or not, Subcontractor shall, if requested by Contractor, defend any such suit at its own expense and in any event shall indemnify Contractor against any loss, damage or expenses including attorney's fees, incurred or suffered as a result thereof.</div>
   <div class="provision"><span class="pnum">9.&nbsp;&nbsp;&nbsp;&nbsp;INSURANCE AND BONDS:</span><br>&nbsp;&nbsp;&nbsp;&nbsp;(1)&nbsp;<span class="pnum">Commercial General and Umbrella Liability Insurance.</span> Subcontractor shall maintain commercial general liability (CGL) and, if necessary, commercial umbrella insurance with a limit of not less than $1,000,000 Bodily Injury and Property Damage Combined Single limit for each occurrence during the project and for a period of ten years after completion of the project. The CGL insurance shall contain a general aggregate limit which shall apply separately to this project using ISO endorsement CG2503 or a substitute providing equivalent coverage. CGL, insurance shall cover liability arising from premises, operations, independent contractors, products completed operations, personal injury and advertising injury, and contractual liability. During the period required in this paragraph to maintain a CGL policy, Contractor, Owner and any other party required under the General Contract shall be included as an additional insured under the CGL, using ISO Additional Insured Endorsement CG 2010 and CG2037 Owners, Lessees or Contractors-Completed Operations or substitutes providing equivalent coverage, and under the commercial umbrella, if any. This insurance shall apply as primary and non-contributory insurance with respect to any other insurance or self-insurance programs maintained by Contractor or Owner. Subcontractor and its insurer waive all rights against Contractor, Owner and their agents, officers, directors and employees for recovery of damages to the extent these damages are covered by the commercial general liability or commercial umbrella liability insurance maintained pursuant to this Article 9.<br>&nbsp;&nbsp;&nbsp;&nbsp;(2)&nbsp;<span class="pnum">Business Auto and Umbrella Liability Insurance.</span> Subcontractor shall maintain business auto liability and, if necessary, commercial umbrella liability insurance with a limit of not less than $1,000,000 Bodily Injury and Property Damage Combined Single limit for each accident. Such insurance shall cover liability arising out of any auto (including owned, hired, and non-owned autos). Contractor, Owner and any other party required under the General Contract shall be included as an insured under the Business Auto Policy using ISO Additional Insured Endorsement CG 2010 and CG2037 Owners, Lessees or Contractors-Completed Operations or substitutes providing equivalent coverage, and under the commercial umbrella, if any. Subcontractor and its insurer waive all rights against Contractor and Owner, and their agents, officers, directors and employees for recovery of damages to the extent these damages are covered by the business auto liability or commercial umbrella liability insurance obtained by Subcontractor pursuant to this Article 9.<br>&nbsp;&nbsp;&nbsp;&nbsp;(3)&nbsp;<span class="pnum">Workers Compensation Insurance.</span> Subcontractor shall maintain workers compensation and employer's liability insurance. The employer's liability limits shall not be less than $500,000 each accident for bodily injury by accident or $500,000 each employee for bodily injury by disease. Subcontractor and its insurer waive all rights against Contractor and Owner, and their agents, officers, directors and employees for recovery of damages to the extent these damages are covered by the workers compensation policy insurance obtained by Subcontractor pursuant to this Article 9.<br>&nbsp;&nbsp;&nbsp;&nbsp;(4)&nbsp;<span class="pnum">Evidence of Insurance.</span> Prior to commencing the work, Subcontractor shall furnish Contractor with a certificate(s) of insurance, executed by a duly authorized representative of each insurer, showing compliance with the insurance requirements set forth above. All certificates shall provide for 30 days written notice to Contractor prior to the cancellation or material change of any insurance referred to therein. Contractor shall have the right, but not the obligation, of prohibiting Subcontractor or any subcontractor from entering the project site until such certificates or other evidence that insurance has been placed in complete compliance with these requirements is received and approved by Contractor. Failure to maintain the required insurance may result in termination of this Subcontract at Contractor's option. If Subcontractor fails to maintain the insurance as set forth herein, Contractor shall have the right, but not the obligation, to purchase and charge Subcontractor for any costs incurred to purchase said insurance. Subcontractor shall provide certified copies of all insurance policies required above within 10 days of Contractor's written request for said copies.<br>&nbsp;&nbsp;&nbsp;&nbsp;(5)&nbsp;<span class="pnum">Subcontractors' Insurance.</span> Subcontractor shall cause each subcontractor employed by Subcontractor to purchase and maintain insurance of the type, limits and endorsements specified above. Subcontractor shall furnish copies of certificates of insurance evidencing coverage for each subcontractor.<br>&nbsp;&nbsp;&nbsp;&nbsp;(6)&nbsp;<span class="pnum">Builders' Risk Insurance.</span> To the extent that Builders' Risk insurance is carried by Contractor on the General Contract, Subcontractor may have an interest in the insurance policy; however, the provisions of this paragraph do not make it mandatory upon Contractor to carry any insurance whatsoever for the benefit of Subcontractor. Subcontractor agrees he will assume the responsibility to determine whether Builders' Risk insurance is in force. In the event Contractor should elect to carry Builders' Risk Insurance, and only in such event, Subcontractor agrees to submit immediately, for the purpose of determining values under the insurance coverage, a complete breakdown of this contract price showing materials, labor, expendable tools, supplies or any other thing or article of value, the cost of which is included in the subcontract price stated in this Subcontract, and further agrees to pay 90% of the premium applicable to such values reported by Subcontractor and if such payment is not made, authorizes Contractor to deduct such amounts from any payment due Subcontractor. Further, Subcontractor will be responsible for reimbursing Contractor for an amount equal to the percentage of this Subcontract value in relation to the total General Contract Amount to cover any deductible applicable to a Contractor-purchased Builder's Risk policy.<br>&nbsp;&nbsp;&nbsp;&nbsp;(7)&nbsp;Subcontractor is fully responsible for all loss or damage to materials delivered and stored on the job site until such materials are actually installed and/or incorporated into the job.<br>&nbsp;&nbsp;&nbsp;&nbsp;(8)&nbsp;<span class="pnum">Performance and Payment Bond.</span> Subcontractor shall provide performance and payment bonds, if required by Contractor, on a form acceptable to Contractor, prescribed by and with a surety acceptable to Contractor in the full amount of this Subcontract, for the faithful performance of this Subcontract. The premium for bonds shall be paid by Subcontractor and the cost shall be included in subcontract amount.</div>
-  <div class="provision"><span class="pnum">10.&nbsp;&nbsp;&nbsp;&nbsp;</span>To the fullest extent permitted by the law, Subcontractor shall fully indemnify, defend and hold harmless Contractor, Owner, and anyone who Contractor has agreed to defend or indemnify, including their respective officers, directors, agents, subsidiaries, and employees (all such persons or entities hereinafter referred to as "Indemnitees") from and against all claims, demands, liabilities, causes of action, suits, judgments, or defense expenses (including attorney's fees) for or on account of or in any way arising out of Subcontractor's Work, fault, breaches, or negligence, for (i) the death or personal injury of any persons (including without limitation Subcontractor, its sub-subcontractors, and their respective agents, employees and invitees; (ii) damages to property of any person (including the loss or loss of use thereof) directly or indirectly connected with, attributable to, or arising from the work to be performed by Subcontractor under this subcontract; (iii) any loss or damage of whatever kind or nature directly or indirectly connected with, attributable to, or arising from the work to be performed under this Subcontract by Subcontractor, its sub-subcontractors, and their respective agents, employees, or invitees; (iv) the providing by Contractor of equipment, operators, and/or other personnel to Subcontractor, its sub-subcontractors, and their respective agents, employees and invitees; (v) in the case of Maryland contracts the costs or damage created by the nonpayment of wages, fringe or other benefit payments, or contributions by Subcontractor or by a subcontractor at any tier working under Subcontractor or otherwise failing to comply with Md. Code, Lab. &amp; Empl. Art. § 3-507.2(b); or (vi) in the case of California contracts the costs or damage created by the nonpayment of wages, fringe or other benefit payments, or contributions by Subcontractor or by a subcontractor at any tier working under Subcontractor or otherwise failing to comply with Cal. Labor Code 218.7; except that as provided for by California Civil Code section 2782.05, Subcontractor shall not be liable for claims of death or bodily injury to persons, injury to property, or any other loss, damage, or expense to the extent the claims arise out of, pertain to, or relate to the active negligence or willful misconduct of Contractor or such other indemnitee, or for defects in design furnished by Contractor or such other indemnitees, or to the extent the claims do not arise out of the scope of work of the Subcontractor. This indemnification provision does not negate, abridge or reduce any other rights or obligations of the persons and entities described herein with respect to indemnity. This indemnification agreement is binding on the Subcontractor, to the fullest extent permitted by law, regardless of the passive negligence, acts or omissions of any Indemnitees. <span class="ul">Further, notwithstanding the foregoing and in any and all claims against Indemnitees by any employee of Indemnitors, the indemnity obligation under this paragraph shall not be limited by any limitation on the amount or type of damages, compensation, or benefits payable by or for Subcontractor under any workers compensation act, disability benefit act, any other employee benefit act, or by any independent obligation of Subcontractor to provide a policy or policies of insurance as provided under the terms of this Subcontract. One percent (1%) of the total Subcontract price represents specific consideration for the obligations assumed by Subcontractor under the above indemnity provisions.</span> In the case of California contracts this indemnity agreement shall be interpreted so as to comply with and be enforceable under the California Civil Code including Sections 2778, 2782 and 2782.05, et seq., and any provisions that are found to be inconsistent with those sections shall be read to meet the requirements of such code sections. In the case of Maryland contracts this indemnity agreement shall be interpreted so as to comply with and be enforceable under Md. Code Ann., Cts. &amp; Jud. Proc. § 5-401, and any provisions that are found to be inconsistent with this section shall be read to meet the requirements of such code section. Indemnitees shall be entitled to receive their attorneys' fees and costs in enforcing their rights to defense and indemnification under this section.</div>
+  <div class="provision"><span class="pnum">10.&nbsp;&nbsp;&nbsp;&nbsp;</span>To the fullest extent permitted by the law, Subcontractor shall fully indemnify, defend and hold harmless Contractor, Owner, and anyone who Contractor has agreed to defend or indemnify, including their respective officers, directors, agents, subsidiaries, and employees (all such persons or entities hereinafter referred to as "Indemnitees") from and against all claims, demands, liabilities, causes of action, suits, judgments, or defense expenses (including attorney's fees) for or on account of or in any way arising out of Subcontractor's Work, fault, breaches, or negligence, for (i) the death or personal injury of any persons (including without limitation Subcontractor, its sub-subcontractors, and their respective agents, employees and invitees; (ii) damages to property of any person (including the loss or loss of use thereof) directly or indirectly connected with, attributable to, or arising from the work to be performed by Subcontractor under this subcontract; (iii) any loss or damage of whatever kind or nature directly or indirectly connected with, attributable to, or arising from the work to be performed under this Subcontract by Subcontractor, its sub-subcontractors, and their respective agents, employees, or invitees; (iv) the providing by Contractor of equipment, operators, and/or other personnel to Subcontractor, its sub-subcontractors, and their respective agents, employees and invitees; (v) in the case of Maryland contracts the costs or damage created by the nonpayment of wages, fringe or other benefit payments, or contributions by Subcontractor or by a subcontractor at any tier working under Subcontractor or otherwise failing to comply with Md. Code, Lab. &amp; Empl. Art. Â§ 3-507.2(b); or (vi) in the case of California contracts the costs or damage created by the nonpayment of wages, fringe or other benefit payments, or contributions by Subcontractor or by a subcontractor at any tier working under Subcontractor or otherwise failing to comply with Cal. Labor Code 218.7; except that as provided for by California Civil Code section 2782.05, Subcontractor shall not be liable for claims of death or bodily injury to persons, injury to property, or any other loss, damage, or expense to the extent the claims arise out of, pertain to, or relate to the active negligence or willful misconduct of Contractor or such other indemnitee, or for defects in design furnished by Contractor or such other indemnitees, or to the extent the claims do not arise out of the scope of work of the Subcontractor. This indemnification provision does not negate, abridge or reduce any other rights or obligations of the persons and entities described herein with respect to indemnity. This indemnification agreement is binding on the Subcontractor, to the fullest extent permitted by law, regardless of the passive negligence, acts or omissions of any Indemnitees. <span class="ul">Further, notwithstanding the foregoing and in any and all claims against Indemnitees by any employee of Indemnitors, the indemnity obligation under this paragraph shall not be limited by any limitation on the amount or type of damages, compensation, or benefits payable by or for Subcontractor under any workers compensation act, disability benefit act, any other employee benefit act, or by any independent obligation of Subcontractor to provide a policy or policies of insurance as provided under the terms of this Subcontract. One percent (1%) of the total Subcontract price represents specific consideration for the obligations assumed by Subcontractor under the above indemnity provisions.</span> In the case of California contracts this indemnity agreement shall be interpreted so as to comply with and be enforceable under the California Civil Code including Sections 2778, 2782 and 2782.05, et seq., and any provisions that are found to be inconsistent with those sections shall be read to meet the requirements of such code sections. In the case of Maryland contracts this indemnity agreement shall be interpreted so as to comply with and be enforceable under Md. Code Ann., Cts. &amp; Jud. Proc. Â§ 5-401, and any provisions that are found to be inconsistent with this section shall be read to meet the requirements of such code section. Indemnitees shall be entitled to receive their attorneys' fees and costs in enforcing their rights to defense and indemnification under this section.</div>
   <div class="provision"><span class="pnum">11.&nbsp;&nbsp;&nbsp;&nbsp;HAZARDOUS MATERIALS:</span> Subcontractor shall not transport to, use, generate, dispose of, or install at the Project site any Hazardous Substance, as defined in this Article, except in accordance with applicable Environmental Laws. Further, in performing the Subcontract Work, Subcontractor shall not cause any release of hazardous substance into, or contamination of, the environment, including the soil, the atmosphere, any water course of ground water, except in accordance with applicable Environmental Laws. In the event Subcontractor engages in any of the activities prohibited in this Article, to the fullest extent permitted by law, Subcontractor shall indemnify, defend and hold harmless Contractor, Owner and anyone Contractor has agreed to defend or indemnify, and all of their respective officers, agents and employees from and against any and all claims, damages, losses, causes of action, suits and liabilities of every kind, including, but not limited to, expenses of litigation, court costs, punitive damages and attorneys' fees, arising out of, incidental to or resulting from the activities prohibited in this Article.<br>&nbsp;&nbsp;&nbsp;&nbsp;(1)&nbsp;In the event Subcontractor encounters on the Project site any Hazardous Substance, or what Subcontractor reasonably believes to be a Hazardous Substance, and which is being introduced to the work, or exists on the Project, in a manner violative of any applicable Environmental Laws, Subcontractor shall immediately stop work in the area affected and report the condition to Contractor in writing. The Subcontract Work in the affected area shall not thereafter be resumed except by written authorization of Contractor if in fact a Hazardous Substance has been encountered and has not been rendered harmless. In the event Subcontractor fails to stop the Subcontract Work upon encountering a Hazardous Substance at the Project site, to the fullest extent permitted by law, Subcontractor shall indemnify, defend and hold harmless Contractor, Owner and Architect, and all of their officers, agents and employees from and against all claims, damages, losses, causes of action, suits and liabilities of every kind, including, but not limited to, expenses of litigation, court costs, punitive damages and attorneys' fees, arising out of, incidental to, or resulting from Subcontractor's failure to stop the Subcontract Work.<br>&nbsp;&nbsp;&nbsp;&nbsp;(2)&nbsp;An extension of time shall be Subcontractor's sole remedy for any delay arising out of the encountering and/or rendering harmless of any Hazardous Substance at the Project site. Contractor and Subcontractor may enter into an agreement for Subcontractor to remediate and/or render harmless the Hazardous Substance, but Subcontractor shall not be required to remediate and/or render harmless the Hazardous Substance absent such agreement. Subcontractor shall not be required to resume any work in any area affected by the Hazardous Substance until such time as the Hazardous Substance has been remediated or rendered harmless.<br>&nbsp;&nbsp;&nbsp;&nbsp;(3)&nbsp;For purpose of this Subcontract, the term "Hazardous Substance" shall mean and include, but shall not be limited to, any element, constituent, chemical, substance, compound, or mixture, which are defined in or included under or regulated by any local, state or federal law, rule ordinance, by-law or regulation pertaining to environmental regulation, contamination, clean-up or disclosure.</div>
   <div class="provision"><span class="pnum">12.&nbsp;&nbsp;&nbsp;&nbsp;GUARANTY:</span> Subcontractor warrants and guaranties that all of Subcontractor's Work and material will be furnished in a good and workmanlike manner. Subcontractor shall, before requesting final payment, provide any and all guarantees required by the General Contract. In addition to any specified guaranty required by the General Contract, Subcontractor, in signing this Subcontract, agrees at his own expense to replace or repair any faulty or defective material or workmanship within one year from the day of notice of completion of the project, or Owner's beneficial occupancy, whichever occurs first. In addition, Subcontractor shall be responsible and pay for replacement or repair of adjacent materials or work which may be damaged due to the failure of Subcontractor's material or work and/or damaged as a result of the replacement or repairs thereof.</div>
   <div class="provision"><span class="pnum">13.&nbsp;&nbsp;&nbsp;&nbsp;DIRECTION OF SUBCONTRACT WORK:</span> It is understood that Subcontractor is an independent contractor and Contractor shall have no right to direct the operations or employees of Subcontractor. Subcontractor agrees to maintain a familiarity with conditions existing over the entire project on which the work is located so that it will be aware of dangerous conditions, whether obvious or hidden, and Subcontractor agrees to warn its employees, subcontractors and suppliers of unsafe conditions on the project premises.</div>
@@ -2878,7 +2879,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       '</style>',
       '<div id="nv-bar" contenteditable="false">',
       '<span style="font-weight:700;color:#e8590c;font-size:15px;">&#9998; Editing Mode</span>',
-      '<span style="color:#888;font-size:12px;">Click anywhere on the contract to edit — every word is changeable.</span>',
+      '<span style="color:#888;font-size:12px;">Click anywhere on the contract to edit â€” every word is changeable.</span>',
       '<div style="flex:1"></div>',
       '<button id="nv-print-btn">Print / Save PDF</button>',
       '</div>',
@@ -2920,7 +2921,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const html = buildSubcontractHtml(contractGenForm)
-      const res = await fetch('/api/signing-requests', {
+      const res = await authFetch('/api/signing-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2929,7 +2930,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           signer_email: signerEmail.trim().toLowerCase(),
           signer_name: contractGenForm.sub_name,
           document_html: html,
-          document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
+          document_title: `Subcontract â€” ${contractGenForm.sub_name} â€” Job #${contractGenForm.job_number}`,
           created_by: session?.user?.id,
         }),
       })
@@ -2946,7 +2947,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
   }
 
-  // ── Change Orders ───────────────────────────────────────────
+  // â”€â”€ Change Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function addCO() {
     const sovTotal = coForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
     const finalAmount = coForm.sov.length > 0 ? sovTotal : parseFloat(coForm.amount)
@@ -2981,11 +2982,11 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         if (subProfile?.email) {
           const amt = parseFloat(finalAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
           const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
-          sendEmail(subProfile.email, `Change order requires your approval — ${job?.project_name}`,
+          sendEmail(subProfile.email, `Change order requires your approval â€” ${job?.project_name}`,
             emailWrap(`
               <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Change order for your review</h2>
               <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
-                NV Construction has issued a change order on <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong> requiring your approval.
+                NV Construction has issued a change order on <strong style="color:#f1f1f1">#${job?.job_number} â€” ${job?.project_name}</strong> requiring your approval.
               </p>
               <p style="color:#aaa;margin:0 0 8px;font-size:14px"><strong style="color:#f1f1f1">Description:</strong> ${coForm.description}</p>
               <p style="font-size:22px;font-weight:800;color:#e8590c;margin:12px 0">${amt}</p>
@@ -3032,7 +3033,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await supabase.from('change_orders').update({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq('id', coId)
     if (status === 'approved') {
       const co = allCOs.find(c => c.id === coId)
-      // Sub COs do NOT change budget — they increase committed cost via the subcontract's
+      // Sub COs do NOT change budget â€” they increase committed cost via the subcontract's
       // adjusted_contract_value (computed in the DB view). Budget only grows when the owner
       // approves a prime CO and pays us for it.
       if (co?.direction === 'sub_to_pm' && co?.subcontract_id && co?.amount) {
@@ -3108,7 +3109,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     await reviewPrimeCO(coId, 'approved', co?.amount, finalSOV)
   }
 
-  // ── Prime Contract Change Orders ────────────────────────────
+  // â”€â”€ Prime Contract Change Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function loadPrimeCOs() {
     const { data } = await supabase.from('prime_change_orders').select('*, budget_items(description, cost_code)').eq('job_id', id).order('created_at', { ascending: false })
     setPrimeCOs(data || [])
@@ -3152,7 +3153,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
         }
       }
-      // Mark budget as applied so the "Apply to Budget" button is hidden — prevents double-counting
+      // Mark budget as applied so the "Apply to Budget" button is hidden â€” prevents double-counting
       if (linkedSovItems.length > 0) {
         await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', coId)
       }
@@ -3166,7 +3167,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     if (linked.length === 0) { alert('This CO has no budget lines assigned. Edit the CO first to add budget line assignments.'); return }
     const lines = linked.map(r => {
       const bi = budgetItems.find(b => b.id === r.budget_item_id)
-      return `  ${bi ? (bi.cost_code ? bi.cost_code + ' · ' : '') + bi.description : 'Unknown'}: +$${Number(r.amount).toLocaleString()}`
+      return `  ${bi ? (bi.cost_code ? bi.cost_code + ' Â· ' : '') + bi.description : 'Unknown'}: +$${Number(r.amount).toLocaleString()}`
     }).join('\n')
     if (!window.confirm(`Apply CO "${co.description}" to budget items?\n\n${lines}`)) return
     for (const sovItem of linked) {
@@ -3178,7 +3179,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         } }) })
       }
     }
-    // Mark applied so this button is hidden — prevents double-counting
+    // Mark applied so this button is hidden â€” prevents double-counting
     await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', co.id)
     await loadBudgetItems()
     await loadPrimeCOs()
@@ -3240,9 +3241,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       : null
     const { error } = await supabase.from('prime_change_orders').insert({
       job_id: id,
-      description: `${subName} — ${co.description}`,
+      description: `${subName} â€” ${co.description}`,
       amount: finalAmt,
-      notes: noteParts.join(' · '),
+      notes: noteParts.join(' Â· '),
       status: 'pending',
       created_by: session.user.id,
       sov: pushedSOV,
@@ -3261,7 +3262,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const amount = Number(co.amount)
     const amtStr = `${amount >= 0 ? '+' : ''}$${Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     const sovRows = co.sov?.length > 0
-      ? co.sov.map(item => `<tr style="border-bottom:1px solid #222"><td style="padding:8px 0;color:#ccc;font-size:13px">${item.description || '—'}</td><td style="text-align:right;padding:8px 0;font-weight:700;font-size:13px;color:${Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b'}">${Number(item.amount) >= 0 ? '+' : ''}$${Math.abs(Number(item.amount)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`).join('')
+      ? co.sov.map(item => `<tr style="border-bottom:1px solid #222"><td style="padding:8px 0;color:#ccc;font-size:13px">${item.description || 'â€”'}</td><td style="text-align:right;padding:8px 0;font-weight:700;font-size:13px;color:${Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b'}">${Number(item.amount) >= 0 ? '+' : ''}$${Math.abs(Number(item.amount)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`).join('')
       : ''
     let attachmentHtml = ''
     if (co.attachment_url) {
@@ -3272,11 +3273,11 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
     await sendEmail(
       ownerEmail,
-      `Change Order ${coNumber} for Review — ${job.project_name}`,
+      `Change Order ${coNumber} for Review â€” ${job.project_name}`,
       emailWrap(`
         <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Change Order for Your Approval</h2>
         <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
-          NV Construction has prepared change order <strong style="color:#f1f1f1">${coNumber}</strong> on project <strong style="color:#f1f1f1">#${job.job_number} — ${job.project_name}</strong> for your review.
+          NV Construction has prepared change order <strong style="color:#f1f1f1">${coNumber}</strong> on project <strong style="color:#f1f1f1">#${job.job_number} â€” ${job.project_name}</strong> for your review.
         </p>
         <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px 20px;margin:0 0 16px">
           <p style="margin:0 0 6px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Description</p>
@@ -3287,7 +3288,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         <p style="font-size:24px;font-weight:800;color:#e8590c;margin:12px 0 20px">${amtStr}</p>
         ${attachmentHtml}
         <p style="color:#888;font-size:13px;margin:16px 0 6px">To approve or request modifications, please reply to this email or contact your project manager.</p>
-        <p style="color:#555;font-size:12px;margin:0">Job #${job.job_number} · ${job.project_name}${job.location ? ` · ${job.location}` : ''}</p>
+        <p style="color:#555;font-size:12px;margin:0">Job #${job.job_number} Â· ${job.project_name}${job.location ? ` Â· ${job.location}` : ''}</p>
       `)
     ).catch(() => {})
     setSentOwnerCOIds(prev => new Set([...prev, co.id]))
@@ -3302,21 +3303,21 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const logoUrl = `${window.location.origin}/logo.png`
     const coNumStr = `PCO-${String(coNum).padStart(3,'0')}`
     const sovHtml = co.sov?.length > 0
-      ? `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:6px">Schedule of Values</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e0e0e0"><th style="text-align:left;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Description</th><th style="text-align:right;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Amount</th></tr></thead><tbody>${co.sov.map(r=>`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:5px 0;font-size:11px;color:#111">${r.description||'—'}</td><td style="padding:5px 0;text-align:right;font-size:11px;font-weight:600;color:${Number(r.amount)>=0?'#1a6b2a':'#cc0000'}">${Number(r.amount)>=0?'+':''}$${Math.abs(Number(r.amount)).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody><tfoot><tr style="border-top:2px solid #111"><td style="padding:7px 0;font-size:11px;font-weight:700">Total</td><td style="padding:7px 0;text-align:right;font-size:13px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr></tfoot></table></div>`
+      ? `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:6px">Schedule of Values</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e0e0e0"><th style="text-align:left;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Description</th><th style="text-align:right;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Amount</th></tr></thead><tbody>${co.sov.map(r=>`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:5px 0;font-size:11px;color:#111">${r.description||'â€”'}</td><td style="padding:5px 0;text-align:right;font-size:11px;font-weight:600;color:${Number(r.amount)>=0?'#1a6b2a':'#cc0000'}">${Number(r.amount)>=0?'+':''}$${Math.abs(Number(r.amount)).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody><tfoot><tr style="border-top:2px solid #111"><td style="padding:7px 0;font-size:11px;font-weight:700">Total</td><td style="padding:7px 0;text-align:right;font-size:13px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr></tfoot></table></div>`
       : ''
-    w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} — Job #${job.job_number}</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} â€” Job #${job.job_number}</title>
 <style>@page{margin:0.45in}*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;background:#fff;font-size:11px;line-height:1.4}.print-btn{padding:6px 16px;background:#e8590c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;display:block;margin:12px auto}.brand-bar{background:#e8590c;padding:12px 32px;display:flex;justify-content:space-between;align-items:center}.brand-logo{display:flex;align-items:center;gap:10px}.brand-name{color:#fff;font-size:14px;font-weight:800;letter-spacing:-0.5px}.brand-tagline{color:rgba(255,255,255,0.7);font-size:9px;margin-top:1px;letter-spacing:1px;text-transform:uppercase}.co-label{text-align:right;color:rgba(255,255,255,0.75);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:2px}.co-num{color:#fff;font-size:20px;font-weight:800}.content{padding:20px 32px;max-width:800px;margin:0 auto}.lbl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:2px}.val{font-size:11px;font-weight:600;color:#111}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #e8e8e8}.amt-box{background:#fff8f5;border:2px solid #e8590c;border-radius:7px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}.amt-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#e8590c;margin-bottom:2px}.amt{font-size:22px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:6px;padding:10px 12px;margin-bottom:10px}.notes{background:#fafafa;border-left:3px solid #e8590c;padding:8px 10px;margin-bottom:12px;font-size:11px;color:#555;border-radius:0 4px 4px 0}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:22px}.sig-block{border-top:1.5px solid #111;padding-top:10px}.sig-lbl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:6px}.sig-line{height:26px;border-bottom:1px solid #ccc;margin-bottom:4px}.sig-field{font-size:10px;color:#aaa}.footer{margin-top:18px;padding:10px 32px;border-top:1px solid #eee;font-size:9px;color:#aaa;text-align:center;background:#fafafa}@media print{.print-btn{display:none}}</style></head><body>
 <div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="34" height="34" style="object-fit:contain;border-radius:3px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Contract Modification</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
 <div class="content">
 <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
-<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div>${job.owner_company||job.owner_name?`<div><div class="lbl">Owner</div><div class="val">${[job.owner_company,job.owner_name].filter(Boolean).join(' · ')}</div></div>`:''}<div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
+<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'â€”'}</div></div>${job.owner_company||job.owner_name?`<div><div class="lbl">Owner</div><div class="val">${[job.owner_company,job.owner_name].filter(Boolean).join(' Â· ')}</div></div>`:''}<div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
 <div class="amt-box"><div><div class="amt-lbl">Change Order Amount</div><div style="font-size:10px;color:#888">Requires owner signature below</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
 <div class="scope-box"><div class="lbl" style="margin-bottom:6px">Description of Change</div><div style="font-size:11px;line-height:1.6;color:#111">${co.description}</div></div>
 ${co.notes?`<div class="notes"><strong style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#e8590c">Notes / Breakdown:</strong><div style="margin-top:4px">${co.notes}</div></div>`:''}
 ${sovHtml}
 <div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Owner / Authorized Representative</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Date</div></div></div>
 </div>
-<div class="footer">NV Construction &nbsp;·&nbsp; ${coNumStr} &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString()}</div>
+<div class="footer">NV Construction &nbsp;Â·&nbsp; ${coNumStr} &nbsp;Â·&nbsp; Job #${job.job_number} &nbsp;Â·&nbsp; Generated ${new Date().toLocaleDateString()}</div>
 </body></html>`)
     w.document.close()
   }
@@ -3331,27 +3332,27 @@ ${sovHtml}
     const coNumStr = `SCO-${String(coNum).padStart(3,'0')}`
     const subSOV = (co.sov || []).filter(r => r.budget_item_id !== null && r.budget_item_id !== undefined)
     const sovHtml = subSOV.length > 0
-      ? `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:6px">Schedule of Values</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e0e0e0"><th style="text-align:left;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Description</th><th style="text-align:right;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Amount</th></tr></thead><tbody>${subSOV.map(r=>`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:5px 0;font-size:11px;color:#111">${r.description||'—'}</td><td style="padding:5px 0;text-align:right;font-size:11px;font-weight:600;color:${Number(r.amount)>=0?'#1a6b2a':'#cc0000'}">${Number(r.amount)>=0?'+':''}$${Math.abs(Number(r.amount)).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody><tfoot><tr style="border-top:2px solid #111"><td style="padding:7px 0;font-size:11px;font-weight:700">Total</td><td style="padding:7px 0;text-align:right;font-size:13px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr></tfoot></table></div>`
+      ? `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:6px">Schedule of Values</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e0e0e0"><th style="text-align:left;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Description</th><th style="text-align:right;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Amount</th></tr></thead><tbody>${subSOV.map(r=>`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:5px 0;font-size:11px;color:#111">${r.description||'â€”'}</td><td style="padding:5px 0;text-align:right;font-size:11px;font-weight:600;color:${Number(r.amount)>=0?'#1a6b2a':'#cc0000'}">${Number(r.amount)>=0?'+':''}$${Math.abs(Number(r.amount)).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody><tfoot><tr style="border-top:2px solid #111"><td style="padding:7px 0;font-size:11px;font-weight:700">Total</td><td style="padding:7px 0;text-align:right;font-size:13px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr></tfoot></table></div>`
       : ''
-    w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} — ${subName}</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>${coNumStr} â€” ${subName}</title>
 <style>@page{margin:0.45in}*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,Arial,sans-serif;color:#111;background:#fff;font-size:11px;line-height:1.4}.print-btn{padding:6px 16px;background:#e8590c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:11px;font-weight:700;display:block;margin:12px auto}.brand-bar{background:#111;padding:12px 32px;display:flex;justify-content:space-between;align-items:center}.brand-logo{display:flex;align-items:center;gap:10px}.brand-name{color:#fff;font-size:14px;font-weight:800;letter-spacing:-0.5px}.brand-tagline{color:rgba(255,255,255,0.5);font-size:9px;margin-top:1px;letter-spacing:1px;text-transform:uppercase}.co-label{text-align:right;color:rgba(255,255,255,0.5);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:2px}.co-num{color:#e8590c;font-size:20px;font-weight:800}.accent-bar{height:3px;background:#e8590c}.content{padding:16px 32px;max-width:800px;margin:0 auto}.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;background:${isPmToSub?'#e8590c':'#f0f0f0'};color:${isPmToSub?'#fff':'#555'}}.lbl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:2px}.val{font-size:11px;font-weight:600;color:#111}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e8e8e8}.amt-box{background:${amount>=0?'#f2fff5':'#fff5f5'};border:2px solid ${amount>=0?'#1a6b2a':'#cc0000'};border-radius:7px;padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}.amt-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:${amount>=0?'#1a6b2a':'#cc0000'};margin-bottom:2px}.amt{font-size:22px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}}.scope-box{border:1px solid #e0e0e0;border-radius:6px;padding:10px 12px;margin-bottom:12px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:22px}.sig-block{border-top:1.5px solid #111;padding-top:10px}.sig-lbl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;font-weight:700;margin-bottom:6px}.sig-line{height:26px;border-bottom:1px solid #ccc;margin-bottom:4px}.sig-field{font-size:10px;color:#aaa}.footer{margin-top:18px;padding:10px 32px;border-top:1px solid #eee;font-size:9px;color:#aaa;text-align:center;background:#fafafa}@media print{.print-btn{display:none}}</style></head><body>
-<div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="34" height="34" style="object-fit:contain;border-radius:3px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Change Order — Subcontract</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
+<div class="brand-bar"><div class="brand-logo"><img src="${logoUrl}" alt="NV Construction" width="34" height="34" style="object-fit:contain;border-radius:3px"><div><div class="brand-name">NV Construction</div><div class="brand-tagline">Change Order â€” Subcontract</div></div></div><div><div class="co-label">Change Order No.</div><div class="co-num">${coNumStr}</div></div></div>
 <div class="accent-bar"></div>
 <div class="content">
 <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
-<div class="badge">${isPmToSub?'NV Construction → Subcontractor':'Subcontractor Request'}</div>
-<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Subcontractor</div><div class="val">${subName}</div></div>${scope?`<div><div class="lbl">Contract Scope</div><div class="val">${scope}</div></div>`:''}<div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'—'}</div></div><div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
+<div class="badge">${isPmToSub?'NV Construction â†’ Subcontractor':'Subcontractor Request'}</div>
+<div class="grid"><div><div class="lbl">Project</div><div class="val">${job.project_name}</div></div><div><div class="lbl">Job Number</div><div class="val">#${job.job_number}</div></div><div><div class="lbl">Subcontractor</div><div class="val">${subName}</div></div>${scope?`<div><div class="lbl">Contract Scope</div><div class="val">${scope}</div></div>`:''}<div><div class="lbl">Date Issued</div><div class="val">${date}</div></div><div><div class="lbl">Location</div><div class="val">${job.location||'â€”'}</div></div><div><div class="lbl">Status</div><div class="val" style="text-transform:capitalize">${co.status}</div></div></div>
 <div class="amt-box"><div><div class="amt-lbl">Change Order Amount</div><div style="font-size:10px;color:#888;margin-top:2px">Requires signatures below</div></div><div class="amt">${amount>=0?'+':''}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
 <div class="scope-box"><div class="lbl" style="margin-bottom:6px">Description of Change</div><div style="font-size:11px;line-height:1.6;color:#111">${co.description}</div></div>
 ${sovHtml}
-<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Subcontractor — ${subName}</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Date</div></div></div>
+<div class="sig-grid"><div class="sig-block"><div class="sig-lbl">Subcontractor â€” ${subName}</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Date</div></div><div class="sig-block"><div class="sig-lbl">NV Construction</div><div class="sig-line"></div><div class="sig-field">Signature</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Print Name &amp; Title</div><div class="sig-line" style="margin-top:12px"></div><div class="sig-field">Date</div></div></div>
 </div>
-<div class="footer">NV Construction &nbsp;·&nbsp; ${coNumStr} &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString()}</div>
+<div class="footer">NV Construction &nbsp;Â·&nbsp; ${coNumStr} &nbsp;Â·&nbsp; Job #${job.job_number} &nbsp;Â·&nbsp; Generated ${new Date().toLocaleDateString()}</div>
 </body></html>`)
     w.document.close()
   }
 
-  // ── Budget ──────────────────────────────────────────────────
+  // â”€â”€ Budget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function saveBudgetItem(e) {
     e.preventDefault()
     setAddingBudgetItem(true)
@@ -3393,7 +3394,7 @@ ${sovHtml}
       const text = await file.text()
       const rawLines = text.trim().split(/\r?\n/)
 
-      // Proper CSV field splitter — handles quoted fields containing commas
+      // Proper CSV field splitter â€” handles quoted fields containing commas
       function splitCsvRow(line) {
         const result = []
         let cur = '', inQ = false
@@ -3452,7 +3453,7 @@ ${sovHtml}
 
   function laborCostForItem(budgetItemId) {
     const budgetItem = budgetItems.find(b => b.id === budgetItemId)
-    const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' — ' : ''}${budgetItem.description}` : null
+    const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' â€” ' : ''}${budgetItem.description}` : null
     return jobAllocations
       .filter(a => {
         if (a.allocation_type !== 'pm_allocation') return false
@@ -3494,11 +3495,11 @@ ${sovHtml}
         .reduce((coTotal, co) => {
           const sovLines = (co.sov || []).filter(s => s.budget_item_id)
           if (sovLines.length > 0) {
-            // Explicit SOV assignment — use only the matching line
+            // Explicit SOV assignment â€” use only the matching line
             const sovMatch = sovLines.find(s => s.budget_item_id === budgetItemId)
             return coTotal + (sovMatch ? Number(sovMatch.amount || 0) : 0)
           }
-          // No explicit SOV — fall back to parent subcontract's budget allocation
+          // No explicit SOV â€” fall back to parent subcontract's budget allocation
           const coAmt = Number(co.amount || 0)
           if (allocs && allocs.length > 0) {
             const match = allocs.find(a => a.budget_item_id === budgetItemId)
@@ -3549,7 +3550,7 @@ ${sovHtml}
             if (!sovMatch) return []
             return [{ type: 'co', name: `CO: ${co.description || 'Change Order'}`, amount: Number(sovMatch.amount || 0), id: co.id, vendor: c.vendor_name }]
           }
-          // No explicit SOV — fall back to parent subcontract's allocation
+          // No explicit SOV â€” fall back to parent subcontract's allocation
           const coAmt = Number(co.amount || 0)
           let fallbackAmt = 0
           if (allocs && allocs.length > 0) {
@@ -3585,7 +3586,7 @@ ${sovHtml}
       .filter(a => {
         if (a.allocation_type !== 'pm_allocation') return false
         const budgetItem = budgetItems.find(b => b.id === budgetItemId)
-        const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' — ' : ''}${budgetItem.description}` : null
+        const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' â€” ' : ''}${budgetItem.description}` : null
         if (a.budget_item_id) return a.budget_item_id === budgetItemId
         if (itemText && a.budget_line) return a.budget_line === itemText
         return false
@@ -3611,7 +3612,7 @@ ${sovHtml}
     setBudgetItems(prev => prev.map(b => b.id === budgetItemId ? { ...b, forecast_eac: val } : b))
   }
 
-  // ── Subs ────────────────────────────────────────────────────
+  // â”€â”€ Subs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function assignSubToJob() {
     const normalEmail = (assignSubForm.from_dir
       ? subDirectory.find(d => d.id === assignSubForm.from_dir)?.email
@@ -3656,7 +3657,7 @@ ${sovHtml}
     for (const a of unregistered) await notifySubToRegister(a.sub_email)
   }
 
-  // ── Billing (PM-managed) ─────────────────────────────────────
+  // â”€â”€ Billing (PM-managed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function createBilling() {
     if (!createBillingForm.amount_billed || !createBillingForm.company_name) return
     setCreatingBilling(true)
@@ -3687,9 +3688,9 @@ ${sovHtml}
       const formData = new FormData()
       formData.append('file', createBillingFile)
       formData.append('data', JSON.stringify(rowData))
-      res = await fetch('/api/billing-entry', { method: 'POST', body: formData })
+      res = await authFetch('/api/billing-entry', { method: 'POST', body: formData })
     } else {
-      res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+      res = await authFetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
     }
     result = await res.json()
     if (result.error) { setCreateBillingError(result.error) }
@@ -3705,7 +3706,7 @@ ${sovHtml}
 
   async function updateBillingEntry() {
     if (editBillingForm.status === 'rejected') {
-      await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingBilling }) })
+      await authFetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingBilling }) })
       setEditingBilling(null)
       await loadBillingForJob()
       return
@@ -3733,9 +3734,9 @@ ${sovHtml}
       const formData = new FormData()
       formData.append('file', editBillingFile)
       formData.append('data', JSON.stringify(patchData))
-      res = await fetch('/api/billing-entry', { method: 'PATCH', body: formData })
+      res = await authFetch('/api/billing-entry', { method: 'PATCH', body: formData })
     } else {
-      res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
+      res = await authFetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
     }
     const result = await res.json()
     if (result.error) { alert('Save error: ' + result.error); return }
@@ -3746,12 +3747,12 @@ ${sovHtml}
 
   async function deleteBillingEntry(billingId) {
     if (!window.confirm('Delete this billing submission?')) return
-    await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
+    await authFetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
     await loadBillingForJob()
   }
 
   async function assignBillingToDraw(billingId, drawRequestId) {
-    await fetch('/api/billing-entry', {
+    await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: billingId, draw_request_id: drawRequestId || null }),
@@ -3768,7 +3769,7 @@ ${sovHtml}
 
   async function toggleReadyToPay(billingId, current) {
     setTogglingReadyToPay(billingId)
-    await fetch('/api/billing-entry', {
+    await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: billingId, ready_to_pay: !current }),
@@ -3779,7 +3780,7 @@ ${sovHtml}
 
   async function approveBilling(billingId) {
     setApprovingBillingId(billingId)
-    await fetch('/api/billing-entry', {
+    await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: billingId, status: 'approved', reviewed_at: new Date().toISOString() }),
@@ -3788,7 +3789,7 @@ ${sovHtml}
     await loadBillingForJob()
   }
 
-  // ── Completion Report ────────────────────────────────────────
+  // â”€â”€ Completion Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function generateCompletionReport(markComplete = false) {
     setGeneratingReport(true)
     try {
@@ -3828,7 +3829,7 @@ ${sovHtml}
       const origContract = job.nv_role === 'sub' ? contractSumToDate : baseContractReport
 
       const totalBilledAIA = (aiaApps || []).reduce((a, app) => {
-        // Use last app's completed value — we'll calc from lines if needed; use billed from apps status
+        // Use last app's completed value â€” we'll calc from lines if needed; use billed from apps status
         return a
       }, 0)
       const receivedApps = (aiaApps || []).filter(a => a.payment_received)
@@ -3861,7 +3862,7 @@ ${sovHtml}
           dcByBudgetItem[c.budget_item_id] += Number(c.amount || 0)
         }
       })
-      // Sub costs by budget item — from AIA lines of the latest app
+      // Sub costs by budget item â€” from AIA lines of the latest app
       const subByBudgetItem = {}
       if (aiaApps && aiaApps.length > 0) {
         const lastApp = aiaApps[aiaApps.length - 1]
@@ -3874,27 +3875,27 @@ ${sovHtml}
         })
       }
 
-      // Revenue received: contract sum × % billed via last AIA app (or just use contractSumToDate if all received)
+      // Revenue received: contract sum Ã— % billed via last AIA app (or just use contractSumToDate if all received)
       const allReceived = receivedApps.length > 0 && receivedApps.length === (aiaApps || []).length
       const lastApp = aiaApps && aiaApps.length > 0 ? aiaApps[aiaApps.length - 1] : null
       const revenueReceived = receivedApps.reduce((a, app) => {
         // rough: pro-rate by app_number; better is to sum AIA lines
         return a
       }, 0) || contractSumToDate // fallback to contract if we can't calc
-      // Use total payment received from AIA apps that are marked received — value from contractSumToDate as best estimate
+      // Use total payment received from AIA apps that are marked received â€” value from contractSumToDate as best estimate
       const receivedCount = receivedApps.length
       const totalApps = (aiaApps || []).length
       const grossProfit = contractSumToDate - totalCosts
       const grossMargin = contractSumToDate > 0 ? (grossProfit / contractSumToDate * 100) : 0
 
       const pmMember = teamMembers.find(m => m.email === job.pm_email)
-      const pmName = pmMember?.full_name || job.pm_email || '—'
+      const pmName = pmMember?.full_name || job.pm_email || 'â€”'
 
       const w = window.open('', '_blank')
       if (!w) { alert('Please allow popups for this site to generate PDFs.'); setGeneratingReport(false); return; }
       w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
-<title>Job Completion Report — #${job.job_number}</title>
+<title>Job Completion Report â€” #${job.job_number}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background: #fff; padding: 32px 40px; max-width: 900px; margin: 0 auto; }
@@ -3944,8 +3945,8 @@ tr.subtotal td.green { color: #1a7a3a; }
   <div><div class="logo-text">NV Construction</div><div class="logo-sub2">Job Completion Report</div></div>
 </div>
 
-<h1>#${job.job_number} — ${job.project_name}</h1>
-<p class="meta">${[job.location, job.owner_company ? 'Owner: ' + job.owner_company : '', 'PM: ' + pmName].filter(Boolean).join(' &nbsp;·&nbsp; ')}</p>
+<h1>#${job.job_number} â€” ${job.project_name}</h1>
+<p class="meta">${[job.location, job.owner_company ? 'Owner: ' + job.owner_company : '', 'PM: ' + pmName].filter(Boolean).join(' &nbsp;Â·&nbsp; ')}</p>
 <div class="badges">
   <span class="badge badge-green">Completed</span>
   <span class="badge">Generated ${genDate}</span>
@@ -3971,7 +3972,7 @@ tr.subtotal td.green { color: #1a7a3a; }
 
 ${Object.keys(subMap).length > 0 ? `
 <div class="section">
-  <div class="section-title">Subcontractor Costs — ${fmt(subCostsTotal)} approved</div>
+  <div class="section-title">Subcontractor Costs â€” ${fmt(subCostsTotal)} approved</div>
   <table>
     <thead><tr><th>Company</th><th class="r">Amount Billed</th></tr></thead>
     <tbody>
@@ -3983,7 +3984,7 @@ ${Object.keys(subMap).length > 0 ? `
 
 ${Object.keys(dcByCategory).length > 0 ? `
 <div class="section">
-  <div class="section-title">Direct Costs — ${fmt(dcTotal)} approved</div>
+  <div class="section-title">Direct Costs â€” ${fmt(dcTotal)} approved</div>
   <table>
     <thead><tr><th>Category</th><th class="r">Amount</th></tr></thead>
     <tbody>
@@ -4026,13 +4027,13 @@ ${(budgets || []).length > 0 ? `
         const variance = ownerAmt - actual
         const over = variance < 0
         return `<tr>
-          <td style="font-family:monospace;font-size:10px;color:#888">${b.cost_code || '—'}</td>
+          <td style="font-family:monospace;font-size:10px;color:#888">${b.cost_code || 'â€”'}</td>
           <td>${b.description}</td>
-          <td class="r">${ownerAmt > 0 ? fmt(ownerAmt) : '<span style="color:#ccc">—</span>'}</td>
-          <td class="r">${subAmt > 0 ? fmt(subAmt) : '<span style="color:#ccc">—</span>'}</td>
-          <td class="r">${dcAmt > 0 ? fmt(dcAmt) : '<span style="color:#ccc">—</span>'}</td>
-          <td class="r">${actual > 0 ? fmt(actual) : '<span style="color:#ccc">—</span>'}</td>
-          <td class="r ${over ? 'red' : ''}" style="${over ? 'color:#cc0000' : 'color:#1a7a3a'}">${ownerAmt > 0 || actual > 0 ? (over ? '-' : '+') + fmt(Math.abs(variance)) : '—'}</td>
+          <td class="r">${ownerAmt > 0 ? fmt(ownerAmt) : '<span style="color:#ccc">â€”</span>'}</td>
+          <td class="r">${subAmt > 0 ? fmt(subAmt) : '<span style="color:#ccc">â€”</span>'}</td>
+          <td class="r">${dcAmt > 0 ? fmt(dcAmt) : '<span style="color:#ccc">â€”</span>'}</td>
+          <td class="r">${actual > 0 ? fmt(actual) : '<span style="color:#ccc">â€”</span>'}</td>
+          <td class="r ${over ? 'red' : ''}" style="${over ? 'color:#cc0000' : 'color:#1a7a3a'}">${ownerAmt > 0 || actual > 0 ? (over ? '-' : '+') + fmt(Math.abs(variance)) : 'â€”'}</td>
         </tr>`
       }).join('')}
       <tr class="subtotal">
@@ -4047,7 +4048,7 @@ ${(budgets || []).length > 0 ? `
   </table>
 </div>` : ''}
 
-<div class="foot">NV Construction &nbsp;·&nbsp; Job #${job.job_number} — ${job.project_name} &nbsp;·&nbsp; Generated ${genDate}</div>
+<div class="foot">NV Construction &nbsp;Â·&nbsp; Job #${job.job_number} â€” ${job.project_name} &nbsp;Â·&nbsp; Generated ${genDate}</div>
 </body></html>`)
       w.document.close()
     } finally {
@@ -4055,7 +4056,7 @@ ${(budgets || []).length > 0 ? `
     }
   }
 
-  // ── Job ─────────────────────────────────────────────────────
+  // â”€â”€ Job â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function saveJob(e) {
     e.preventDefault()
     setSaving(true)
@@ -4102,14 +4103,14 @@ ${(budgets || []).length > 0 ? `
     router.push('/dashboard')
   }
 
-  // ── PDF exports ──────────────────────────────────────────────
+  // â”€â”€ PDF exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function exportContractsPDF() {
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = new Date().toLocaleDateString()
     const rows = contracts.map(c => ({ c, subName: c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown' }))
     w.document.write(`<!DOCTYPE html><html><head>
-<title>Subcontract Summary — Job #${job.job_number}</title>
+<title>Subcontract Summary â€” Job #${job.job_number}</title>
 <style>* { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, Arial, sans-serif; color: #111; padding: 40px; font-size: 13px; line-height: 1.5; }
 h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; } .meta { color: #666; margin-bottom: 28px; }
@@ -4123,13 +4124,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; }
 .generated { font-size: 11px; color: #aaa; margin-top: 40px; }
 @media print { .print-btn { display: none; } }</style></head><body>
 <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
-<h1>#${job.job_number} — ${job.project_name}</h1>
-<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date).toLocaleDateString() : ''].filter(Boolean).join(' · ')}</p>
+<h1>#${job.job_number} â€” ${job.project_name}</h1>
+<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date).toLocaleDateString() : ''].filter(Boolean).join(' Â· ')}</p>
 <div class="section-title">Subcontract Summary</div>
 <table><thead><tr><th>Subcontractor</th><th>Scope</th><th class="right">Contract</th><th class="right">COs</th><th class="right">Revised</th><th class="right">Remaining</th></tr></thead>
-<tbody>${rows.map(({ c, subName }) => `<tr><td>${subName}</td><td style="color:#666">${c.description || '—'}</td><td class="right">$${Number(c.contract_value).toLocaleString()}</td><td class="right">${Number(c.approved_change_orders) >= 0 ? '+' : ''}$${Number(c.approved_change_orders).toLocaleString()}</td><td class="right">$${Number(c.adjusted_contract_value).toLocaleString()}</td><td class="right ${Number(c.remaining_balance) < 0 ? 'over' : ''}">$${Number(c.remaining_balance).toLocaleString()}</td></tr>`).join('')}
+<tbody>${rows.map(({ c, subName }) => `<tr><td>${subName}</td><td style="color:#666">${c.description || 'â€”'}</td><td class="right">$${Number(c.contract_value).toLocaleString()}</td><td class="right">${Number(c.approved_change_orders) >= 0 ? '+' : ''}$${Number(c.approved_change_orders).toLocaleString()}</td><td class="right">$${Number(c.adjusted_contract_value).toLocaleString()}</td><td class="right ${Number(c.remaining_balance) < 0 ? 'over' : ''}">$${Number(c.remaining_balance).toLocaleString()}</td></tr>`).join('')}
 <tr class="total"><td colspan="2">Total</td><td class="right">$${totalContractValue.toLocaleString()}</td><td class="right">${totalCOs >= 0 ? '+' : ''}$${Math.abs(totalCOs).toLocaleString()}</td><td class="right">$${totalRevised.toLocaleString()}</td><td></td></tr>
-</tbody></table><p class="generated">Generated ${date} · NV Construction</p></body></html>`)
+</tbody></table><p class="generated">Generated ${date} Â· NV Construction</p></body></html>`)
     w.document.close()
   }
 
@@ -4138,7 +4139,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; }
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = new Date().toLocaleDateString()
     w.document.write(`<!DOCTYPE html><html><head>
-<title>Budget Report — Job #${job.job_number}</title>
+<title>Budget Report â€” Job #${job.job_number}</title>
 <style>* { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, Arial, sans-serif; color: #111; padding: 40px; font-size: 13px; line-height: 1.5; }
 h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; } .meta { color: #666; margin-bottom: 28px; }
@@ -4155,21 +4156,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 .generated { font-size: 11px; color: #aaa; margin-top: 40px; }
 @media print { .print-btn { display: none; } }</style></head><body>
 <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
-<h1>#${job.job_number} — ${job.project_name}</h1>
-<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date).toLocaleDateString() : ''].filter(Boolean).join(' · ')}</p>
+<h1>#${job.job_number} â€” ${job.project_name}</h1>
+<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date).toLocaleDateString() : ''].filter(Boolean).join(' Â· ')}</p>
 <div class="summary">
   <div class="stat"><div class="stat-label">Total budget</div><div class="stat-value">$${totalBudget.toLocaleString()}</div></div>
   <div class="stat"><div class="stat-label">Committed</div><div class="stat-value">$${totalCommitted.toLocaleString()}</div></div>
   <div class="stat"><div class="stat-label">Uncommitted</div><div class="stat-value ${totalUncommitted < 0 ? 'over' : ''}">${totalUncommitted < 0 ? '-' : ''}$${Math.abs(totalUncommitted).toLocaleString()}</div></div>
 </div>
 <table><thead><tr><th>Code</th><th>Description</th><th class="right">Budget</th><th class="right">Committed</th><th class="right">Uncommitted</th><th class="right">% Used</th></tr></thead>
-<tbody>${budgetItems.map(item => { const committed = committedForItem(item.id); const uncommitted = Number(item.budget_amount) - committed; const pct = Number(item.budget_amount) > 0 ? (committed / Number(item.budget_amount) * 100).toFixed(0) : 0; const over = uncommitted < 0; return `<tr><td class="mono">${item.cost_code || '—'}</td><td>${item.description}</td><td class="right">$${Number(item.budget_amount).toLocaleString()}</td><td class="right">$${committed.toLocaleString()}</td><td class="right ${over ? 'over' : ''}">${over ? '-' : ''}$${Math.abs(uncommitted).toLocaleString()}</td><td class="right ${over ? 'over' : ''}">${pct}%</td></tr>` }).join('')}
+<tbody>${budgetItems.map(item => { const committed = committedForItem(item.id); const uncommitted = Number(item.budget_amount) - committed; const pct = Number(item.budget_amount) > 0 ? (committed / Number(item.budget_amount) * 100).toFixed(0) : 0; const over = uncommitted < 0; return `<tr><td class="mono">${item.cost_code || 'â€”'}</td><td>${item.description}</td><td class="right">$${Number(item.budget_amount).toLocaleString()}</td><td class="right">$${committed.toLocaleString()}</td><td class="right ${over ? 'over' : ''}">${over ? '-' : ''}$${Math.abs(uncommitted).toLocaleString()}</td><td class="right ${over ? 'over' : ''}">${pct}%</td></tr>` }).join('')}
 <tr class="total"><td></td><td>Total</td><td class="right">$${totalBudget.toLocaleString()}</td><td class="right">$${totalCommitted.toLocaleString()}</td><td class="right ${totalUncommitted < 0 ? 'over' : ''}">${totalUncommitted < 0 ? '-' : ''}$${Math.abs(totalUncommitted).toLocaleString()}</td><td class="right">${totalBudget > 0 ? ((totalCommitted / totalBudget) * 100).toFixed(0) : 0}%</td></tr>
-</tbody></table><p class="generated">Generated ${date} · NV Construction</p></body></html>`)
+</tbody></table><p class="generated">Generated ${date} Â· NV Construction</p></body></html>`)
     w.document.close()
   }
 
-  // ── Derived values ───────────────────────────────────────────
+  // â”€â”€ Derived values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const totalBilled = billing.reduce((a, b) => a + (b.amount_billed || 0), 0)
   const pendingBilling = billing.filter(b => b.status === 'pending').length
   const pctContract = job?.contract_value ? ((totalBilled / job.contract_value) * 100).toFixed(1) : null
@@ -4211,7 +4212,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     }
     const week1 = allDays.slice(0, 5); const week2 = allDays.slice(5, 10)
     const endDate = new Date(allDays[9] + 'T12:00:00Z')
-    const dateRange = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    const dateRange = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' â€“ ' + endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
     const todayStr = new Date().toISOString().split('T')[0]
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
     const renderWeek = (wkDays, wkNum) => {
@@ -4219,17 +4220,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
       const inspections = wkActs.filter(a => a.inspection_required)
       const constraints = wkActs.filter(a => a.constraints_notes)
-      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + wkNum + ' — ' + new Date(wkDays[0] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + new Date(wkDays[4] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' +
+      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + wkNum + ' â€” ' + new Date(wkDays[0] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' â€“ ' + new Date(wkDays[4] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' +
         (totalManpower > 0 ? '<span>' + totalManpower + ' workers total</span>' : '') +
-        (inspections.length > 0 ? '<span class="warn">⚠ ' + inspections.length + ' inspection' + (inspections.length > 1 ? 's' : '') + '</span>' : '') +
-        (constraints.length > 0 ? '<span class="alert">⛔ ' + constraints.length + ' constraint' + (constraints.length > 1 ? 's' : '') + '</span>' : '') +
+        (inspections.length > 0 ? '<span class="warn">âš  ' + inspections.length + ' inspection' + (inspections.length > 1 ? 's' : '') + '</span>' : '') +
+        (constraints.length > 0 ? '<span class="alert">â›” ' + constraints.length + ' constraint' + (constraints.length > 1 ? 's' : '') + '</span>' : '') +
         (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
         dayNames.map((dayName, di) => {
           const dateStr = wkDays[di]
           const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
           const dateLabel = new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
           const isToday = dateStr === todayStr
-          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + ' <span class="day-date">' + dateLabel + (isToday ? ' · TODAY' : '') + '</span></span></div>' +
+          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + ' <span class="day-date">' + dateLabel + (isToday ? ' Â· TODAY' : '') + '</span></span></div>' +
             (dayActs.length === 0 ? '<div class="empty">No activities</div>' :
               dayActs.map(act => {
                 const type = act.responsible_type === 'sub' ? 'sub' : act.responsible_type === 'other' ? 'other' : 'own'
@@ -4237,21 +4238,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const mp = parseInt(act.manpower) || 0
                 const addlCos = (act.additional_companies || [])
                 const matStatus = act.materials_status === 'on_site' ? null : act.materials_status === 'ordered' ? '<span class="tag tag-warn">Materials: Ordered</span>' : '<span class="tag tag-alert">Materials: Need to Order</span>'
-                return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + (act.location ? '<span class="act-loc"> · ' + act.location + '</span>' : '') + '</div>' +
+                return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + (act.location ? '<span class="act-loc"> Â· ' + act.location + '</span>' : '') + '</div>' +
                   '<div class="act-meta"><span class="tag tag-' + type + '">' + responsible + '</span>' +
                   (mp > 0 ? '<span class="tag">' + mp + ' workers</span>' : '') +
-                  (act.equipment ? '<span>⚙ ' + act.equipment + '</span>' : '') +
-                  (act.inspection_required ? '<span class="tag tag-warn">🔍 Inspection' + (act.inspection_scheduled ? ' ✓ Sched' : ' — Not Sched') + '</span>' : '') +
-                  (act.committed ? '<span class="tag tag-green">Committed ✓</span>' : '') +
-                  (act.preceding_work_complete ? '<span class="tag tag-green">Preceding ✓</span>' : '') +
+                  (act.equipment ? '<span>âš™ ' + act.equipment + '</span>' : '') +
+                  (act.inspection_required ? '<span class="tag tag-warn">ðŸ” Inspection' + (act.inspection_scheduled ? ' âœ“ Sched' : ' â€” Not Sched') + '</span>' : '') +
+                  (act.committed ? '<span class="tag tag-green">Committed âœ“</span>' : '') +
+                  (act.preceding_work_complete ? '<span class="tag tag-green">Preceding âœ“</span>' : '') +
                   (matStatus || '') +
                   addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
-                  '</div>' + (act.constraints_notes ? '<div class="act-constraint">⛔ ' + act.constraints_notes + '</div>' : '') + '</div>'
+                  '</div>' + (act.constraints_notes ? '<div class="act-constraint">â›” ' + act.constraints_notes + '</div>' : '') + '</div>'
               }).join('')
             ) + '</div>'
         }).join('') + '</div>'
     }
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead — ${jobName}${jobNum}</title><style>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead â€” ${jobName}${jobNum}</title><style>
       body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:36px;font-size:13px}
       h1{font-size:22px;font-weight:800;margin:0 0 2px}h2{font-size:13px;font-weight:400;color:#666;margin:0 0 28px}
       .week{margin-bottom:32px}
@@ -4280,8 +4281,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       .empty{font-size:12px;color:#d1d5db;padding:2px 0 6px}
       @media print{body{padding:18px}@page{margin:1.5cm;size:letter portrait}}
     </style></head><body>
-    <h1>2-Week Lookahead${jobNum ? ' — ' + jobNum : ''}</h1>
-    <h2>${jobName} · ${dateRange} · ${lookahead.status === 'submitted' ? 'Submitted by superintendent' : 'Draft'}</h2>
+    <h1>2-Week Lookahead${jobNum ? ' â€” ' + jobNum : ''}</h1>
+    <h2>${jobName} Â· ${dateRange} Â· ${lookahead.status === 'submitted' ? 'Submitted by superintendent' : 'Draft'}</h2>
     ${renderWeek(week1, 1)}
     ${renderWeek(week2, 2)}
     <script>window.onload=()=>window.print()</script></body></html>`
@@ -4430,7 +4431,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   if (errMsg && !job) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: '1rem' }}>
       <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{errMsg}</div>
-      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }}>â† Back to dashboard</button>
     </div>
   )
 
@@ -4450,7 +4451,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       </header>
 
       <main style={s.main} className="rx-main">
-        <button style={s.backBtn} onClick={() => router.push('/dashboard')}>← Back to dashboard</button>
+        <button style={s.backBtn} onClick={() => router.push('/dashboard')}>â† Back to dashboard</button>
 
         {msg && <div style={s.successMsg}>{msg}</div>}
         {errMsg && <div style={s.errorMsg}>{errMsg}</div>}
@@ -4458,10 +4459,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h1 style={{ ...s.jobTitle, margin: 0 }}>#{job.job_number} — {job.project_name}</h1>
+              <h1 style={{ ...s.jobTitle, margin: 0 }}>#{job.job_number} â€” {job.project_name}</h1>
               {job.nv_role === 'sub' && <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>Subcontractor</span>}
             </div>
-            <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
+            <p style={s.jobMeta}>{job.location}{job.start_date ? ' Â· Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {job.status !== 'complete' && !job.archived && (
@@ -4472,7 +4473,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   if (!window.confirm('Mark this job as complete and generate the financial performance report?')) return
                   await generateCompletionReport(true)
                 }}>
-                {generatingReport ? 'Generating...' : '✓ Complete Job & Report'}
+                {generatingReport ? 'Generating...' : 'âœ“ Complete Job & Report'}
               </button>
             )}
             {job.status === 'complete' && (
@@ -4503,7 +4504,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const hasValue = isSub ? (subTotal > 0 || !!job.contract_value) : !!job.contract_value
               return (
                 <>
-                  <div style={s.statValue()}>{hasValue ? '$' + total.toLocaleString() : '—'}</div>
+                  <div style={s.statValue()}>{hasValue ? '$' + total.toLocaleString() : 'â€”'}</div>
                   {isSub && nvSubcontracts.length > 0 && (
                     <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>{nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}</div>
                   )}
@@ -4516,10 +4517,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )
             })()}
           </div>
-          <div style={s.statCard}><div style={s.statLabel}>% billed</div><div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : '—'}</div></div>
+          <div style={s.statCard}><div style={s.statLabel}>% billed</div><div style={s.statValue('#e8590c')}>{pctContract ? pctContract + '%' : 'â€”'}</div></div>
         </div>
 
-        {/* ── SIDEBAR + CONTENT LAYOUT ── */}
+        {/* â”€â”€ SIDEBAR + CONTENT LAYOUT â”€â”€ */}
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
 
           {/* Left sidebar nav */}
@@ -4615,7 +4616,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           {/* Main content area */}
           <div style={{ flex: 1, minWidth: 0 }}>
 
-        {/* ── MOBILE SECTION NAV (hidden on desktop) ── */}
+        {/* â”€â”€ MOBILE SECTION NAV (hidden on desktop) â”€â”€ */}
         <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f1f1f1', fontSize: '16px', marginBottom: '1.25rem' }}>
           <optgroup label="Project">
             <option value="details">Details</option>
@@ -4651,7 +4652,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </optgroup>
         </select>
 
-        {/* ── DETAILS TAB ── */}
+        {/* â”€â”€ DETAILS TAB â”€â”€ */}
         {activeTab === 'details' && (
           <>
             <form onSubmit={saveJob}>
@@ -4684,11 +4685,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           type="button"
                           style={{ ...s.btnSmall, whiteSpace: 'nowrap', flexShrink: 0 }}
                           onClick={() => {
-                            if (window.confirm('The original contract value is locked because it is used as the base for all change order calculations.\n\nUnlock only to correct a data entry mistake — do NOT use this to apply change orders (use Contract Modifications for that).\n\nUnlock to edit?')) {
+                            if (window.confirm('The original contract value is locked because it is used as the base for all change order calculations.\n\nUnlock only to correct a data entry mistake â€” do NOT use this to apply change orders (use Contract Modifications for that).\n\nUnlock to edit?')) {
                               setContractValueUnlocked(true)
                             }
                           }}
-                        >🔒 Unlock</button>
+                        >ðŸ”’ Unlock</button>
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4698,7 +4699,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                       </div>
                     )}
-                    {contractValueUnlocked && <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Correction mode — use Contract Modifications to apply change orders, not this field.</p>}
+                    {contractValueUnlocked && <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Correction mode â€” use Contract Modifications to apply change orders, not this field.</p>}
                   </div>
                   <div><label style={s.label}>Default markup %</label><input type="number" style={s.input} placeholder="0" value={form.markup_pct || ''} onChange={e => update('markup_pct', e.target.value)} /></div>
                   <div>
@@ -4712,7 +4713,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div>
                     {(form.billing_frequency || 'monthly') === 'monthly' ? (
                       <>
-                        <label style={s.label}>Due day of month (1–28)</label>
+                        <label style={s.label}>Due day of month (1â€“28)</label>
                         <input type="number" min="1" max="28" style={s.input} placeholder="e.g. 25" value={form.billing_due_day || ''} onChange={e => update('billing_due_day', e.target.value)} />
                       </>
                     ) : (
@@ -4756,7 +4757,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ maxWidth: '360px' }}>
                   <label style={s.label}>PM contact (for RFI &amp; billing emails)</label>
                   <select style={s.input} value={form.pm_email || ''} onChange={e => update('pm_email', e.target.value)}>
-                    <option value="">— Select PM —</option>
+                    <option value="">â€” Select PM â€”</option>
                     {teamMembers.map(m => (
                       <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
                     ))}
@@ -4767,7 +4768,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showBillingDates ? '1.25rem' : 0, cursor: 'pointer' }} onClick={() => setShowBillingDates(v => !v)}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Billing schedule</p>
-                  <span style={{ fontSize: '12px', color: '#555', fontWeight: '700', userSelect: 'none' }}>{showBillingDates ? '▲ Hide' : '▼ Show'}</span>
+                  <span style={{ fontSize: '12px', color: '#555', fontWeight: '700', userSelect: 'none' }}>{showBillingDates ? 'â–² Hide' : 'â–¼ Show'}</span>
                 </div>
                 {showBillingDates && <>
                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
@@ -4897,7 +4898,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const title = freq === 'monthly' ? `Due on the ${ord(dueDay)} of each month` : freq === 'weekly' ? `Due every ${DOW[dueDay]}` : `Due every other ${DOW[dueDay]}`
                 return (
                   <div style={{ ...s.card, marginBottom: '1rem' }}>
-                    <p style={s.cardTitle}>Billing calendar — {title}</p>
+                    <p style={s.cardTitle}>Billing calendar â€” {title}</p>
                     <p style={{ fontSize: '12px', color: '#555', margin: '0 0 1rem' }}>Vendors receive an automatic reminder email 3 days before each due date.</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '8px' }}>
                       {dates.map((d, i) => {
@@ -5017,7 +5018,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   return <>
                                     {approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: approvedAmt >= 0 ? '#4ade80' : '#ff6b6b' }}>{approvedAmt >= 0 ? '+' : ''}${approvedAmt.toLocaleString()} COs</span>}
                                     {sc.contract_value != null && approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${(Number(sc.contract_value) + approvedAmt).toLocaleString()} revised</span>}
-                                    {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>⏳ {pendingCount} pending CO{pendingCount !== 1 ? 's' : ''}</span>}
+                                    {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>â³ {pendingCount} pending CO{pendingCount !== 1 ? 's' : ''}</span>}
                                   </>
                                 })()}
                                 {sc.signed_date && <span style={{ fontSize: '12px', color: '#555' }}>Signed {new Date(sc.signed_date + 'T12:00:00').toLocaleDateString()}</span>}
@@ -5055,7 +5056,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   </div>
                                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                     <button type="submit" style={s.btn} disabled={savingNvSubCO}>{savingNvSubCO ? 'Saving...' : 'Add CO'}</button>
-                                    <span style={{ fontSize: '11px', color: '#555' }}>Status defaults to Pending — approve below once confirmed with GC</span>
+                                    <span style={{ fontSize: '11px', color: '#555' }}>Status defaults to Pending â€” approve below once confirmed with GC</span>
                                   </div>
                                 </form>
                               )}
@@ -5074,7 +5075,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ fontSize: '11px', color: '#555' }}>
                                       {co.date && new Date(co.date + 'T12:00:00').toLocaleDateString()}
-                                      {co.notes && <span style={{ marginLeft: '8px' }}>· {co.notes}</span>}
+                                      {co.notes && <span style={{ marginLeft: '8px' }}>Â· {co.notes}</span>}
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
@@ -5082,7 +5083,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     {co.status !== 'approved' && <button style={s.btnSmallGreen} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'approved')}>Approve</button>}
                                     {co.status !== 'pending' && <button style={s.btnSmall} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'pending')}>Pending</button>}
                                     {co.status !== 'rejected' && <button style={s.btnSmallRed} type="button" onClick={() => updateNvSubCOStatus(sc, co.id, 'rejected')}>Reject</button>}
-                                    <button style={s.btnSmallRed} type="button" onClick={() => deleteNvSubCO(sc, co.id)}>✕</button>
+                                    <button style={s.btnSmallRed} type="button" onClick={() => deleteNvSubCO(sc, co.id)}>âœ•</button>
                                   </div>
                                 </div>
                               ))}
@@ -5111,7 +5112,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── SUBS TAB ── */}
+        {/* â”€â”€ SUBS TAB â”€â”€ */}
         {activeTab === 'subs' && (
           <>
             {(() => {
@@ -5147,10 +5148,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <label style={s.label}>Pick from approved directory</label>
                       <select style={s.input} value={assignSubForm.from_dir}
                         onChange={e => setAssignSubForm({ from_dir: e.target.value, email: '' })}>
-                        <option value="">— Select company —</option>
+                        <option value="">â€” Select company â€”</option>
                         {subDirectory
                           .filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase()))
-                          .map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
+                          .map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` Â· ${d.trade}` : ''}</option>)}
                       </select>
                     </div>
                   )}
@@ -5190,7 +5191,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const isExpanded = expandedCompanyKey === gKey
                 return (
                   <div key={group.name} style={{ marginBottom: '6px', border: '1px solid #1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
-                    {/* Company header — click to expand/collapse */}
+                    {/* Company header â€” click to expand/collapse */}
                     <div
                       style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#0f0f0f' : 'transparent', userSelect: 'none' }}
                       onClick={() => setExpandedCompanyKey(isExpanded ? null : gKey)}
@@ -5200,10 +5201,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
                       </span>
                       {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#555' }}>{group.members.length} users</span>}
-                      <span style={{ fontSize: '12px', color: '#555', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
+                      <span style={{ fontSize: '12px', color: '#555', marginLeft: '4px' }}>{isExpanded ? 'â–²' : 'â–¼'}</span>
                     </div>
 
-                    {/* Users — only visible when expanded */}
+                    {/* Users â€” only visible when expanded */}
                     {isExpanded && <div style={{ borderTop: '1px solid #1a1a1a', padding: '8px 14px 12px' }}>
                     {group.members.map(a => {
                       const contactName = a.profiles?.full_name || a._dirEntry?.contact_name
@@ -5221,7 +5222,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', gap: '4px' }}>
                             {[1,2,3,4,5].map(n => (
                               <button key={n} onClick={() => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, [field]: n } }))}
-                                style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#1a1a1a', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#2a2a2a'}`, borderRadius: '6px', color: '#f1f1f1', fontSize: '16px', cursor: 'pointer' }}>★</button>
+                                style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#1a1a1a', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#2a2a2a'}`, borderRadius: '6px', color: '#f1f1f1', fontSize: '16px', cursor: 'pointer' }}>â˜…</button>
                             ))}
                           </div>
                         </div>
@@ -5242,7 +5243,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <span style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666' }}>
                                   {contactName || a.sub_email || 'Unknown'}
                                 </span>
-                                {existingRating && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}</span>}
+                                {existingRating && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'â˜…'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}</span>}
                               </div>
                               <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
                                 {a.sub_email && contactName && <span>{a.sub_email}</span>}
@@ -5253,13 +5254,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {/* Status + actions */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                               <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', background: isRegistered ? '#0a2a0a' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a2800'}` }}>
-                                {isRegistered ? '● Active' : 'Not registered'}
+                                {isRegistered ? 'â— Active' : 'Not registered'}
                               </span>
                               {isRegistered && (
                                 <button style={s.btnSmall} onClick={() => {
                                   if (isShowingMessages) { setExpandedMessageSubId(null) }
                                   else { setExpandedMessageSubId(a.sub_id); loadMessages(a.sub_id) }
-                                }}>💬{messages.length > 0 ? ` (${messages.length})` : ''}</button>
+                                }}>ðŸ’¬{messages.length > 0 ? ` (${messages.length})` : ''}</button>
                               )}
                               {isRegistered && (
                                 <button style={s.btnSmall} onClick={() => {
@@ -5301,12 +5302,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {/* Message thread */}
                           {isShowingMessages && (
                             <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
-                              <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Messages — {contactName || group.name}</p>
+                              <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Messages â€” {contactName || group.name}</p>
                               <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 {messages.length === 0 ? <p style={{ color: '#444', fontSize: '13px' }}>No messages yet.</p> : messages.map(msg => (
                                   <div key={msg.id} style={{ display: 'flex', flexDirection: msg.sender_role === 'pm' ? 'row-reverse' : 'row', gap: '8px' }}>
                                     <div style={{ maxWidth: '70%', background: msg.sender_role === 'pm' ? '#1a2a0a' : '#1a1a2a', border: `1px solid ${msg.sender_role === 'pm' ? '#2a4a1a' : '#2a2a4a'}`, borderRadius: '10px', padding: '8px 12px' }}>
-                                      <div style={{ fontSize: '11px', color: '#555', marginBottom: '3px' }}>{msg.sender_name} · {new Date(msg.created_at).toLocaleString()}</div>
+                                      <div style={{ fontSize: '11px', color: '#555', marginBottom: '3px' }}>{msg.sender_name} Â· {new Date(msg.created_at).toLocaleString()}</div>
                                       <div style={{ fontSize: '13px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</div>
                                     </div>
                                   </div>
@@ -5329,7 +5330,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── BUDGET TAB ── */}
+        {/* â”€â”€ BUDGET TAB â”€â”€ */}
         {activeTab === 'budget' && !hideBudget && (
           <>
             <div style={s.statRow} className="rx-stats">
@@ -5384,7 +5385,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </button>
                 </div>
               </div>
-              <p style={{ fontSize: '12px', color: '#333', margin: '0 0 1.25rem' }}>CSV format: cost_code, description, amount · Header row optional</p>
+              <p style={{ fontSize: '12px', color: '#333', margin: '0 0 1.25rem' }}>CSV format: cost_code, description, amount Â· Header row optional</p>
 
               {showAddBudgetItem && (
                 <form onSubmit={saveBudgetItem} style={s.inlineForm}>
@@ -5426,7 +5427,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 })
                 return unlinked.length > 0 ? (
                   <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', fontSize: '13px', color: '#e8590c' }}>
-                    ⚠ {unlinked.length} contract{unlinked.length !== 1 ? 's' : ''} not linked to any budget line and not counted in committed totals:{' '}
+                    âš  {unlinked.length} contract{unlinked.length !== 1 ? 's' : ''} not linked to any budget line and not counted in committed totals:{' '}
                     <span style={{ color: '#aaa' }}>{unlinked.map(c => c.company_name || c.vendor_name || 'Unnamed').join(', ')}</span>
                     . Open each contract and assign it to a budget line.
                   </div>
@@ -5476,10 +5477,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{item.description}</span>
                             {itemCOs.length > 0 && (
                               <span
-                                title={itemCOs.map(co => `${co.status === 'approved' ? '✓' : co.status === 'pending' ? '⏳' : '✗'} ${co.description || 'CO'}: ${Number(co.amount) >= 0 ? '+' : ''}$${Math.abs(Number(co.amount)).toLocaleString()} (${co.status})`).join('\n')}
+                                title={itemCOs.map(co => `${co.status === 'approved' ? 'âœ“' : co.status === 'pending' ? 'â³' : 'âœ—'} ${co.description || 'CO'}: ${Number(co.amount) >= 0 ? '+' : ''}$${Math.abs(Number(co.amount)).toLocaleString()} (${co.status})`).join('\n')}
                                 style={{ display: 'inline-flex', alignItems: 'center', background: '#1a1000', color: '#f59e0b', border: '1px solid #4a3000', borderRadius: '4px', padding: '1px 7px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', cursor: 'help', flexShrink: 0, userSelect: 'none' }}
                               >
-                                CO{itemCOs.length > 1 ? ` ×${itemCOs.length}` : ''}
+                                CO{itemCOs.length > 1 ? ` Ã—${itemCOs.length}` : ''}
                               </span>
                             )}
                           </div>
@@ -5498,7 +5499,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           style={{ textAlign: 'right', fontSize: '14px', color: committed > 0 ? '#e8590c' : '#444', fontWeight: '600', cursor: committed > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}
                         >
                           ${committed.toLocaleString()}
-                          {committed > 0 && <span style={{ fontSize: '10px', opacity: 0.6 }}>{drillOpen ? '▲' : '▼'}</span>}
+                          {committed > 0 && <span style={{ fontSize: '10px', opacity: 0.6 }}>{drillOpen ? 'â–²' : 'â–¼'}</span>}
                         </div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: over ? '#ff6b6b' : '#4ade80', fontWeight: '600' }}>{over ? '-' : ''}${Math.abs(uncommitted).toLocaleString()}</div>
                         <div style={{ textAlign: 'right', fontSize: '13px', color: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</div>
@@ -5519,7 +5520,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   {r.name}
                                   {r.type === 'co' && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '6px' }}>({r.vendor})</span>}
                                   {r.type === 'po' && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.status}</span>}
-                                  {r.type === 'labor' && r.start && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.start}{r.end ? ' → ' + r.end : ''}</span>}
+                                  {r.type === 'labor' && r.start && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.start}{r.end ? ' â†’ ' + r.end : ''}</span>}
                                   {r.type === 'dc' && r.date && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.date}</span>}
                                 </span>
                                 <span style={{ fontSize: '13px', fontWeight: '700', color, whiteSpace: 'nowrap' }}>{fmt(r.amount)}</span>
@@ -5529,7 +5530,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )
                         return (
                           <div style={{ gridColumn: '1 / -1', background: '#0d0d0d', border: '1px solid #1e1e1e', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px 18px', marginBottom: '2px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', marginBottom: '12px' }}>COMMITTED BREAKDOWN — {item.description.toUpperCase()}</div>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', marginBottom: '12px' }}>COMMITTED BREAKDOWN â€” {item.description.toUpperCase()}</div>
                             <DrillSection label="Subcontracts" color="#60a5fa" rows={contractLines} />
                             <DrillSection label="Direct Costs" color="#4ade80" rows={dcLines} />
                             <DrillSection label="Purchase Orders" color="#facc15" rows={poLines} />
@@ -5582,7 +5583,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   {forecastRows.map(({ item, spent, contracted, autoEac, eac, revenue, variance, projProfit }) => (
                     <div key={item.id} style={{ ...col, borderBottom: '1px solid #111', alignItems: 'center' }}>
                       <div>
-                        {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code} · </span>}
+                        {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code} Â· </span>}
                         <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
                       </div>
                       <div style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1' }}>${Number(item.budget_amount).toLocaleString()}</div>
@@ -5599,7 +5600,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           onBlur={e => saveForecastEac(item.id, e.target.value === '' ? '' : e.target.value)}
                         />
                         {item.forecast_eac != null && (
-                          <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                          <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>Ã—</button>
                         )}
                       </div>
                       <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{variance >= 0 ? '+' : '-'}${Math.abs(variance).toLocaleString()}</div>
@@ -5620,7 +5621,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )
             })()}
 
-            {/* ── Owner Billing vs Budget ── */}
+            {/* â”€â”€ Owner Billing vs Budget â”€â”€ */}
             {budgetView === 'billing' && budgetItems.length > 0 && (() => {
               const hasBilling = Object.keys(billingByItem).length > 0
               const rows = budgetItems.map(item => {
@@ -5644,7 +5645,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Owner Billing vs Budget</p>
                   <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>
-                    {hasBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found — create one in the Prime Contract tab to track billing progress per line.'}
+                    {hasBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found â€” create one in the Prime Contract tab to track billing progress per line.'}
                   </p>
 
                   {/* Summary stats */}
@@ -5698,7 +5699,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )
             })()}
-            {/* Employee Labor — Against Profit */}
+            {/* Employee Labor â€” Against Profit */}
             {(() => {
               const profitAllocs = jobAllocations.filter(a => a.allocation_type === 'profit')
               if (profitAllocs.length === 0) return null
@@ -5718,7 +5719,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
                 <div style={{ ...s.card, marginTop: '1.5rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <p style={{ ...s.cardTitle, margin: 0 }}>Employee Labor — Against Profit</p>
+                    <p style={{ ...s.cardTitle, margin: 0 }}>Employee Labor â€” Against Profit</p>
                     <button style={s.btnSmallOrange} onClick={async () => {
                       if (!confirm(`Post $${totalAccrued.toLocaleString()} in employee labor to job costs?\n\nThis creates direct cost entries for each employee. Only do this at closeout or end of period.`)) return
                       const today = new Date().toISOString().slice(0, 10)
@@ -5730,7 +5731,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             job_id: id,
                             budget_item_id: null,
                             cost_date: today,
-                            description: `Employee labor — ${r.emp.name} (${r.days} days${r.pct < 100 ? ` at ${r.pct}%` : ''})`,
+                            description: `Employee labor â€” ${r.emp.name} (${r.days} days${r.pct < 100 ? ` at ${r.pct}%` : ''})`,
                             category: 'Employee Labor',
                             amount: r.accrued,
                             status: 'approved',
@@ -5738,13 +5739,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         })
                       ))
                       const allOk = results.every(res => res.ok)
-                      alert(allOk ? `Posted $${totalAccrued.toLocaleString()} to job costs.` : 'Some entries may have failed — check the Costs tab.')
+                      alert(allOk ? `Posted $${totalAccrued.toLocaleString()} to job costs.` : 'Some entries may have failed â€” check the Costs tab.')
                     }}>Post to Job Costs</button>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
                     <span>Employee</span>
                     <span style={{ textAlign: 'right' }}>Start</span>
-                    <span style={{ textAlign: 'right' }}>Days ▲</span>
+                    <span style={{ textAlign: 'right' }}>Days â–²</span>
                     <span style={{ textAlign: 'right' }}>$/Wk</span>
                     <span style={{ textAlign: 'right' }}>Accrued</span>
                   </div>
@@ -5762,7 +5763,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   ))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 0', fontSize: '13px' }}>
-                    <span style={{ color: '#555' }}>{rows.length} employee{rows.length !== 1 ? 's' : ''} · accruing daily</span>
+                    <span style={{ color: '#555' }}>{rows.length} employee{rows.length !== 1 ? 's' : ''} Â· accruing daily</span>
                     <span style={{ fontWeight: '700', color: '#4ade80' }}>Total: ${totalAccrued.toLocaleString()}</span>
                   </div>
                 </div>
@@ -5771,7 +5772,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── CONTRACTS TAB ── */}
+        {/* â”€â”€ CONTRACTS TAB â”€â”€ */}
         {activeTab === 'contracts' && (
           <>
             <div style={s.statRow} className="rx-stats">
@@ -5797,8 +5798,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div><label style={s.label}>Subcontractor name</label>
                     <select style={s.input} value={contractGenForm.contract_id} onChange={e => { const c = contracts.find(x => x.id === e.target.value); if (c) openContractGenerator(c) }}>
-                      <option value="">— Select —</option>
-                      {contracts.map(c => { const n = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'; return <option key={c.id} value={c.id}>{n}{c.description ? ` — ${c.description}` : ''}</option> })}
+                      <option value="">â€” Select â€”</option>
+                      {contracts.map(c => { const n = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'; return <option key={c.id} value={c.id}>{n}{c.description ? ` â€” ${c.description}` : ''}</option> })}
                     </select>
                   </div>
                   <div><label style={s.label}>Sub address</label><input style={s.input} value={contractGenForm.sub_address} onChange={e => setContractGenForm(f => ({ ...f, sub_address: e.target.value }))} placeholder="123 Main St, City, TX 75000" /></div>
@@ -5826,14 +5827,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ marginBottom: '16px' }}>
                   <button type="button" style={{ ...s.btnSmall, marginBottom: '8px' }} onClick={() => setShowCustomText(v => !v)}>
-                    {showCustomText ? '▲ Hide custom text' : '▼ Edit cover letter & contract text'}
+                    {showCustomText ? 'â–² Hide custom text' : 'â–¼ Edit cover letter & contract text'}
                   </button>
                   {showCustomText && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '14px', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px' }}>
                       <div>
                         <label style={s.label}>Subcontractor entity type</label>
                         <input style={s.input} value={contractGenForm.entity_type} onChange={e => setContractGenForm(f => ({ ...f, entity_type: e.target.value }))} placeholder="sole proprietorship" />
-                        <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Appears in agreement as: "…{contractGenForm.sub_name || 'Sub Name'}, a [entity type] of the State of Texas…"</p>
+                        <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Appears in agreement as: "â€¦{contractGenForm.sub_name || 'Sub Name'}, a [entity type] of the State of Texasâ€¦"</p>
                       </div>
                       <div>
                         <label style={s.label}>Cover letter body</label>
@@ -5856,7 +5857,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
                   <button style={{ ...s.btn, background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a' }} onClick={() => { setShowSignPanel(v => !v); setSignMsg('') }}>
-                    {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
+                    {showSignPanel ? 'Cancel' : 'âœ‰ Send for e-Signature'}
                   </button>
                 </div>
 
@@ -5892,7 +5893,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #1a1a1a', fontSize: '12px' }}>
                         <span style={{ color: '#aaa' }}>{r.signer_email}</span>
                         <span style={{ color: r.status === 'signed' ? '#4ade80' : '#f59e0b', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
-                          {r.status === 'signed' ? `✓ Signed ${new Date(r.signed_at).toLocaleDateString()}` : '⏳ Awaiting signature'}
+                          {r.status === 'signed' ? `âœ“ Signed ${new Date(r.signed_at).toLocaleDateString()}` : 'â³ Awaiting signature'}
                         </span>
                       </div>
                     ))}
@@ -5923,7 +5924,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <>
                             <select style={s.input} value={contractForm.dir_id} onChange={e => setContractForm(f => ({ ...f, dir_id: e.target.value }))}>
                               <option value="">{assignedDirs.length === 0 ? 'No subs assigned to this project yet' : 'Select a sub...'}</option>
-                              {assignedDirs.map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
+                              {assignedDirs.map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` Â· ${d.trade}` : ''}</option>)}
                             </select>
                             {assignedDirs.length === 0 && (
                               <p style={{ fontSize: '11px', color: '#e8590c', margin: '4px 0 0' }}>Assign companies to this project in the Subs tab first.</p>
@@ -5946,7 +5947,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <p style={{ fontSize: '12px', color: '#555', margin: 0 }}>
                         {contractForm.retainage_pct > 0
                           ? `${contractForm.retainage_pct}% of each billing will be withheld until project completion.`
-                          : 'No retainage — full payment on each billing.'}
+                          : 'No retainage â€” full payment on each billing.'}
                       </p>
                     </div>
                   </div>
@@ -5966,7 +5967,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmall} onClick={() => setContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
                         </div>
                         {allocs.length === 0 && (
-                          <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                          <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation â€” click Add line to split across budget items.</p>
                         )}
                         {allocs.map((alloc, idx) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
@@ -5975,20 +5976,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               setContractForm(f => ({ ...f, budget_allocations: next }))
                             }}>
                               <option value="">Select budget item...</option>
-                              {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
+                              {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
                             </select>
                             <input type="number" step="0.01" placeholder="Amount" style={{ ...s.input, padding: '8px 10px', textAlign: 'right' }} value={alloc.amount} onChange={e => {
                               const next = allocs.map((a, i) => i === idx ? { ...a, amount: e.target.value } : a)
                               setContractForm(f => ({ ...f, budget_allocations: next }))
                             }} />
-                            <button style={{ ...s.btnSmallRed, padding: '6px 8px' }} onClick={() => setContractForm(f => ({ ...f, budget_allocations: f.budget_allocations.filter((_, i) => i !== idx) }))}>✕</button>
+                            <button style={{ ...s.btnSmallRed, padding: '6px 8px' }} onClick={() => setContractForm(f => ({ ...f, budget_allocations: f.budget_allocations.filter((_, i) => i !== idx) }))}>âœ•</button>
                           </div>
                         ))}
                         {allocs.length > 0 && contractVal > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', marginTop: '4px' }}>
                             <span style={{ color: '#888' }}>Allocated: <strong style={{ color: '#f1f1f1' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#f1f1f1' }}>${contractVal.toLocaleString()}</strong></span>
                             <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
-                              {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
+                              {remaining === 0 ? 'âœ“ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
                             </span>
                           </div>
                         )}
@@ -6030,7 +6031,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               if (!item) return null
                               return (
                                 <span key={i} style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
-                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description}
+                                  {item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description}
                                   {a.amount ? <span style={{ color: '#888', marginLeft: '4px' }}>${Number(a.amount).toLocaleString()}</span> : null}
                                 </span>
                               )
@@ -6073,13 +6074,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </button>
                           <button style={{ ...s.btnSmall, background: '#1a3a1a', color: '#4ade80', border: '1px solid #1a3a1a' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
                           {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#1a2a3a', color: '#60a5fa', border: '1px solid #1a2a3a' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
-                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #1a3a1a' }} onClick={() => openSignedContractUrl(c.signed_contract_url)}>Signed Contract ↗</button>}
+                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #1a3a1a' }} onClick={() => openSignedContractUrl(c.signed_contract_url)}>Signed Contract â†—</button>}
                           {(() => {
                             const req = signingRequests.find(r => r.subcontract_id === c.id)
                             if (!req) return null
                             return (
                               <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#0a2a0a' : '#1a1400', color: req.status === 'signed' ? '#4ade80' : '#f59e0b', border: `1px solid ${req.status === 'signed' ? '#1a4a1a' : '#4a3800'}`, whiteSpace: 'nowrap' }}>
-                                {req.status === 'signed' ? '✓ Signed' : '⏳ Awaiting sign'}
+                                {req.status === 'signed' ? 'âœ“ Signed' : 'â³ Awaiting sign'}
                               </span>
                             )
                           })()}
@@ -6116,7 +6117,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <button style={s.btnSmall} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
                               </div>
                               {allocs.length === 0 && (
-                                <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                                <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation â€” click Add line to split across budget items.</p>
                               )}
                               {allocs.map((alloc, idx) => (
                                 <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
@@ -6125,20 +6126,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     setEditContractForm(f => ({ ...f, budget_allocations: next }))
                                   }}>
                                     <option value="">Select budget item...</option>
-                                    {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
+                                    {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
                                   </select>
                                   <input type="number" step="0.01" placeholder="Amount" style={{ ...s.input, padding: '8px 10px', textAlign: 'right' }} value={alloc.amount} onChange={e => {
                                     const next = allocs.map((a, i) => i === idx ? { ...a, amount: e.target.value } : a)
                                     setEditContractForm(f => ({ ...f, budget_allocations: next }))
                                   }} />
-                                  <button style={{ ...s.btnSmallRed, padding: '6px 8px' }} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: f.budget_allocations.filter((_, i) => i !== idx) }))}>✕</button>
+                                  <button style={{ ...s.btnSmallRed, padding: '6px 8px' }} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: f.budget_allocations.filter((_, i) => i !== idx) }))}>âœ•</button>
                                 </div>
                               ))}
                               {allocs.length > 0 && contractVal > 0 && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', marginTop: '4px' }}>
                                   <span style={{ color: '#888' }}>Allocated: <strong style={{ color: '#f1f1f1' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#f1f1f1' }}>${contractVal.toLocaleString()}</strong></span>
                                   <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
-                                    {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
+                                    {remaining === 0 ? 'âœ“ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
                                   </span>
                                 </div>
                               )}
@@ -6157,7 +6158,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
                           <label style={s.label}>Replace bid proposal PDF (optional)</label>
-                          {editContractForm.bid_proposal_url && <p style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>Current file on record — upload a new one to replace it</p>}
+                          {editContractForm.bid_proposal_url && <p style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>Current file on record â€” upload a new one to replace it</p>}
                           <input type="file" accept=".pdf,.doc,.docx" onChange={e => setEditContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#ccc' }} />
                         </div>
                         <button style={s.btnSmallOrange} onClick={updateContract}>Save changes</button>
@@ -6166,7 +6167,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                     {c.onedrive_url && !isEditing && (
                       <div style={{ ...s.contractRowExpanded, paddingTop: '10px', paddingBottom: '10px' }}>
-                        <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>View contract on OneDrive ↗</a>
+                        <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>View contract on OneDrive â†—</a>
                       </div>
                     )}
 
@@ -6237,11 +6238,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     return (
                                       <tr key={b.id} style={{ borderBottom: '1px solid #111' }}>
                                         <td style={{ padding: '8px', color: '#888', fontSize: '11px', whiteSpace: 'nowrap' }}>{new Date(b.submitted_at).toLocaleDateString()}</td>
-                                        <td style={{ padding: '8px', color: '#555', fontSize: '11px' }}>{b.billing_period ? b.billing_period.slice(0, 7) : '—'}</td>
+                                        <td style={{ padding: '8px', color: '#555', fontSize: '11px' }}>{b.billing_period ? b.billing_period.slice(0, 7) : 'â€”'}</td>
                                         <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#f1f1f1', fontWeight: '600' }}>{fmtC(b.amount_billed)}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#facc15' }}>{Number(b.retainage_held || 0) > 0 ? fmtC(b.retainage_held) : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#facc15' }}>{Number(b.retainage_held || 0) > 0 ? fmtC(b.retainage_held) : 'â€”'}</td>
                                         <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#4ade80' }}>{fmtC(net)}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center', color: '#888', fontSize: '11px' }}>{b.pct_complete != null ? b.pct_complete + '%' : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'center', color: '#888', fontSize: '11px' }}>{b.pct_complete != null ? b.pct_complete + '%' : 'â€”'}</td>
                                         <td style={{ padding: '8px', textAlign: 'center' }}>
                                           <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{b.status}</span>
                                         </td>
@@ -6286,9 +6287,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div style={{ marginBottom: '8px' }}>
                                   <label style={s.label}>Budget line item (optional)</label>
                                   <select style={s.input} value={sovLineForm.budget_item_id} onChange={e => setSovLineForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                                    <option value="">— None —</option>
+                                    <option value="">â€” None â€”</option>
                                     {budgetItems.map(item => (
-                                      <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>
+                                      <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>
                                     ))}
                                   </select>
                                 </div>
@@ -6335,9 +6336,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               <input style={{ ...s.input, padding: '5px 8px', fontSize: '12px' }} value={editSovLineForm.description} onChange={e => setEditSovLineForm(f => ({ ...f, description: e.target.value }))} />
                                               {budgetItems.length > 0 && (
                                                 <select style={{ ...s.input, padding: '5px 8px', fontSize: '12px', marginTop: '4px' }} value={editSovLineForm.budget_item_id || ''} onChange={e => setEditSovLineForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                                                  <option value="">— No budget item —</option>
+                                                  <option value="">â€” No budget item â€”</option>
                                                   {budgetItems.map(item => (
-                                                    <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description}</option>
+                                                    <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description}</option>
                                                   ))}
                                                 </select>
                                               )}
@@ -6349,7 +6350,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <td style={{ padding: '4px', textAlign: 'right' }}>
                                               <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                                                 <button style={s.btnSmallOrange} onClick={() => updateSovLine(line.id, c.id)}>Save</button>
-                                                <button style={s.btnSmall} onClick={() => setEditingSovLine(null)}>✕</button>
+                                                <button style={s.btnSmall} onClick={() => setEditingSovLine(null)}>âœ•</button>
                                               </div>
                                             </td>
                                           </>
@@ -6359,7 +6360,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               {line.description}
                                               {line.budget_items && (
                                                 <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
-                                                  {line.budget_items.cost_code ? `${line.budget_items.cost_code} · ` : ''}{line.budget_items.description}
+                                                  {line.budget_items.cost_code ? `${line.budget_items.cost_code} Â· ` : ''}{line.budget_items.description}
                                                 </div>
                                               )}
                                             </td>
@@ -6407,7 +6408,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── CHANGE ORDERS TAB ── */}
+        {/* â”€â”€ CHANGE ORDERS TAB â”€â”€ */}
         {activeTab === 'changeorders' && (
           <>
             {(() => {
@@ -6460,11 +6461,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             amount: amt,
                           }))
                         }}>
-                          <option value="">— None, fill in manually —</option>
+                          <option value="">â€” None, fill in manually â€”</option>
                           {approvedBillings.map(b => {
-                            const period = b.billing_period ? ` · ${b.billing_period}` : ''
+                            const period = b.billing_period ? ` Â· ${b.billing_period}` : ''
                             const amt = Number(b.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })
-                            return <option key={b.id} value={b.id}>{b.company_name}{period} — ${amt}</option>
+                            return <option key={b.id} value={b.id}>{b.company_name}{period} â€” ${amt}</option>
                           })}
                         </select>
                       </div>
@@ -6498,8 +6499,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             const bi = budgetItems.find(b => b.id === e.target.value)
                             setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value, description: r.description || bi?.description || '' } : r) }))
                           }}>
-                          <option value="">— Select budget line * —</option>
-                          {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
+                          <option value="">â€” Select budget line * â€”</option>
+                          {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} Â· ` : ''}{bi.description}</option>)}
                         </select>
                         <input style={s.input} placeholder="Description (optional)" value={row.description} onChange={e => setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
                         <input type="number" style={{ ...s.input, borderColor: row.amount ? '#1a4a1a' : '#4a2200' }} placeholder="Amount *" value={row.amount}
@@ -6512,12 +6513,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const newSov = primeCOForm.sov.filter((_, j) => j !== i)
                           const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
                           setPrimeCOForm(f => ({ ...f, sov: newSov, amount: String(newTotal || '') }))
-                        }}>×</button>
+                        }}>Ã—</button>
                       </div>
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #1a3a1a' }}>
                       <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
-                        {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
+                        {allLinesAssigned ? 'âœ“ All lines assigned' : 'Assign a budget line and amount to each row'}
                       </span>
                       <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>
                         Total: ${totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -6554,7 +6555,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <p style={{ ...s.cardTitle, margin: 0 }}>Edit prime CO</p>
                         {co.status === 'approved' && (
                           <span style={{ fontSize: '11px', color: '#f59e0b', background: '#1a1200', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
-                            Approved — amount change will adjust contract value
+                            Approved â€” amount change will adjust contract value
                           </span>
                         )}
                       </div>
@@ -6592,8 +6593,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 const bi = budgetItems.find(b => b.id === e.target.value)
                                 setEditPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value, description: r.description || bi?.description || '' } : r) }))
                               }}>
-                              <option value="">— Select budget line —</option>
-                              {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
+                              <option value="">â€” Select budget line â€”</option>
+                              {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} Â· ` : ''}{bi.description}</option>)}
                             </select>
                             <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
                             <input type="number" style={{ ...s.input, borderColor: row.amount ? '#1a4a1a' : '#4a2200' }} placeholder="Amount" value={row.amount}
@@ -6606,13 +6607,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const newSov = editPrimeCOForm.sov.filter((_, j) => j !== i)
                               const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
                               setEditPrimeCOForm(f => ({ ...f, sov: newSov, amount: String(newTotal || '') }))
-                            }}>×</button>
+                            }}>Ã—</button>
                           </div>
                         ))}
                         {editPrimeCOForm.sov.length > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #1a3a1a' }}>
                             <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
-                              {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
+                              {allLinesAssigned ? 'âœ“ All lines assigned' : 'Assign a budget line and amount to each row'}
                             </span>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>
                               Total: ${totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -6638,7 +6639,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{co.description}</span>
-                        {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedPrimeCOId(isExpanded ? null : co.id)}>{co.sov.length} SOV lines {isExpanded ? '▲' : '▼'}</span>}
+                        {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedPrimeCOId(isExpanded ? null : co.id)}>{co.sov.length} SOV lines {isExpanded ? 'â–²' : 'â–¼'}</span>}
                         <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                       </div>
                       {co.notes && <span style={{ fontSize: '13px', color: '#aaa' }}>{co.notes}</span>}
@@ -6659,7 +6660,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#0a1a2a', border: '1px solid #1a3a5a', color: '#60a5fa' }} onClick={() => applyPrimeCOToBudget(co)}>Apply to Budget</button>
                       )}
                       {co.status === 'approved' && hasSov && co.budget_applied && (
-                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600' }}>✓ Budget Applied</span>
+                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600' }}>âœ“ Budget Applied</span>
                       )}
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
                         loadBudgetItems()
@@ -6670,10 +6671,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1) }}>Print CO</button>
                       <button
                         style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(sentOwnerCOIds.has(co.id) ? { background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' } : {}), opacity: (!job?.owner_email || sendingOwnerCO === co.id) ? 0.5 : 1 }}
-                        title={!job?.owner_email ? 'No owner email — add it in the Details tab' : 'Email this CO to the owner for approval'}
+                        title={!job?.owner_email ? 'No owner email â€” add it in the Details tab' : 'Email this CO to the owner for approval'}
                         disabled={!job?.owner_email || sendingOwnerCO === co.id}
                         onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); sendPrimeCOToOwner(co, idx + 1) }}
-                      >{sendingOwnerCO === co.id ? 'Sending...' : sentOwnerCOIds.has(co.id) ? '✓ Sent to Owner' : '✉ Send to Owner'}</button>
+                      >{sendingOwnerCO === co.id ? 'Sending...' : sentOwnerCOIds.has(co.id) ? 'âœ“ Sent to Owner' : 'âœ‰ Send to Owner'}</button>
                       <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px' }} onClick={() => deletePrimeCO(co.id)}>Delete</button>
                     </div>
                   </div>
@@ -6687,8 +6688,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         const bi = budgetItems.find(b => b.id === item.budget_item_id)
                         return (
                           <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '5px 0', borderTop: '1px solid #1a1a1a' }}>
-                            <span>{item.description || '—'}</span>
-                            <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' · ' : ''}${bi.description}` : '—'}</span>
+                            <span>{item.description || 'â€”'}</span>
+                            <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' Â· ' : ''}${bi.description}` : 'â€”'}</span>
                             <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           </div>
                         )
@@ -6710,7 +6711,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ marginTop: '12px', background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '18px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                           <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign CO to Budget Lines</p>
-                          <button onClick={() => setPrimeCOAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
+                          <button onClick={() => setPrimeCOAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>Ã—</button>
                         </div>
 
                         {/* Breakdown */}
@@ -6737,8 +6738,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const bi = budgetItems.find(b => b.id === e.target.value)
                                   setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, budget_item_id: e.target.value, description: l.description || (bi ? bi.description : '') } : l) }))
                                 }}>
-                                <option value="">— Select line —</option>
-                                {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                                <option value="">â€” Select line â€”</option>
+                                {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
                               </select>
                               <input style={{ ...s.input, padding: '7px 10px', fontSize: '12px' }} placeholder="Description"
                                 value={line.description}
@@ -6747,7 +6748,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 value={line.amount}
                                 onChange={e => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, amount: e.target.value } : l) }))} />
                               <button onClick={() => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.filter((_, j) => j !== i) }))}
-                                style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
+                                style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>Ã—</button>
                             </div>
                           ))}
                           <button
@@ -6763,7 +6764,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{fmt(assigned)}</span>
                           <span style={{ fontSize: '12px', color: '#555' }}>Remaining:</span>
                           <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
-                            {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
+                            {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? 'âœ“' : remaining < 0 ? '(over)' : ''}
                           </span>
                           {!isBalanced && remaining > 0 && (
                             <button onClick={() => {
@@ -6823,7 +6824,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <option value="">Select subcontract...</option>
                       {contracts.map(c => {
                         const subName = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown'
-                        return <option key={c.id} value={c.id}>{subName}{c.description ? ` — ${c.description}` : ''}</option>
+                        return <option key={c.id} value={c.id}>{subName}{c.description ? ` â€” ${c.description}` : ''}</option>
                       })}
                     </select>
                   </div>
@@ -6831,8 +6832,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <label style={s.label}>Direction</label>
                       <select style={s.input} value={coForm.direction} onChange={e => setCoForm(f => ({ ...f, direction: e.target.value }))}>
-                        <option value="pm_to_sub">PM → Sub (add scope)</option>
-                        <option value="sub_to_pm">Sub → PM (sub request)</option>
+                        <option value="pm_to_sub">PM â†’ Sub (add scope)</option>
+                        <option value="sub_to_pm">Sub â†’ PM (sub request)</option>
                       </select>
                     </div>
                     <div>
@@ -6852,16 +6853,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Schedule of Values</p>
                       <button type="button" style={s.btnSmall} onClick={() => { setCoForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] })); if (!budgetItems.length) loadBudgetItems() }}>+ Add Line</button>
                     </div>
-                    {coForm.sov.length === 0 && <p style={{ fontSize: '12px', color: '#444', marginBottom: '8px' }}>No SOV lines — CO will use the amount above. Add lines to break down cost by budget item.</p>}
+                    {coForm.sov.length === 0 && <p style={{ fontSize: '12px', color: '#444', marginBottom: '8px' }}>No SOV lines â€” CO will use the amount above. Add lines to break down cost by budget item.</p>}
                     {coForm.sov.map((row, i) => (
                       <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
                         <input style={s.input} placeholder="Description" value={row.description} onChange={e => setCoForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
                         <select style={s.input} value={row.budget_item_id} onChange={e => setCoForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value } : r) }))}>
-                          <option value="">— Budget line —</option>
-                          {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
+                          <option value="">â€” Budget line â€”</option>
+                          {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} Â· ` : ''}{bi.description}</option>)}
                         </select>
                         <input type="number" style={s.input} placeholder="$0.00" value={row.amount} onChange={e => setCoForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r) }))} />
-                        <button type="button" style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px', padding: '0' }} onClick={() => setCoForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>×</button>
+                        <button type="button" style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px', padding: '0' }} onClick={() => setCoForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>Ã—</button>
                       </div>
                     ))}
                     {subHasSOV && (
@@ -6902,8 +6903,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
                           {scope && <span style={{ fontSize: '11px', color: '#555' }}>{scope}</span>}
-                          <span style={{ fontSize: '11px', color: '#555' }}>{co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'}</span>
-                          {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedSubCOId(isSOVExpanded ? null : co.id)}>{co.sov.length} SOV lines {isSOVExpanded ? '▲' : '▼'}</span>}
+                          <span style={{ fontSize: '11px', color: '#555' }}>{co.direction === 'pm_to_sub' ? 'PM â†’ Sub' : 'Sub â†’ PM'}</span>
+                          {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedSubCOId(isSOVExpanded ? null : co.id)}>{co.sov.length} SOV lines {isSOVExpanded ? 'â–²' : 'â–¼'}</span>}
                           <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                         </div>
                         <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
@@ -6922,7 +6923,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         {(
                           <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup(''); setPushAdditional('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')); setPushAdditional('') } }}>
-                            {isPushing ? '✕ Cancel' : '↑ Push to Mod'}
+                            {isPushing ? 'âœ• Cancel' : 'â†‘ Push to Mod'}
                           </button>
                         )}
                         <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const num = allCOs.length - coIdx; printSubCO(co, subName, scope, num) }}>Print CO</button>
@@ -6945,7 +6946,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '16px', marginTop: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                             <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit Change Order</p>
-                            <button onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '18px', cursor: 'pointer' }}>×</button>
+                            <button onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '18px', cursor: 'pointer' }}>Ã—</button>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                             <div>
@@ -6964,11 +6965,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
                                   <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
                                   <select style={s.input} value={row.budget_item_id} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value } : r) }))}>
-                                    <option value="">— No budget line —</option>
-                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? b.cost_code + ' · ' : ''}{b.description}</option>)}
+                                    <option value="">â€” No budget line â€”</option>
+                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? b.cost_code + ' Â· ' : ''}{b.description}</option>)}
                                   </select>
                                   <input style={s.input} type="number" placeholder="Amount" value={row.amount} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r) }))} />
-                                  <button style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>×</button>
+                                  <button style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>Ã—</button>
                                 </div>
                               ))}
                               <button style={{ ...s.btnSmall, fontSize: '11px', marginTop: '4px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: [...f.sov, { description: '', budget_item_id: '', amount: '' }] }))}>+ Add Line</button>
@@ -7019,8 +7020,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const bi = budgetItems.find(b => b.id === item.budget_item_id)
                           return (
                             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '5px 0', borderTop: '1px solid #1a1a1a' }}>
-                              <span>{item.description || '—'}</span>
-                              <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' · ' : ''}${bi.description}` : '—'}</span>
+                              <span>{item.description || 'â€”'}</span>
+                              <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' Â· ' : ''}${bi.description}` : 'â€”'}</span>
                               <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </div>
                           )
@@ -7042,7 +7043,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ marginTop: '12px', background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '18px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                             <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign to Budget</p>
-                            <button onClick={() => setCoAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
+                            <button onClick={() => setCoAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>Ã—</button>
                           </div>
 
                           {/* Breakdown */}
@@ -7067,8 +7068,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     const bi = budgetItems.find(b => b.id === e.target.value)
                                     setCoAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, budget_item_id: e.target.value, description: l.description || (bi ? bi.description : '') } : l) }))
                                   }}>
-                                  <option value="">— Select line —</option>
-                                  {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                                  <option value="">â€” Select line â€”</option>
+                                  {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
                                 </select>
                                 <input style={{ ...s.input, padding: '7px 10px', fontSize: '12px' }} placeholder="Description"
                                   value={line.description}
@@ -7077,7 +7078,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   value={line.amount}
                                   onChange={e => setCoAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, amount: e.target.value } : l) }))} />
                                 <button onClick={() => setCoAssignPanel(prev => ({ ...prev, lines: prev.lines.filter((_, j) => j !== i) }))}
-                                  style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
+                                  style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>Ã—</button>
                               </div>
                             ))}
                             <button
@@ -7093,7 +7094,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{fmt(assigned)}</span>
                             <span style={{ fontSize: '12px', color: '#555' }}>Remaining:</span>
                             <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
-                              {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
+                              {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? 'âœ“' : remaining < 0 ? '(over)' : ''}
                             </span>
                             {!isBalanced && remaining > 0 && (
                               <button onClick={() => {
@@ -7136,7 +7137,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── BILLING TAB ── */}
+        {/* â”€â”€ BILLING TAB â”€â”€ */}
         {activeTab === 'billing' && (
           <>
             <div style={s.statRow} className="rx-stats">
@@ -7145,7 +7146,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#4ade80')}>${approvedBillingTotal.toLocaleString()}</div></div>
             </div>
 
-            {/* ── DRAW REQUESTS ── */}
+            {/* â”€â”€ DRAW REQUESTS â”€â”€ */}
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Draw requests ({drawRequests.length})</p>
@@ -7178,7 +7179,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
                               />
                               <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{dc.description}</span>
-                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{dc.cost_date} · ${Number(dc.amount).toLocaleString()}</span>
+                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{dc.cost_date} Â· ${Number(dc.amount).toLocaleString()}</span>
                             </label>
                           ))}
                         </div>
@@ -7202,8 +7203,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 onChange={e => setDrawForm(f => ({ ...f, po_ids: e.target.checked ? [...f.po_ids, po.id] : f.po_ids.filter(x => x !== po.id) }))}
                                 style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
                               />
-                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
-                              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number} · ${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` Â· ${po.description}` : ''}</span>
+                              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number} Â· ${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </label>
                           ))}
                         </div>
@@ -7220,7 +7221,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
                               <input type="checkbox" checked={drawForm.gc_ids.includes(e.id)} onChange={ev => setDrawForm(f => ({ ...f, gc_ids: ev.target.checked ? [...f.gc_ids, e.id] : f.gc_ids.filter(x => x !== e.id) }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
                               <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{e.description}</span>
-                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{e.entry_date} · ${Number(e.amount).toLocaleString()}</span>
+                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{e.entry_date} Â· ${Number(e.amount).toLocaleString()}</span>
                             </label>
                           ))}
                         </div>
@@ -7271,7 +7272,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const taggedGCTotal = taggedGCs.reduce((a, e) => a + Number(e.amount || 0), 0)
                 return (
                   <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                    {/* Header row — click to expand */}
+                    {/* Header row â€” click to expand */}
                     <div
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: dr.status === 'open' ? '#140a00' : '#0a0a0a', cursor: 'pointer' }}
                       onClick={() => { setExpandedDrawId(isOpen ? null : dr.id); setDrawAddCostIds([]); setDrawAddPOIds([]) }}
@@ -7308,7 +7309,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           await loadDrawRequests()
                           await loadBillingForJob()
                         }}>Delete</button>
-                        <span style={{ color: '#555', fontSize: '14px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
+                        <span style={{ color: '#555', fontSize: '14px', marginLeft: '4px' }}>{isOpen ? 'â–²' : 'â–¼'}</span>
                       </div>
                     </div>
 
@@ -7326,7 +7327,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div key={dc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
                                 <div>
                                   <span style={{ color: '#ccc' }}>{dc.description}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{dc.cost_date} · {dc.category}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{dc.cost_date} Â· {dc.category}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(dc.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -7394,7 +7395,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
                                 <div>
                                   <span style={{ color: '#ccc' }}>{po.vendor_name}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` Â· ${po.description}` : ''}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -7427,7 +7428,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     onChange={e => setDrawAddPOIds(ids => e.target.checked ? [...ids, po.id] : ids.filter(x => x !== po.id))}
                                     style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }}
                                   />
-                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
+                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` Â· ${po.description}` : ''}</span>
                                   <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number}</span>
                                   <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 </label>
@@ -7460,7 +7461,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
                                 <div>
                                   <span style={{ color: '#ccc' }}>{e.description}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{e.entry_date} · {e.category}</span>
+                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{e.entry_date} Â· {e.category}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -7561,13 +7562,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           contact_info: regSub?.profiles?.phone || '',
                         }))
                       }}>
-                      <option value="">— Select a subcontract —</option>
+                      <option value="">â€” Select a subcontract â€”</option>
                       {contracts.length === 0 && (
                         <option value="" disabled>No subcontracts on this job yet</option>
                       )}
                       {contracts.map(c => (
                         <option key={c.id} value={c.id}>
-                          {c.vendor_name || 'Unknown'}{c.description ? ` — ${c.description}` : ''}{c.adjusted_contract_value || c.contract_value ? ` ($${Number(c.adjusted_contract_value || c.contract_value).toLocaleString()})` : ''}
+                          {c.vendor_name || 'Unknown'}{c.description ? ` â€” ${c.description}` : ''}{c.adjusted_contract_value || c.contract_value ? ` ($${Number(c.adjusted_contract_value || c.contract_value).toLocaleString()})` : ''}
                         </option>
                       ))}
                     </select>
@@ -7632,7 +7633,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {drawRequests.length > 0 ? (
                           <>
                             <select style={s.input} value={createBillingForm.draw_request_id} onChange={e => setCreateBillingForm(f => ({ ...f, draw_request_id: e.target.value, billing_period: '' }))}>
-                              <option value="">— Select a draw —</option>
+                              <option value="">â€” Select a draw â€”</option>
                               {drawRequests.filter(d => d.status === 'open').map(d => (
                                 <option key={d.id} value={d.id}>{d.title}</option>
                               ))}
@@ -7649,7 +7650,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         ) : (
                           <>
                             <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
-                            <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                            <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers â€” used to auto-fill AIA applications</p>
                           </>
                         )}
                       </div>
@@ -7720,8 +7721,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>{drawRequests.find(d => d.id === b.draw_request_id)?.title || 'Draw'}</span>
                             : b.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                           }
-                          {cumPct != null ? ` · ${cumPct}% billed to date` : b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
-                          {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
+                          {cumPct != null ? ` Â· ${cumPct}% billed to date` : b.pct_complete != null ? ` Â· ${b.pct_complete}% complete` : ''}
+                          {b.work_description ? ` Â· ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? 'â€¦' : ''}` : ''}
                         </div>
                         {drawRequests.length > 0 && (
                           <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -7731,7 +7732,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               onChange={e => assignBillingToDraw(b.id, e.target.value)}
                               style={{ fontSize: '11px', padding: '3px 8px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', color: b.draw_request_id ? '#e8590c' : '#555', outline: 'none', cursor: 'pointer' }}
                             >
-                              <option value="">— Unassigned —</option>
+                              <option value="">â€” Unassigned â€”</option>
                               {drawRequests.map(d => (
                                 <option key={d.id} value={d.id}>{d.title}{d.status !== 'open' ? ' (closed)' : ''}</option>
                               ))}
@@ -7756,7 +7757,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               onClick={() => approveBilling(b.id)}
                               style={{ fontSize: '11px', padding: '4px 10px', background: '#0a2a0a', border: '1px solid #1a4a1a', color: '#4ade80', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: approvingBillingId === b.id ? 0.5 : 1 }}
                             >
-                              {approvingBillingId === b.id ? 'Approving…' : '✓ Approve'}
+                              {approvingBillingId === b.id ? 'Approvingâ€¦' : 'âœ“ Approve'}
                             </button>
                           )}
                           {b.status === 'approved' && (
@@ -7766,7 +7767,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               onClick={() => toggleReadyToPay(b.id, b.ready_to_pay)}
                               style={{ fontSize: '11px', padding: '4px 10px', background: b.ready_to_pay ? '#0a2a0a' : '#1a1a1a', border: `1px solid ${b.ready_to_pay ? '#1a4a1a' : '#2a2a2a'}`, color: b.ready_to_pay ? '#4ade80' : '#888', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: togglingReadyToPay === b.id ? 0.5 : 1 }}
                             >
-                              {b.ready_to_pay ? '✓ Ready to pay' : 'Mark ready to pay'}
+                              {b.ready_to_pay ? 'âœ“ Ready to pay' : 'Mark ready to pay'}
                             </button>
                           )}
                           {isOwnerPay && (
@@ -7795,7 +7796,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 <div class="grid">
 <div class="cell"><label>Claimant</label><span>${b.company_name}</span></div>
 <div class="cell"><label>Hiring Party</label><span>NV Construction</span></div>
-<div class="cell"><label>Project</label><span>#${job?.job_number} — ${job?.project_name}</span></div>
+<div class="cell"><label>Project</label><span>#${job?.job_number} â€” ${job?.project_name}</span></div>
 <div class="cell"><label>Owner</label><span>${job?.owner_company || job?.owner_name || 'Project Owner'}</span></div>
 <div class="cell"><label>Payment Amount</label><span style="font-size:16px;font-weight:800;">${amt}</span></div>
 <div class="cell"><label>Through Date</label><span>${period}</span></div>
@@ -7897,7 +7898,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         {billingSovData[b.id] && billingSovData[b.id].length > 0 && (
                           <div style={{ marginTop: '1.25rem', borderTop: '1px solid #1e1e1e', paddingTop: '1rem' }}>
-                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Schedule of values — this submission</p>
+                            <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Schedule of values â€” this submission</p>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                               <thead>
                                 <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
@@ -7911,10 +7912,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {billingSovData[b.id].map(line => {
                                   const sched = Number(line.subcontract_sov_lines?.scheduled_value || 0)
                                   const amt = Number(line.amount || 0)
-                                  const pct = sched > 0 ? (amt / sched * 100).toFixed(0) : '—'
+                                  const pct = sched > 0 ? (amt / sched * 100).toFixed(0) : 'â€”'
                                   return (
                                     <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
-                                      <td style={{ padding: '8px', color: '#ccc' }}>{line.subcontract_sov_lines?.description || '—'}</td>
+                                      <td style={{ padding: '8px', color: '#ccc' }}>{line.subcontract_sov_lines?.description || 'â€”'}</td>
                                       <td style={{ padding: '8px', textAlign: 'right', color: '#888' }}>${sched.toLocaleString()}</td>
                                       <td style={{ padding: '8px', textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>${amt.toLocaleString()}</td>
                                       <td style={{ padding: '8px', textAlign: 'right', color: '#4ade80' }}>{pct}%</td>
@@ -7933,7 +7934,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
           </>
         )}
-        {/* ── FIELD TAB ── */}
+        {/* â”€â”€ FIELD TAB â”€â”€ */}
         {activeTab === 'field' && (
           <>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid #1a1a1a', paddingBottom: '0' }}>
@@ -7956,7 +7957,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}</span>}
                       {r.crew_count != null && <span style={{ fontSize: '12px', color: '#555' }}>{r.crew_count} crew</span>}
                     </div>
-                    <span style={{ color: '#555' }}>{expandedFieldReport === r.id ? '▲' : '▼'}</span>
+                    <span style={{ color: '#555' }}>{expandedFieldReport === r.id ? 'â–²' : 'â–¼'}</span>
                   </div>
                   {expandedFieldReport === r.id && (
                     <div style={s.billingEntryExpanded}>
@@ -7965,7 +7966,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ marginBottom: '1.2rem' }}>
                           <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Weather</p>
                           <p style={{ fontSize: '13px', color: '#ccc', margin: 0 }}>
-                            {[r.weather, r.weather_temp && `${r.weather_temp}°F`].filter(Boolean).join(' · ')}
+                            {[r.weather, r.weather_temp && `${r.weather_temp}Â°F`].filter(Boolean).join(' Â· ')}
                             {r.weather_delay && <span style={{ marginLeft: '8px', color: '#e8590c', fontWeight: '700', fontSize: '11px' }}>DELAY</span>}
                           </p>
                         </div>
@@ -7986,7 +7987,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           {r.crew_log.map((c, i) => (
                             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
-                              <span>{c.name || '—'}</span><span>{c.company || '—'}</span><span>{c.trade || '—'}</span><span>{c.hours || '—'}</span>
+                              <span>{c.name || 'â€”'}</span><span>{c.company || 'â€”'}</span><span>{c.trade || 'â€”'}</span><span>{c.hours || 'â€”'}</span>
                             </div>
                           ))}
                         </div>
@@ -7997,7 +7998,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Subcontractor Activity</p>
                           {r.subcontractor_activity.map((sub, i) => (
                             <div key={i} style={{ padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '6px' }}>
-                              <p style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: '600', margin: '0 0 4px' }}>{sub.company || '—'} {sub.trade ? `· ${sub.trade}` : ''} {sub.crew_size ? `· ${sub.crew_size} crew` : ''}</p>
+                              <p style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: '600', margin: '0 0 4px' }}>{sub.company || 'â€”'} {sub.trade ? `Â· ${sub.trade}` : ''} {sub.crew_size ? `Â· ${sub.crew_size} crew` : ''}</p>
                               {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: 0, whiteSpace: 'pre-wrap' }}>{sub.notes}</p>}
                             </div>
                           ))}
@@ -8012,7 +8013,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           {r.equipment_log.map((e, i) => (
                             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
-                              <span>{e.equipment || '—'}</span><span>{e.operator || '—'}</span><span>{e.hours || '—'}</span>
+                              <span>{e.equipment || 'â€”'}</span><span>{e.operator || 'â€”'}</span><span>{e.hours || 'â€”'}</span>
                             </div>
                           ))}
                         </div>
@@ -8026,7 +8027,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           {r.materials_delivered.map((m, i) => (
                             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
-                              <span>{m.material || '—'}</span><span>{m.supplier || '—'}</span><span>{m.quantity || '—'}</span>
+                              <span>{m.material || 'â€”'}</span><span>{m.supplier || 'â€”'}</span><span>{m.quantity || 'â€”'}</span>
                             </div>
                           ))}
                         </div>
@@ -8040,7 +8041,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           {r.visitors.map((v, i) => (
                             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
-                              <span>{v.name || '—'}</span><span>{v.company || '—'}</span><span>{v.purpose || '—'}</span>
+                              <span>{v.name || 'â€”'}</span><span>{v.company || 'â€”'}</span><span>{v.purpose || 'â€”'}</span>
                             </div>
                           ))}
                         </div>
@@ -8085,7 +8086,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   onClick={() => deleteFieldPhoto({ path: ph.path, fromReport: true, reportId: r.id })}
                                   disabled={deletingFieldPhoto === ph.path}
                                   style={{ background: 'none', border: 'none', color: deletingFieldPhoto === ph.path ? '#555' : '#ff6b6b', cursor: 'pointer', fontSize: '13px', padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>
-                                  {deletingFieldPhoto === ph.path ? '…' : '✕'}
+                                  {deletingFieldPhoto === ph.path ? 'â€¦' : 'âœ•'}
                                 </button>
                               </div>
                             ))}
@@ -8111,7 +8112,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                       <span style={{ fontSize: '12px', color: '#555' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
                     </div>
-                    <span style={{ color: '#555' }}>{expandedFieldRfi === rfi.id ? '▲' : '▼'}</span>
+                    <span style={{ color: '#555' }}>{expandedFieldRfi === rfi.id ? 'â–²' : 'â–¼'}</span>
                   </div>
                   {expandedFieldRfi === rfi.id && (
                     <div style={s.billingEntryExpanded}>
@@ -8177,10 +8178,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>DAILY RPT</span>}
                       </div>
                       <span style={{ fontSize: '12px', color: '#555' }}>
-                        {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                        {d.vendor && `${d.vendor} Â· `}{d.quantity && `${d.quantity} Â· `}
                         {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
-                        {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
-                        {d.notes && ` · ${d.notes}`}
+                        {d.received_date && ` Â· Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
+                        {d.notes && ` Â· ${d.notes}`}
                       </span>
                     </div>
                     {d.bol_url && (
@@ -8246,7 +8247,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <span style={{ fontSize: '12px', color: '#555' }}>
                             {m.due_date && `Due ${new Date(m.due_date + 'T12:00:00').toLocaleDateString()}`}
-                            {m.completed_date && ` · Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
+                            {m.completed_date && ` Â· Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
                           </span>
                           {m.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{m.notes}</div>}
                         </div>
@@ -8263,7 +8264,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── DIRECT COSTS TAB ── */}
+        {/* â”€â”€ DIRECT COSTS TAB â”€â”€ */}
         {activeTab === 'costs' && (
           <>
             {(() => {
@@ -8301,7 +8302,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <label style={{ ...s.label, marginBottom: '4px' }}>Keyword</label>
                         <input
                           style={{ ...s.input, margin: 0, fontSize: '13px', padding: '6px 10px' }}
-                          placeholder="Description, notes…"
+                          placeholder="Description, notesâ€¦"
                           value={dcSearch}
                           onChange={e => setDcSearch(e.target.value)}
                         />
@@ -8315,9 +8316,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           onChange={e => setDcBudgetFilter(e.target.value)}
                         >
                           <option value="">All lines</option>
-                          <option value="__unassigned__">— Unassigned —</option>
+                          <option value="__unassigned__">â€” Unassigned â€”</option>
                           {budgetItems.map(b => (
-                            <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
+                            <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>
                           ))}
                         </select>
                       </div>
@@ -8337,7 +8338,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input
                           type="number" min="0" step="1"
                           style={{ ...s.input, margin: 0, fontSize: '13px', padding: '6px 10px' }}
-                          placeholder="∞"
+                          placeholder="âˆž"
                           value={dcAmountMax}
                           onChange={e => setDcAmountMax(e.target.value)}
                         />
@@ -8398,8 +8399,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div>
                           <label style={s.label}>Budget line</label>
                           <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                            <option value="">— Unassigned —</option>
-                            {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                            <option value="">â€” Unassigned â€”</option>
+                            {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
                           </select>
                         </div>
                       )}
@@ -8417,7 +8418,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div>
                           <label style={s.label}>Assigned To</label>
                           <select style={s.input} value={dcForm.assigned_to} onChange={e => setDcForm(f => ({ ...f, assigned_to: e.target.value }))}>
-                            <option value="">— Select team member —</option>
+                            <option value="">â€” Select team member â€”</option>
                             {teamMembers.map(m => <option key={m.id} value={m.full_name || m.email}>{m.full_name || m.email}</option>)}
                           </select>
                         </div>
@@ -8463,10 +8464,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <tbody>
                             {csvRows.map((r, i) => (
                               <tr key={i} style={{ borderBottom: '1px solid #111', background: r.errors.length ? '#1a0a0a' : 'transparent' }}>
-                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad date') ? '#e74c3c' : '#ccc' }}>{r.cost_date || '—'}</td>
-                                <td style={{ padding: '4px 8px', color: r.errors.includes('no description') ? '#e74c3c' : '#ccc' }}>{r.description || '—'}</td>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad date') ? '#e74c3c' : '#ccc' }}>{r.cost_date || 'â€”'}</td>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('no description') ? '#e74c3c' : '#ccc' }}>{r.description || 'â€”'}</td>
                                 <td style={{ padding: '4px 8px', color: '#ccc' }}>{r.category}</td>
-                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad amount') ? '#e74c3c' : '#ccc' }}>{r.amount > 0 ? `$${r.amount.toLocaleString()}` : '—'}</td>
+                                <td style={{ padding: '4px 8px', color: r.errors.includes('bad amount') ? '#e74c3c' : '#ccc' }}>{r.amount > 0 ? `$${r.amount.toLocaleString()}` : 'â€”'}</td>
                                 <td style={{ padding: '4px 8px', color: '#666' }}>{r.notes || ''}</td>
                                 <td style={{ padding: '4px 8px' }}>{r.errors.length ? <span style={{ color: '#e74c3c' }}>{r.errors.join(', ')}</span> : <span style={{ color: '#4ade80' }}>OK</span>}</td>
                               </tr>
@@ -8525,7 +8526,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return <>
                   {activeDupIds.size > 0 && !q && (
                     <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#f59e0b' }}>
-                      {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) — entries marked below.
+                      {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) â€” entries marked below.
                     </div>
                   )}
                   {visibleCosts.length === 0 && (
@@ -8546,12 +8547,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={s.coBadge(c.status)}>{c.status}</span>
                           {drawnApp && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a' }}>
-                              Drawn — App #{drawnApp.app_number}
+                              Drawn â€” App #{drawnApp.app_number}
                             </span>
                           )}
                           {isDup && (() => {
                             const matches = (dupPairs[c.id] || []).map(mid => directCosts.find(x => x.id === mid)).filter(Boolean)
-                            const tipText = matches.map(m => `${new Date(m.cost_date + 'T12:00:00').toLocaleDateString()} — ${m.description} — $${Number(m.amount).toLocaleString()}`).join('\n')
+                            const tipText = matches.map(m => `${new Date(m.cost_date + 'T12:00:00').toLocaleDateString()} â€” ${m.description} â€” $${Number(m.amount).toLocaleString()}`).join('\n')
                             return (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                 <span title={tipText} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3800', cursor: 'help' }}>
@@ -8573,10 +8574,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
-                          {budgetLine && ` · ${budgetLine.description}`}
-                          {c.assigned_to && <span style={{ color: '#e8590c' }}> · {c.assigned_to}</span>}
-                          {c.reason && ` · ${c.reason}`}
-                          {c.notes && ` · ${c.notes}`}
+                          {budgetLine && ` Â· ${budgetLine.description}`}
+                          {c.assigned_to && <span style={{ color: '#e8590c' }}> Â· {c.assigned_to}</span>}
+                          {c.reason && ` Â· ${c.reason}`}
+                          {c.notes && ` Â· ${c.notes}`}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -8608,7 +8609,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button
                           style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#1a0a2a', color: '#c084fc', border: '1px solid #4a1a6a' } : {}) }}
                           onClick={() => openMovePanel(c.id)}
-                        >{movingCostId === c.id ? '✕ Cancel' : '⇄ Move'}</button>
+                        >{movingCostId === c.id ? 'âœ• Cancel' : 'â‡„ Move'}</button>
                       </div>
                     </div>
 
@@ -8631,9 +8632,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         disabled={assigningCostId === c.id}
                         value={c.budget_item_id || ''}
                         onChange={e => assignDcBudgetItem(c.id, e.target.value)}>
-                        <option value="">— Unassigned —</option>
+                        <option value="">â€” Unassigned â€”</option>
                         {budgetItems.map(b => (
-                          <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
+                          <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>
                         ))}
                       </select>
                     </div>
@@ -8647,9 +8648,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           value={moveTargetJobId}
                           onChange={e => setMoveTargetJobId(e.target.value)}
                         >
-                          <option value="">{loadingActiveJobs ? 'Loading jobs...' : '— Select destination job —'}</option>
+                          <option value="">{loadingActiveJobs ? 'Loading jobs...' : 'â€” Select destination job â€”'}</option>
                           {activeJobs.map(j => (
-                            <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
+                            <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>
                           ))}
                         </select>
                         <button
@@ -8668,7 +8669,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── PRIME CONTRACT TAB ── */}
+        {/* â”€â”€ PRIME CONTRACT TAB â”€â”€ */}
         {activeTab === 'prime' && (
           <>
             <div style={s.card}>
@@ -8691,14 +8692,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
                       return a + Number(s.contract_value || 0) + coAdj
                     }, 0).toLocaleString()}</strong>
-                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— {nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}, manage in the Details tab</span>
+                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>â€” {nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}, manage in the Details tab</span>
                   </p>
                 )
               ) : (
                 job.contract_value && (
                   <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
                     Contract value: <strong style={{ color: '#f1f1f1' }}>${Number(job.contract_value).toLocaleString()}</strong>
-                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— edit in the Details tab</span>
+                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>â€” edit in the Details tab</span>
                   </p>
                 )
               )}
@@ -8720,7 +8721,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
                 <div style={{ background: '#1a0800', border: '1px solid #e8590c', borderRadius: '10px', padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>
-                    Contract sum to date doesn't match your budget SOV — G703 won't balance
+                    Contract sum to date doesn't match your budget SOV â€” G703 won't balance
                   </p>
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '12px', marginBottom: '10px' }}>
                     {isSub ? (
@@ -8760,7 +8761,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             <div style={s.card}>
               {job.nv_role === 'sub' && nvSubcontracts.length > 0 ? (
-                /* Per-subcontract AIA navigation — one section per GC contract */
+                /* Per-subcontract AIA navigation â€” one section per GC contract */
                 <div>
                   <p style={{ ...s.cardTitle, margin: '0 0 1.25rem' }}>AIA Applications by GC Contract</p>
                   {nvSubcontracts.map((sc, scIdx) => {
@@ -8786,7 +8787,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         {isShowingForm && (
                           <form onSubmit={e => createNvSubAiaApplication(e, sc)} style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
-                            <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application — {sc.gc_name}</p>
+                            <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application â€” {sc.gc_name}</p>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                               <div>
                                 <label style={s.label}>Billing period</label>
@@ -8843,7 +8844,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 }}>
                                   App #{app.app_number}
                                   <span style={{ fontSize: '10px', color: isActivePill ? '#e8590c88' : '#444' }}>{shortLabel}</span>
-                                  {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                                  {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>âœ“</span>}
                                 </button>
                               )
                             })}
@@ -8889,7 +8890,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const dr = drawRequests.find(d => d.id === e.target.value)
                               setNewAiaForm(f => ({ ...f, linked_draw_request_id: e.target.value, app_number: dr ? String(dr.draw_number) : f.app_number }))
                             }}>
-                              <option value="">— Select sub draw request —</option>
+                              <option value="">â€” Select sub draw request â€”</option>
                               {drawRequests.filter(d => d.status === 'open').map(d => (
                                 <option key={d.id} value={d.id}>{d.title}</option>
                               ))}
@@ -8947,7 +8948,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </p>
                       )}
                       {budgetItems.length === 0 && (
-                        <p style={{ fontSize: '12px', color: '#e8590c', margin: '0 0 12px' }}>Add budget line items in the Budget tab first — they become the G703 schedule of values.</p>
+                        <p style={{ fontSize: '12px', color: '#e8590c', margin: '0 0 12px' }}>Add budget line items in the Budget tab first â€” they become the G703 schedule of values.</p>
                       )}
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button style={{ ...s.btn, opacity: canCreate ? 1 : 0.6 }}
@@ -8993,7 +8994,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             }}
                           >
                             {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
-                            {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                            {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>âœ“</span>}
                           </button>
                         )
                       })}
@@ -9005,8 +9006,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {activeAia && (() => {
                 const isActive = true
                 const periodLabel = activeAia.period_from && activeAia.period_from !== (activeAia.period_to ? activeAia.period_to.slice(0, 7) + '-01' : '')
-                  ? `${new Date(activeAia.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                  : activeAia.period_to ? new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
+                  ? `${new Date(activeAia.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} â€“ ${new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                  : activeAia.period_to ? new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'â€”'
                 return (
                   <div style={{ ...s.billingEntryRow, border: '1px solid #4a2200' }}>
                     <div style={s.billingEntryHeader}>
@@ -9031,8 +9032,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {relinkDrawOpen ? (
                           <>
                             <select value={relinkDrawId} onChange={e => setRelinkDrawId(e.target.value)} style={{ padding: '5px 8px', background: '#0a0a0a', border: '1px solid #333', borderRadius: '6px', color: '#f1f1f1', fontSize: '11px' }}>
-                              <option value="">— No draw —</option>
-                              {drawRequests.map(d => <option key={d.id} value={d.id}>Draw #{d.draw_number}{d.title ? ` · ${d.title}` : ''}</option>)}
+                              <option value="">â€” No draw â€”</option>
+                              {drawRequests.map(d => <option key={d.id} value={d.id}>Draw #{d.draw_number}{d.title ? ` Â· ${d.title}` : ''}</option>)}
                             </select>
                             <button style={s.btnSmallGreen} onClick={relinkAiaDraw}>Save</button>
                             <button style={s.btnSmall} onClick={() => { setRelinkDrawOpen(false); setRelinkDrawId('') }}>Cancel</button>
@@ -9043,7 +9044,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button
                           style={activeAia.payment_received ? s.btnSmallGreen : s.btnSmall}
                           onClick={() => markPaymentReceived(activeAia.id, activeAia.payment_received)}>
-                          {activeAia.payment_received ? '✓ Received' : 'Record Payment'}
+                          {activeAia.payment_received ? 'âœ“ Received' : 'Record Payment'}
                         </button>
                         <button style={s.btnSmallRed} onClick={() => deleteAiaApplication(activeAia.id)}>Delete</button>
                       </div>
@@ -9080,7 +9081,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {periodBilling.length > 0 && (
                               <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                                  Approved billing this period — ${periodBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()} from {periodBilling.length} sub{periodBilling.length !== 1 ? 's' : ''}
+                                  Approved billing this period â€” ${periodBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()} from {periodBilling.length} sub{periodBilling.length !== 1 ? 's' : ''}
                                 </p>
                                 {periodBilling.map((b, i) => {
                                   const applied = appliedBillings.has(b.id)
@@ -9108,13 +9109,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             disabled={applied}
                                             onClick={() => applyBillingToAia(b)}
                                           >
-                                            {applied ? '✓ Applied' : 'Apply to G703'}
+                                            {applied ? 'âœ“ Applied' : 'Apply to G703'}
                                           </button>
                                         </div>
                                       </div>
                                       {needsManual && (
                                         <div style={{ marginTop: '8px', background: '#0f1a0f', border: '1px solid #2a4a1a', borderRadius: '6px', padding: '10px' }}>
-                                          <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked — pick one manually</p>
+                                          <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked â€” pick one manually</p>
                                           <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>To auto-map in future, assign a budget line item to this subcontract in the Contracts tab.</p>
                                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                             <select
@@ -9122,10 +9123,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               value={manualMapBudgetItemId}
                                               onChange={e => setManualMapBudgetItemId(e.target.value)}
                                             >
-                                              <option value="">— Select a budget line —</option>
+                                              <option value="">â€” Select a budget line â€”</option>
                                               {budgetItems.map(item => (
                                                 <option key={item.id} value={item.id}>
-                                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
+                                                  {item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
                                                 </option>
                                               ))}
                                             </select>
@@ -9154,7 +9155,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {periodPOs.length > 0 && (
                               <div style={{ background: '#1a1200', border: '1px solid #4a3000', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                                  Purchase orders on this draw — ${periodPOs.reduce((a, p) => a + Number(p.amount || 0), 0).toLocaleString()} across {periodPOs.length} PO{periodPOs.length !== 1 ? 's' : ''}
+                                  Purchase orders on this draw â€” ${periodPOs.reduce((a, p) => a + Number(p.amount || 0), 0).toLocaleString()} across {periodPOs.length} PO{periodPOs.length !== 1 ? 's' : ''}
                                 </p>
                                 {periodPOs.map((po, i) => {
                                   const applied = appliedPOs.has(po.id)
@@ -9166,8 +9167,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <div>
                                           <span style={{ fontSize: '13px', color: '#aaa' }}>{po.vendor_name}</span>
                                           <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{po.po_number}</span>
-                                          {budgetLine && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px' }}>→ {budgetLine.description}</span>}
-                                          {!budgetLine && <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px' }}>No budget line — pick one</span>}
+                                          {budgetLine && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px' }}>â†’ {budgetLine.description}</span>}
+                                          {!budgetLine && <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px' }}>No budget line â€” pick one</span>}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                           <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(po.amount || 0).toLocaleString()}</span>
@@ -9176,13 +9177,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             disabled={applied}
                                             onClick={() => applyPOToAia(po)}
                                           >
-                                            {applied ? '✓ Applied' : 'Apply to G703'}
+                                            {applied ? 'âœ“ Applied' : 'Apply to G703'}
                                           </button>
                                         </div>
                                       </div>
                                       {needsManual && (
                                         <div style={{ marginTop: '8px', background: '#150f00', border: '1px solid #4a3000', borderRadius: '6px', padding: '10px' }}>
-                                          <p style={{ fontSize: '11px', color: '#f59e0b', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line on this PO — pick one</p>
+                                          <p style={{ fontSize: '11px', color: '#f59e0b', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line on this PO â€” pick one</p>
                                           <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>To auto-map in future, set a budget line on the PO in the PO tab.</p>
                                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                             <select
@@ -9190,10 +9191,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               value={manualMapPOBudgetItemId}
                                               onChange={e => setManualMapPOBudgetItemId(e.target.value)}
                                             >
-                                              <option value="">— Select a budget line —</option>
+                                              <option value="">â€” Select a budget line â€”</option>
                                               {budgetItems.map(item => (
                                                 <option key={item.id} value={item.id}>
-                                                  {item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
+                                                  {item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
                                                 </option>
                                               ))}
                                             </select>
@@ -9248,12 +9249,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{c.category}</span>
                                       {drawnElsewhere && (
                                         <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px', fontWeight: '700' }}>
-                                          Already drawn — App #{drawnApp?.app_number || '?'}
+                                          Already drawn â€” App #{drawnApp?.app_number || '?'}
                                         </span>
                                       )}
                                       {drawnToThisApp && (
                                         <span style={{ fontSize: '11px', color: '#c084fc', marginLeft: '8px', fontWeight: '700' }}>
-                                          Drawn — App #{drawnApp?.app_number || '?'}
+                                          Drawn â€” App #{drawnApp?.app_number || '?'}
                                         </span>
                                       )}
                                     </div>
@@ -9284,7 +9285,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {thisPeriod.length > 0 && (
                                   <div style={{ background: '#100a1a', border: '1px solid #3a1a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ fontSize: '11px', fontWeight: '700', color: '#c084fc', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                                      {linkedDrawId ? 'Direct costs — this draw' : 'Direct costs — this period'} — ${thisPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({thisPeriod.length} item{thisPeriod.length !== 1 ? 's' : ''})
+                                      {linkedDrawId ? 'Direct costs â€” this draw' : 'Direct costs â€” this period'} â€” ${thisPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({thisPeriod.length} item{thisPeriod.length !== 1 ? 's' : ''})
                                     </p>
                                     {thisPeriod.map((c, i) => renderCostRow(c, i, thisPeriod))}
                                   </div>
@@ -9292,7 +9293,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {otherPeriod.length > 0 && (
                                   <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
-                                      {linkedDrawId ? 'Other costs' : 'Previous period costs'} — ${otherPeriod.filter(c => !c.drawn_application_id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} undrawn · {otherPeriod.filter(c => c.drawn_application_id).length} drawn elsewhere
+                                      {linkedDrawId ? 'Other costs' : 'Previous period costs'} â€” ${otherPeriod.filter(c => !c.drawn_application_id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} undrawn Â· {otherPeriod.filter(c => c.drawn_application_id).length} drawn elsewhere
                                     </p>
                                     <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>Costs from outside this application period. Undrawn costs can be pulled into this billing. Costs already drawn to another application are shown for reference.</p>
                                     {otherPeriod.map((c, i) => renderCostRow(c, i, otherPeriod))}
@@ -9314,7 +9315,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               return (
                                 <div style={{ background: '#0a1a0a', border: '1px solid #1a4a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                                    General conditions — {linkedDrawId ? 'this draw' : 'this period'} — ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({gcEntries.length} entr{gcEntries.length !== 1 ? 'ies' : 'y'})
+                                    General conditions â€” {linkedDrawId ? 'this draw' : 'this period'} â€” ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({gcEntries.length} entr{gcEntries.length !== 1 ? 'ies' : 'y'})
                                   </p>
                                   {gcEntries.map((e, i) => {
                                     const applied = appliedGCs.has(e.id)
@@ -9341,13 +9342,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               disabled={applied}
                                               onClick={() => applyGCToAia(e)}
                                             >
-                                              {applied ? '✓ Applied' : 'Apply to G703'}
+                                              {applied ? 'âœ“ Applied' : 'Apply to G703'}
                                             </button>
                                           </div>
                                         </div>
                                         {needsManual && (
                                           <div style={{ marginTop: '8px', background: '#0f1a0f', border: '1px solid #2a4a1a', borderRadius: '6px', padding: '10px' }}>
-                                            <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked — pick one manually</p>
+                                            <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked â€” pick one manually</p>
                                             <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>Assign a budget line to this GC entry to auto-map in future.</p>
                                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                               <select
@@ -9355,10 +9356,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                 value={gcManualBudgetItemId}
                                                 onChange={ev => setGcManualBudgetItemId(ev.target.value)}
                                               >
-                                                <option value="">— Select a budget line —</option>
+                                                <option value="">â€” Select a budget line â€”</option>
                                                 {budgetItems.map(item => (
                                                   <option key={item.id} value={item.id}>
-                                                    {item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
+                                                    {item.cost_code ? `${item.cost_code} Â· ` : ''}{item.description} (${Number(item.owner_amount ?? item.budget_amount).toLocaleString()})
                                                   </option>
                                                 ))}
                                               </select>
@@ -9466,14 +9467,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                         title="One-time: set to weighted average % of all other lines"
                                                         onClick={() => autoCalcProRataLine(i)}
                                                         style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
-                                                      >≈%</button>
+                                                      >â‰ˆ%</button>
                                                     )}
                                                     {!line.nv_sub_mode && (
                                                       <button
-                                                        title={isPinned ? 'Pinned — auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
+                                                        title={isPinned ? 'Pinned â€” auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
                                                         onClick={() => togglePinLine(line.budget_item_id)}
                                                         style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}
-                                                      >📌</button>
+                                                      >ðŸ“Œ</button>
                                                     )}
                                                   </div>
                                                 )
@@ -9526,7 +9527,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         return (
                                         <div style={{ background: '#2a1200', border: '1px solid #e8590c', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
                                           <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
-                                            SOV total doesn't match contract sum to date — G703 won't balance
+                                            SOV total doesn't match contract sum to date â€” G703 won't balance
                                           </p>
                                           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 16px', fontSize: '12px', marginBottom: '8px' }}>
                                             {isSubAia ? (
@@ -9583,7 +9584,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                                         <button style={{ ...s.btnGray, fontSize: '12px', padding: '7px 14px' }} onClick={() => setAiaBalanceWarning(null)}>Dismiss</button>
-                                        <button style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', padding: '7px 14px', cursor: 'pointer', fontWeight: '700' }} onClick={() => generateAIAFromApp(true)}>Override — Generate Anyway</button>
+                                        <button style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', padding: '7px 14px', cursor: 'pointer', fontWeight: '700' }} onClick={() => generateAIAFromApp(true)}>Override â€” Generate Anyway</button>
                                       </div>
                                     </div>
                                   )
@@ -9605,7 +9606,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── PAYMENT RECEIVED MODAL ── */}
+        {/* â”€â”€ PAYMENT RECEIVED MODAL â”€â”€ */}
         {paymentForm.appId && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
             <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '400px' }}>
@@ -9628,7 +9629,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </div>
         )}
 
-        {/* ── SCHEDULE TAB ── */}
+        {/* â”€â”€ SCHEDULE TAB â”€â”€ */}
         {activeTab === 'schedule' && (
           <>
             <div style={s.card}>
@@ -9709,7 +9710,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
                 <>
                   <div style={{ ...s.card, marginBottom: '1rem' }}>
-                    <p style={s.cardTitle}>What's Next — from {parsedFrom}</p>
+                    <p style={s.cardTitle}>What's Next â€” from {parsedFrom}</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
                       <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
                         <div style={{ fontSize: '28px', fontWeight: '800', color: '#e8590c' }}>{inProgress.length}</div>
@@ -9753,7 +9754,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div style={{ background: '#1a1a1a', borderRadius: '4px', height: '4px' }}>
                                 <div style={{ background: '#e8590c', borderRadius: '4px', height: '4px', width: `${t.pct}%` }} />
                               </div>
-                              <span style={{ fontSize: '11px', color: '#555' }}>{t.start} → {t.finish}</span>
+                              <span style={{ fontSize: '11px', color: '#555' }}>{t.start} â†’ {t.finish}</span>
                             </div>
                           </div>
                         ))}
@@ -9766,7 +9767,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).filter(t => t.start <= new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)).slice(0, 10).map(t => (
                           <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#0a0a1a', border: '1px solid #1a2a3a', borderRadius: '6px', marginBottom: '6px' }}>
                             <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
-                            <span style={{ fontSize: '12px', color: '#60a5fa' }}>{t.start} → {t.finish}</span>
+                            <span style={{ fontSize: '12px', color: '#60a5fa' }}>{t.start} â†’ {t.finish}</span>
                           </div>
                         ))}
                       </>
@@ -9784,7 +9785,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       return (
                         <div key={t.uid} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '10px 0', borderBottom: '1px solid #111', alignItems: 'center' }}>
                           <div>
-                            <span style={{ fontSize: '13px', color: isOverdue ? '#ff6b6b' : '#f1f1f1' }}>{t.milestone ? '◆ ' : ''}{t.name}</span>
+                            <span style={{ fontSize: '13px', color: isOverdue ? '#ff6b6b' : '#f1f1f1' }}>{t.milestone ? 'â—† ' : ''}{t.name}</span>
                           </div>
                           <span style={{ fontSize: '12px', color: '#555' }}>{t.start}</span>
                           <span style={{ fontSize: '12px', color: isOverdue ? '#ff6b6b' : '#555' }}>{t.finish}</span>
@@ -9807,7 +9808,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── DOCUMENTS TAB ── */}
+        {/* â”€â”€ DOCUMENTS TAB â”€â”€ */}
         {activeTab === 'documents' && (
           <>
             <div style={s.card}>
@@ -9855,7 +9856,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).map(d => (
                   <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
                     <div>
-                      <span style={{ fontSize: '14px', color: '#f1f1f1' }}>📄 {d.file_name}</span>
+                      <span style={{ fontSize: '14px', color: '#f1f1f1' }}>ðŸ“„ {d.file_name}</span>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
                         <span style={{ padding: '2px 8px', background: '#1a1200', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
                           {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
@@ -9883,7 +9884,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── CONTACTS TAB ── */}
+        {/* â”€â”€ CONTACTS TAB â”€â”€ */}
         {activeTab === 'contacts' && (
           <>
             <div style={s.card}>
@@ -9987,7 +9988,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </>
         )}
 
-        {/* ── LABOR TAB ── */}
+        {/* â”€â”€ LABOR TAB â”€â”€ */}
         {activeTab === 'labor' && userRole === 'pm' && (() => {
           const fmtD = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           const totalLaborCost = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
@@ -10020,10 +10021,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <label style={s.label}>Employee *</label>
                       <select style={s.input} value={laborForm.employee_id} onChange={e => setLaborForm(f => ({ ...f, employee_id: e.target.value }))}>
-                        <option value="">Select employee…</option>
+                        <option value="">Select employeeâ€¦</option>
                         {activeEmployees.map(e => {
                           const wk = Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
-                          return <option key={e.id} value={e.id}>{e.name}{e.title ? ` — ${e.title}` : ''} · {fmtD(wk)}/wk</option>
+                          return <option key={e.id} value={e.id}>{e.name}{e.title ? ` â€” ${e.title}` : ''} Â· {fmtD(wk)}/wk</option>
                         })}
                       </select>
                     </div>
@@ -10031,7 +10032,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div><label style={s.label}>End date *</label><input type="date" style={s.input} value={laborForm.end_date} onChange={e => setLaborForm(f => ({ ...f, end_date: e.target.value }))} /></div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr', gap: '12px', marginBottom: '16px' }}>
-                    <div><label style={s.label}>Budget line</label><input style={s.input} value={laborForm.budget_line} onChange={e => setLaborForm(f => ({ ...f, budget_line: e.target.value }))} placeholder="e.g. General Conditions — Superintendent" /></div>
+                    <div><label style={s.label}>Budget line</label><input style={s.input} value={laborForm.budget_line} onChange={e => setLaborForm(f => ({ ...f, budget_line: e.target.value }))} placeholder="e.g. General Conditions â€” Superintendent" /></div>
                     <div><label style={s.label}>Notes</label><input style={s.input} value={laborForm.notes} onChange={e => setLaborForm(f => ({ ...f, notes: e.target.value }))} placeholder="optional" /></div>
                   </div>
                   {laborForm.employee_id && laborForm.start_date && laborForm.end_date && (() => {
@@ -10041,9 +10042,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const ms = new Date(laborForm.end_date) - new Date(laborForm.start_date)
                     const weeks = Math.max(0, Math.round(ms / (7 * 24 * 60 * 60 * 1000) * 10) / 10)
                     const total = wk * weeks
-                    return <p style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>{weeks} week{weeks !== 1 ? 's' : ''} × <strong style={{ color: '#f1f1f1' }}>{fmtD(wk)}/wk</strong> = <strong style={{ color: '#e8590c' }}>{fmtD(total)}</strong> total allocation</p>
+                    return <p style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>{weeks} week{weeks !== 1 ? 's' : ''} Ã— <strong style={{ color: '#f1f1f1' }}>{fmtD(wk)}/wk</strong> = <strong style={{ color: '#e8590c' }}>{fmtD(total)}</strong> total allocation</p>
                   })()}
-                  <button style={{ ...s.btnSmallOrange, opacity: savingLabor ? 0.6 : 1 }} onClick={saveAllocation} disabled={savingLabor}>{savingLabor ? 'Saving…' : 'Save Allocation'}</button>
+                  <button style={{ ...s.btnSmallOrange, opacity: savingLabor ? 0.6 : 1 }} onClick={saveAllocation} disabled={savingLabor}>{savingLabor ? 'Savingâ€¦' : 'Save Allocation'}</button>
                 </div>
               )}
 
@@ -10094,16 +10095,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#0a1e2a' : '#1a1a0a', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#1a3a5a' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
                               </td>
                               <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px' }}>
-                                {new Date(al.start_date + 'T12:00:00').toLocaleDateString()} – {new Date(al.end_date + 'T12:00:00').toLocaleDateString()}
+                                {new Date(al.start_date + 'T12:00:00').toLocaleDateString()} â€“ {new Date(al.end_date + 'T12:00:00').toLocaleDateString()}
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{weeks}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtD(wk)}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                                 <div style={{ color: '#4ade80', fontWeight: '700' }}>{fmtD(drawn)}</div>
-                                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{pctDrawn.toFixed(0)}% · {fmtD(remaining)} left</div>
+                                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{pctDrawn.toFixed(0)}% Â· {fmtD(remaining)} left</div>
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtD(total)}</td>
-                              <td style={{ padding: '10px 12px', color: '#666', fontSize: '12px' }}>{al.budget_line || '—'}</td>
+                              <td style={{ padding: '10px 12px', color: '#666', fontSize: '12px' }}>{al.budget_line || 'â€”'}</td>
                               <td style={{ padding: '10px 12px' }}>
                                 <button style={s.btnSmallRed} onClick={() => deleteAllocation(al.id)}>Remove</button>
                               </td>
@@ -10133,7 +10134,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── SUBMITTALS TAB ── */}
+        {/* â”€â”€ SUBMITTALS TAB â”€â”€ */}
         {activeTab === 'submittals' && (() => {
           const statusColor = { submitted: '#60a5fa', under_review: '#facc15', approved: '#4ade80', rejected: '#ff6b6b', resubmit: '#e8590c' }
           return (
@@ -10163,14 +10164,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         const sub = subs.find(s => s.sub_id === e.target.value)
                         setSubmittalForm(f => ({ ...f, submitted_by_sub_id: e.target.value, submitted_by_company: sub?.company_name || '' }))
                       }}>
-                        <option value="">— Select sub (optional) —</option>
+                        <option value="">â€” Select sub (optional) â€”</option>
                         {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
                       </select>
                     </div>
                   </div>
                   <div style={{ marginBottom: '10px' }}><label style={s.label}>Notes</label><input style={s.input} value={submittalForm.notes} onChange={e => setSubmittalForm(f => ({ ...f, notes: e.target.value }))} /></div>
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={s.label}>Attach documents (PDF, image — select multiple)</label>
+                    <label style={s.label}>Attach documents (PDF, image â€” select multiple)</label>
                     <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setSubmittalFile(e.target.files.length > 0 ? Array.from(e.target.files) : null)} />
                     {submittalFile && submittalFile.length > 0 && <p style={{ fontSize: '11px', color: '#4ade80', margin: '4px 0 0' }}>{submittalFile.length} file{submittalFile.length > 1 ? 's' : ''} selected: {submittalFile.map(f => f.name).join(', ')}</p>}
                   </div>
@@ -10191,10 +10192,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '11px', fontWeight: '700', color: color, background: color + '22', border: `1px solid ${color}44`, borderRadius: '4px', padding: '1px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sub.status.replace('_', ' ')}</span>
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
-                          {sub.type.replace('_', ' ')} {sub.spec_section ? `· §${sub.spec_section}` : ''} {sub.submitted_by_company ? `· ${sub.submitted_by_company}` : ''} · {new Date(sub.submitted_at).toLocaleDateString()} {parseSubmittalFiles(sub.file_url).length > 0 ? `· ${parseSubmittalFiles(sub.file_url).length} doc${parseSubmittalFiles(sub.file_url).length > 1 ? 's' : ''}` : ''}
+                          {sub.type.replace('_', ' ')} {sub.spec_section ? `Â· Â§${sub.spec_section}` : ''} {sub.submitted_by_company ? `Â· ${sub.submitted_by_company}` : ''} Â· {new Date(sub.submitted_at).toLocaleDateString()} {parseSubmittalFiles(sub.file_url).length > 0 ? `Â· ${parseSubmittalFiles(sub.file_url).length} doc${parseSubmittalFiles(sub.file_url).length > 1 ? 's' : ''}` : ''}
                         </div>
                       </div>
-                      <span style={{ color: '#555' }}>{isExp ? '▲' : '▼'}</span>
+                      <span style={{ color: '#555' }}>{isExp ? 'â–²' : 'â–¼'}</span>
                     </div>
                     {isExp && (
                       <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
@@ -10202,7 +10203,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {sub.status === 'approved' && (
                           <div style={{ background: '#061a06', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
-                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.5px' }}>✓ Approved</span>
+                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.5px' }}>âœ“ Approved</span>
                               {sub.reviewed_at && <span style={{ fontSize: '11px', color: '#555' }}>{new Date(sub.reviewed_at).toLocaleDateString()}</span>}
                             </div>
                             <label style={s.label}>Approval notes</label>
@@ -10284,7 +10285,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── LIEN / PRELIM NOTICES TAB ── */}
+        {/* â”€â”€ LIEN / PRELIM NOTICES TAB â”€â”€ */}
         {activeTab === 'prelim' && (
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
@@ -10308,7 +10309,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {prelimNotices.filter(n => n.status === 'active').length > 0 && (
               <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b' }}>
-                ⚠ {prelimNotices.filter(n => n.status === 'active').length} active lien notice{prelimNotices.filter(n => n.status === 'active').length > 1 ? 's' : ''} on this job. Ensure waivers are obtained before final payment.
+                âš  {prelimNotices.filter(n => n.status === 'active').length} active lien notice{prelimNotices.filter(n => n.status === 'active').length > 1 ? 's' : ''} on this job. Ensure waivers are obtained before final payment.
               </div>
             )}
 
@@ -10322,7 +10323,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       background: notice.status === 'active' ? '#2a0a0a' : '#0a2a0a',
                       border: `1px solid ${notice.status === 'active' ? '#5a1a1a' : '#1a4a1a'}` }}>{notice.status}</span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#555' }}>Received {new Date(notice.received_at + 'T00:00:00').toLocaleDateString()}{notice.notes ? ` · ${notice.notes}` : ''}</div>
+                  <div style={{ fontSize: '12px', color: '#555' }}>Received {new Date(notice.received_at + 'T00:00:00').toLocaleDateString()}{notice.notes ? ` Â· ${notice.notes}` : ''}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   {notice.amount_claimed && <span style={{ fontSize: '15px', fontWeight: '700', color: '#ff6b6b' }}>${Number(notice.amount_claimed).toLocaleString()}</span>}
@@ -10336,7 +10337,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </div>
         )}
 
-        {/* ── CASH FLOW TAB ── */}
+        {/* â”€â”€ CASH FLOW TAB â”€â”€ */}
         {activeTab === 'cashflow' && (() => {
           const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
           const fmtSigned = (n) => n === 0 ? '$0' : n > 0 ? `+$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : `-$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -10388,7 +10389,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {receivedNoAmount.length > 0 && (
                 <div style={{ background: '#2a1200', border: '1px solid #5a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c' }}>
                   <strong>{receivedNoAmount.length} {receivedNoAmount.length === 1 ? 'application is' : 'applications are'} marked received but have no dollar amount.</strong>
-                  {' '}Go to the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab, click <strong style={{ color: '#f1f1f1' }}>Record Payment</strong> on each one, and enter the amount — or run this SQL migration first if amounts aren't saving:
+                  {' '}Go to the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab, click <strong style={{ color: '#f1f1f1' }}>Record Payment</strong> on each one, and enter the amount â€” or run this SQL migration first if amounts aren't saving:
                   <code style={{ display: 'block', marginTop: '8px', padding: '8px 10px', background: '#1a0a00', borderRadius: '6px', fontSize: '12px', color: '#aaa', userSelect: 'all' }}>
                     ALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;
                   </code>
@@ -10448,7 +10449,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {aiaApplications.length > 0 && (
                 <div style={s.card}>
-                  <p style={s.cardTitle}>{job.billing_type === 'draw_request' ? 'Draw Requests — Payment Status' : 'AIA Applications — Payment Status'}</p>
+                  <p style={s.cardTitle}>{job.billing_type === 'draw_request' ? 'Draw Requests â€” Payment Status' : 'AIA Applications â€” Payment Status'}</p>
                   {aiaApplications.map(a => (
                     <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #111', flexWrap: 'wrap', gap: '8px' }}>
                       <div>
@@ -10477,7 +10478,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── LOOKAHEAD TAB ── */}
+        {/* â”€â”€ LOOKAHEAD TAB â”€â”€ */}
         {activeTab === 'lookahead' && (() => {
           const days = []
           const start = new Date(lookaheadWeekStart + 'T12:00:00Z')
@@ -10503,9 +10504,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em' }}>{weekLabel}</div>
                 <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#555' }}>
-                  {wkManpower > 0 && <span>👷 {wkManpower} workers</span>}
-                  {wkInspect > 0 && <span style={{ color: '#f59e0b' }}>🔍 {wkInspect} inspection{wkInspect > 1 ? 's' : ''}</span>}
-                  {wkConstraints > 0 && <span style={{ color: '#ef4444' }}>⚠ {wkConstraints} constraint{wkConstraints > 1 ? 's' : ''}</span>}
+                  {wkManpower > 0 && <span>ðŸ‘· {wkManpower} workers</span>}
+                  {wkInspect > 0 && <span style={{ color: '#f59e0b' }}>ðŸ” {wkInspect} inspection{wkInspect > 1 ? 's' : ''}</span>}
+                  {wkConstraints > 0 && <span style={{ color: '#ef4444' }}>âš  {wkConstraints} constraint{wkConstraints > 1 ? 's' : ''}</span>}
                   <span style={{ color: '#444' }}>{wkActs.length} activities</span>
                 </div>
               </div>
@@ -10515,7 +10516,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   return (
                     <div key={dt} style={{ background: '#0d0d0d', border: '1px solid #1f1f1f', borderRadius: '8px', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
                       <div style={{ fontSize: '11px', fontWeight: '700', color: '#666', textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'center', borderBottom: '1px solid #1a1a1a', paddingBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dayLabel(dt)}</div>
-                      {acts.length === 0 && <div style={{ fontSize: '11px', color: '#2a2a2a', textAlign: 'center', padding: '6px 0' }}>—</div>}
+                      {acts.length === 0 && <div style={{ fontSize: '11px', color: '#2a2a2a', textAlign: 'center', padding: '6px 0' }}>â€”</div>}
                       {acts.map(act => (
                         <div key={act.id} onClick={() => openEditActivity(act)}
                           style={{ background: '#141414', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '12px' }}
@@ -10530,13 +10531,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 ? <span style={{ fontSize: '10px', background: '#2a1a0a', color: '#fb923c', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.other_company_name || 'Other'}</span>
                                 : <span style={{ fontSize: '10px', background: '#0f2215', color: '#4ade80', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
                             }
-                            {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#666' }}>👷{act.manpower}</span>}
+                            {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#666' }}>ðŸ‘·{act.manpower}</span>}
                             {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#a78bfa' }} title={(act.additional_companies || []).map(c => c.name).join(', ')}>+{(act.additional_companies || []).length}</span>}
                             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block', flexShrink: 0 }} title={`Materials: ${act.materials_status || 'none'}`} />
-                            {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍</span>}
-                            {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
-                            {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 700 }}>✓</span>}
-                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#f59e0b' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
+                            {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>ðŸ”</span>}
+                            {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>âš </span>}
+                            {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 700 }}>âœ“</span>}
+                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#f59e0b' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>ðŸ—{(act.company_equipment_ids || []).length}</span>}
                           </div>
                         </div>
                       ))}
@@ -10559,27 +10560,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <p style={s.cardTitle}>2-Week Lookahead</p>
                     {lookahead && (
                       <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', marginTop: '-8px', fontWeight: 600 }}>
-                        {lookahead.status === 'submitted' ? '✓ Submitted by superintendent' : lookahead.status === 'approved' ? '✓ Approved' : '● Draft'}
+                        {lookahead.status === 'submitted' ? 'âœ“ Submitted by superintendent' : lookahead.status === 'approved' ? 'âœ“ Approved' : 'â— Draft'}
                       </div>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>←</button>
+                      <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>â†</button>
                       <div style={{ textAlign: 'center', minWidth: '155px' }}>
                         <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '2px' }}>Week of</div>
                         <div style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: 600 }}>{new Date(lookaheadWeekStart + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>
                       </div>
-                      <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>→</button>
+                      <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>â†’</button>
                     </div>
                     {!lookahead && <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>}
-                    {lookahead && <button onClick={printLookaheadPM} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>⬇ Download PDF</button>}
+                    {lookahead && <button onClick={printLookaheadPM} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>â¬‡ Download PDF</button>}
                     {lookahead?.status === 'submitted' && (
                       <button style={{ ...s.btn, background: '#16a34a', borderColor: '#166534' }} onClick={submitLookahead} disabled={submittingLookahead}>
-                        {submittingLookahead ? 'Approving…' : '✓ Mark Approved'}
+                        {submittingLookahead ? 'Approvingâ€¦' : 'âœ“ Mark Approved'}
                       </button>
                     )}
-                    <button onClick={() => setShowEquipmentMgr(v => !v)} style={{ ...s.btn, background: showEquipmentMgr ? '#2a2a2a' : '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', fontSize: '12px' }}>⚙ Equipment</button>
+                    <button onClick={() => setShowEquipmentMgr(v => !v)} style={{ ...s.btn, background: showEquipmentMgr ? '#2a2a2a' : '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', fontSize: '12px' }}>âš™ Equipment</button>
                   </div>
                 </div>
 
@@ -10593,7 +10594,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #1a1a1a' }}>
                       {totalWorkers > 0 && <div style={{ background: '#0f1a0f', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#4ade80', fontVariantNumeric: 'tabular-nums' }}>{totalWorkers}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Workers</div></div>}
                       {lookaheadActivities.length > 0 && <div style={{ background: '#111', border: '1px solid #222', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{lookaheadActivities.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Activities</div></div>}
-                      {inspections.length > 0 && <div style={{ background: '#1a1400', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f59e0b', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections ✓'}</div></div>}
+                      {inspections.length > 0 && <div style={{ background: '#1a1400', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f59e0b', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections âœ“'}</div></div>}
                       {constraints.length > 0 && <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ef4444', fontVariantNumeric: 'tabular-nums' }}>{constraints.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Constraints</div></div>}
                       {materialsNeeded.length > 0 && <div style={{ background: '#1a0f0a', border: '1px solid #3a2a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#fb923c', fontVariantNumeric: 'tabular-nums' }}>{materialsNeeded.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Need Materials</div></div>}
                     </div>
@@ -10606,13 +10607,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {lookaheadActivities.filter(a => a.inspection_required || a.constraints_notes).map(act => (
                       <div key={act.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #111', fontSize: '12px' }}>
                         <span style={{ color: act.constraints_notes ? '#ef4444' : act.inspection_scheduled ? '#4ade80' : '#f59e0b', flexShrink: 0, fontSize: '13px' }}>
-                          {act.constraints_notes ? '⚠' : act.inspection_scheduled ? '🔍✓' : '🔍'}
+                          {act.constraints_notes ? 'âš ' : act.inspection_scheduled ? 'ðŸ”âœ“' : 'ðŸ”'}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600, color: '#e8e8e8', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.description}</div>
                           <div style={{ color: '#555' }}>
                             {new Date(act.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
-                            {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#4ade80' : '#f59e0b', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
+                            {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#4ade80' : '#f59e0b', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? 'âœ“ Scheduled' : 'â€” Not yet scheduled'}</span>}
                             {act.constraints_notes && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints_notes}</span>}
                           </div>
                         </div>
@@ -10632,7 +10633,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
                     <input style={{ ...s.input, flex: 1, minWidth: '160px' }} placeholder="Equipment name (e.g. Excavator CAT 320)" value={newEqName} onChange={e => setNewEqName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addEquipment()} />
                     <input style={{ ...s.input, flex: 1, minWidth: '120px' }} placeholder="Category (e.g. Earthwork)" value={newEqCategory} onChange={e => setNewEqCategory(e.target.value)} onKeyDown={e => e.key === 'Enter' && addEquipment()} />
-                    <button style={s.btn} onClick={addEquipment} disabled={addingEquipment || !newEqName.trim()}>{addingEquipment ? 'Adding…' : '+ Add'}</button>
+                    <button style={s.btn} onClick={addEquipment} disabled={addingEquipment || !newEqName.trim()}>{addingEquipment ? 'Addingâ€¦' : '+ Add'}</button>
                   </div>
                   {companyEquipment.length === 0 ? (
                     <div style={{ fontSize: '13px', color: '#444', textAlign: 'center', padding: '16px 0' }}>No equipment added yet.</div>
@@ -10644,7 +10645,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <span style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: 600 }}>{eq.name}</span>
                             {eq.category && <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{eq.category}</span>}
                           </div>
-                          <button onClick={() => deleteEquipment(eq.id)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
+                          <button onClick={() => deleteEquipment(eq.id)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>Ã—</button>
                         </div>
                       ))}
                     </div>
@@ -10661,8 +10662,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {lookahead && (
                 <>
-                  {renderWeekGrid(week1, `Week 1 — ${new Date(week1[0]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})} – ${new Date(week1[4]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}`)}
-                  {renderWeekGrid(week2, `Week 2 — ${new Date(week2[0]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})} – ${new Date(week2[4]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}`)}
+                  {renderWeekGrid(week1, `Week 1 â€” ${new Date(week1[0]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})} â€“ ${new Date(week1[4]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}`)}
+                  {renderWeekGrid(week2, `Week 2 â€” ${new Date(week2[0]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})} â€“ ${new Date(week2[4]+'T12:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}`)}
                 </>
               )}
 
@@ -10671,8 +10672,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   onClick={e => { if (e.target === e.currentTarget) setShowActivityModal(false) }}>
                   <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{editingActivity ? 'Edit Activity' : 'Add Activity'} — {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
-                      <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{editingActivity ? 'Edit Activity' : 'Add Activity'} â€” {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
+                      <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>Ã—</button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div>
@@ -10681,7 +10682,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                       <div>
                         <label style={s.label}>Location on Site</label>
-                        <input style={s.input} value={activityForm.location || ''} onChange={e => setActivityForm(f => ({ ...f, location: e.target.value }))} placeholder="Level 2 west, Grid B–D..." />
+                        <input style={s.input} value={activityForm.location || ''} onChange={e => setActivityForm(f => ({ ...f, location: e.target.value }))} placeholder="Level 2 west, Grid Bâ€“D..." />
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
@@ -10697,7 +10698,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <>
                               <label style={s.label}>Subcontractor</label>
                               <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.sub_id || ''} onChange={e => setActivityForm(f => ({ ...f, sub_id: e.target.value }))}>
-                                <option value="">— Select —</option>
+                                <option value="">â€” Select â€”</option>
                                 {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                               </select>
                             </>
@@ -10741,8 +10742,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         {(activityForm.additional_companies || []).map((co, idx) => (
                           <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '6px 10px', marginBottom: '6px', fontSize: '13px', color: '#ccc' }}>
-                            <span>{co.name}{co.manpower > 0 ? <span style={{ color: '#666', marginLeft: '6px' }}>👷{co.manpower}</span> : null}</span>
-                            <button type="button" onClick={() => setActivityForm(f => ({ ...f, additional_companies: (f.additional_companies || []).filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>×</button>
+                            <span>{co.name}{co.manpower > 0 ? <span style={{ color: '#666', marginLeft: '6px' }}>ðŸ‘·{co.manpower}</span> : null}</span>
+                            <button type="button" onClick={() => setActivityForm(f => ({ ...f, additional_companies: (f.additional_companies || []).filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>Ã—</button>
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
@@ -10753,7 +10754,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div>
                         <label style={s.label}>Company Equipment Needed</label>
                         {companyEquipment.length === 0 ? (
-                          <div style={{ fontSize: '12px', color: '#555', padding: '8px 0' }}>No company equipment added yet — use the ⚙ Equipment button in the header to add your fleet.</div>
+                          <div style={{ fontSize: '12px', color: '#555', padding: '8px 0' }}>No company equipment added yet â€” use the âš™ Equipment button in the header to add your fleet.</div>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
                             {companyEquipment.map(eq => (
@@ -10815,7 +10816,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', padding: '8px 16px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
                         <button onClick={saveActivity} disabled={savingActivity || !activityForm.description} style={{ ...s.btn, opacity: !activityForm.description ? 0.5 : 1 }}>
-                          {savingActivity ? 'Saving…' : editingActivity ? 'Save Changes' : 'Add Activity'}
+                          {savingActivity ? 'Savingâ€¦' : editingActivity ? 'Save Changes' : 'Add Activity'}
                         </button>
                       </div>
                     </div>
@@ -10826,7 +10827,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── CLOSEOUT TAB ── */}
+        {/* â”€â”€ CLOSEOUT TAB â”€â”€ */}
         {activeTab === 'closeout' && (() => {
           const openItems = punchItems.filter(p => p.status === 'open')
           const subComplete = punchItems.filter(p => p.status === 'sub_complete')
@@ -10842,7 +10843,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <>
               {allClear ? (
                 <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'center' }}>
-                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>✓</div>
+                  <div style={{ fontSize: '28px', marginBottom: '8px' }}>âœ“</div>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#4ade80' }}>Project ready to close</div>
                   <div style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, marginTop: '4px' }}>All punch items approved, retainage released, and no active lien notices.</div>
                 </div>
@@ -10885,7 +10886,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '16px' }}>{item.done ? '✓' : '○'}</span>
+                      <span style={{ fontSize: '16px' }}>{item.done ? 'âœ“' : 'â—‹'}</span>
                       <span style={{ fontSize: '14px', color: item.done ? '#4ade80' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}</span>
                     </div>
                     {!item.done && (
@@ -10898,7 +10899,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── PUNCH LIST TAB ── */}
+        {/* â”€â”€ PUNCH LIST TAB â”€â”€ */}
         {activeTab === 'punch' && (
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
@@ -10915,7 +10916,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const sub = subs.find(s => s.sub_id === e.target.value)
                       setPunchForm(f => ({ ...f, assigned_sub_id: e.target.value, assigned_company: sub?.company_name || '' }))
                     }}>
-                      <option value="">— Not assigned —</option>
+                      <option value="">â€” Not assigned â€”</option>
                       {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
                     </select>
                   </div>
@@ -10966,7 +10967,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </div>
         )}
 
-        {/* ── RETAINAGE TAB ── */}
+        {/* â”€â”€ RETAINAGE TAB â”€â”€ */}
         {activeTab === 'retainage' && (() => {
           const totalRetainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
           const totalReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
@@ -10994,7 +10995,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const c = contracts.find(c => c.id === e.target.value)
                           setReleaseForm(f => ({ ...f, subcontract_id: e.target.value, company_name: c?.vendor_name || '' }))
                         }}>
-                          <option value="">— Select subcontract —</option>
+                          <option value="">â€” Select subcontract â€”</option>
                           {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                         </select>
                       </div>
@@ -11012,7 +11013,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
                     <div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{r.company_name}</div>
-                      <div style={{ fontSize: '12px', color: '#555' }}>{new Date(r.released_at).toLocaleDateString()}{r.notes ? ` · ${r.notes}` : ''}</div>
+                      <div style={{ fontSize: '12px', color: '#555' }}>{new Date(r.released_at).toLocaleDateString()}{r.notes ? ` Â· ${r.notes}` : ''}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <span style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80' }}>{fmt(r.amount)}</span>
@@ -11025,7 +11026,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── WARRANTY TAB ── */}
+        {/* â”€â”€ WARRANTY TAB â”€â”€ */}
         {activeTab === 'warranty' && (() => {
           const openOrders = warrantyOrders.filter(o => o.status !== 'resolved')
           const resolvedOrders = warrantyOrders.filter(o => o.status === 'resolved')
@@ -11117,7 +11118,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const emp = allEmployees.find(em => em.id === e.target.value)
                           setWarrantyOrderForm(f => ({ ...f, assigned_employee_id: e.target.value, assigned_employee_name: emp?.full_name || emp?.name || '' }))
                         }}>
-                          <option value="">— None —</option>
+                          <option value="">â€” None â€”</option>
                           {allEmployees.filter(e => e.active).map(emp => <option key={emp.id} value={emp.id}>{emp.full_name || emp.name}</option>)}
                         </select>
                       </div>
@@ -11127,7 +11128,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const sub = subs.find(s => s.sub_id === e.target.value)
                           setWarrantyOrderForm(f => ({ ...f, assigned_sub_id: e.target.value, assigned_company: sub?.company_name || '' }))
                         }}>
-                          <option value="">— None —</option>
+                          <option value="">â€” None â€”</option>
                           {subs.filter(s => s.sub_id).map(s => <option key={s.sub_id} value={s.sub_id}>{s.company_name}</option>)}
                         </select>
                       </div>
@@ -11161,7 +11162,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {(order.assigned_employee_name || order.assigned_company) && (
                               <div style={{ fontSize: '12px', color: '#555', marginBottom: '2px' }}>
                                 {order.assigned_employee_name && `Employee: ${order.assigned_employee_name}`}
-                                {order.assigned_employee_name && order.assigned_company && ' · '}
+                                {order.assigned_employee_name && order.assigned_company && ' Â· '}
                                 {order.assigned_company && `Sub: ${order.assigned_company}`}
                               </div>
                             )}
@@ -11191,8 +11192,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
                                   {resolvingOrder.photos.map((p, i) => (
                                     <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      📷 {p.name}
-                                      <button type="button" onClick={() => setResolvingOrder(r => ({ ...r, photos: r.photos.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
+                                      ðŸ“· {p.name}
+                                      <button type="button" onClick={() => setResolvingOrder(r => ({ ...r, photos: r.photos.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>Ã—</button>
                                     </div>
                                   ))}
                                 </div>
@@ -11262,11 +11263,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#aaa', textDecoration: 'line-through' }}>{order.title}</span>
                           <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>Resolved</span>
-                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#1a1200', color: '#facc15', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` · $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
+                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#1a1200', color: '#facc15', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` Â· $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
                         </div>
                         <div style={{ fontSize: '12px', color: '#444', marginTop: '3px' }}>
                           {order.resolved_at && `Resolved ${new Date(order.resolved_at).toLocaleDateString()}`}
-                          {order.photos?.length > 0 && ` · ${order.photos.length} photo${order.photos.length !== 1 ? 's' : ''} on file`}
+                          {order.photos?.length > 0 && ` Â· ${order.photos.length} photo${order.photos.length !== 1 ? 's' : ''} on file`}
                         </div>
                         {order.resolution_notes && <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>{order.resolution_notes}</div>}
                       </div>
@@ -11278,7 +11279,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-        {/* ── SITE PHOTOS TAB ── */}
+        {/* â”€â”€ SITE PHOTOS TAB â”€â”€ */}
         {activeTab === 'photos' && (() => {
           const byDate = fieldPhotos.reduce((acc, p) => { const d = p.date || 'Unknown'; (acc[d] = acc[d] || []).push(p); return acc }, {})
           const dates = Object.keys(byDate).sort((a, b) => new Date(b) - new Date(a))
@@ -11290,7 +11291,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: '13px', color: '#555', margin: '0 0 1.25rem' }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} — gallery uploads + daily reports</p>
+                  <p style={{ fontSize: '13px', color: '#555', margin: '0 0 1.25rem' }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} â€” gallery uploads + daily reports</p>
                   {dates.map(date => (
                     <div key={date} style={{ marginBottom: '1.5rem' }}>
                       <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
@@ -11310,7 +11311,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               type="button"
                               onClick={e => { e.stopPropagation(); deleteFieldPhoto(p) }}
                               style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingFieldPhoto === p.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
-                              {deletingFieldPhoto === p.path ? '…' : '✕'}
+                              {deletingFieldPhoto === p.path ? 'â€¦' : 'âœ•'}
                             </button>
                           </div>
                         ))}
@@ -11323,7 +11324,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           )
         })()}
 
-              {/* ── ORDERS ── */}
+              {/* â”€â”€ ORDERS â”€â”€ */}
               {activeTab === 'po' && (() => {
                 const PO_STATUS = {
                   draft:    { color: '#888',    bg: '#111',    border: '#2a2a2a' },
@@ -11347,7 +11348,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div key={i.id || idx} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '1px solid #111', fontSize: '13px', color: '#ccc' }}>
                           <span>{i.description}</span>
                           <span style={{ textAlign: 'right', color: '#888' }}>{Number(i.qty)}</span>
-                          <span style={{ color: '#555' }}>{i.unit || '—'}</span>
+                          <span style={{ color: '#555' }}>{i.unit || 'â€”'}</span>
                           <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{fmt(i.unit_price)}</span>
                           <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#f1f1f1' }}>{fmt(i.amount)}</span>
                         </div>
@@ -11386,8 +11387,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ marginBottom: '12px' }}>
                             <label style={s.label}>Budget line item</label>
                             <select style={s.input} value={poForm.budget_item_id} onChange={e => setPOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                              <option value="">— Unassigned —</option>
-                              {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                              <option value="">â€” Unassigned â€”</option>
+                              {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
                             </select>
                           </div>
                           <div style={{ marginBottom: '12px' }}>
@@ -11403,7 +11404,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
                                     <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
                                     <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
-                                    <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
+                                    <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>Ã—</button>
                                   </div>
                                 ))}
                                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
@@ -11458,8 +11459,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div style={{ marginBottom: '12px' }}>
                                   <label style={s.label}>Budget line item</label>
                                   <select style={s.input} value={editPOForm.budget_item_id} onChange={e => setEditPOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                                    <option value="">— Unassigned —</option>
-                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                                    <option value="">â€” Unassigned â€”</option>
+                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
                                   </select>
                                 </div>
                                 <div style={{ marginBottom: '12px' }}>
@@ -11475,7 +11476,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
                                           <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
                                           <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
-                                          <button onClick={() => setEditPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>×</button>
+                                          <button onClick={() => setEditPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>Ã—</button>
                                         </div>
                                       ))}
                                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
@@ -11519,15 +11520,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{po.status}</span>
-                                      {bi && <span style={{ fontSize: '11px', color: '#555' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
+                                      {bi && <span style={{ fontSize: '11px', color: '#555' }}>{bi.cost_code ? `${bi.cost_code} Â· ` : ''}{bi.description}</span>}
                                       {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
                                       <span style={{ fontSize: '11px', color: '#444' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
-                                      {po.draw_request_id && (() => { const dr = drawRequests.find(d => d.id === po.draw_request_id); return dr ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#0a1f2e', color: '#38bdf8', border: '1px solid #0c2d42' }}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span> : null })()}
+                                      {po.draw_request_id && (() => { const dr = drawRequests.find(d => d.id === po.draw_request_id); return dr ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#0a1f2e', color: '#38bdf8', border: '1px solid #0c2d42' }}>Draw #{dr.draw_number}{dr.title ? ` â€” ${dr.title}` : ''}</span> : null })()}
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                                     <span style={{ fontSize: '15px', fontWeight: '800', color: '#f1f1f1' }}>{fmt(po.amount)}</span>
-                                    <span style={{ color: '#555', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
+                                    <span style={{ color: '#555', fontSize: '14px' }}>{isExpanded ? 'â–²' : 'â–¼'}</span>
                                   </div>
                                 </div>
 
@@ -11536,7 +11537,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     {po.notes && <p style={{ fontSize: '13px', color: '#666', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
                                     {po.attachment_url && (
                                       <button onClick={() => openPOAttachment(po.attachment_url)} style={{ marginBottom: '10px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px solid #3a1a00', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}>
-                                        📎 View Attachment
+                                        ðŸ“Ž View Attachment
                                       </button>
                                     )}
                                     <POLineItemsTable items={po.purchase_order_items} />
@@ -11592,7 +11593,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                           <div style={{ gridColumn: '1 / -1' }}>
                             <label style={s.label}>Description *</label>
-                            <input style={s.input} value={gcForm.description} onChange={e => setGcForm(f => ({ ...f, description: e.target.value }))} placeholder="PM salary — 8/1 to 8/14" />
+                            <input style={s.input} value={gcForm.description} onChange={e => setGcForm(f => ({ ...f, description: e.target.value }))} placeholder="PM salary â€” 8/1 to 8/14" />
                           </div>
                           <div>
                             <label style={s.label}>Amount *</label>
@@ -11607,14 +11608,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div>
                             <label style={s.label}>Draw Request</label>
                             <select style={s.input} value={gcForm.draw_request_id} onChange={e => setGcForm(f => ({ ...f, draw_request_id: e.target.value }))}>
-                              <option value="">— none —</option>
+                              <option value="">â€” none â€”</option>
                               {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
                             </select>
                           </div>
                           <div>
                             <label style={s.label}>Budget item</label>
                             <select style={s.input} value={gcForm.budget_item_id} onChange={e => setGcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                              <option value="">— none —</option>
+                              <option value="">â€” none â€”</option>
                               {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
                             </select>
                           </div>
@@ -11627,7 +11628,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div>
                             <label style={s.label}>Attachment (PDF/image)</label>
                             <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e => setGcFile(e.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#888' }} />
-                            {gcFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>📎 {gcFile.name}</div>}
+                            {gcFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>ðŸ“Ž {gcFile.name}</div>}
                           </div>
                         </div>
                         <button
@@ -11683,22 +11684,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div>
                                       <label style={s.label}>Draw Request</label>
                                       <select style={s.input} value={gcEditForm.draw_request_id} onChange={e2 => setGcEditForm(f => ({ ...f, draw_request_id: e2.target.value }))}>
-                                        <option value="">— none —</option>
+                                        <option value="">â€” none â€”</option>
                                         {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
                                       </select>
                                     </div>
                                     <div>
                                       <label style={s.label}>Budget item</label>
                                       <select style={s.input} value={gcEditForm.budget_item_id} onChange={e2 => setGcEditForm(f => ({ ...f, budget_item_id: e2.target.value }))}>
-                                        <option value="">— none —</option>
+                                        <option value="">â€” none â€”</option>
                                         {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
                                       </select>
                                     </div>
                                     <div style={{ gridColumn: '1 / -1' }}>
                                       <label style={s.label}>Replace attachment (optional)</label>
                                       <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e2 => setGcEditFile(e2.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#888' }} />
-                                      {gcEditFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>📎 {gcEditFile.name}</div>}
-                                      {e.doc_url && !gcEditFile && <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>Current attachment on file — upload a new file to replace it</div>}
+                                      {gcEditFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>ðŸ“Ž {gcEditFile.name}</div>}
+                                      {e.doc_url && !gcEditFile && <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>Current attachment on file â€” upload a new file to replace it</div>}
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                                       <button style={s.btn} onClick={async () => {
@@ -11732,13 +11733,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </div>
                                       <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>
                                         {e.entry_date && <span style={{ marginRight: '10px' }}>{e.entry_date}</span>}
-                                        {budgetItem && <span style={{ marginRight: '10px' }}>→ {budgetItem.description}</span>}
+                                        {budgetItem && <span style={{ marginRight: '10px' }}>â†’ {budgetItem.description}</span>}
                                         {e.notes && <span style={{ color: '#444' }}>{e.notes}</span>}
                                       </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
-                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={async () => { const { data } = await supabase.storage.from('gc-docs').createSignedUrl(e.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>📎</button>}
+                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={async () => { const { data } = await supabase.storage.from('gc-docs').createSignedUrl(e.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>ðŸ“Ž</button>}
                                       <button style={s.btnSmallOrange} onClick={() => {
                                         setEditingGCId(e.id)
                                         setGcEditFile(null)
@@ -11802,7 +11803,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div>
                             <label style={labelStyle}>Vendor</label>
-                            <input value={addOrderForm.vendor} onChange={e => setAddOrderForm(f => ({ ...f, vendor: e.target.value }))} style={inputStyle} placeholder="Home Depot, Amazon…" />
+                            <input value={addOrderForm.vendor} onChange={e => setAddOrderForm(f => ({ ...f, vendor: e.target.value }))} style={inputStyle} placeholder="Home Depot, Amazonâ€¦" />
                           </div>
                           <div>
                             <label style={labelStyle}>Description *</label>
@@ -11846,7 +11847,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <input value={addOrderForm.notes} onChange={e => setAddOrderForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} />
                         </div>
                         <div style={{ marginTop: '1rem' }}>
-                          <button type="submit" disabled={savingJobOrder} style={btnStyle}>{savingJobOrder ? 'Saving…' : 'Save Order'}</button>
+                          <button type="submit" disabled={savingJobOrder} style={btnStyle}>{savingJobOrder ? 'Savingâ€¦' : 'Save Order'}</button>
                         </div>
                       </form>
                     )}
@@ -11857,10 +11858,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Procurement Templates</p>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <select value={selectedTplId} onChange={e => setSelectedTplId(e.target.value)} style={{ padding: '6px 10px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', color: '#888' }}>
-                            <option value="">Apply template…</option>
+                            <option value="">Apply templateâ€¦</option>
                             {allOrderTemplates.filter(t => !jobAssignedTemplates.some(a => a.template_id === t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                           </select>
-                          {selectedTplId && <button onClick={() => assignTemplate(selectedTplId)} disabled={assigningTemplate} style={btnSmStyle('orange')}>{assigningTemplate ? '…' : 'Apply'}</button>}
+                          {selectedTplId && <button onClick={() => assignTemplate(selectedTplId)} disabled={assigningTemplate} style={btnSmStyle('orange')}>{assigningTemplate ? 'â€¦' : 'Apply'}</button>}
                         </div>
                       </div>
 
@@ -11885,7 +11886,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     const existingOrder = jobOrders.find(o => o.template_item_id === item.id)
                                     return (
                                       <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: '#0f0f0f', marginBottom: '4px', flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: '20px' }}>{existingOrder ? '✅' : '⬜'}</span>
+                                        <span style={{ fontSize: '20px' }}>{existingOrder ? 'âœ…' : 'â¬œ'}</span>
                                         <span style={{ flex: 1, fontSize: '13px', color: existingOrder ? '#555' : '#f1f1f1', textDecoration: existingOrder ? 'line-through' : 'none' }}>{item.item_name}</span>
                                         <span style={{ fontSize: '12px', color: '#444' }}>{item.default_qty} {item.unit}</span>
                                         {existingOrder ? (
@@ -11895,8 +11896,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <input value={orderingItemForm.vendor} onChange={e => setOrderingItemForm(f => ({ ...f, vendor: e.target.value }))} style={{ ...inputStyle, width: '110px' }} placeholder="Vendor" />
                                             <input type="number" value={orderingItemForm.amount} onChange={e => setOrderingItemForm(f => ({ ...f, amount: e.target.value }))} style={{ ...inputStyle, width: '80px' }} placeholder="$" />
                                             <input value={orderingItemForm.tracking_number} onChange={e => setOrderingItemForm(f => ({ ...f, tracking_number: e.target.value }))} style={{ ...inputStyle, width: '120px' }} placeholder="Tracking #" />
-                                            <button onClick={() => saveItemOrder(item.id)} disabled={savingItemOrder} style={btnSmStyle('green')}>{savingItemOrder ? '…' : 'Save'}</button>
-                                            <button onClick={() => setOrderingItemId(null)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer' }}>✕</button>
+                                            <button onClick={() => saveItemOrder(item.id)} disabled={savingItemOrder} style={btnSmStyle('green')}>{savingItemOrder ? 'â€¦' : 'Save'}</button>
+                                            <button onClick={() => setOrderingItemId(null)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer' }}>âœ•</button>
                                           </div>
                                         ) : (
                                           <button onClick={() => { setOrderingItemId(item.id); setOrderingItemForm({ vendor: '', amount: '', tracking_number: '', carrier: 'UPS', notes: '' }) }} style={btnSmStyle('orange')}>Order This</button>
@@ -11922,13 +11923,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div key={o.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 16px', marginBottom: '6px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                             <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{o.description}</div>
-                            <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{o.vendor ? `${o.vendor}` : ''}{o.po_number ? ` · PO ${o.po_number}` : ''}{o.ordered_at ? ` · ${o.ordered_at}` : ''}</div>
+                            <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{o.vendor ? `${o.vendor}` : ''}{o.po_number ? ` Â· PO ${o.po_number}` : ''}{o.ordered_at ? ` Â· ${o.ordered_at}` : ''}</div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
                             {o.amount != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${Number(o.amount).toLocaleString()}</span>}
                             {tUrl ? (
                               <a href={tUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#60a5fa', textDecoration: 'none' }}>
-                                {o.carrier} ↗
+                                {o.carrier} â†—
                               </a>
                             ) : o.tracking_number ? (
                               <span style={{ fontSize: '12px', color: '#555' }}>{o.tracking_number}</span>
@@ -11941,7 +11942,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             >
                               {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                             </select>
-                            <button onClick={() => deleteJobOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px' }}>×</button>
+                            <button onClick={() => deleteJobOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px' }}>Ã—</button>
                           </div>
                         </div>
                       )
@@ -11950,7 +11951,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )
               })()}
 
-        {/* ── DRAWINGS ── */}
+        {/* â”€â”€ DRAWINGS â”€â”€ */}
         {activeTab === 'drawings' && (() => {
           const isSub = userRole === 'subcontractor'
           const DISCIPLINES = ['Architectural', 'Structural', 'Mechanical', 'Electrical', 'Plumbing', 'Civil', 'Landscape', 'Other']
@@ -11987,7 +11988,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <div>
                       <label style={s.label}>Sheet Name</label>
-                      <input style={s.input} placeholder="Floor Plan — Level 1" value={drawingUploadForm.sheet_name} onChange={e => setDrawingUploadForm(f => ({ ...f, sheet_name: e.target.value }))} />
+                      <input style={s.input} placeholder="Floor Plan â€” Level 1" value={drawingUploadForm.sheet_name} onChange={e => setDrawingUploadForm(f => ({ ...f, sheet_name: e.target.value }))} />
                     </div>
                     <div>
                       <label style={s.label}>Revision</label>
@@ -12015,7 +12016,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {drawings.length === 0 ? (
                 <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '10px', padding: '48px 24px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>📐</div>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>ðŸ“</div>
                   <div style={{ fontSize: '14px', color: '#555' }}>No drawings uploaded yet. Upload plan sheets to keep them accessible to the whole team.</div>
                 </div>
               ) : Object.keys(grouped).length === 0 ? (
@@ -12024,12 +12025,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 Object.entries(grouped).map(([discipline, sheets]) => (
                   <div key={discipline} style={{ marginBottom: '24px' }}>
                     <div style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1e1e1e' }}>
-                      {discipline} · {sheets.length} sheet{sheets.length !== 1 ? 's' : ''}
+                      {discipline} Â· {sheets.length} sheet{sheets.length !== 1 ? 's' : ''}
                     </div>
                     <div style={{ display: 'grid', gap: '6px' }}>
                       {sheets.map(d => (
                         <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '10px 14px' }}>
-                          <div style={{ fontSize: '20px', flexShrink: 0 }}>{d.file_name?.endsWith('.pdf') ? '📄' : '🖼'}</div>
+                          <div style={{ fontSize: '20px', flexShrink: 0 }}>{d.file_name?.endsWith('.pdf') ? 'ðŸ“„' : 'ðŸ–¼'}</div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
                               {d.sheet_number && <span style={{ fontSize: '12px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{d.sheet_number}</span>}
@@ -12038,12 +12039,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
                             <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
                               {new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {d.notes && <span> · {d.notes}</span>}
+                              {d.notes && <span> Â· {d.notes}</span>}
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                             <button onClick={() => openDrawing(d.storage_path)} style={{ padding: '6px 12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>View</button>
-                            {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#555', fontSize: '11px', cursor: 'pointer' }}>×</button>}
+                            {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#555', fontSize: '11px', cursor: 'pointer' }}>Ã—</button>}
                           </div>
                         </div>
                       ))}
@@ -12060,7 +12061,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
       </main>
 
-      {/* ── FIELD PHOTOS LIGHTBOX ── */}
+      {/* â”€â”€ FIELD PHOTOS LIGHTBOX â”€â”€ */}
       {fieldLightbox && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
@@ -12068,7 +12069,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {fieldLightbox.photos[fieldLightbox.index]?.tag && <span style={{ background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '10px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px' }}>{fieldLightbox.photos[fieldLightbox.index].tag}</span>}
               {fieldLightbox.photos[fieldLightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px' }}>{fieldLightbox.photos[fieldLightbox.index].caption}</span>}
               {fieldLightbox.photos[fieldLightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(fieldLightbox.photos[fieldLightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#444', fontSize: '11px' }}>· Daily report</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#444', fontSize: '11px' }}>Â· Daily report</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ color: '#555', fontSize: '12px' }}>{fieldLightbox.index + 1} / {fieldLightbox.photos.length}</span>
@@ -12078,7 +12079,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 style={{ padding: '6px 14px', background: 'rgba(90,10,10,0.8)', border: '1px solid #5a1a1a', borderRadius: '6px', color: deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
                 {deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? 'Deleting...' : 'Delete'}
               </button>
-              <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+              <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>âœ•</button>
             </div>
           </div>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '0 60px' }}>
@@ -12087,8 +12088,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               : <div style={{ color: '#444', fontSize: '13px' }}>Loading...</div>
             }
             {fieldLightbox.photos.length > 1 && <>
-              <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
-              <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
+              <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>â€¹</button>
+              <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>â€º</button>
             </>}
           </div>
           {fieldLightbox.photos.length > 1 && (
@@ -12116,3 +12117,4 @@ export default function JobDetail() {
     </Suspense>
   )
 }
+

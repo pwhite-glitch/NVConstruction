@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,7 +11,10 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'}/logo.png`
 
 export async function POST(request) {
-  const { job_id, subcontract_id, signer_email, signer_name, document_html, document_title, created_by } = await request.json()
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
+
+  const { job_id, subcontract_id, signer_email, signer_name, document_html, document_title } = await request.json()
   if (!job_id || !signer_email || !document_html) {
     return Response.json({ error: 'job_id, signer_email, and document_html are required' }, { status: 400 })
   }
@@ -24,7 +28,7 @@ export async function POST(request) {
       signer_name: signer_name || null,
       document_html,
       document_title: document_title || null,
-      created_by: created_by || null,
+      created_by: auth.userId,  // always from verified session
     })
     .select()
     .single()
@@ -58,19 +62,15 @@ export async function POST(request) {
         <tr>
           <td style="padding:40px;">
             <h1 style="margin:0 0 8px;font-size:22px;font-weight:800;color:#f1f1f1;">Signature Requested, ${firstName}</h1>
-            <p style="margin:0 0 24px;font-size:14px;color:#888;line-height:1.6;">
-              NV Construction has sent you a document to review and sign electronically.
-            </p>
+            <p style="margin:0 0 24px;font-size:14px;color:#888;line-height:1.6;">NV Construction has sent you a document to review and sign electronically.</p>
             <div style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:20px 24px;margin-bottom:28px;">
               <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:2px;color:#555;text-transform:uppercase;">Document</p>
               <p style="margin:0;font-size:16px;font-weight:700;color:#f1f1f1;">${title}</p>
             </div>
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-              <tr>
-                <td align="center">
-                  <a href="${signingLink}" style="display:inline-block;background:#e8590c;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:700;letter-spacing:0.5px;">Review &amp; Sign Document</a>
-                </td>
-              </tr>
+              <tr><td align="center">
+                <a href="${signingLink}" style="display:inline-block;background:#e8590c;color:#fff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:700;letter-spacing:0.5px;">Review &amp; Sign Document</a>
+              </td></tr>
             </table>
             <p style="margin:0 0 8px;font-size:12px;color:#444;line-height:1.6;">Or copy and paste this link into your browser:</p>
             <p style="margin:0;font-size:12px;color:#e8590c;word-break:break-all;">${signingLink}</p>
@@ -92,24 +92,34 @@ export async function POST(request) {
 }
 
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   const sub_id = searchParams.get('sub_id')
 
-  if (sub_id) {
-    const { data: subs } = await adminSupabase.from('subcontracts').select('id').eq('sub_id', sub_id)
+  // Sub sees only their own signing requests — always derive from session, never from query param
+  if (isSub(auth.role) || sub_id) {
+    const { data: subs } = await adminSupabase
+      .from('subcontracts')
+      .select('id')
+      .eq('sub_id', auth.userId)  // always use session userId, not the supplied sub_id param
     const subIds = (subs || []).map(s => s.id)
     if (subIds.length === 0) return Response.json({ data: [] })
     const { data, error } = await adminSupabase
       .from('signing_requests')
-      .select('id, token, job_id, subcontract_id, signer_email, signer_name, document_title, status, signed_at, created_at')
+      // Token excluded from sub listing — subs use sub-initiate-sign to get their own token
+      .select('id, job_id, subcontract_id, signer_email, signer_name, document_title, status, signed_at, created_at')
       .in('subcontract_id', subIds)
       .order('created_at', { ascending: false })
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ data: data || [] })
   }
 
-  if (!job_id) return Response.json({ error: 'job_id or sub_id required' }, { status: 400 })
+  // PM sees all for a given job — token included for PM management
+  if (!isPM(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
 
   const { data, error } = await adminSupabase
     .from('signing_requests')

@@ -1,8 +1,9 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
+import { authFetch } from '../../lib/client-fetch'
 
 const PM_EMAIL = 'pwhite@nvim.co'
 
@@ -329,7 +330,7 @@ export default function Submit() {
   async function uploadDocFile(file, folder) {
     const ext = file.name.split('.').pop()
     const path = `${dirEntry.id}/${folder}-${Date.now()}.${ext}`
-    const res = await fetch('/api/sub-docs', {
+    const res = await authFetch('/api/sub-docs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'upload-url', path }),
@@ -347,7 +348,7 @@ export default function Submit() {
     try {
       const ext = file.name.split('.').pop()
       const path = `contracts/${contractId}/${Date.now()}.${ext}`
-      const urlRes = await fetch('/api/sub-docs', {
+      const urlRes = await authFetch('/api/sub-docs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'upload-url', path }),
@@ -372,7 +373,7 @@ export default function Submit() {
   }
 
   async function viewSignedContract(filePath) {
-    const res = await fetch('/api/sub-docs', {
+    const res = await authFetch('/api/sub-docs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'signed-url', file_path: filePath, download: true }),
@@ -395,7 +396,7 @@ export default function Submit() {
       setSavingDocs(false)
       return
     }
-    const saveRes = await fetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, w9_url, coi_url, coi_expiration: docsCoiExpiry || null }) })
+    const saveRes = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirEntry.id, w9_url, coi_url, coi_expiration: docsCoiExpiry || null }) })
     setSavingDocs(false)
     if (!saveRes.ok) { setDocError('Save failed. Please try again.'); return }
     setDocError('')
@@ -458,13 +459,13 @@ export default function Submit() {
       await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).ilike('sub_email', user.email)
       const inv = bidInvitations.find(i => i.bid_packages?.id === bidPackageId)
       const pkgTitle = inv?.bid_packages?.title || 'Bid Package'
-      await sendEmail(PM_EMAIL, `Bid received — ${profile?.company_name || user.email}`,
+      await sendEmail(PM_EMAIL, `Bid received â€” ${profile?.company_name || user.email}`,
         emailWrap(`
           <h2 style="color:#f1f1f1;margin:0 0 1rem">New bid submitted</h2>
           <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted a bid for <strong style="color:#f1f1f1">${pkgTitle}</strong>.</p>
           <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(bidSubmitForm.amount).toLocaleString()}</p>
           ${bidSubmitForm.notes ? `<p style="color:#888;font-size:13px">${bidSubmitForm.notes}</p>` : ''}
-          ${doc_url ? `<p style="color:#888;font-size:13px">📎 Estimate attached</p>` : ''}
+          ${doc_url ? `<p style="color:#888;font-size:13px">ðŸ“Ž Estimate attached</p>` : ''}
         `)
       )
       await loadBidPackageDetail(bidPackageId)
@@ -501,7 +502,7 @@ export default function Submit() {
   async function printContract(subcontractId) {
     setPrintingContractFor(subcontractId)
     try {
-      const res = await fetch('/api/sub-initiate-sign', {
+      const res = await authFetch('/api/sub-initiate-sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subcontract_id: subcontractId, sub_user_id: user.id }),
@@ -528,7 +529,7 @@ export default function Submit() {
   async function initiateSign(subcontractId) {
     setInitiatingSignFor(subcontractId)
     try {
-      const res = await fetch('/api/sub-initiate-sign', {
+      const res = await authFetch('/api/sub-initiate-sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subcontract_id: subcontractId, sub_user_id: user.id }),
@@ -587,7 +588,7 @@ export default function Submit() {
     if (data.ok) {
       setShowCORequestFor(null)
       setCoRequestForm({ description: '', amount: '', notes: '' })
-      setCoRequestMsg(prev => ({ ...prev, [contractId]: 'CO request submitted — pending PM approval.' }))
+      setCoRequestMsg(prev => ({ ...prev, [contractId]: 'CO request submitted â€” pending PM approval.' }))
       setTimeout(() => setCoRequestMsg(prev => ({ ...prev, [contractId]: '' })), 5000)
       await loadMyCOs(contractId)
     } else {
@@ -613,7 +614,7 @@ export default function Submit() {
     setSovRetainageMap(retMap)
     const { data: rawLines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description, retainage_pct)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
     let lines = rawLines || []
-    // Backfill SOV lines for approved COs missing a row — runs server-side to bypass RLS
+    // Backfill SOV lines for approved COs missing a row â€” runs server-side to bypass RLS
     try {
       const backfillRes = await fetch('/api/sov-co-backfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subcontract_ids: contractIds }) })
       const { lines: newLines } = await backfillRes.json()
@@ -701,7 +702,7 @@ export default function Submit() {
 <div class="grid">
   <div class="cell"><label>Claimant (Subcontractor)</label><span>${sub.company_name || ''}</span></div>
   <div class="cell"><label>Hiring Party</label><span>NV Construction</span></div>
-  <div class="cell"><label>Project</label><span>#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</span></div>
+  <div class="cell"><label>Project</label><span>#${sub.jobs?.job_number} â€” ${sub.jobs?.project_name}</span></div>
   <div class="cell"><label>Owner</label><span>${owner}</span></div>
   <div class="cell"><label>Conditional Payment Amount</label><span style="font-size:16px;font-weight:800;">${amt}</span></div>
   <div class="cell"><label>Through Date</label><span>${period}</span></div>
@@ -838,15 +839,15 @@ export default function Submit() {
       await supabase.from('billing_sov_lines').insert(sovInserts)
     }
     const pmEmail = selectedJob?.pm_email || PM_EMAIL
-    await sendEmail(pmEmail, `Billing submitted — ${profile?.company_name || user.email}`,
+    await sendEmail(pmEmail, `Billing submitted â€” ${profile?.company_name || user.email}`,
       emailWrap(`
         <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
-        <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
+        <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} â€” ${selectedJob?.project_name}</strong>.</p>
         <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(form.amount_billed).toLocaleString()}</p>
         ${form.pct_complete ? `<p style="color:#888;font-size:13px">${form.pct_complete}% complete on scope</p>` : ''}
         <p style="color:#888;font-size:13px;line-height:1.6">${form.work_description}</p>
-        <p style="color:#888;font-size:13px">📎 Invoice PDF attached</p>
-        <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
+        <p style="color:#888;font-size:13px">ðŸ“Ž Invoice PDF attached</p>
+        <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal â†’</a></p>
       `)
     )
     setSuccess(true)
@@ -865,7 +866,7 @@ export default function Submit() {
     if (!teamInviteForm.email.trim() || !teamCompanyId) return
     setTeamInviting(true)
     setTeamInviteMsg('')
-    const res = await fetch('/api/invite-team-member', {
+    const res = await authFetch('/api/invite-team-member', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ inviter_id: user?.id, company_id: teamCompanyId, email: teamInviteForm.email.trim(), full_name: teamInviteForm.name.trim() || undefined }),
@@ -930,7 +931,7 @@ export default function Submit() {
 
   return (
     <div style={s.page}>
-      {/* ── Sidebar ── */}
+      {/* â”€â”€ Sidebar â”€â”€ */}
       <nav style={s.sidebar}>
         <div style={s.sidebarTop}>
           <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
@@ -959,11 +960,11 @@ export default function Submit() {
         </div>
       </nav>
 
-      {/* ── Content ── */}
+      {/* â”€â”€ Content â”€â”€ */}
       <div style={s.content}>
         {success && <div style={s.success}>Billing submitted successfully. Your project manager will be notified.</div>}
 
-        {/* ── CALENDAR ── */}
+        {/* â”€â”€ CALENDAR â”€â”€ */}
         {activeTab === 'calendar' && (() => {
           const { year, month } = calMonth
           const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -1049,9 +1050,9 @@ export default function Submit() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#2a1a4a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Bid deadline</span></div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>â€¹</button>
                   <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
+                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>â€º</button>
                 </div>
               </div>
 
@@ -1109,7 +1110,7 @@ export default function Submit() {
                   {submissions.slice(0, 3).map(sub => (
                     <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
                       <div>
-                        <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#ccc', fontWeight: '600' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}</p>
+                        <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#ccc', fontWeight: '600' }}>#{sub.jobs?.job_number} â€” {sub.jobs?.project_name}</p>
                         <p style={{ margin: 0, fontSize: '11px', color: '#555' }}>{new Date(sub.submitted_at).toLocaleDateString()}</p>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1118,14 +1119,14 @@ export default function Submit() {
                       </div>
                     </div>
                   ))}
-                  <button onClick={() => setActiveTab('history')} style={{ marginTop: '10px', fontSize: '12px', color: '#555', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View all history →</button>
+                  <button onClick={() => setActiveTab('history')} style={{ marginTop: '10px', fontSize: '12px', color: '#555', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View all history â†’</button>
                 </div>
               )}
             </div>
           )
         })()}
 
-        {/* ── SUBMIT BILLING TAB ── */}
+        {/* â”€â”€ SUBMIT BILLING TAB â”€â”€ */}
         {activeTab === 'billing' && (
           jobs.length === 0 ? (
             <div style={s.empty}>You have not been assigned to any active jobs yet.<br />Contact NV Construction to get started.</div>
@@ -1137,7 +1138,7 @@ export default function Submit() {
                   <label style={s.label}>Project</label>
                   <select value={form.job_id} onChange={e => { update('job_id', e.target.value); loadJobSov(e.target.value) }} required style={s.input}>
                     <option value="">Select a project...</option>
-                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
                   </select>
                 </div>
                 {sovForm.length > 0 && (
@@ -1169,7 +1170,7 @@ export default function Submit() {
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>${line.scheduled_value.toLocaleString()}</td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right', color: line.retainage_pct > 0 ? '#facc15' : '#444' }}>
-                                  {line.retainage_pct > 0 ? `${line.retainage_pct}%` : '—'}
+                                  {line.retainage_pct > 0 ? `${line.retainage_pct}%` : 'â€”'}
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                   {(line.pct_prev || 0) > 0 ? (
@@ -1177,7 +1178,7 @@ export default function Submit() {
                                       <span style={{ color: '#888', fontSize: '13px' }}>{line.pct_prev}%</span>
                                       <div style={{ fontSize: '11px', color: remaining > 0 ? '#555' : '#ff6b6b', marginTop: '2px' }}>{remaining}% left</div>
                                     </div>
-                                  ) : <span style={{ color: '#333' }}>—</span>}
+                                  ) : <span style={{ color: '#333' }}>â€”</span>}
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                   <input
@@ -1214,7 +1215,7 @@ export default function Submit() {
                                   />
                                   {line.retainage_pct > 0 && line.amount_this > 0 && (
                                     <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                                      <span style={{ color: '#facc15' }}>−${lineRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      <span style={{ color: '#facc15' }}>âˆ’${lineRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                       <span style={{ color: '#4ade80', marginLeft: '6px' }}>=${lineNet.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                     </div>
                                   )}
@@ -1239,7 +1240,7 @@ export default function Submit() {
                                     <tr style={{ background: '#0f0f0f' }}>
                                       <td colSpan={5} style={{ padding: '6px 12px', color: '#facc15', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Retainage held:</td>
                                       <td style={{ padding: '6px 12px', textAlign: 'right', color: '#facc15', fontWeight: '700' }}>
-                                        −${totalRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        âˆ’${totalRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </td>
                                     </tr>
                                     <tr style={{ background: '#0a0a0a' }}>
@@ -1264,7 +1265,7 @@ export default function Submit() {
                   </div>
                 )}
 
-                {/* ── SOV builder: contracts exist but no lines yet ── */}
+                {/* â”€â”€ SOV builder: contracts exist but no lines yet â”€â”€ */}
                 {form.job_id && !noContract && jobSovContracts.length > 0 && sovForm.length === 0 && (() => {
                   const contractMax = jobSovContracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
                   const totalDraft = sovDraftLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
@@ -1303,7 +1304,7 @@ export default function Submit() {
                               type="button"
                               style={{ padding: '10px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
                               onClick={() => setSovDraftLines(lines => lines.filter((_, i) => i !== idx))}
-                            >✕</button>
+                            >âœ•</button>
                           )}
                         </div>
                       ))}
@@ -1318,7 +1319,7 @@ export default function Submit() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', background: '#080808', border: `1px solid ${isBalanced ? '#1a4a1a' : remaining < 0 ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', marginBottom: '1rem' }}>
                           <span style={{ color: '#888' }}>Total: <strong style={{ color: '#f1f1f1' }}>${totalDraft.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
                           <span style={{ fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#e8590c' }}>
-                            {isBalanced ? '✓ Matches contract' : remaining > 0 ? `$${remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} remaining` : `$${Math.abs(remaining).toLocaleString('en-US', { minimumFractionDigits: 2 })} over contract`}
+                            {isBalanced ? 'âœ“ Matches contract' : remaining > 0 ? `$${remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} remaining` : `$${Math.abs(remaining).toLocaleString('en-US', { minimumFractionDigits: 2 })} over contract`}
                           </span>
                         </div>
                       )}
@@ -1333,10 +1334,10 @@ export default function Submit() {
                   )
                 })()}
 
-                {/* ── Billing form: SOV exists ── */}
+                {/* â”€â”€ Billing form: SOV exists â”€â”€ */}
                 {!noContract && sovForm.length > 0 && (
                   <>
-                    {sovSaved && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#4ade80', marginBottom: '1rem' }}>✓ Schedule of values saved — fill in the fields below to submit your billing.</div>}
+                    {sovSaved && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#4ade80', marginBottom: '1rem' }}>âœ“ Schedule of values saved â€” fill in the fields below to submit your billing.</div>}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }} className="rx-grid-3">
                       <div>
                         <label style={s.label}>Amount billed ($)</label>
@@ -1347,7 +1348,7 @@ export default function Submit() {
                         <label style={s.label}>Billing period</label>
                         {jobDrawRequests.length > 0 ? (
                           <select style={s.input} value={form.draw_request_id} onChange={e => update('draw_request_id', e.target.value)} required>
-                            <option value="">— Select a draw —</option>
+                            <option value="">â€” Select a draw â€”</option>
                             {jobDrawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
                           </select>
                         ) : (
@@ -1362,13 +1363,13 @@ export default function Submit() {
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={s.label}>Invoice # <span style={{ color: '#e8590c' }}>*</span></label>
                       <input style={s.input} value={form.invoice_number} onChange={e => update('invoice_number', e.target.value)} placeholder="e.g. INV-2024-001" />
-                      {!form.invoice_number.trim() && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required — enter the invoice number from your invoice</div>}
+                      {!form.invoice_number.trim() && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required â€” enter the invoice number from your invoice</div>}
                     </div>
                     <div style={{ marginBottom: '1.5rem' }}>
                       <label style={s.label}>Invoice PDF <span style={{ color: '#e8590c' }}>*</span></label>
                       <input type="file" accept=".pdf" required onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
-                      {billingFile && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>📎 {billingFile.name}</div>}
-                      {!billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required — attach your invoice to receive payment</div>}
+                      {billingFile && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>ðŸ“Ž {billingFile.name}</div>}
+                      {!billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required â€” attach your invoice to receive payment</div>}
                     </div>
                     {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
                     {submitError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{submitError}</div>}
@@ -1382,7 +1383,7 @@ export default function Submit() {
           )
         )}
 
-        {/* ── MY CONTRACTS TAB ── */}
+        {/* â”€â”€ MY CONTRACTS TAB â”€â”€ */}
         {activeTab === 'contracts' && (
           <>
             {myContracts.length > 0 && (
@@ -1412,7 +1413,7 @@ export default function Submit() {
                   <div style={s.contractRowHeader} onClick={() => toggleContract(c.id)}>
                     <div>
                       <div style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>
-                        #{c.job?.job_number} — {c.job?.project_name}
+                        #{c.job?.job_number} â€” {c.job?.project_name}
                       </div>
                       {c.description && <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>{c.description}</div>}
                     </div>
@@ -1440,16 +1441,16 @@ export default function Submit() {
                       {(() => {
                         const sr = mySigningRequests.find(r => r.subcontract_id === c.id)
                         if (sr?.status === 'signed') return (
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '3px 10px' }}>✓ Signed</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '3px 10px' }}>âœ“ Signed</span>
                         )
                         if (sr) return (
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '3px 10px' }}>⏳ Awaiting Signature</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '3px 10px' }}>â³ Awaiting Signature</span>
                         )
                         return (
                           <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '99px', padding: '3px 10px' }}>Unsigned</span>
                         )
                       })()}
-                      <span style={{ color: '#555', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
+                      <span style={{ color: '#555', fontSize: '16px' }}>{isExpanded ? 'â–²' : 'â–¼'}</span>
                     </div>
                   </div>
 
@@ -1461,7 +1462,7 @@ export default function Submit() {
                           <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             {sr?.status === 'signed' ? (
                               <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>
-                                ✓ Contract signed{sr.signed_at ? ` on ${new Date(sr.signed_at).toLocaleDateString()}` : ''}
+                                âœ“ Contract signed{sr.signed_at ? ` on ${new Date(sr.signed_at).toLocaleDateString()}` : ''}
                               </span>
                             ) : sr ? (
                               <>
@@ -1483,7 +1484,7 @@ export default function Submit() {
                                   disabled={initiatingSignFor === c.id}
                                   style={{ padding: '7px 18px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '7px', color: '#4ade80', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: initiatingSignFor === c.id ? 0.6 : 1 }}
                                 >
-                                  {initiatingSignFor === c.id ? 'Preparing…' : 'Sign Contract'}
+                                  {initiatingSignFor === c.id ? 'Preparingâ€¦' : 'Sign Contract'}
                                 </button>
                               </>
                             )}
@@ -1492,7 +1493,7 @@ export default function Submit() {
                               disabled={printingContractFor === c.id}
                               style={{ padding: '7px 18px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '7px', color: '#60a5fa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: printingContractFor === c.id ? 0.6 : 1 }}
                             >
-                              {printingContractFor === c.id ? 'Loading…' : 'Print Contract'}
+                              {printingContractFor === c.id ? 'Loadingâ€¦' : 'Print Contract'}
                             </button>
                           </div>
                         )
@@ -1500,7 +1501,7 @@ export default function Submit() {
                       {c.onedrive_url && (
                         <div style={{ marginBottom: '1rem' }}>
                           <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>
-                            📄 View contract document ↗
+                            ðŸ“„ View contract document â†—
                           </a>
                         </div>
                       )}
@@ -1514,7 +1515,7 @@ export default function Submit() {
                         )}
                         {c.signed_contract_url ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Signed document on file</span>
+                            <span style={{ fontSize: '13px', color: '#4ade80' }}>âœ“ Signed document on file</span>
                             <button onClick={() => viewSignedContract(c.signed_contract_url)} style={{ padding: '6px 14px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '6px', color: '#60a5fa', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
                               View / Download
                             </button>
@@ -1527,7 +1528,7 @@ export default function Submit() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span style={{ fontSize: '13px', color: '#555' }}>No signed document uploaded yet</span>
                             <label style={{ padding: '7px 16px', background: '#1a1a0a', border: '1px solid #3a3a1a', borderRadius: '6px', color: '#facc15', fontSize: '12px', fontWeight: '600', cursor: uploadingSignedContract === c.id ? 'not-allowed' : 'pointer', opacity: uploadingSignedContract === c.id ? 0.6 : 1 }}>
-                              {uploadingSignedContract === c.id ? 'Uploading…' : '↑ Upload Signed Contract'}
+                              {uploadingSignedContract === c.id ? 'Uploadingâ€¦' : 'â†‘ Upload Signed Contract'}
                               <input type="file" accept=".pdf,.doc,.docx,.png,.jpg" style={{ display: 'none' }} onChange={e => e.target.files[0] && uploadSignedContract(c.id, e.target.files[0])} disabled={uploadingSignedContract === c.id} />
                             </label>
                           </div>
@@ -1545,13 +1546,13 @@ export default function Submit() {
                             <div style={{ flex: 1 }}>
                               <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
                               <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
-                                {co.direction === 'pm_to_sub' ? 'NV → You' : 'Your request'} · {new Date(co.created_at).toLocaleDateString()}
+                                {co.direction === 'pm_to_sub' ? 'NV â†’ You' : 'Your request'} Â· {new Date(co.created_at).toLocaleDateString()}
                               </span>
                               {co.direction === 'sub_to_pm' && co.status === 'pending' && (
-                                <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px', fontWeight: '700' }}>⏳ Awaiting PM approval</span>
+                                <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px', fontWeight: '700' }}>â³ Awaiting PM approval</span>
                               )}
                               {co.direction === 'sub_to_pm' && co.status === 'approved' && (
-                                <span style={{ fontSize: '11px', color: '#4ade80', marginLeft: '8px', fontWeight: '700' }}>✓ Approved — added to your SOV</span>
+                                <span style={{ fontSize: '11px', color: '#4ade80', marginLeft: '8px', fontWeight: '700' }}>âœ“ Approved â€” added to your SOV</span>
                               )}
                               {co.dispute_reason && (
                                 <div style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px' }}>Dispute: {co.dispute_reason}</div>
@@ -1618,7 +1619,7 @@ export default function Submit() {
                           >+ Request Change Order</button>
                         ) : (
                           <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem' }}>
-                            <p style={{ margin: '0 0 1rem', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>New CO Request — Sub → PM</p>
+                            <p style={{ margin: '0 0 1rem', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>New CO Request â€” Sub â†’ PM</p>
                             <form onSubmit={e => submitCORequest(e, c.id)}>
                               <div style={{ marginBottom: '12px' }}>
                                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Description *</label>
@@ -1676,7 +1677,7 @@ export default function Submit() {
           </>
         )}
 
-        {/* ── BILLING HISTORY TAB ── */}
+        {/* â”€â”€ BILLING HISTORY TAB â”€â”€ */}
         {activeTab === 'history' && (
           submissions.length === 0 ? (
             <div style={s.empty}>No billing submissions yet.</div>
@@ -1687,9 +1688,9 @@ export default function Submit() {
                 <div key={s2.id} style={{ padding: '14px 0', borderBottom: '1px solid #1e1e1e' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} â€” {s2.jobs?.project_name}</p>
                       <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
-                        {new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete
+                        {new Date(s2.submitted_at).toLocaleDateString()} Â· {s2.pct_complete ?? 'â€”'}% complete
                         {s2.draw_request_id
                           ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>Draw #{s2.draw_request_id.slice(-4)}</span>
                           : s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
@@ -1711,16 +1712,16 @@ export default function Submit() {
                         <button
                           onClick={() => printLienWaiver(s2)}
                           style={{ padding: '5px 12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
-                        >🖨 Print Waiver</button>
+                        >ðŸ–¨ Print Waiver</button>
                       )}
                       {s2.status === 'approved' && !s2.lien_waiver_signed_at && (
                         <button
                           onClick={() => { setLienWaiverSub(s2); setSignerName(profile?.full_name || ''); setHasSigned(false) }}
                           style={{ padding: '5px 12px', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '6px', color: '#e8590c', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
-                        >✍ Sign Waiver</button>
+                        >âœ Sign Waiver</button>
                       )}
                       {s2.lien_waiver_signed_at && (
-                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '700' }}>✓ Signed {new Date(s2.lien_waiver_signed_at).toLocaleDateString()}</span>
+                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '700' }}>âœ“ Signed {new Date(s2.lien_waiver_signed_at).toLocaleDateString()}</span>
                       )}
                     </div>
                   </div>
@@ -1732,7 +1733,7 @@ export default function Submit() {
                   )}
                   {s2.paid_at && (
                     <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#4ade80', letterSpacing: '0.5px' }}>✓ Payment received</span>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#4ade80', letterSpacing: '0.5px' }}>âœ“ Payment received</span>
                       {s2.payment_amount && <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>${Number(s2.payment_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
                       <span style={{ fontSize: '12px', color: '#4ade80', opacity: 0.7 }}>{new Date(s2.paid_at).toLocaleDateString()}</span>
                       {s2.payment_method && <span style={{ fontSize: '11px', color: '#1a5a1a', background: '#0d2e0d', borderRadius: '4px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s2.payment_method}{s2.check_number ? ` #${s2.check_number}` : ''}</span>}
@@ -1744,7 +1745,7 @@ export default function Submit() {
             </div>
           )
         )}
-        {/* ── BID INVITATIONS TAB ── */}
+        {/* â”€â”€ BID INVITATIONS TAB â”€â”€ */}
         {activeTab === 'bids' && (
           bidInvitations.length === 0 ? (
             <div style={s.empty}>No bid invitations yet.<br />NV Construction will notify you when plans are ready for bidding.</div>
@@ -1774,10 +1775,10 @@ export default function Submit() {
                         </div>
                         <div style={{ fontSize: '12px', color: '#555' }}>
                           {pkg.due_date ? `Bids due ${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}` : 'No due date'}
-                          {myBid && ` · Your bid: $${Number(myBid.amount).toLocaleString()}`}
+                          {myBid && ` Â· Your bid: $${Number(myBid.amount).toLocaleString()}`}
                         </div>
                       </div>
-                      <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                      <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? 'â–²' : 'â–¼'}</span>
                     </div>
 
                     {isExp && (
@@ -1796,7 +1797,7 @@ export default function Submit() {
                           <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Plans & documents ({plans.length})</div>
                           {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No plans uploaded yet.</p> : plans.map(plan => (
                             <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#111', borderRadius: '6px', marginBottom: '4px' }}>
-                              <span style={{ fontSize: '13px', color: '#ccc' }}>📄 {plan.file_name}</span>
+                              <span style={{ fontSize: '13px', color: '#ccc' }}>ðŸ“„ {plan.file_name}</span>
                               <button style={{ padding: '6px 14px', background: '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }} onClick={() => openPlan(plan.storage_path)}>Open</button>
                             </div>
                           ))}
@@ -1808,10 +1809,10 @@ export default function Submit() {
                             <div style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Your submitted bid</div>
                             <div style={{ fontSize: '24px', fontWeight: '800', color: '#4ade80' }}>${Number(myBid.amount).toLocaleString()}</div>
                             {myBid.notes && <p style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, margin: '6px 0 0' }}>{myBid.notes}</p>}
-                            <p style={{ fontSize: '11px', color: '#1a4a1a', margin: '6px 0 0' }}>Submitted {new Date(myBid.submitted_at).toLocaleDateString()}{myBid.status === 'awarded' ? ' · AWARDED' : ''}</p>
+                            <p style={{ fontSize: '11px', color: '#1a4a1a', margin: '6px 0 0' }}>Submitted {new Date(myBid.submitted_at).toLocaleDateString()}{myBid.status === 'awarded' ? ' Â· AWARDED' : ''}</p>
                             {myBid.doc_url && (
                               <button onClick={() => openBidDoc(myBid.doc_url)} style={{ marginTop: '10px', fontSize: '12px', color: '#4ade80', background: 'none', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>
-                                📎 View attached estimate
+                                ðŸ“Ž View attached estimate
                               </button>
                             )}
                           </div>
@@ -1833,7 +1834,7 @@ export default function Submit() {
                             <div style={{ marginBottom: '12px' }}>
                               <label style={s.label}>Attach estimate (optional)</label>
                               <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBidFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
-                              {bidFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {bidFile.name}</div>}
+                              {bidFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>ðŸ“Ž {bidFile.name}</div>}
                             </div>
                             <button
                               style={{ ...s.btn, opacity: submittingBidFor === pkg.id || !bidSubmitForm.amount ? 0.6 : 1 }}
@@ -1852,7 +1853,7 @@ export default function Submit() {
           )
         )}
 
-        {/* ── MY DOCUMENTS ── */}
+        {/* â”€â”€ MY DOCUMENTS â”€â”€ */}
         {activeTab === 'docs' && (
           <div style={s.card}>
             <h2 style={s.cardTitle}>My Documents & Compliance</h2>
@@ -1864,20 +1865,20 @@ export default function Submit() {
                   <div>
                     <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>W-9</p>
                     {dirEntry.w9_url
-                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>✓ On file</p>
+                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>âœ“ On file</p>
                       : <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c' }}>Not on file</p>}
                     <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', marginBottom: 0 }}>
-                      {docsW9File ? `📎 ${docsW9File.name}` : dirEntry.w9_url ? 'Replace W-9' : 'Upload W-9'}
+                      {docsW9File ? `ðŸ“Ž ${docsW9File.name}` : dirEntry.w9_url ? 'Replace W-9' : 'Upload W-9'}
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => setDocsW9File(e.target.files[0] || null)} />
                     </label>
                   </div>
                   <div>
                     <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Certificate of Insurance (COI)</p>
                     {dirEntry.coi_url
-                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>✓ On file</p>
+                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>âœ“ On file</p>
                       : <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c' }}>Not on file</p>}
                     <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', marginBottom: 0 }}>
-                      {docsCoiFile ? `📎 ${docsCoiFile.name}` : dirEntry.coi_url ? 'Replace COI' : 'Upload COI'}
+                      {docsCoiFile ? `ðŸ“Ž ${docsCoiFile.name}` : dirEntry.coi_url ? 'Replace COI' : 'Upload COI'}
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => setDocsCoiFile(e.target.files[0] || null)} />
                     </label>
                   </div>
@@ -1893,7 +1894,7 @@ export default function Submit() {
                   <button style={{ ...s.btn, opacity: savingDocs ? 0.6 : 1 }} disabled={savingDocs} onClick={saveDocs}>
                     {savingDocs ? 'Saving...' : 'Save documents'}
                   </button>
-                  {docsSaved && <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Saved — NV Construction can now view your documents.</span>}
+                  {docsSaved && <span style={{ fontSize: '13px', color: '#4ade80' }}>âœ“ Saved â€” NV Construction can now view your documents.</span>}
                   {docError && <span style={{ fontSize: '13px', color: '#ff6b6b' }}>{docError}</span>}
                 </div>
               </>
@@ -1901,7 +1902,7 @@ export default function Submit() {
           </div>
         )}
 
-        {/* ── RFIs TAB ── */}
+        {/* â”€â”€ RFIs TAB â”€â”€ */}
         {activeTab === 'rfis' && (
           <div style={s.card}>
             <h2 style={s.cardTitle}>RFIs (Requests for Information)</h2>
@@ -1913,7 +1914,7 @@ export default function Submit() {
                 <label style={s.label}>Project</label>
                 <select style={s.input} value={rfiForm.job_id} onChange={e => setRfiForm(f => ({ ...f, job_id: e.target.value }))}>
                   <option value="">Select a project...</option>
-                  {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                  {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom: '10px' }}>
@@ -1929,7 +1930,7 @@ export default function Submit() {
                 disabled={submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question}
                 onClick={submitRfi}
               >{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
-              {rfiSuccess && <p style={{ fontSize: '13px', color: '#4ade80', marginTop: '10px', marginBottom: 0 }}>✓ RFI submitted — NV Construction will respond within 1–2 business days.</p>}
+              {rfiSuccess && <p style={{ fontSize: '13px', color: '#4ade80', marginTop: '10px', marginBottom: 0 }}>âœ“ RFI submitted â€” NV Construction will respond within 1â€“2 business days.</p>}
               {rfiError && <p style={{ fontSize: '13px', color: '#ff6b6b', marginTop: '10px', marginBottom: 0 }}>{rfiError}</p>}
             </div>
 
@@ -1951,10 +1952,10 @@ export default function Submit() {
                         <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>{rfi.status}</span>
                       </div>
                       <div style={{ fontSize: '12px', color: '#555' }}>
-                        {rfi.jobs?.job_number ? `#${rfi.jobs.job_number} — ${rfi.jobs.project_name}` : ''}{rfi.created_at ? ` · ${new Date(rfi.created_at).toLocaleDateString()}` : ''}
+                        {rfi.jobs?.job_number ? `#${rfi.jobs.job_number} â€” ${rfi.jobs.project_name}` : ''}{rfi.created_at ? ` Â· ${new Date(rfi.created_at).toLocaleDateString()}` : ''}
                       </div>
                     </div>
-                    <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                    <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? 'â–²' : 'â–¼'}</span>
                   </div>
                   {isExp && (
                     <div style={s.contractRowExpanded}>
@@ -1977,7 +1978,7 @@ export default function Submit() {
           </div>
         )}
 
-        {/* ── MESSAGES TAB ── */}
+        {/* â”€â”€ MESSAGES TAB â”€â”€ */}
         {activeTab === 'messages' && (
           <div style={s.card}>
             <h2 style={s.cardTitle}>Messages</h2>
@@ -1991,7 +1992,7 @@ export default function Submit() {
                     <label style={s.label}>Project</label>
                     <select style={s.input} value={selectedMessageJob} onChange={e => { setSelectedMessageJob(e.target.value); loadMessages(e.target.value) }}>
                       <option value="">Select a project...</option>
-                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
                     </select>
                   </div>
                 )}
@@ -2047,7 +2048,7 @@ export default function Submit() {
           </div>
         )}
 
-        {/* ── PUNCH LIST TAB ── */}
+        {/* â”€â”€ PUNCH LIST TAB â”€â”€ */}
         {activeTab === 'punch' && (
           <div style={s.card}>
             <h2 style={s.cardTitle}>Punch List</h2>
@@ -2102,10 +2103,10 @@ export default function Submit() {
           </div>
         )}
 
-        {/* ── My Team ── */}
+        {/* â”€â”€ My Team â”€â”€ */}
         {activeTab === 'team' && (
           <div style={s.card}>
-            <h2 style={s.cardTitle}>My Team — {profile?.company_name || 'Your Company'}</h2>
+            <h2 style={s.cardTitle}>My Team â€” {profile?.company_name || 'Your Company'}</h2>
 
             {/* Current members */}
             <div style={{ marginBottom: '2rem' }}>
@@ -2132,11 +2133,11 @@ export default function Submit() {
                       </div>
                       {!hasLoggedIn && m.email && (
                         <button onClick={async () => {
-                          const res = await fetch('/api/invite-team-member', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inviter_id: profile?.id, company_id: teamCompanyId, email: m.email, full_name: m.full_name }) })
+                          const res = await authFetch('/api/invite-team-member', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ inviter_id: profile?.id, company_id: teamCompanyId, email: m.email, full_name: m.full_name }) })
                           const d = await res.json()
                           setTeamInviteMsg(d.ok ? `Invite resent to ${m.email}` : `Error: ${d.error}`)
                         }} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', background: 'transparent', color: '#e8590c', border: '1px solid #e8590c', cursor: 'pointer' }}>
-                          ↩ Resend
+                          â†© Resend
                         </button>
                       )}
                       {m.role && m.role !== 'subcontractor' && (
@@ -2216,18 +2217,18 @@ export default function Submit() {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1', marginBottom: '4px' }}>{act.description}</div>
                               {act.location && <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px' }}>{act.location}</div>}
-                              <div style={{ fontSize: '11px', color: '#444' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` · Job #${act.lookaheads.jobs.job_number}` : ''}</div>
+                              <div style={{ fontSize: '11px', color: '#444' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` Â· Job #${act.lookaheads.jobs.job_number}` : ''}</div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', flexShrink: 0 }}>
-                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#888' }}>👷 {act.manpower} crew</span>}
+                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#888' }}>ðŸ‘· {act.manpower} crew</span>}
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block' }} />
                                 <span style={{ fontSize: '11px', color: '#666' }}>{mLabel[act.materials_status] || 'No materials'}</span>
                               </div>
                               {act.inspection_required && (
-                                <span style={{ fontSize: '11px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍 Inspection {act.inspection_scheduled ? 'scheduled' : 'required'}</span>
+                                <span style={{ fontSize: '11px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>ðŸ” Inspection {act.inspection_scheduled ? 'scheduled' : 'required'}</span>
                               )}
-                              {act.committed && <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>✓ Committed</span>}
+                              {act.committed && <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>âœ“ Committed</span>}
                             </div>
                           </div>
                           {act.equipment && (
@@ -2235,7 +2236,7 @@ export default function Submit() {
                           )}
                           {act.constraints_notes && (
                             <div style={{ marginTop: '10px', padding: '10px', background: '#1a1008', border: '1px solid #2a1a08', borderRadius: '6px', fontSize: '12px', color: '#f59e0b' }}>
-                              ⚠ {act.constraints_notes}
+                              âš  {act.constraints_notes}
                             </div>
                           )}
                         </div>
@@ -2250,7 +2251,7 @@ export default function Submit() {
 
       </div>
 
-      {/* ── LIEN WAIVER SIGNATURE MODAL ── */}
+      {/* â”€â”€ LIEN WAIVER SIGNATURE MODAL â”€â”€ */}
       {lienWaiverSub && (() => {
         const sub = lienWaiverSub
         const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -2316,7 +2317,7 @@ export default function Submit() {
                     <p style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>Sign Lien Waiver</p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Conditional Waiver and Release on Progress Payment</p>
                   </div>
-                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg(''); setHasSigned(false) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg(''); setHasSigned(false) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>Ã—</button>
                 </div>
               </div>
 
@@ -2326,7 +2327,7 @@ export default function Submit() {
                   {[
                     ['Claimant', sub.company_name],
                     ['Hiring Party', 'NV Construction'],
-                    ['Project', `#${sub.jobs?.job_number} — ${sub.jobs?.project_name}`],
+                    ['Project', `#${sub.jobs?.job_number} â€” ${sub.jobs?.project_name}`],
                     ['Owner', owner],
                     ['Payment Amount', amt],
                     ['Through Date', period],
@@ -2382,7 +2383,7 @@ export default function Submit() {
                     type="button"
                     onClick={() => printLienWaiver(sub)}
                     style={{ padding: '10px 20px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}
-                  >🖨 Print blank form</button>
+                  >ðŸ–¨ Print blank form</button>
                   <button
                     type="button"
                     disabled={savingWaiver || !signerName.trim() || !hasSigned}
@@ -2398,3 +2399,4 @@ export default function Submit() {
     </div>
   )
 }
+

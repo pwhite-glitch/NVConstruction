@@ -1,11 +1,34 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
+
+// Fields a PM may set on a new submission (POST)
+const PM_INSERT_FIELDS = new Set(['job_id', 'sub_id', 'company_name', 'amount_billed', 'retainage_held', 'status', 'notes', 'billing_period', 'doc_url', 'lien_waiver_signed_at'])
+// Fields a sub may set on their own new submission
+const SUB_INSERT_FIELDS = new Set(['job_id', 'amount_billed', 'retainage_held', 'notes', 'billing_period', 'doc_url'])
+
+// Fields a PM may PATCH
+const PM_PATCH_FIELDS = new Set(['status', 'amount_billed', 'retainage_held', 'notes', 'ready_to_pay', 'lien_waiver_signed_at', 'paid_at', 'doc_url', 'billing_period'])
+// Sub may only update their own pending submission's safe fields
+const SUB_PATCH_FIELDS = new Set(['notes', 'billing_period', 'doc_url'])
+
+// Valid status transitions
+const ALLOWED_TRANSITIONS = {
+  pm: {
+    pending: ['approved', 'rejected'],
+    approved: ['pending'], // correction reopen
+    rejected: ['pending'],
+  },
+  sub: {
+    pending: [], // subs cannot change status
+  },
+}
 
 async function uploadBillingDoc(file, jobId) {
   const ext = file.name.split('.').pop()
@@ -18,24 +41,45 @@ async function uploadBillingDoc(file, jobId) {
   return path
 }
 
+function pickFields(obj, allowed) {
+  const result = {}
+  for (const key of allowed) {
+    if (key in obj) result[key] = obj[key]
+  }
+  return result
+}
+
 export async function POST(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+
   try {
     const contentType = request.headers.get('content-type') || ''
-    let row = {}
+    let raw = {}
     let doc_url = null
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
       const file = formData.get('file')
-      row = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        doc_url = await uploadBillingDoc(file, row.job_id)
-      }
+      raw = JSON.parse(formData.get('data') || '{}')
+      if (file && file.size > 0) doc_url = await uploadBillingDoc(file, raw.job_id)
     } else {
-      row = await request.json()
+      raw = await request.json()
     }
 
-    // Validate sub_id against auth.users — stale UUIDs (deleted/re-invited subs) would violate the FK
+    // Derive sub_id from session — never trust it from the request body
+    let row
+    if (isPM(auth.role)) {
+      row = pickFields(raw, PM_INSERT_FIELDS)
+    } else if (isSub(auth.role)) {
+      row = pickFields(raw, SUB_INSERT_FIELDS)
+      row.sub_id = auth.userId  // always derive from session
+      row.status = 'pending'    // subs always submit as pending
+    } else {
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Validate sub_id auth account still exists
     if (row.sub_id) {
       const { data: authUser } = await adminSupabase.auth.admin.getUserById(row.sub_id)
       if (!authUser?.user) row.sub_id = null
@@ -53,10 +97,13 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+
   try {
     const contentType = request.headers.get('content-type') || ''
     let id = null
-    let fields = {}
+    let rawFields = {}
     let doc_url = undefined
 
     if (contentType.includes('multipart/form-data')) {
@@ -65,32 +112,56 @@ export async function PATCH(request) {
       const parsed = JSON.parse(formData.get('data') || '{}')
       id = parsed.id
       const { id: _id, ...rest } = parsed
-      fields = rest
-      if (file && file.size > 0) {
-        doc_url = await uploadBillingDoc(file, fields.job_id)
-      }
+      rawFields = rest
+      if (file && file.size > 0) doc_url = await uploadBillingDoc(file, rawFields.job_id)
     } else {
       const body = await request.json()
       id = body.id
       const { id: _id, ...rest } = body
-      fields = rest
+      rawFields = rest
     }
 
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-    // Only lock amount_billed on approved submissions — pending/rejected allow PM correction
-    const { data: current } = await adminSupabase.from('billing_submissions').select('status').eq('id', id).single()
-    if (current?.status === 'approved') delete fields.amount_billed
-    const update = doc_url !== undefined ? { ...fields, doc_url } : fields
-    const { error } = await adminSupabase
+    const { data: current } = await adminSupabase
       .from('billing_submissions')
-      .update(update)
+      .select('status, sub_id')
       .eq('id', id)
+      .single()
 
+    if (!current) return Response.json({ error: 'Not found' }, { status: 404 })
+
+    let fields
+    if (isPM(auth.role)) {
+      fields = pickFields(rawFields, PM_PATCH_FIELDS)
+
+      // Validate status transition
+      if (fields.status && fields.status !== current.status) {
+        const allowed = ALLOWED_TRANSITIONS.pm[current.status] || []
+        if (!allowed.includes(fields.status)) {
+          return Response.json({ error: `Cannot transition status from '${current.status}' to '${fields.status}'` }, { status: 422 })
+        }
+      }
+
+      // If status is approved, amount_billed cannot be changed except by first reopening
+      if (current.status === 'approved' && 'amount_billed' in fields && !fields.status) {
+        delete fields.amount_billed
+      }
+    } else if (isSub(auth.role)) {
+      // Subs can only edit their own pending submissions
+      if (current.sub_id !== auth.userId) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      if (current.status !== 'pending') return Response.json({ error: 'Cannot edit a submission that is not pending' }, { status: 422 })
+      fields = pickFields(rawFields, SUB_PATCH_FIELDS)
+    } else {
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const update = doc_url !== undefined ? { ...fields, doc_url } : fields
+    const { error } = await adminSupabase.from('billing_submissions').update(update).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
 
-    // Send email to admin when PM marks ready to pay
-    if (fields.ready_to_pay === true) {
+    // Send ready-to-pay email notification (PM only)
+    if (isPM(auth.role) && fields.ready_to_pay === true) {
       try {
         const { data: sub } = await adminSupabase
           .from('billing_submissions')
@@ -103,7 +174,7 @@ export async function PATCH(request) {
           const net = gross - ret
           const fmt = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           const adminEmail = process.env.PM_EMAIL || 'management@nvim.co'
-          const adminUrl = process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/admin` : 'https://app.nvim.co/admin'
+          const adminUrl = process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard` : 'https://app.nvim.co/dashboard'
           await resend.emails.send({
             from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
             to: adminEmail,
@@ -116,7 +187,7 @@ export async function PATCH(request) {
                 ${ret > 0 ? `<tr><td style="color:#888;padding:4px 0">Retainage held</td><td style="text-align:right;color:#e8590c;font-family:monospace">− ${fmt(ret)}</td></tr>` : ''}
                 <tr style="border-top:1px solid #2a2a2a"><td style="color:#f1f1f1;font-weight:700;padding:6px 0">Net check amount</td><td style="text-align:right;color:#4ade80;font-weight:800;font-size:18px;font-family:monospace">${fmt(net)}</td></tr>
               </table>
-              <a href="${adminUrl}" style="display:inline-block;background:#e8590c;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Open Admin Portal →</a>
+              <a href="${adminUrl}" style="display:inline-block;background:#e8590c;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Open Portal →</a>
             </div>`,
           }).catch(() => {})
         }
@@ -130,15 +201,16 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
+
   try {
-    const { id } = await request.json()
+    let body
+    try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
+    const { id } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-    const { error } = await adminSupabase
-      .from('billing_submissions')
-      .delete()
-      .eq('id', id)
-
+    const { error } = await adminSupabase.from('billing_submissions').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   } catch (e) {

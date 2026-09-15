@@ -512,7 +512,7 @@ function JobDetailInner() {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const { data: prof, error: profErr } = await supabase.from('profiles').select('role, full_name, hide_budget').eq('id', session.user.id).single()
+      const { data: prof, error: profErr } = await supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
       const subRoles = ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin']
       if (!prof) {
         setErrMsg(`Could not load your profile — ${profErr ? profErr.code + ': ' + profErr.message : 'no profile found'}. Contact your administrator.`)
@@ -525,7 +525,7 @@ function JobDetailInner() {
       const effectiveRole = (devRole === 'apm' && prof.role === 'pm') ? 'apm' : prof.role
       setUserRole(effectiveRole)
       setCurrentUserName(prof.full_name || '')
-      if (prof.hide_budget) setHideBudget(true)
+      // hide_budget column pending SQL migration — defaults to false
       const { data: jobData, error: jobErr } = await supabase.from('jobs').select('*').eq('id', id).single()
       if (jobErr || !jobData) {
         setErrMsg(`Job not found (id: ${id}) — ${jobErr ? jobErr.code + ': ' + jobErr.message : 'no data returned'}`)

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import MeetingsTab from './MeetingsTab'
 
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
@@ -355,6 +356,17 @@ function JobDetailInner() {
   const [contactForm, setContactForm] = useState({ name: '', company: '', role: '', phone: '', email: '', notes: '' })
   const [addingContact, setAddingContact] = useState(false)
   const [savingContact, setSavingContact] = useState(false)
+
+  // Meetings tab state
+  const [meetings, setMeetings] = useState([])
+  const [meetingForm, setMeetingForm] = useState({ meeting_date: new Date().toISOString().slice(0, 10), title: '', attendees: '' })
+  const [meetingTranscript, setMeetingTranscript] = useState('')
+  const [parsedMeeting, setParsedMeeting] = useState(null)
+  const [parsingMeeting, setParsingMeeting] = useState(false)
+  const [savingMeeting, setSavingMeeting] = useState(false)
+  const [showNewMeeting, setShowNewMeeting] = useState(false)
+  const [expandedMeetingId, setExpandedMeetingId] = useState(null)
+  const [meetingMsg, setMeetingMsg] = useState(null)
 
   // Punch list / closeout state
   const [punchItems, setPunchItems] = useState([])
@@ -1645,6 +1657,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'documents') { loadJobDocs() }
     if (activeTab === 'drawings') { loadDrawings() }
     if (activeTab === 'contacts') { loadJobContacts() }
+    if (activeTab === 'meetings') { loadMeetings() }
     if (activeTab === 'labor' && !laborLoaded) { loadLaborData() }
     if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadPrelimNotices() }
     if (activeTab === 'punch') { loadPunchItems(); loadContracts() }
@@ -2308,6 +2321,81 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     if (!window.confirm('Delete this contact?')) return
     await supabase.from('job_contacts').delete().eq('id', contactId)
     await loadJobContacts()
+  }
+
+  async function loadMeetings() {
+    const res = await authFetch(`/api/meetings?job_id=${id}`)
+    const data = await res.json()
+    setMeetings(Array.isArray(data) ? data : [])
+  }
+
+  async function parseMeetingTranscript() {
+    if (!meetingTranscript.trim()) return
+    setParsingMeeting(true)
+    setParsedMeeting(null)
+    try {
+      const res = await authFetch('/api/parse-meeting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: meetingTranscript }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setMeetingMsg({ ok: false, text: data.error || 'Parse failed' }); return }
+      setParsedMeeting(data)
+    } catch {
+      setMeetingMsg({ ok: false, text: 'Parse failed — check your connection' })
+    } finally {
+      setParsingMeeting(false)
+    }
+  }
+
+  async function saveMeeting() {
+    if (!meetingForm.meeting_date) return
+    setSavingMeeting(true)
+    const res = await authFetch('/api/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: id,
+        ...meetingForm,
+        raw_transcript: meetingTranscript || null,
+        action_items: parsedMeeting?.action_items ?? [],
+        decisions: parsedMeeting?.decisions ?? [],
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setMeetingMsg({ ok: false, text: data.error || 'Save failed' }); setSavingMeeting(false); return }
+    setMeetingMsg({ ok: true, text: 'Meeting saved' })
+    setShowNewMeeting(false)
+    setMeetingForm({ meeting_date: new Date().toISOString().slice(0, 10), title: '', attendees: '' })
+    setMeetingTranscript('')
+    setParsedMeeting(null)
+    setSavingMeeting(false)
+    await loadMeetings()
+    setTimeout(() => setMeetingMsg(null), 4000)
+  }
+
+  async function toggleActionItem(actionItemId, currentStatus) {
+    const newStatus = currentStatus === 'done' ? 'open' : 'done'
+    await authFetch('/api/meetings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action_item_id: actionItemId, status: newStatus }),
+    })
+    await loadMeetings()
+  }
+
+  async function deleteMeeting(meetingId) {
+    if (!window.confirm('Delete this meeting and all its action items and decisions?')) return
+    await authFetch(`/api/meetings?meeting_id=${meetingId}`, { method: 'DELETE' })
+    await loadMeetings()
+  }
+
+  async function addContactFromMeeting(contact) {
+    await supabase.from('job_contacts').insert({ ...contact, job_id: id, created_by: (await supabase.auth.getUser()).data.user?.id })
+    await loadJobContacts()
+    setMeetingMsg({ ok: true, text: `${contact.name} added to contacts` })
+    setTimeout(() => setMeetingMsg(null), 3000)
   }
 
   async function loadPunchItems() {
@@ -4531,6 +4619,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 items: [
                   { key: 'details', label: 'Details' },
                   { key: 'contacts', label: 'Contacts', badge: jobContacts.length || null },
+                  { key: 'meetings', label: 'Meetings', badge: meetings.length || null },
                   { key: 'documents', label: 'Documents', badge: jobDocs.length || null },
                   { key: 'schedule', label: 'Schedule' },
                   { key: 'closeout', label: 'Closeout' },
@@ -9883,6 +9972,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
           </>
         )}
+
+        {/* ── MEETINGS TAB ── */}
+        {activeTab === 'meetings' && (
+          <MeetingsTab
+            s={s}
+            meetings={meetings}
+            showNewMeeting={showNewMeeting} setShowNewMeeting={setShowNewMeeting}
+            meetingForm={meetingForm} setMeetingForm={setMeetingForm}
+            meetingTranscript={meetingTranscript} setMeetingTranscript={setMeetingTranscript}
+            parsedMeeting={parsedMeeting} setParsedMeeting={setParsedMeeting}
+            parsingMeeting={parsingMeeting}
+            savingMeeting={savingMeeting}
+            expandedMeetingId={expandedMeetingId} setExpandedMeetingId={setExpandedMeetingId}
+            meetingMsg={meetingMsg}
+            parseMeetingTranscript={parseMeetingTranscript}
+            saveMeeting={saveMeeting}
+            toggleActionItem={toggleActionItem}
+            deleteMeeting={deleteMeeting}
+            addContactFromMeeting={addContactFromMeeting}
+          />
+        )}
+
 
         {/* â”€â”€ CONTACTS TAB â”€â”€ */}
         {activeTab === 'contacts' && (

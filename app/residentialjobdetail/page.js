@@ -1,6 +1,6 @@
 'use client'
-import React, { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -68,9 +68,11 @@ const s = {
 
 const statusColor = { pending: 'orange', approved: 'green', rejected: 'red', active: 'green', complete: 'gray', open: 'orange', closed: 'gray', planned: 'blue', 'in-progress': 'orange', done: 'green' }
 
-export default function ResidentialJobDetail() {
+function ResidentialJobDetailInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [id, setId] = useState(null)
+  const [jobErrMsg, setJobErrMsg] = useState(null)
   const [profile, setProfile] = useState(null)
   const [profileLoadError, setProfileLoadError] = useState(false)
   const [job, setJob] = useState(null)
@@ -196,12 +198,11 @@ export default function ResidentialJobDetail() {
   const [addingContact, setAddingContact] = useState(false)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const jobId = params.get('id')
-    const tab = params.get('tab')
-    setId(jobId)
+    const jobId = searchParams.get('id')
+    const tab = searchParams.get('tab')
+    if (jobId) setId(jobId)
     if (tab) setActiveTab(tab)
-  }, [])
+  }, [searchParams])
 
   useEffect(() => { if (id) loadAll() }, [id])
 
@@ -215,6 +216,11 @@ export default function ResidentialJobDetail() {
       supabase.from('jobs').select('*').eq('id', id).single(),
     ])
     if (profileRes.data) { setProfile(profileRes.data) } else { setProfileLoadError(true) }
+    if (jobRes.error || !jobRes.data) {
+      setJobErrMsg(`Job not found (id: ${id}) — ${jobRes.error ? jobRes.error.code + ': ' + jobRes.error.message : 'no data returned'}`)
+      setLoading(false)
+      return
+    }
     setJob(jobRes.data)
     if (jobRes.data) setDetailsForm(jobRes.data)
 
@@ -995,6 +1001,12 @@ export default function ResidentialJobDetail() {
   }
 
   if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#555' }}>Loading...</div></div>
+  if (jobErrMsg && !job) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: '1rem' }}>
+      <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{jobErrMsg}</div>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+    </div>
+  )
   if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#555' }}>Project not found.</div></div>
 
   const approvedCOs = changeOrders.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount), 0)
@@ -2273,5 +2285,13 @@ export default function ResidentialJobDetail() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function ResidentialJobDetail() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>}>
+      <ResidentialJobDetailInner />
+    </Suspense>
   )
 }

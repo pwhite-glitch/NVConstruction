@@ -1,6 +1,6 @@
 'use client'
-import React, { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
 
@@ -92,8 +92,9 @@ function CoAttachmentLink({ path, supabase }) {
   return <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#e8590c', textDecoration: 'none', marginTop: '3px', display: 'inline-block' }}>📎 Attachment</a>
 }
 
-export default function JobDetail() {
+function JobDetailInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [id, setId] = useState(null)
   const [job, setJob] = useState(null)
   const [form, setForm] = useState({})
@@ -469,11 +470,11 @@ export default function JobDetail() {
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    setId(params.get('id'))
-    const tab = params.get('tab')
-    if (tab) setActiveTab(tab)
-  }, [])
+    const paramId = searchParams.get('id')
+    const paramTab = searchParams.get('tab')
+    if (paramId) setId(paramId)
+    if (paramTab) setActiveTab(paramTab)
+  }, [searchParams])
 
   useEffect(() => {
     if (!id) return
@@ -512,8 +513,11 @@ export default function JobDetail() {
       setCurrentUserName(prof.full_name || '')
       if (prof.hide_budget) setHideBudget(true)
       const { data: jobData, error: jobErr } = await supabase.from('jobs').select('*').eq('id', id).single()
-      if (jobErr && jobErr.code !== 'PGRST116') { setErrMsg(`Failed to load job: ${jobErr.message}`); setLoading(false); return }
-      if (!jobData) { router.push('/dashboard'); return }
+      if (jobErr || !jobData) {
+        setErrMsg(`Job not found (id: ${id}) — ${jobErr ? jobErr.code + ': ' + jobErr.message : 'no data returned'}`)
+        setLoading(false)
+        return
+      }
       setJob(jobData)
       setForm(jobData)
       setContractValueUnlocked(false)
@@ -4353,6 +4357,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   }
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
+  if (errMsg && !job) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: '1rem' }}>
+      <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{errMsg}</div>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+    </div>
+  )
 
   return (
     <div style={s.page}>
@@ -11919,5 +11929,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         </div>
       )}
     </div>
+  )
+}
+
+export default function JobDetail() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>}>
+      <JobDetailInner />
+    </Suspense>
   )
 }

@@ -198,7 +198,7 @@ export default function Dashboard() {
   const [bidPackages, setBidPackages] = useState([])
   const [expandedBid, setExpandedBid] = useState(null)
   const [showCreateBid, setShowCreateBid] = useState(false)
-  const [bidForm, setBidForm] = useState({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '' })
+  const [bidForm, setBidForm] = useState({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '', project_address: '', owner_name: '', insurance_req: '', bid_instructions: '' })
   const [creatingBid, setCreatingBid] = useState(false)
   const [bidDetails, setBidDetails] = useState({})
   const [editingBidId, setEditingBidId] = useState(null)
@@ -619,12 +619,16 @@ export default function Dashboard() {
       scope_of_work: bidForm.scope_of_work || null,
       due_date: bidForm.due_date || null,
       job_id: bidForm.job_id || null,
+      project_address: bidForm.project_address || null,
+      owner_name: bidForm.owner_name || null,
+      insurance_req: bidForm.insurance_req || null,
+      bid_instructions: bidForm.bid_instructions || null,
       created_by: session.user.id,
       status: 'open',
     })
     if (!error) {
       setShowCreateBid(false)
-      setBidForm({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '' })
+      setBidForm({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '', project_address: '', owner_name: '', insurance_req: '', bid_instructions: '' })
       await loadBidPackages()
       if (bdLoaded) loadBD()
     }
@@ -683,14 +687,40 @@ export default function Dashboard() {
     }
     for (const email of allEmails) {
       await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
-      sendEmail(email, `You're invited to bid — ${pkg.title}`,
+      const pkgScopeItems = scopeItems[bidId] || []
+      const byTrade = {}
+      pkgScopeItems.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
+      const dueStr = pkg.due_date ? new Date(pkg.due_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : null
+      const scopeTableHtml = pkgScopeItems.length > 0 ? `
+        <div style="margin:20px 0">
+          <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#e8590c;margin:0 0 10px">Scope Items — Confirm Coverage in Your Bid</p>
+          ${Object.entries(byTrade).map(([trade, tItems]) => `
+            <p style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#888;margin:12px 0 4px;border-bottom:1px solid #222;padding-bottom:4px">${trade}</p>
+            ${tItems.map((item, i) => `<p style="font-size:13px;color:#ccc;margin:4px 0;padding-left:12px">${i + 1}. ${item.description}</p>`).join('')}
+          `).join('')}
+        </div>` : ''
+      sendEmail(email, `Invitation to Bid — ${pkg.title}`,
         emailWrap(`
-          <h2 style="color:#f1f1f1;margin:0 0 1rem">Bid invitation</h2>
-          <p style="color:#aaa">NV Construction has invited you to submit a bid for <strong style="color:#f1f1f1">${pkg.title}</strong>.</p>
-          ${pkg.due_date ? `<p style="color:#888;font-size:13px">Bids due: <strong style="color:#f1f1f1">${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}</strong></p>` : ''}
-          ${pkg.scope_of_work ? `<div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0"><p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Scope of work</p><p style="color:#aaa;font-size:13px;line-height:1.6;margin:0">${pkg.scope_of_work}</p></div>` : ''}
-          <p style="color:#888;font-size:13px;margin:1rem 0">Log in to the sub portal to view plans and submit your bid:</p>
-          <a href="${process.env.NEXT_PUBLIC_SITE_URL}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">Open Sub Portal</a>
+          <p style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#e8590c;margin:0 0 8px">Invitation to Bid</p>
+          <h2 style="color:#f1f1f1;margin:0 0 6px;font-size:20px">${pkg.title}</h2>
+          ${pkg.project_address ? `<p style="color:#555;font-size:12px;margin:0 0 16px">${pkg.project_address}</p>` : ''}
+          ${dueStr ? `<div style="background:#1a0800;border:1px solid #3a1a00;border-left:3px solid #e8590c;border-radius:4px;padding:14px 18px;margin:16px 0">
+            <p style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#e8590c;margin:0 0 4px">Bids Due</p>
+            <p style="font-size:18px;font-weight:900;color:#fff;margin:0">${dueStr}</p>
+            <p style="font-size:11px;color:#888;margin:4px 0 0">Late submissions will not be accepted</p>
+          </div>` : ''}
+          ${pkg.scope_of_work ? `<div style="background:#111;border:1px solid #222;border-radius:6px;padding:14px 16px;margin:16px 0">
+            <p style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#888;margin:0 0 6px">Scope Narrative</p>
+            <p style="color:#aaa;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">${pkg.scope_of_work}</p>
+          </div>` : ''}
+          ${scopeTableHtml}
+          ${pkg.insurance_req ? `<div style="background:#111;border:1px solid #222;border-radius:6px;padding:14px 16px;margin:16px 0">
+            <p style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#888;margin:0 0 6px">Insurance &amp; Bonding Requirements</p>
+            <p style="color:#aaa;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">${pkg.insurance_req}</p>
+          </div>` : ''}
+          <p style="color:#888;font-size:13px;margin:20px 0 8px;line-height:1.6">Log in to the NV Construction sub portal to view plans and submit your bid. All questions and clarifications must be submitted through the portal.</p>
+          <a href="${process.env.NEXT_PUBLIC_SITE_URL}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:1px">Submit Bid in Portal →</a>
+          <p style="color:#444;font-size:11px;margin-top:20px;line-height:1.7">This invitation is confidential and intended solely for invited bidders. NV Construction reserves the right to reject any or all bids.</p>
         `)
       )
     }
@@ -1446,6 +1476,164 @@ export default function Dashboard() {
       included: included !== false,
     }, { onConflict: 'bid_submission_id,bid_scope_item_id' })
     await loadLevelingEntries(bidId)
+  }
+
+  async function generateITBDocument(pkg) {
+    let logoSrc = ''
+    try {
+      const res = await fetch('/logo.png')
+      const blob = await res.blob()
+      logoSrc = await new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob) })
+    } catch { /* logo optional */ }
+
+    const items = scopeItems[pkg.id] || []
+    const byTrade = {}
+    items.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
+    const dueStr = pkg.due_date ? new Date(pkg.due_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : null
+    const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head>
+<title>ITB — ${pkg.title}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@media print { .no-print { display: none !important; } }
+.no-print { padding: 12px 40px; background: #1a1a1a; display: flex; gap: 10px; align-items: center; }
+.btn { padding: 8px 22px; background: #e8590c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.btn-outline { padding: 8px 18px; background: transparent; color: #888; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.page { max-width: 860px; margin: 0 auto; }
+.header-band { background: #111; padding: 32px 52px 28px; display: flex; justify-content: space-between; align-items: flex-start; }
+.brand { display: flex; align-items: center; gap: 18px; }
+.brand-logo { width: 56px; height: 56px; object-fit: contain; filter: brightness(0) invert(1); }
+.brand-divider { width: 1px; height: 48px; background: #333; }
+.co-name { font-size: 17px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #fff; }
+.co-tagline { font-size: 9px; color: #555; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; }
+.co-contact { font-size: 10px; color: #555; margin-top: 8px; line-height: 1.9; }
+.doc-block { text-align: right; }
+.doc-type { font-size: 8px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; color: #e8590c; }
+.doc-title { font-size: 22px; font-weight: 900; color: #fff; margin-top: 4px; }
+.doc-sub { font-size: 10px; color: #555; margin-top: 6px; line-height: 1.8; }
+.rule { height: 3px; background: #e8590c; }
+.body { padding: 40px 52px; }
+.due-box { background: #111; border: 1px solid #1e1e1e; border-left: 4px solid #e8590c; padding: 16px 22px; margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
+.due-label { font-size: 9px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; margin-bottom: 4px; }
+.due-date { font-size: 20px; font-weight: 900; color: #fff; }
+.due-warn { font-size: 10px; color: #888; margin-top: 2px; }
+.project-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid #e8e8e8; margin-bottom: 28px; }
+.project-cell { padding: 16px 20px; }
+.project-cell + .project-cell { border-left: 1px solid #e8e8e8; }
+.cell-label { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; margin-bottom: 6px; }
+.cell-value { font-size: 14px; font-weight: 700; color: #111; }
+.cell-sub { font-size: 11px; color: #777; margin-top: 3px; }
+.section-eyebrow { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; margin-bottom: 10px; margin-top: 24px; }
+.prose { border: 1px solid #e8e8e8; border-left: 3px solid #e8590c; padding: 14px 18px; font-size: 12px; color: #444; line-height: 1.9; white-space: pre-wrap; margin-bottom: 4px; }
+.scope-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+.trade-hdr td { padding: 6px 12px 3px; font-size: 9px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #e8590c; background: #fafafa; border-top: 1px solid #e8e8e8; }
+.scope-row td { padding: 8px 12px; font-size: 12px; color: #333; border-bottom: 1px solid #f0f0f0; }
+.scope-num { color: #bbb; width: 28px; font-size: 10px; }
+.req-box { border: 1px solid #e8e8e8; border-left: 3px solid #111; padding: 14px 18px; font-size: 12px; color: #444; line-height: 1.9; white-space: pre-wrap; margin-bottom: 4px; }
+.submit-box { margin-top: 28px; background: #111; padding: 22px 28px; border-radius: 2px; }
+.submit-title { font-size: 9px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; margin-bottom: 10px; }
+.submit-text { font-size: 12px; color: #aaa; line-height: 1.8; margin-bottom: 14px; }
+.submit-link { display: inline-block; padding: 10px 24px; background: #e8590c; color: #fff; text-decoration: none; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid #efefef; display: flex; justify-content: space-between; font-size: 9px; color: #bbb; }
+.notice { margin-top: 16px; font-size: 10px; color: #bbb; font-style: italic; line-height: 1.7; }
+</style></head><body>
+<div class="no-print">
+  <button class="btn" onclick="window.print()">Print / Save PDF</button>
+  <button class="btn-outline" onclick="window.close()">Close</button>
+</div>
+<div class="page">
+<div class="header-band">
+  <div class="brand">
+    ${logoSrc ? `<img src="${logoSrc}" class="brand-logo" alt="NV" />` : ''}
+    <div class="brand-divider"></div>
+    <div>
+      <div class="co-name">NV Construction</div>
+      <div class="co-tagline">General Contractor</div>
+      <div class="co-contact">management@nvim.co<br>nvim.co</div>
+    </div>
+  </div>
+  <div class="doc-block">
+    <div class="doc-type">Invitation to Bid</div>
+    <div class="doc-title">${pkg.title}</div>
+    <div class="doc-sub">Issued: ${genDate}</div>
+  </div>
+</div>
+<div class="rule"></div>
+<div class="body">
+
+${dueStr ? `
+<div class="due-box">
+  <div>
+    <div class="due-label">Bids Due</div>
+    <div class="due-date">${dueStr}</div>
+    <div class="due-warn">Late submissions will not be accepted</div>
+  </div>
+  <div style="font-size:9px;color:#555;text-align:right;">Submit via NV Construction<br>sub portal or email</div>
+</div>` : ''}
+
+<div class="project-grid">
+  <div class="project-cell">
+    <div class="cell-label">Project</div>
+    <div class="cell-value">${pkg.title}</div>
+    ${pkg.project_address ? `<div class="cell-sub">${pkg.project_address.replace(/\n/g,'<br>')}</div>` : ''}
+  </div>
+  <div class="project-cell">
+    <div class="cell-label">Owner / Client</div>
+    <div class="cell-value">${pkg.owner_name || 'NV Construction Client'}</div>
+    <div class="cell-sub">c/o NV Construction, LLC — General Contractor</div>
+  </div>
+</div>
+
+${pkg.description ? `<div class="section-eyebrow">Project Overview</div><div class="prose">${pkg.description.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+
+${pkg.scope_of_work ? `<div class="section-eyebrow">Scope of Work Narrative</div><div class="prose">${pkg.scope_of_work.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+
+${items.length > 0 ? `
+<div class="section-eyebrow" style="margin-top:24px">Scope Items — Bidders Shall Confirm Coverage</div>
+<p style="font-size:10px;color:#777;margin-bottom:10px;">For each item below, your bid shall explicitly state whether the scope is Included, Excluded, or provided as an Alternate.</p>
+<table class="scope-table">
+${Object.entries(byTrade).map(([trade, tItems]) => `
+  <tr class="trade-hdr"><td colspan="2">${trade}</td></tr>
+  ${tItems.map((item, i) => `<tr class="scope-row"><td class="scope-num">${i + 1}</td><td>${item.description}</td></tr>`).join('')}
+`).join('')}
+</table>` : ''}
+
+${pkg.insurance_req ? `
+<div class="section-eyebrow" style="margin-top:24px">Insurance &amp; Bonding Requirements</div>
+<div class="req-box">${pkg.insurance_req.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : `
+<div class="section-eyebrow" style="margin-top:24px">Insurance Requirements</div>
+<div class="req-box">Subcontractors shall provide certificates of insurance naming NV Construction, LLC as additional insured. Minimum limits: General Liability $1,000,000 per occurrence / $2,000,000 aggregate. Workers Compensation as required by state law. Auto Liability $1,000,000 combined single limit.</div>`}
+
+${pkg.bid_instructions ? `
+<div class="section-eyebrow" style="margin-top:24px">Special Instructions</div>
+<div class="prose">${pkg.bid_instructions.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+
+<div class="submit-box">
+  <div class="submit-title">Bid Submission Instructions</div>
+  <div class="submit-text">
+    Submit your bid via the NV Construction subcontractor portal. Your submission should include your lump sum bid amount, a clear breakdown of any items you are excluding, and any qualifications or clarifications.<br><br>
+    Questions regarding the scope of work or plans must be submitted no later than 48 hours before the bid due date. All addenda will be distributed through the portal.
+  </div>
+  <a href="${siteUrl}/submit" class="submit-link">Submit Bid in Portal</a>
+</div>
+
+<div class="notice">
+  This Invitation to Bid does not commit NV Construction to award a contract. NV Construction reserves the right to reject any or all bids. Plans and specifications are available through the sub portal. This document is confidential and intended solely for invited bidders.
+</div>
+
+<div class="footer">
+  <div>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; management@nvim.co</div>
+  <div>ITB Issued ${genDate}</div>
+</div>
+
+</div>
+</div>
+</body></html>`)
+    w.document.close()
   }
 
   async function generateEstimatePDF(estimate) {
@@ -3392,13 +3580,25 @@ ${estimate.notes ? `
                           {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                         </select>
                       </div>
+                      <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                        <div><label style={s.label}>Owner / Client name</label><input style={s.input} value={bidForm.owner_name} onChange={e => setBidForm(f => ({ ...f, owner_name: e.target.value }))} placeholder="City of Dallas" /></div>
+                        <div><label style={s.label}>Project address</label><input style={s.input} value={bidForm.project_address} onChange={e => setBidForm(f => ({ ...f, project_address: e.target.value }))} placeholder="123 Main St, Dallas, TX" /></div>
+                      </div>
                       <div style={{ marginBottom: '12px' }}>
-                        <label style={s.label}>Description</label>
+                        <label style={s.label}>Project description</label>
                         <input style={s.input} value={bidForm.description} onChange={e => setBidForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief summary of the bid package" />
                       </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Scope of work narrative</label>
+                        <textarea style={{ ...s.input, minHeight: '90px', resize: 'vertical' }} value={bidForm.scope_of_work} onChange={e => setBidForm(f => ({ ...f, scope_of_work: e.target.value }))} placeholder="Full scope of work for bidders to review..." />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={s.label}>Insurance & bonding requirements</label>
+                        <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={bidForm.insurance_req} onChange={e => setBidForm(f => ({ ...f, insurance_req: e.target.value }))} placeholder="e.g. GL $1M/$2M, Workers Comp, Auto $1M, NV Construction named as additional insured. Performance bond required over $500K." />
+                      </div>
                       <div style={{ marginBottom: '1.25rem' }}>
-                        <label style={s.label}>Scope of work</label>
-                        <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical' }} value={bidForm.scope_of_work} onChange={e => setBidForm(f => ({ ...f, scope_of_work: e.target.value }))} placeholder="Full scope of work for bidders to review..." />
+                        <label style={s.label}>Special bid instructions (optional)</label>
+                        <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={bidForm.bid_instructions} onChange={e => setBidForm(f => ({ ...f, bid_instructions: e.target.value }))} placeholder="Any special instructions, substitution procedures, pre-bid meeting info, etc." />
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button type="submit" style={{ ...s.btn, opacity: creatingBid ? 0.6 : 1 }} disabled={creatingBid}>{creatingBid ? 'Creating...' : 'Create package'}</button>
@@ -3449,24 +3649,25 @@ ${estimate.notes ? `
                             </div>
                           )}
 
-                          {profile?.role === 'pm' && (
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {pkg.status === 'open' && <>
-                              <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>✓ Won</button>
-                              <button style={s.btnSm('red')} onClick={() => setBidStatus(pkg.id, 'lost')}>✗ Lost</button>
+                            <button style={s.btnSm('orange')} onClick={() => { loadScopeItems(pkg.id); setTimeout(() => generateITBDocument(pkg), 300) }}>📄 ITB Document</button>
+                            {profile?.role === 'pm' && <>
+                              {pkg.status === 'open' && <>
+                                <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>✓ Won</button>
+                                <button style={s.btnSm('red')} onClick={() => setBidStatus(pkg.id, 'lost')}>✗ Lost</button>
+                              </>}
+                              {(pkg.status === 'won' || pkg.status === 'lost' || pkg.status === 'closed') && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
+                              {editingBidId === pkg.id
+                                ? <>
+                                    <input type="date" style={{ ...s.input, width: 'auto', padding: '6px 10px', fontSize: '13px' }} value={editBidDueDate} onChange={e => setEditBidDueDate(e.target.value)} />
+                                    <button style={s.btnSm('green')} onClick={() => saveBidDueDate(pkg.id)}>Save</button>
+                                    <button style={s.btnSm('gray')} onClick={() => setEditingBidId(null)}>Cancel</button>
+                                  </>
+                                : <button style={s.btnSm('gray')} onClick={() => { setEditingBidId(pkg.id); setEditBidDueDate(pkg.due_date || '') }}>Edit due date</button>
+                              }
+                              <button style={s.btnSm('red')} onClick={() => deleteBidPackage(pkg.id)}>Delete package</button>
                             </>}
-                            {(pkg.status === 'won' || pkg.status === 'lost' || pkg.status === 'closed') && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
-                            {editingBidId === pkg.id
-                              ? <>
-                                  <input type="date" style={{ ...s.input, width: 'auto', padding: '6px 10px', fontSize: '13px' }} value={editBidDueDate} onChange={e => setEditBidDueDate(e.target.value)} />
-                                  <button style={s.btnSm('green')} onClick={() => saveBidDueDate(pkg.id)}>Save</button>
-                                  <button style={s.btnSm('gray')} onClick={() => setEditingBidId(null)}>Cancel</button>
-                                </>
-                              : <button style={s.btnSm('gray')} onClick={() => { setEditingBidId(pkg.id); setEditBidDueDate(pkg.due_date || '') }}>Edit due date</button>
-                            }
-                            <button style={s.btnSm('red')} onClick={() => deleteBidPackage(pkg.id)}>Delete package</button>
                           </div>
-                          )}
                           {profile?.role === 'pm' && (() => {
                             const apms = teamMembers.filter(m => m.role === 'apm')
                             if (!apms.length) return null

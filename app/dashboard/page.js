@@ -12,28 +12,42 @@ const TRADES = [
   'Signage', 'Cleaning', 'Other'
 ]
 
+function fmtDate(val) {
+  if (!val) return '—'
+  // For date-only strings (YYYY-MM-DD), parse as local noon to avoid timezone shift
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(val) ? new Date(val + 'T12:00:00') : new Date(val)
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000 || d.getFullYear() > 2100) return '—'
+  return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
+}
+
+function fmtMoney(val) {
+  const n = parseFloat(val)
+  if (isNaN(n)) return '—'
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex' },
-  sidebar: { width: '220px', flexShrink: 0, background: '#0d0d0d', borderRight: '1px solid #1a1a1a', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid #1a1a1a' },
-  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px' },
-  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#f1f1f1', letterSpacing: '0.5px', margin: '0 0 2px' },
-  sidebarRole: { fontSize: '10px', color: '#333', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
-  sidebarUser: { fontSize: '12px', color: '#3a3a3a', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', margin: '12px 0 0' },
+  sidebar: { width: '220px', flexShrink: 0, background: '#e8590c', borderRight: 'none', boxShadow: '4px 0 24px rgba(0,0,0,0.35)', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.15)' },
+  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px', filter: 'brightness(0) invert(1)' },
+  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#fff', letterSpacing: '0.5px', margin: '0 0 2px' },
+  sidebarRole: { fontSize: '10px', color: 'rgba(255,255,255,0.65)', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
+  sidebarUser: { fontSize: '12px', color: 'rgba(255,255,255,0.7)', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(0,0,0,0.15)', margin: '12px 0 0' },
   sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
-  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(232,89,12,0.08)' : 'transparent', color: active ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: active ? '600' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 #e8590c' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
-  navBadge: { background: '#e8590c', color: 'white', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
-  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' },
-  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'transparent', border: '1px solid #222', borderRadius: '8px', color: '#444', cursor: 'pointer', fontSize: '12px' },
+  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(0,0,0,0.2)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.72)', fontSize: '13px', fontWeight: active ? '700' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 rgba(0,0,0,0.4)' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
+  navBadge: { background: '#fff', color: '#e8590c', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
+  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid rgba(0,0,0,0.15)' },
+  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'rgba(0,0,0,0.15)', border: '1px solid rgba(0,0,0,0.2)', borderRadius: '8px', color: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
   content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
   ovGreeting: { fontSize: '22px', fontWeight: '700', color: '#f1f1f1', margin: '0 0 4px' },
-  ovDate: { fontSize: '13px', color: '#3a3a3a', margin: '0 0 1.75rem' },
+  ovDate: { fontSize: '13px', color: '#777', margin: '0 0 1.75rem' },
   ovGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' },
   ovCard: { background: '#141414', border: '1px solid #1e1e1e', borderRadius: '14px', padding: '1.25rem 1.5rem' },
-  ovLabel: { fontSize: '11px', fontWeight: '600', color: '#3a3a3a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', marginTop: 0 },
+  ovLabel: { fontSize: '11px', fontWeight: '600', color: '#666', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', marginTop: 0 },
   ovValue: (accent) => ({ fontSize: '36px', fontWeight: '800', color: accent || '#f1f1f1', margin: '0 0 4px', lineHeight: 1 }),
-  ovSub: { fontSize: '12px', color: '#3a3a3a', margin: 0 },
-  ovSectionTitle: { fontSize: '11px', fontWeight: '700', color: '#3a3a3a', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 1.25rem' },
+  ovSub: { fontSize: '12px', color: '#777', margin: 0 },
+  ovSectionTitle: { fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 1.25rem' },
   sectionCard: { background: '#141414', border: '1px solid #1e1e1e', borderRadius: '14px', overflow: 'hidden' },
   sectionPad: { padding: '1.5rem' },
   label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
@@ -1350,7 +1364,11 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession()
     const year = new Date().getFullYear()
     const yearEstimates = estimates.filter(e => e.estimate_number?.startsWith(`EST-${year}-`))
-    const nextNum = String(yearEstimates.length + 1).padStart(3, '0')
+    const maxNum = yearEstimates.reduce((max, e) => {
+      const n = parseInt(e.estimate_number?.split('-')[2] || '0', 10)
+      return n > max ? n : max
+    }, 0)
+    const nextNum = String(maxNum + 1).padStart(3, '0')
     const { data: est, error } = await supabase.from('estimates').insert({
       created_by: session.user.id,
       estimate_number: `EST-${year}-${nextNum}`,
@@ -2220,11 +2238,18 @@ ${estimate.notes ? `
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
 
-  const filtered = submissions.filter(s => (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob))
+  const filtered = submissions.filter(s => {
+    if (filterStatus === 'unsigned_waiver') return s.status === 'approved' && !s.lien_waiver_signed_at
+    return (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob)
+  }).sort((a, b) => filterStatus === 'unsigned_waiver' ? new Date(a.submitted_at) - new Date(b.submitted_at) : 0)
   const pending = submissions.filter(s => s.status === 'pending')
   const totalThisWeek = submissions.filter(s => new Date(s.submitted_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).reduce((a, s) => a + (s.amount_billed || 0), 0)
   const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-  const expiringCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration) < thirtyDaysFromNow)
+  const now = new Date()
+  const expiredCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration + 'T00:00:00') < now)
+  const expiringSoonCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration + 'T00:00:00') >= now && new Date(s.coi_expiration + 'T00:00:00') < thirtyDaysFromNow)
+  const missingCOIs = directory.filter(s => s.status === 'approved' && !s.coi_url)
+  const expiringCOIs = [...expiredCOIs, ...expiringSoonCOIs]
   const filteredDir = directory.filter(s =>
     (!filterDirStatus || s.status === filterDirStatus) &&
     (!filterTrade || s.trade === filterTrade) &&
@@ -2253,7 +2278,7 @@ ${estimate.notes ? `
   const pendingTotal = pending.reduce((sum, sub) => sum + (sub.amount_billed || 0), 0)
   const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
   const billingBadge = pending.length || null
-  const dirBadge = (pendingApps + expiringCOIs.length) || null
+  const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
 
   const navItems = [
     { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
@@ -2274,8 +2299,8 @@ ${estimate.notes ? `
   return (
     <div style={s.page}>
       <style>{`
-        .nv-nav-btn { transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease !important; }
-        .nv-nav-btn:hover { background: rgba(232,89,12,0.14) !important; color: #e8590c !important; box-shadow: inset 3px 0 0 #e8590c !important; }
+        .nv-nav-btn { transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease !important; }
+        .nv-nav-btn:hover { background: rgba(0,0,0,0.18) !important; color: #fff !important; box-shadow: inset 3px 0 0 rgba(0,0,0,0.4) !important; }
         .nv-inner-tab { transition: color 0.18s ease, border-color 0.18s ease, background 0.15s ease !important; position: relative; }
         .nv-inner-tab:hover { color: #e8590c !important; }
         .nv-stat-card { transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease !important; cursor: default; }
@@ -2286,8 +2311,8 @@ ${estimate.notes ? `
         .nv-metric-card:hover { border-color: rgba(232,89,12,0.28) !important; box-shadow: 0 0 14px rgba(232,89,12,0.07) !important; }
         .nv-badge-pulse { animation: nv-pulse 2.2s ease-in-out infinite; }
         @keyframes nv-pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
-        .nv-sidebar-shimmer { height: 1px; background: linear-gradient(90deg, transparent, rgba(232,89,12,0.6), transparent); margin: 0.6rem 1rem 0.4rem; animation: nv-shimmer 3.5s ease-in-out infinite; }
-        @keyframes nv-shimmer { 0%,100%{opacity:0.3} 50%{opacity:1} }
+        .nv-sidebar-shimmer { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent); margin: 0.6rem 1rem 0.4rem; animation: nv-shimmer 3.5s ease-in-out infinite; }
+        @keyframes nv-shimmer { 0%,100%{opacity:0.25} 50%{opacity:0.85} }
         .nv-btn { transition: opacity 0.14s ease, transform 0.1s ease !important; }
         .nv-btn:hover { opacity: 0.82 !important; }
         .nv-btn:active { transform: scale(0.96) !important; }
@@ -2354,14 +2379,26 @@ ${estimate.notes ? `
                 {pending.length > 0 && <p style={s.ovSub}>${pendingTotal.toLocaleString()} waiting</p>}
               </div>
               <div className="nv-stat-card" style={s.ovCard}>
-                <p style={s.ovLabel}>COIs expiring</p>
-                <div style={s.ovValue(expiringCOIs.length ? '#facc15' : null)}>{expiringCOIs.length}</div>
-                {expiringCOIs.length > 0 && <p style={s.ovSub}>in next 30 days</p>}
+                <p style={s.ovLabel}>COI alerts</p>
+                <div style={s.ovValue((expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) ? '#ff6b6b' : null)}>{expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length}</div>
+                {(expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) > 0 && (
+                  <p style={s.ovSub}>
+                    {expiredCOIs.length > 0 && `${expiredCOIs.length} expired`}
+                    {expiredCOIs.length > 0 && expiringSoonCOIs.length > 0 && ' · '}
+                    {expiringSoonCOIs.length > 0 && `${expiringSoonCOIs.length} expiring`}
+                    {(expiredCOIs.length > 0 || expiringSoonCOIs.length > 0) && missingCOIs.length > 0 && ' · '}
+                    {missingCOIs.length > 0 && `${missingCOIs.length} missing`}
+                  </p>
+                )}
               </div>
-              <div className="nv-stat-card" style={s.ovCard}>
+              <div className="nv-stat-card" style={{ ...s.ovCard, cursor: unsignedWaivers.length ? 'pointer' : 'default' }} onClick={() => unsignedWaivers.length && setActiveTab('billing')}>
                 <p style={s.ovLabel}>Unsigned waivers</p>
                 <div style={s.ovValue(unsignedWaivers.length ? '#facc15' : null)}>{unsignedWaivers.length}</div>
-                {unsignedWaivers.length > 0 && <p style={s.ovSub}>approved, not yet signed</p>}
+                {unsignedWaivers.length > 0 && (() => {
+                  const over30 = unsignedWaivers.filter(w => (Date.now() - new Date(w.submitted_at)) > 30*24*60*60*1000).length
+                  const over60 = unsignedWaivers.filter(w => (Date.now() - new Date(w.submitted_at)) > 60*24*60*60*1000).length
+                  return <p style={s.ovSub}>{over60 > 0 ? `${over60} over 60d · ` : ''}{over30 > 0 ? `${over30} over 30d · ` : ''}click to review</p>
+                })()}
               </div>
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending applications</p>
@@ -2381,19 +2418,32 @@ ${estimate.notes ? `
                     <option value="pending">Pending</option>
                     <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
+                    <option value="unsigned_waiver">⚠ Unsigned waivers (oldest first)</option>
                   </select>
                   <select value={filterJob} onChange={e => { setFilterJob(e.target.value); setBillingPage(1) }} style={s.filterSelect}>
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.job_number}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
                 </div>
-                {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : pagedFiltered.map(sub => (
+                {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : pagedFiltered.map(sub => {
+                  const daysSince = Math.floor((Date.now() - new Date(sub.submitted_at)) / (24*60*60*1000))
+                  const isUnsignedView = filterStatus === 'unsigned_waiver'
+                  return (
                   <div key={sub.id} style={s.rowBorder}>
                     <div style={s.row} className="rx-row" onClick={() => setExpanded(expanded === sub.id ? null : sub.id)}>
-                      <div><p style={s.company}>{sub.company_name}</p><p style={s.meta}>{new Date(sub.submitted_at).toLocaleDateString()} · {sub.contact_name}</p></div>
+                      <div>
+                        <p style={s.company}>{sub.company_name}</p>
+                        <p style={s.meta}>
+                          {new Date(sub.submitted_at).toLocaleDateString()} · {sub.contact_name}
+                          {isUnsignedView && sub.jobs?.project_name && <> · <span style={{ color: '#888' }}>{sub.jobs.project_name}</span></>}
+                        </p>
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', color: '#888', fontSize: '14px' }}>#{sub.jobs?.job_number}</div>
                       <div style={{ display: 'flex', alignItems: 'center', fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${sub.amount_billed?.toLocaleString()}</div>
-                      <div style={{ display: 'flex', alignItems: 'center' }}><span style={s.badge(sub.status)}>{sub.status}</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={s.badge(sub.status)}>{sub.status}</span>
+                        {isUnsignedView && <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: daysSince > 60 ? '#2a0a0a' : daysSince > 30 ? '#2a1200' : '#1a1a0a', color: daysSince > 60 ? '#ff6b6b' : daysSince > 30 ? '#e8590c' : '#facc15' }}>{daysSince}d</span>}
+                      </div>
                     </div>
                     {expanded === sub.id && (
                       <div style={s.detail}>
@@ -2487,7 +2537,7 @@ ${estimate.notes ? `
                       </div>
                     )}
                   </div>
-                ))}
+                )})}
                 {filtered.length > billingPage * PAGE_SIZE && (
                   <div style={{ textAlign: 'center', paddingTop: '1.25rem' }}>
                     <button style={s.btnGray} onClick={() => setBillingPage(p => p + 1)}>
@@ -2579,9 +2629,23 @@ ${estimate.notes ? `
                   </div>
                 )}
 
-                {expiringCOIs.length > 0 && (
-                  <div style={s.coiWarning}>
-                    ⚠ {expiringCOIs.length} subcontractor{expiringCOIs.length > 1 ? 's have' : ' has'} a COI expiring within 30 days: {expiringCOIs.map(s => s.company_name).join(', ')}
+                {(expiredCOIs.length > 0 || expiringSoonCOIs.length > 0 || missingCOIs.length > 0) && (
+                  <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {expiredCOIs.length > 0 && (
+                      <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#ff6b6b' }}>
+                        🚨 <strong>{expiredCOIs.length} expired COI{expiredCOIs.length > 1 ? 's' : ''}:</strong> {expiredCOIs.map(s => s.company_name).join(', ')}
+                      </div>
+                    )}
+                    {expiringSoonCOIs.length > 0 && (
+                      <div style={s.coiWarning}>
+                        ⚠ <strong>{expiringSoonCOIs.length} expiring within 30 days:</strong> {expiringSoonCOIs.map(s => s.company_name).join(', ')}
+                      </div>
+                    )}
+                    {missingCOIs.length > 0 && (
+                      <div style={{ background: '#1a1a0a', border: '1px solid #3a3a0a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#facc15' }}>
+                        📋 <strong>{missingCOIs.length} missing COI{missingCOIs.length > 1 ? 's' : ''}:</strong> {missingCOIs.map(s => s.company_name).join(', ')}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3421,7 +3485,7 @@ ${estimate.notes ? `
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                              <p style={s.meta}>{j.location}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                              <p style={s.meta}>{j.location}{contract > 0 ? ' · ' + fmtMoney(contract) + ' contract' : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               {contract > 0 && (
@@ -4700,7 +4764,7 @@ ${estimate.notes ? `
                         onClick={() => { const newId = isExp ? null : est.id; setExpandedEstimate(newId); if (newId) loadEstDocs(newId) }}>
                         <div>
                           <p style={s.company}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#555', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
-                          <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}</p>
+                          <p style={s.meta}>{est.estimate_number} · {fmtDate(est.created_at)}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -5057,7 +5121,7 @@ ${estimate.notes ? `
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 8px' }}>
                               <div>
                                 <p style={{ ...s.company, color: isWon ? '#4ade80' : '#888' }}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#444', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
-                                <p style={s.meta}>{est.estimate_number} · {new Date(est.created_at).toLocaleDateString()}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}{est.square_footage ? ` · ${Number(est.square_footage).toLocaleString()} sqft` : ''}</p>
+                                <p style={s.meta}>{est.estimate_number} · {fmtDate(est.created_at)}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}{est.square_footage ? ` · ${Number(est.square_footage).toLocaleString()} sqft` : ''}</p>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ fontSize: '16px', fontWeight: '800', color: isWon ? '#4ade80' : '#555' }}>{fmtC(tot)}</span>

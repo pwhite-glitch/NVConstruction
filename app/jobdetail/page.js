@@ -511,7 +511,8 @@ export default function JobDetail() {
       setUserRole(effectiveRole)
       setCurrentUserName(prof.full_name || '')
       if (prof.hide_budget) setHideBudget(true)
-      const { data: jobData } = await supabase.from('jobs').select('*').eq('id', id).single()
+      const { data: jobData, error: jobErr } = await supabase.from('jobs').select('*').eq('id', id).single()
+      if (jobErr && jobErr.code !== 'PGRST116') { setErrMsg(`Failed to load job: ${jobErr.message}`); setLoading(false); return }
       if (!jobData) { router.push('/dashboard'); return }
       setJob(jobData)
       setForm(jobData)

@@ -338,6 +338,14 @@ function JobDetailInner() {
   const [docCategory, setDocCategory] = useState('plans')
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
+  // Drawings tab state
+  const [drawings, setDrawings] = useState([])
+  const [uploadingDrawing, setUploadingDrawing] = useState(false)
+  const [drawingUploadForm, setDrawingUploadForm] = useState({ sheet_number: '', sheet_name: '', discipline: 'Architectural', revision: '0', notes: '' })
+  const [showDrawingUpload, setShowDrawingUpload] = useState(false)
+  const [drawingFilter, setDrawingFilter] = useState('all')
+  const [drawingSignedUrls, setDrawingSignedUrls] = useState({})
+
   const [teamMembers, setTeamMembers] = useState([])
   const [generatingReport, setGeneratingReport] = useState(false)
 
@@ -1628,6 +1636,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests(); loadNvSubcontracts(); loadPurchaseOrders() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
+    if (activeTab === 'drawings') { loadDrawings() }
     if (activeTab === 'contacts') { loadJobContacts() }
     if (activeTab === 'labor' && !laborLoaded) { loadLaborData() }
     if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadPrelimNotices() }
@@ -2215,6 +2224,61 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     await supabase.storage.from('job-documents').remove([storagePath])
     await supabase.from('job_documents').delete().eq('id', docId)
     await loadJobDocs()
+  }
+
+  async function loadDrawings() {
+    const { data } = await supabase.from('drawings').select('*').eq('job_id', id).order('discipline').order('sheet_number')
+    setDrawings(data || [])
+  }
+
+  async function uploadDrawing(file) {
+    setUploadingDrawing(true)
+    const path = `${id}/${Date.now()}-${file.name}`
+    const res = await fetch('/api/drawings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upload-url', path }),
+    })
+    const { signedUrl, error: urlErr } = await res.json()
+    if (urlErr || !signedUrl) { alert('Upload error: ' + (urlErr || 'Could not get upload URL')); setUploadingDrawing(false); return }
+    const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    if (!up.ok) { alert('Upload failed'); setUploadingDrawing(false); return }
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('drawings').insert({
+      job_id: id,
+      file_name: file.name,
+      storage_path: path,
+      sheet_number: drawingUploadForm.sheet_number || null,
+      sheet_name: drawingUploadForm.sheet_name || null,
+      discipline: drawingUploadForm.discipline || 'Architectural',
+      revision: drawingUploadForm.revision || '0',
+      notes: drawingUploadForm.notes || null,
+      uploaded_by: user?.id,
+    })
+    await loadDrawings()
+    setUploadingDrawing(false)
+    setShowDrawingUpload(false)
+    setDrawingUploadForm({ sheet_number: '', sheet_name: '', discipline: 'Architectural', revision: '0', notes: '' })
+  }
+
+  async function openDrawing(storagePath) {
+    const res = await fetch('/api/drawings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signed-url', path: storagePath }),
+    })
+    const { url } = await res.json()
+    if (url) window.open(url, '_blank')
+  }
+
+  async function deleteDrawing(drawingId, storagePath) {
+    if (!window.confirm('Delete this drawing?')) return
+    await fetch('/api/drawings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', storage_path: storagePath, drawing_id: drawingId }),
+    })
+    await loadDrawings()
   }
 
   async function loadJobContacts() {
@@ -4485,6 +4549,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 group: 'Field',
                 items: [
                   { key: 'field', label: 'Field', badge: fieldRfis.filter(r => r.status === 'open').length > 0 ? `${fieldRfis.filter(r => r.status === 'open').length} RFI` : null, alert: fieldRfis.filter(r => r.status === 'open').length > 0 },
+                  { key: 'drawings', label: 'Drawings', badge: drawings.length || null },
                   { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
                   { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
                   { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
@@ -4567,6 +4632,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           </optgroup>
           <optgroup label="Field">
             <option value="field">Field Reports</option>
+            <option value="drawings">Drawings</option>
             <option value="submittals">Submittals</option>
             <option value="punch">Punch List</option>
             <option value="photos">Site Photos</option>
@@ -11877,6 +11943,111 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </>
                 )
               })()}
+
+        {/* ── DRAWINGS ── */}
+        {activeTab === 'drawings' && (() => {
+          const isSub = userRole === 'subcontractor'
+          const DISCIPLINES = ['Architectural', 'Structural', 'Mechanical', 'Electrical', 'Plumbing', 'Civil', 'Landscape', 'Other']
+          const filtered = drawingFilter === 'all' ? drawings : drawings.filter(d => d.discipline === drawingFilter)
+          const grouped = filtered.reduce((acc, d) => {
+            const key = d.discipline || 'Other'
+            if (!acc[key]) acc[key] = []
+            acc[key].push(d)
+            return acc
+          }, {})
+          return (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {['all', ...DISCIPLINES].map(d => (
+                    <button key={d} onClick={() => setDrawingFilter(d)} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid', fontSize: '12px', fontWeight: '600', cursor: 'pointer', background: drawingFilter === d ? '#e8590c' : 'transparent', color: drawingFilter === d ? '#fff' : '#555', borderColor: drawingFilter === d ? '#e8590c' : '#2a2a2a' }}>
+                      {d === 'all' ? `All (${drawings.length})` : d}
+                    </button>
+                  ))}
+                </div>
+                {!isSub && (
+                  <button onClick={() => setShowDrawingUpload(v => !v)} style={{ padding: '8px 16px', background: '#e8590c', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
+                    {showDrawingUpload ? 'Cancel' : '+ Upload Drawing'}
+                  </button>
+                )}
+              </div>
+
+              {showDrawingUpload && (
+                <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div>
+                      <label style={s.label}>Sheet Number</label>
+                      <input style={s.input} placeholder="A1.01" value={drawingUploadForm.sheet_number} onChange={e => setDrawingUploadForm(f => ({ ...f, sheet_number: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Sheet Name</label>
+                      <input style={s.input} placeholder="Floor Plan — Level 1" value={drawingUploadForm.sheet_name} onChange={e => setDrawingUploadForm(f => ({ ...f, sheet_name: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={s.label}>Revision</label>
+                      <input style={s.input} placeholder="0" value={drawingUploadForm.revision} onChange={e => setDrawingUploadForm(f => ({ ...f, revision: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                    <div>
+                      <label style={s.label}>Discipline</label>
+                      <select style={s.input} value={drawingUploadForm.discipline} onChange={e => setDrawingUploadForm(f => ({ ...f, discipline: e.target.value }))}>
+                        {DISCIPLINES.map(d => <option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={s.label}>Notes</label>
+                      <input style={s.input} placeholder="Optional notes..." value={drawingUploadForm.notes} onChange={e => setDrawingUploadForm(f => ({ ...f, notes: e.target.value }))} />
+                    </div>
+                  </div>
+                  <label style={{ display: 'block', padding: '14px 20px', background: uploadingDrawing ? '#0a0a0a' : '#1a0a00', border: '2px dashed #3a1800', borderRadius: '8px', color: uploadingDrawing ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600', cursor: uploadingDrawing ? 'not-allowed' : 'pointer', textAlign: 'center' }}>
+                    {uploadingDrawing ? 'Uploading...' : 'Click to select PDF or image file'}
+                    <input type="file" accept=".pdf,.png,.jpg,.jpeg,.dwg,.dxf" style={{ display: 'none' }} disabled={uploadingDrawing} onChange={e => { if (e.target.files[0]) uploadDrawing(e.target.files[0]) }} />
+                  </label>
+                </div>
+              )}
+
+              {drawings.length === 0 ? (
+                <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '10px', padding: '48px 24px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '12px' }}>📐</div>
+                  <div style={{ fontSize: '14px', color: '#555' }}>No drawings uploaded yet. Upload plan sheets to keep them accessible to the whole team.</div>
+                </div>
+              ) : Object.keys(grouped).length === 0 ? (
+                <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '10px', padding: '32px 24px', textAlign: 'center', color: '#555', fontSize: '14px' }}>No drawings match this filter.</div>
+              ) : (
+                Object.entries(grouped).map(([discipline, sheets]) => (
+                  <div key={discipline} style={{ marginBottom: '24px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1e1e1e' }}>
+                      {discipline} · {sheets.length} sheet{sheets.length !== 1 ? 's' : ''}
+                    </div>
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      {sheets.map(d => (
+                        <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '10px 14px' }}>
+                          <div style={{ fontSize: '20px', flexShrink: 0 }}>{d.file_name?.endsWith('.pdf') ? '📄' : '🖼'}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                              {d.sheet_number && <span style={{ fontSize: '12px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{d.sheet_number}</span>}
+                              <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{d.sheet_name || d.file_name}</span>
+                              {d.revision && d.revision !== '0' && <span style={{ fontSize: '10px', color: '#555', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px' }}>Rev {d.revision}</span>}
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
+                              {new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              {d.notes && <span> · {d.notes}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                            <button onClick={() => openDrawing(d.storage_path)} style={{ padding: '6px 12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>View</button>
+                            {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#555', fontSize: '11px', cursor: 'pointer' }}>×</button>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </>
+          )
+        })()}
 
           </div>{/* end content area */}
         </div>{/* end sidebar + content flex */}

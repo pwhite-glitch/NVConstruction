@@ -1977,6 +1977,25 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
 
   return (
     <div style={s.page}>
+      <style>{`
+        .nv-nav-btn { transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease !important; }
+        .nv-nav-btn:hover { background: rgba(232,89,12,0.14) !important; color: #e8590c !important; box-shadow: inset 3px 0 0 #e8590c !important; }
+        .nv-inner-tab { transition: color 0.18s ease, border-color 0.18s ease, background 0.15s ease !important; position: relative; }
+        .nv-inner-tab:hover { color: #e8590c !important; }
+        .nv-stat-card { transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease !important; cursor: default; }
+        .nv-stat-card:hover { border-color: rgba(232,89,12,0.35) !important; box-shadow: 0 0 18px rgba(232,89,12,0.09) !important; transform: translateY(-2px) !important; }
+        .nv-kanban-card { transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important; }
+        .nv-kanban-card:hover { transform: translateY(-2px) !important; box-shadow: 0 4px 18px rgba(0,0,0,0.5) !important; border-color: #2a2a2a !important; }
+        .nv-metric-card { transition: border-color 0.2s ease, box-shadow 0.2s ease !important; }
+        .nv-metric-card:hover { border-color: rgba(232,89,12,0.28) !important; box-shadow: 0 0 14px rgba(232,89,12,0.07) !important; }
+        .nv-badge-pulse { animation: nv-pulse 2.2s ease-in-out infinite; }
+        @keyframes nv-pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+        .nv-sidebar-shimmer { height: 1px; background: linear-gradient(90deg, transparent, rgba(232,89,12,0.6), transparent); margin: 0.6rem 1rem 0.4rem; animation: nv-shimmer 3.5s ease-in-out infinite; }
+        @keyframes nv-shimmer { 0%,100%{opacity:0.3} 50%{opacity:1} }
+        .nv-btn { transition: opacity 0.14s ease, transform 0.1s ease !important; }
+        .nv-btn:hover { opacity: 0.82 !important; }
+        .nv-btn:active { transform: scale(0.96) !important; }
+      `}</style>
 
       {/* ── SIDEBAR ── */}
       <nav style={s.sidebar} className="rx-sidebar">
@@ -1985,13 +2004,14 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
           <p style={s.sidebarBrand}>NV Construction</p>
           <p style={s.sidebarRole}>PM Dashboard</p>
           <p style={s.sidebarUser}>{profile?.full_name}</p>
+          <div className="nv-sidebar-shimmer" />
         </div>
         <div style={s.sidebarNav}>
           {navItems.map(({ tab, label, icon, badge }) => (
-            <button key={tab} style={s.navItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
+            <button key={tab} className="nv-nav-btn" style={s.navItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
               <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
               {label}
-              {badge ? <span style={s.navBadge}>{badge}</span> : null}
+              {badge ? <span className="nv-badge-pulse" style={s.navBadge}>{badge}</span> : null}
             </button>
           ))}
         </div>
@@ -2028,26 +2048,26 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
             <p style={s.ovGreeting}>Good {greeting}, {firstName}</p>
             <p style={s.ovDate}>{todayStr}</p>
             <div style={s.ovGrid} className="rx-stats">
-              <div style={s.ovCard}>
+              <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Active jobs</p>
                 <div style={s.ovValue('#60a5fa')}>{activeJobs.length}</div>
               </div>
-              <div style={s.ovCard}>
+              <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending billing</p>
                 <div style={s.ovValue(pending.length ? '#e8590c' : null)}>{pending.length}</div>
                 {pending.length > 0 && <p style={s.ovSub}>${pendingTotal.toLocaleString()} waiting</p>}
               </div>
-              <div style={s.ovCard}>
+              <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>COIs expiring</p>
                 <div style={s.ovValue(expiringCOIs.length ? '#facc15' : null)}>{expiringCOIs.length}</div>
                 {expiringCOIs.length > 0 && <p style={s.ovSub}>in next 30 days</p>}
               </div>
-              <div style={s.ovCard}>
+              <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Unsigned waivers</p>
                 <div style={s.ovValue(unsignedWaivers.length ? '#facc15' : null)}>{unsignedWaivers.length}</div>
                 {unsignedWaivers.length > 0 && <p style={s.ovSub}>approved, not yet signed</p>}
               </div>
-              <div style={s.ovCard}>
+              <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending applications</p>
                 <div style={s.ovValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
               </div>
@@ -3926,7 +3946,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                   { key: 'bids', label: `Bid Packages (${bidPackages.length})` },
                   { key: 'archive', label: `Archive (${estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status)).length})` },
                 ].map(tab => (
-                  <button key={tab.key} style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === tab.key ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === tab.key ? '700' : '500', color: estimatorInnerTab === tab.key ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab(tab.key)}>
+                  <button key={tab.key} className="nv-inner-tab" style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === tab.key ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === tab.key ? '700' : '500', color: estimatorInnerTab === tab.key ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab(tab.key)}>
                     {tab.label}
                   </button>
                 ))}
@@ -3980,7 +4000,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#4ade80' : winRate >= 25 ? '#facc15' : '#ff6b6b', bg: '#0f0f0f', border: '#1e1e1e' },
                       { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#0f0f0f', border: '#1e1e1e' },
                     ].map(m => (
-                      <div key={m.label} style={{ background: m.bg, border: `1px solid ${m.border}`, borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                      <div key={m.label} className="nv-metric-card" style={{ background: m.bg, border: `1px solid ${m.border}`, borderRadius: '10px', padding: '1rem 1.25rem' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>{m.label}</div>
                         <div style={{ fontSize: '24px', fontWeight: '800', color: m.color, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{m.value}</div>
                         <div style={{ fontSize: '11px', color: '#444', marginTop: '5px' }}>{m.sub}</div>
@@ -4010,7 +4030,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                               const tot = calcTotal(est)
                               const psf = est.square_footage > 0 ? tot / est.square_footage : null
                               return (
-                                <div key={est.id} style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
+                                <div key={est.id} className="nv-kanban-card" style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
                                   onClick={() => { setEstimatorInnerTab('estimates'); setExpandedEstimate(est.id) }}>
                                   <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3', marginBottom: '2px' }}>{est.project_name}</div>
                                   {(est.owner_company || est.owner_name) && <div style={{ fontSize: '11px', color: '#555', marginBottom: '5px' }}>{est.owner_company || est.owner_name}</div>}
@@ -5557,7 +5577,7 @@ ${estimate.notes ? `<div class="section-label">Scope of work</div><div class="sc
                       { label: 'In Repair', value: inRepair, color: '#3b82f6' },
                       { label: 'Fleet Value', value: '$' + totalValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }), color: '#4ade80' },
                     ].map(stat => (
-                      <div key={stat.label} style={s.ovCard}>
+                      <div key={stat.label} className="nv-stat-card" style={s.ovCard}>
                         <p style={s.ovLabel}>{stat.label}</p>
                         <p style={{ ...s.ovValue(stat.color), fontSize: '24px' }}>{stat.value}</p>
                       </div>

@@ -283,6 +283,12 @@ export default function Dashboard() {
   const [newScopeItemForm, setNewScopeItemForm] = useState({ description: '', budget_amount: '', trade: '' })
   const [showScopeTemplate, setShowScopeTemplate] = useState(null)
 
+  // Phase 4: Bid → Job handoff
+  const [showCreateJobFor, setShowCreateJobFor] = useState(null)
+  const [createJobFromBidForm, setCreateJobFromBidForm] = useState({ job_number: '', start_date: '', contract_value: '' })
+  const [creatingJobFromBid, setCreatingJobFromBid] = useState(false)
+  const [showScopeMatrix, setShowScopeMatrix] = useState(null)
+
   // Business Development state
   const [bdBidPackages, setBdBidPackages] = useState([])
   const [bdOpportunities, setBdOpportunities] = useState([])
@@ -1494,6 +1500,192 @@ export default function Dashboard() {
       included: included !== false,
     }, { onConflict: 'bid_submission_id,bid_scope_item_id' })
     await loadLevelingEntries(bidId)
+  }
+
+  async function createJobFromBid(pkg) {
+    if (!createJobFromBidForm.job_number.trim()) { alert('Job number is required.'); return }
+    setCreatingJobFromBid(true)
+    const det = bidDetails[pkg.id] || {}
+    const subs = det.submissions || []
+    const awardedSub = subs.find(s => s.status === 'awarded')
+    const contractVal = parseFloat(createJobFromBidForm.contract_value) || (awardedSub ? Number(awardedSub.amount) : null)
+
+    const { data: job, error: jobErr } = await supabase.from('jobs').insert({
+      job_number: createJobFromBidForm.job_number.trim(),
+      project_name: pkg.title,
+      location: pkg.project_address || null,
+      contract_value: contractVal || null,
+      start_date: createJobFromBidForm.start_date || null,
+      status: 'active',
+      job_type: 'commercial',
+      nv_role: 'gc',
+    }).select('id').single()
+    if (jobErr) { alert('Error creating job: ' + jobErr.message); setCreatingJobFromBid(false); return }
+
+    await supabase.from('bid_packages').update({ job_id: job.id }).eq('id', pkg.id)
+
+    if (awardedSub) {
+      const items = scopeItems[pkg.id] || []
+      const entries = levelingEntries[pkg.id] || []
+      const coveredItems = entries.length > 0
+        ? items.filter(item => {
+            const e = entries.find(en => en.bid_scope_item_id === item.id && en.bid_submission_id === awardedSub.id)
+            return !e || e.included !== false
+          })
+        : items
+      const scopeDesc = coveredItems.length > 0
+        ? coveredItems.map(i => (i.trade ? `[${i.trade}] ` : '') + i.description).join('\n')
+        : pkg.scope_of_work || null
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch('/api/subcontracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ job_id: job.id, vendor_name: awardedSub.company_name, description: scopeDesc, contract_value: Number(awardedSub.amount), status: 'active', created_by: session.user.id }),
+      })
+    }
+
+    setCreatingJobFromBid(false)
+    setShowCreateJobFor(null)
+    setCreateJobFromBidForm({ job_number: '', start_date: '', contract_value: '' })
+    await loadBidPackages()
+    router.push(`/jobdetail?id=${job.id}`)
+  }
+
+  async function generateSubcontractPDF(pkg, sub) {
+    if (!scopeItems[pkg.id]) await loadScopeItems(pkg.id)
+    const items = scopeItems[pkg.id] || []
+    const entries = levelingEntries[pkg.id] || []
+    const coveredItems = entries.length > 0
+      ? items.filter(item => {
+          const e = entries.find(en => en.bid_scope_item_id === item.id && en.bid_submission_id === sub.id)
+          return !e || e.included !== false
+        })
+      : items
+    const tradeGroups = {}
+    coveredItems.forEach(item => {
+      const t = item.trade || 'General'
+      if (!tradeGroups[t]) tradeGroups[t] = []
+      tradeGroups[t].push(item)
+    })
+    const contractNum = `SC-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Subcontract — ${sub.company_name}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #111; font-size: 13px; }
+  .header { background: #e8590c; padding: 28px 40px 22px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .header-left h1 { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+  .header-left p { font-size: 11px; color: rgba(255,255,255,0.75); letter-spacing: 2px; text-transform: uppercase; margin-top: 3px; }
+  .header-right { text-align: right; }
+  .header-right .doc-type { font-size: 13px; font-weight: 700; color: #fff; letter-spacing: 3px; text-transform: uppercase; }
+  .header-right .doc-num { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 4px; }
+  .header-right .doc-date { font-size: 11px; color: rgba(255,255,255,0.7); }
+  .body { padding: 32px 40px; }
+  .section { margin-bottom: 28px; }
+  .section-title { font-size: 10px; font-weight: 700; color: #e8590c; letter-spacing: 3px; text-transform: uppercase; border-bottom: 1px solid #e8e8e8; padding-bottom: 6px; margin-bottom: 14px; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .party-card { background: #f8f8f8; border: 1px solid #eee; border-radius: 6px; padding: 14px 16px; }
+  .party-role { font-size: 10px; font-weight: 700; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+  .party-name { font-size: 15px; font-weight: 800; color: #111; margin-bottom: 2px; }
+  .party-sub { font-size: 12px; color: #666; }
+  .amount-box { background: #111; border-radius: 8px; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .amount-label { font-size: 11px; font-weight: 700; color: #888; letter-spacing: 2px; text-transform: uppercase; }
+  .amount-value { font-size: 32px; font-weight: 900; color: #e8590c; }
+  .scope-group { margin-bottom: 16px; }
+  .trade-label { font-size: 10px; font-weight: 700; color: #888; letter-spacing: 2px; text-transform: uppercase; background: #f4f4f4; padding: 4px 10px; border-radius: 4px; margin-bottom: 6px; display: inline-block; }
+  .scope-item { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; color: #333; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+  .scope-item:last-child { border-bottom: none; }
+  .scope-check { color: #4ade80; font-weight: 700; flex-shrink: 0; }
+  .terms { background: #f9f9f9; border: 1px solid #eee; border-radius: 6px; padding: 16px; font-size: 11.5px; color: #666; line-height: 1.7; }
+  .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 32px; }
+  .sig-block { border-top: 2px solid #111; padding-top: 10px; }
+  .sig-label { font-size: 11px; font-weight: 700; color: #555; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+  .sig-name { font-size: 15px; font-weight: 700; color: #111; }
+  .sig-company { font-size: 12px; color: #888; }
+  .sig-line { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 20px; }
+  .sig-field { font-size: 11px; color: #999; margin-top: 4px; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<div class="header">
+  <div class="header-left">
+    <h1>NV Construction</h1>
+    <p>General Contractor</p>
+  </div>
+  <div class="header-right">
+    <div class="doc-type">Subcontract Agreement</div>
+    <div class="doc-num">${contractNum}</div>
+    <div class="doc-date">${today}</div>
+  </div>
+</div>
+<div class="body">
+  <div class="section">
+    <div class="section-title">Parties</div>
+    <div class="parties">
+      <div class="party-card">
+        <div class="party-role">Contractor</div>
+        <div class="party-name">NV Construction, LLC</div>
+        <div class="party-sub">General Contractor</div>
+      </div>
+      <div class="party-card">
+        <div class="party-role">Subcontractor</div>
+        <div class="party-name">${sub.company_name}</div>
+        ${sub.sub_email ? `<div class="party-sub">${sub.sub_email}</div>` : ''}
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">Project</div>
+    <div class="parties">
+      <div class="party-card">
+        <div class="party-role">Project</div>
+        <div class="party-name">${pkg.title}</div>
+        ${pkg.project_address ? `<div class="party-sub">${pkg.project_address}</div>` : ''}
+        ${pkg.owner_name ? `<div class="party-sub">Owner: ${pkg.owner_name}</div>` : ''}
+      </div>
+      ${pkg.due_date ? `<div class="party-card"><div class="party-role">Bid reference date</div><div class="party-name">${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})}</div></div>` : ''}
+    </div>
+  </div>
+  <div class="amount-box">
+    <div><div class="amount-label">Subcontract value</div></div>
+    <div class="amount-value">$${Number(sub.amount).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+  </div>
+  <div class="section">
+    <div class="section-title">Scope of Work</div>
+    ${coveredItems.length > 0 ? Object.entries(tradeGroups).map(([trade, tItems]) => `
+      <div class="scope-group">
+        ${trade !== 'General' ? `<div class="trade-label">${trade}</div>` : ''}
+        ${tItems.map(item => `<div class="scope-item"><span class="scope-check">✓</span>${item.description}</div>`).join('')}
+      </div>`).join('') : `<p style="color:#888;font-size:13px">${pkg.scope_of_work || 'See attached scope documents.'}</p>`}
+  </div>
+  <div class="section">
+    <div class="section-title">Terms & Conditions</div>
+    <div class="terms">
+      Subcontractor shall perform the scope of work described herein in a workmanlike manner, in accordance with all applicable codes and regulations, and to the satisfaction of NV Construction, LLC. Work shall commence upon written notice to proceed and shall be completed in accordance with the project schedule. Subcontractor shall maintain general liability insurance of not less than $1,000,000 per occurrence / $2,000,000 aggregate and workers' compensation as required by law, naming NV Construction, LLC as additional insured. Subcontractor shall submit lien waivers with each payment application. Retainage of 10% shall be withheld from each progress payment until final completion and acceptance. This subcontract is subject to the terms of the Prime Contract between NV Construction, LLC and the project owner.
+    </div>
+  </div>
+  <div class="sigs">
+    <div class="sig-block">
+      <div class="sig-label">Contractor</div>
+      <div class="sig-name">NV Construction, LLC</div>
+      <div class="sig-line" style="margin-top:32px"></div>
+      <div class="sig-field">Signature / Date</div>
+      <div style="margin-top:12px;border-bottom:1px solid #ccc;padding-bottom:20px"></div>
+      <div class="sig-field">Print name &amp; title</div>
+    </div>
+    <div class="sig-block">
+      <div class="sig-label">Subcontractor</div>
+      <div class="sig-name">${sub.company_name}</div>
+      <div class="sig-line" style="margin-top:32px"></div>
+      <div class="sig-field">Signature / Date</div>
+      <div style="margin-top:12px;border-bottom:1px solid #ccc;padding-bottom:20px"></div>
+      <div class="sig-field">Print name &amp; title</div>
+    </div>
+  </div>
+</div>
+<script>window.onload=function(){window.print()}</script>
+</body></html>`)
+    w.document.close()
   }
 
   async function generateITBDocument(pkg) {
@@ -3715,6 +3907,24 @@ ${estimate.notes ? `
 
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
                             <button style={s.btnSm('orange')} onClick={() => { loadScopeItems(pkg.id); setTimeout(() => generateITBDocument(pkg), 300) }}>📄 ITB Document</button>
+                            {pkg.job_id
+                              ? <button style={s.btnSm('green')} onClick={() => router.push(`/jobdetail?id=${pkg.job_id}`)}>🏗 View Job →</button>
+                              : pkg.status === 'awarded' && (
+                                <button style={s.btnSm('green')} onClick={() => {
+                                  const det = bidDetails[pkg.id] || {}
+                                  const awardedSub = (det.submissions || []).find(s => s.status === 'awarded')
+                                  setShowCreateJobFor(showCreateJobFor === pkg.id ? null : pkg.id)
+                                  setCreateJobFromBidForm({ job_number: '', start_date: '', contract_value: awardedSub ? String(awardedSub.amount) : '' })
+                                  if (showCreateJobFor !== pkg.id) { loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
+                                }}>🏗 Create Job</button>
+                              )
+                            }
+                            {pkg.status === 'awarded' && (scopeItems[pkg.id] || []).length > 0 && (
+                              <button style={s.btnSm(showScopeMatrix === pkg.id ? 'orange' : 'gray')} onClick={() => {
+                                setShowScopeMatrix(showScopeMatrix === pkg.id ? null : pkg.id)
+                                if (showScopeMatrix !== pkg.id) { loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
+                              }}>📋 Coverage Matrix</button>
+                            )}
                             {profile?.role === 'pm' && <>
                               {pkg.status === 'open' && <>
                                 <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>✓ Won</button>
@@ -3732,6 +3942,130 @@ ${estimate.notes ? `
                               <button style={s.btnSm('red')} onClick={() => deleteBidPackage(pkg.id)}>Delete package</button>
                             </>}
                           </div>
+                          {/* Create Job from Bid form */}
+                          {showCreateJobFor === pkg.id && (
+                            <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1rem' }}>
+                              <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 1rem' }}>🏗 Create job from bid — {pkg.title}</p>
+                              {(() => {
+                                const det = bidDetails[pkg.id] || {}
+                                const awardedSub = (det.submissions || []).find(s => s.status === 'awarded')
+                                return (
+                                  <>
+                                    {awardedSub && <p style={{ fontSize: '12px', color: '#888', margin: '0 0 1rem' }}>Awarded to: <strong style={{ color: '#4ade80' }}>{awardedSub.company_name}</strong> — a subcontract will be auto-created for their scope.</p>}
+                                    <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
+                                      <div>
+                                        <label style={s.label}>Job number *</label>
+                                        <input style={s.input} placeholder="e.g. 1043" value={createJobFromBidForm.job_number} onChange={e => setCreateJobFromBidForm(f => ({ ...f, job_number: e.target.value }))} />
+                                      </div>
+                                      <div>
+                                        <label style={s.label}>Start date</label>
+                                        <input type="date" style={s.input} value={createJobFromBidForm.start_date} onChange={e => setCreateJobFromBidForm(f => ({ ...f, start_date: e.target.value }))} />
+                                      </div>
+                                      <div>
+                                        <label style={s.label}>Contract value</label>
+                                        <input type="number" step="0.01" style={s.input} value={createJobFromBidForm.contract_value} onChange={e => setCreateJobFromBidForm(f => ({ ...f, contract_value: e.target.value }))} placeholder={awardedSub ? String(awardedSub.amount) : '0'} />
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <button style={{ ...s.btn, opacity: creatingJobFromBid || !createJobFromBidForm.job_number ? 0.6 : 1 }} disabled={creatingJobFromBid || !createJobFromBidForm.job_number} onClick={() => createJobFromBid(pkg)}>
+                                        {creatingJobFromBid ? 'Creating...' : 'Create job & open'}
+                                      </button>
+                                      <button style={s.btnGray} onClick={() => setShowCreateJobFor(null)}>Cancel</button>
+                                    </div>
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          )}
+
+                          {/* Scope Coverage Matrix */}
+                          {showScopeMatrix === pkg.id && (() => {
+                            const det = bidDetails[pkg.id] || {}
+                            const subs = (det.submissions || []).filter(s => s.status !== 'rejected')
+                            const awardedSub = subs.find(s => s.status === 'awarded')
+                            const items = scopeItems[pkg.id] || []
+                            const entries = levelingEntries[pkg.id] || []
+                            const trades = [...new Set(items.map(i => i.trade || 'General'))]
+                            if (items.length === 0) return <div style={{ padding: '1rem', fontSize: '13px', color: '#444', marginBottom: '1rem' }}>Add scope items to see the coverage matrix.</div>
+                            return (
+                              <div style={{ marginBottom: '1.5rem', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
+                                <div style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Superintendent Scope Matrix</span>
+                                  <span style={{ fontSize: '11px', color: '#444' }}>{subs.length} sub{subs.length !== 1 ? 's' : ''} · {items.length} scope items</span>
+                                </div>
+                                <div style={{ overflowX: 'auto' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
+                                    <thead>
+                                      <tr style={{ background: '#111', borderBottom: '1px solid #1e1e1e' }}>
+                                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', minWidth: '200px' }}>Scope item</th>
+                                        {subs.map(sub => (
+                                          <th key={sub.id} style={{ padding: '8px 12px', textAlign: 'center', color: sub.status === 'awarded' ? '#4ade80' : '#666', fontSize: '11px', letterSpacing: '0.5px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                                            {sub.company_name}
+                                            {sub.status === 'awarded' && <span style={{ display: 'block', fontSize: '10px', color: '#4ade80', letterSpacing: '1px' }}>AWARDED</span>}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {trades.map(trade => {
+                                        const tradeItems = items.filter(i => (i.trade || 'General') === trade)
+                                        return (
+                                          <>
+                                            <tr key={`trade-${trade}`}>
+                                              <td colSpan={subs.length + 1} style={{ padding: '6px 12px', background: '#141414', fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '2px', textTransform: 'uppercase' }}>{trade}</td>
+                                            </tr>
+                                            {tradeItems.map(item => {
+                                              const awardedEntry = awardedSub ? entries.find(e => e.bid_scope_item_id === item.id && e.bid_submission_id === awardedSub.id) : null
+                                              const isGap = awardedSub && awardedEntry?.included === false
+                                              return (
+                                                <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,107,107,0.06)' : 'transparent' }}>
+                                                  <td style={{ padding: '9px 12px', color: isGap ? '#ff6b6b' : '#ccc' }}>
+                                                    {isGap && <span style={{ color: '#ff6b6b', fontWeight: '700', marginRight: '4px' }}>⚠</span>}
+                                                    {item.description}
+                                                  </td>
+                                                  {subs.map(sub => {
+                                                    const entry = entries.find(e => e.bid_scope_item_id === item.id && e.bid_submission_id === sub.id)
+                                                    const included = !entry ? null : entry.included !== false
+                                                    return (
+                                                      <td key={sub.id} style={{ padding: '9px 12px', textAlign: 'center' }}>
+                                                        {included === null
+                                                          ? <span style={{ color: '#333', fontSize: '11px' }}>—</span>
+                                                          : included
+                                                            ? <span style={{ color: '#4ade80', fontWeight: '700', fontSize: '13px' }}>✓</span>
+                                                            : <span style={{ color: '#ff6b6b', fontWeight: '700', fontSize: '13px' }}>✗</span>
+                                                        }
+                                                        {entry?.amount > 0 && <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>${Number(entry.amount).toLocaleString()}</div>}
+                                                      </td>
+                                                    )
+                                                  })}
+                                                </tr>
+                                              )
+                                            })}
+                                          </>
+                                        )
+                                      })}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr style={{ borderTop: '1px solid #1e1e1e', background: '#111' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '12px', fontWeight: '700', color: '#555' }}>Total bid</td>
+                                        {subs.map(sub => (
+                                          <td key={sub.id} style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '800', fontSize: '14px', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>
+                                            ${Number(sub.amount).toLocaleString()}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                                {items.some(item => { const aEntry = awardedSub && entries.find(e => e.bid_scope_item_id === item.id && e.bid_submission_id === awardedSub.id); return aEntry?.included === false }) && (
+                                  <div style={{ padding: '10px 14px', background: '#1a0a0a', borderTop: '1px solid #2a1a1a', fontSize: '12px', color: '#ff6b6b' }}>
+                                    ⚠ Gap detected — awarded sub excluded one or more scope items. Confirm coverage with another subcontractor.
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
+
                           {profile?.role === 'pm' && (() => {
                             const apms = teamMembers.filter(m => m.role === 'apm')
                             if (!apms.length) return null
@@ -3930,6 +4264,7 @@ ${estimate.notes ? `
                                             <td style={{ padding: '10px 12px' }}>
                                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                                 {sub.doc_url && <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎</button>}
+                                                {sub.status === 'awarded' && <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>📄</button>}
                                                 {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                                   <>
                                                     <button style={s.btnSm('green')} onClick={() => awardBid(sub, pkg.id)}>Award</button>
@@ -3960,6 +4295,9 @@ ${estimate.notes ? `
                                   <span style={{ fontSize: '20px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</span>
                                   {sub.doc_url && (
                                     <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎 Estimate</button>
+                                  )}
+                                  {sub.status === 'awarded' && (
+                                    <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>📄 Subcontract</button>
                                   )}
                                   {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                     <div style={{ display: 'flex', gap: '6px' }}>

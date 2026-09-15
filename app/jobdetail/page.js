@@ -513,7 +513,7 @@ function JobDetailInner() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('role, full_name, hide_budget').eq('id', session.user.id).single()
-      if (prof?.role !== 'pm' && prof?.role !== 'apm') { router.push('/submit'); return }
+      if (prof?.role !== 'pm' && prof?.role !== 'apm' && prof?.role !== 'super') { router.push('/submit'); return }
       if (prof.role === 'pm') localStorage.setItem('nvc_pm_session', '1')
       const devRole = localStorage.getItem('nvc_dev_role')
       const effectiveRole = (devRole === 'apm' && prof.role === 'pm') ? 'apm' : prof.role

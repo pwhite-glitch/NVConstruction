@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -124,7 +125,14 @@ export default function Dashboard() {
   const [expanded, setExpanded] = useState(null)
   const [expandedDir, setExpandedDir] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTabValue] = useState('overview')
+  const [scopeDirty, setScopeDirty] = useState(false)
+  function leaveScope() {
+    if (scopeDirty && !window.confirm('Discard unsaved scope changes?')) return false
+    setScopeDirty(false)
+    return true
+  }
+  function setActiveTab(tab) { if (tab === activeTab || leaveScope()) setActiveTabValue(tab) }
   const [filterStatus, setFilterStatus] = useState('')
   const [filterJob, setFilterJob] = useState('')
   const [filterTrade, setFilterTrade] = useState('')
@@ -271,7 +279,10 @@ export default function Dashboard() {
   const [editEstimateForm, setEditEstimateForm] = useState({})
   const [editEstimateLines, setEditEstimateLines] = useState([])
   const [savingEstimateEdit, setSavingEstimateEdit] = useState(false)
-  const [estimatorInnerTab, setEstimatorInnerTab] = useState('overview')
+  const [estimatorInnerTab, setEstimatorInnerTab] = useState('estimates')
+  const [bidWorkspaceStep, setBidWorkspaceStep] = useState('plans')
+  const [bidWorkspaceLoading, setBidWorkspaceLoading] = useState({})
+  const [bidWorkspaceErrors, setBidWorkspaceErrors] = useState({})
   const [convertingEst, setConvertingEst] = useState(null)
   const [convertJobForm, setConvertJobForm] = useState({ job_number: '', start_date: '' })
   const [convertingJob, setConvertingJob] = useState(false)
@@ -279,7 +290,6 @@ export default function Dashboard() {
   const [estDocs, setEstDocs] = useState({})
   const [scopeItems, setScopeItems] = useState({})
   const [levelingEntries, setLevelingEntries] = useState({})
-  const [showLeveling, setShowLeveling] = useState(null)
   const [addingScopeItem, setAddingScopeItem] = useState(null)
   const [newScopeItemForm, setNewScopeItemForm] = useState({ description: '', budget_amount: '', trade: '' })
   const [showScopeTemplate, setShowScopeTemplate] = useState(null)
@@ -606,12 +616,20 @@ export default function Dashboard() {
   }
 
   async function loadBidDetail(bidId) {
-    const [{ data: plans }, { data: invites }, { data: subs }] = await Promise.all([
-      supabase.from('bid_plans').select('*').eq('bid_package_id', bidId).order('uploaded_at'),
-      supabase.from('bid_invitations').select('*').eq('bid_package_id', bidId).order('sent_at'),
-      supabase.from('bid_submissions').select('*').eq('bid_package_id', bidId).order('submitted_at'),
-    ])
-    setBidDetails(prev => ({ ...prev, [bidId]: { plans: plans || [], invitations: invites || [], submissions: subs || [] } }))
+    setBidWorkspaceLoading(prev => ({ ...prev, [bidId]: true }))
+    setBidWorkspaceErrors(prev => ({ ...prev, [bidId]: '' }))
+    try {
+      const results = await Promise.all([
+        supabase.from('bid_plans').select('*').eq('bid_package_id', bidId).order('uploaded_at'),
+        supabase.from('bid_invitations').select('*').eq('bid_package_id', bidId).order('sent_at'),
+        supabase.from('bid_submissions').select('*').eq('bid_package_id', bidId).order('submitted_at'),
+      ])
+      const failure = results.find(r => r.error)
+      if (failure) throw failure.error
+      setBidDetails(prev => ({ ...prev, [bidId]: { plans: results[0].data || [], invitations: results[1].data || [], submissions: results[2].data || [] } }))
+    } catch (error) {
+      setBidWorkspaceErrors(prev => ({ ...prev, [bidId]: 'Could not load package details. Please try again.' }))
+    } finally { setBidWorkspaceLoading(prev => ({ ...prev, [bidId]: false })) }
   }
 
   async function toggleEstimateAccess(estId, userId) {
@@ -1446,7 +1464,8 @@ export default function Dashboard() {
   }
 
   async function loadScopeItems(bidId) {
-    const { data } = await supabase.from('bid_scope_items').select('*').eq('bid_package_id', bidId).order('sort_order')
+    const { data, error } = await supabase.from('bid_scope_items').select('*').eq('bid_package_id', bidId).order('sort_order')
+    if (error) { setBidWorkspaceErrors(prev => ({ ...prev, [bidId]: 'Could not load scope items. Please try again.' })); return }
     setScopeItems(prev => ({ ...prev, [bidId]: data || [] }))
   }
 
@@ -2554,7 +2573,7 @@ ${estimate.notes ? `
       </div>
 
       {/* â”€â”€ MAIN CONTENT â”€â”€ */}
-      <main style={s.content} className="rx-content">
+      <main style={s.content} className={`rx-content ${activeTab === 'estimator' ? 'nv-estimator' : ''}`}>
 
         {/* Overview section (stats shown above calendar) */}
         {activeTab === 'overview' && (
@@ -3814,6 +3833,8 @@ ${estimate.notes ? `
               </>
             )}
 
+            {activeTab === 'estimator' && <EstimatingHeader active={estimatorInnerTab} onChange={tab => { if (tab === estimatorInnerTab || leaveScope()) setEstimatorInnerTab(tab) }} estimates={estimates} packages={bidPackages} />}
+
             {/* â”€â”€ BID INVITES (inside Estimator) â”€â”€ */}
             {activeTab === 'estimator' && estimatorInnerTab === 'bids' && (
               <>
@@ -3867,7 +3888,7 @@ ${estimate.notes ? `
 
                 {bidPackages.length === 0 && !showCreateBid && <div style={s.emptyMsg}>No bid packages yet. Create one to start inviting subs.</div>}
 
-                {bidPackages.map(pkg => {
+                {bidPackages.filter(pkg => !expandedBid || pkg.id === expandedBid).map(pkg => {
                   const isExp = expandedBid === pkg.id
                   const det = bidDetails[pkg.id] || {}
                   const plans = det.plans || []
@@ -3879,8 +3900,8 @@ ${estimate.notes ? `
 
                   return (
                     <div key={pkg.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', cursor: 'pointer' }}
-                        onClick={() => { if (isExp) { setExpandedBid(null) } else { setExpandedBid(pkg.id); loadBidDetail(pkg.id); loadScopeItems(pkg.id) } }}>
+                      <button type="button" className="est-package-row" hidden={isExp} style={{ display: isExp ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', background: '#171b20', cursor: 'pointer' }}
+                        onClick={() => { setExpandedBid(pkg.id); setBidWorkspaceStep('plans'); loadBidDetail(pkg.id); loadScopeItems(pkg.id) }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{pkg.title}</span>
@@ -3889,15 +3910,17 @@ ${estimate.notes ? `
                           </div>
                           <div style={{ fontSize: '12px', color: '#555' }}>
                             {pkg.due_date ? `Due ${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}` : 'No due date'}
-                            {invitations.length > 0 && ` Â· ${invitations.length} invited`}
-                            {submissions.length > 0 && ` Â· ${submissions.length} bid${submissions.length !== 1 ? 's' : ''} received`}
+                            {invitations.length > 0 && ` · ${invitations.length} invited`}
+                            {submissions.length > 0 && ` · ${submissions.length} bid${submissions.length !== 1 ? 's' : ''} received`}
                           </div>
                         </div>
-                        <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? 'â–²' : 'â–¼'}</span>
-                      </div>
+                        <span style={{ color: '#bac4ce', fontSize: '13px' }}>Open workspace →</span>
+                      </button>
 
                       {isExp && (
-                        <div style={{ borderTop: '1px solid #1e1e1e', padding: '1.25rem', background: '#080808' }}>
+                        <div className="est-package-workspace">
+                          <BidWorkspaceNav step={bidWorkspaceStep} pkg={pkg} plans={plans} items={scopeItems[pkg.id] || []} submissions={submissions} loading={bidWorkspaceLoading[pkg.id]} error={bidWorkspaceErrors[pkg.id]} onRetry={() => { loadBidDetail(pkg.id); loadScopeItems(pkg.id) }} onBack={() => { if (!leaveScope()) return; setExpandedBid(null); setShowCreateBid(false) }} onChange={step => { setBidWorkspaceStep(step); if (step === 'compare') { loadLevelingEntries(pkg.id) } }} />
+                          <div className="est-step-panel" hidden={bidWorkspaceStep !== 'proposal'}>
                           {pkg.description && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{pkg.description}</p>}
                           {pkg.scope_of_work && (
                             <div style={{ background: '#0f0f0f', border: '1px solid #1a1a1a', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
@@ -4087,7 +4110,11 @@ ${estimate.notes ? `
                             )
                           })()}
 
+                          </div>
                           {/* Plans */}
+                          <div className="est-step-panel" hidden={bidWorkspaceStep !== 'plans'}>
+                            <h3 style={{ margin: '0 0 12px', color: '#e3e9ef' }}>Project documents</h3>
+                            <p style={{ color: '#b2bbc5', fontSize: '13px', marginBottom: '20px' }}>Upload the current drawings, specifications, and addenda. Use clear revision names so the team can identify the current set.</p>
                           <div style={{ marginBottom: '1.5rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                               <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Plans & documents ({plans.length})</span>
@@ -4108,8 +4135,10 @@ ${estimate.notes ? `
                               </div>
                             ))}
                           </div>
+                          </div>
 
                           {/* Invitations */}
+                          <div className="est-step-panel" hidden={bidWorkspaceStep !== 'quotes'}>
                           <div style={{ marginBottom: '1.5rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                               <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Invited subs ({invitations.length})</span>
@@ -4311,8 +4340,12 @@ ${estimate.notes ? `
                             ))}
                           </div>
 
+                          </div>
+
                           {/* â”€â”€ SCOPE BUILDER / BID LEVELING â”€â”€ */}
-                          <div style={{ marginTop: '1.5rem', borderTop: '1px solid #1a1a1a', paddingTop: '1.5rem' }}>
+                          <div className={'est-step-panel'} hidden={bidWorkspaceStep !== 'scope' && bidWorkspaceStep !== 'compare'}>
+                          <div>
+                            <div hidden={bidWorkspaceStep !== 'scope'}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                               <div>
                                 <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Scope Builder</span>
@@ -4320,13 +4353,10 @@ ${estimate.notes ? `
                               </div>
                               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                 <button style={s.btnSm('gray')} onClick={() => { setShowScopeTemplate(showScopeTemplate === pkg.id ? null : pkg.id); if (showScopeTemplate !== pkg.id) loadScopeItems(pkg.id) }}>
-                                  {showScopeTemplate === pkg.id ? 'Close templates' : 'ðŸ“‹ Templates'}
+                                  {showScopeTemplate === pkg.id ? 'Close templates' : '📋 Templates'}
                                 </button>
                                 {submissions.length >= 1 && (scopeItems[pkg.id] || []).length >= 1 && (
-                                  <button style={s.btnSm(showLeveling === pkg.id ? 'orange' : 'gray')} onClick={() => {
-                                    if (showLeveling === pkg.id) { setShowLeveling(null) }
-                                    else { setShowLeveling(pkg.id); loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
-                                  }}>{showLeveling === pkg.id ? 'Close leveling' : 'âŠž Level bids'}</button>
+                                  <button style={s.btnSm('gray')} onClick={() => { setBidWorkspaceStep('compare'); loadLevelingEntries(pkg.id) }}>Compare &amp; price →</button>
                                 )}
                                 <button style={s.btnSm(addingScopeItem === pkg.id ? 'gray' : 'green')} onClick={() => { setAddingScopeItem(addingScopeItem === pkg.id ? null : pkg.id); if (addingScopeItem !== pkg.id) loadScopeItems(pkg.id) }}>
                                   {addingScopeItem === pkg.id ? 'Done' : '+ Scope item'}
@@ -4452,36 +4482,22 @@ ${estimate.notes ? `
                                   </div>
                                   <button style={{ ...s.btnSm('green'), alignSelf: 'flex-end' }} onClick={() => addScopeItem(pkg.id)}>Add</button>
                                 </div>
-                                {(scopeItems[pkg.id] || []).length > 0 && (() => {
-                                  const allItems = scopeItems[pkg.id] || []
-                                  const byTrade = {}
-                                  allItems.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
-                                  const budgetTotal = allItems.reduce((a, i) => a + Number(i.budget_amount || 0), 0)
-                                  return (
-                                    <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '10px' }}>
-                                      {Object.entries(byTrade).map(([trade, tradeItems]) => (
-                                        <div key={trade} style={{ marginBottom: '8px' }}>
-                                          <div style={{ fontSize: '9px', fontWeight: '800', color: '#e8590c', letterSpacing: '2px', textTransform: 'uppercase', padding: '4px 0 4px', borderBottom: '1px solid #1a1a1a', marginBottom: '4px' }}>{trade}</div>
-                                          {tradeItems.map(item => (
-                                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 4px', fontSize: '13px' }}>
-                                              <span style={{ color: '#ccc' }}>{item.description}</span>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                {item.budget_amount > 0 && <span style={{ color: '#555', fontVariantNumeric: 'tabular-nums' }}>${Number(item.budget_amount).toLocaleString()}</span>}
-                                                <button style={{ background: 'none', border: 'none', color: '#5a2a2a', cursor: 'pointer', fontSize: '18px', padding: '0 2px', lineHeight: 1 }} onClick={() => deleteScopeItem(item.id, pkg.id)}>Ã—</button>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ))}
-                                      {budgetTotal > 0 && <div style={{ textAlign: 'right', fontSize: '12px', color: '#555', marginTop: '8px', borderTop: '1px solid #1a1a1a', paddingTop: '6px' }}>Budget total: <strong style={{ color: '#f1f1f1' }}>${Number(budgetTotal).toLocaleString()}</strong></div>}
-                                    </div>
-                                  )
-                                })()}
+
                               </div>
                             )}
 
+                            <ScopeReview key={pkg.id} onDirtyChange={setScopeDirty} items={scopeItems[pkg.id] || []} plans={plans} openPlan={openPlan} onSave={async (itemId, changes) => {
+                              const { data, error } = await supabase.from('bid_scope_items').update(changes).eq('id', itemId).eq('bid_package_id', pkg.id).select('id').single()
+                              if (error || !data) throw new Error(error?.message?.includes('scope_review') ? 'Scope review storage is not available yet. Apply the estimating migration before saving review details.' : error?.message || 'Scope could not be saved. Check your access and try again.')
+                              await loadScopeItems(pkg.id)
+                            }} onDelete={async itemId => {
+                              const { data, error } = await supabase.from('bid_scope_items').delete().eq('id', itemId).eq('bid_package_id', pkg.id).select('id').single()
+                              if (error || !data) throw new Error(error?.message || 'Scope could not be removed.')
+                              await loadScopeItems(pkg.id)
+                            }} />
+                            </div>
                             {/* Leveling matrix */}
-                            {showLeveling === pkg.id && (() => {
+                            {bidWorkspaceStep === 'compare' && (() => {
                               const items = scopeItems[pkg.id] || []
                               const subs = submissions.filter(s => s.status !== 'rejected')
                               const entries = levelingEntries[pkg.id] || []
@@ -4585,6 +4601,7 @@ ${estimate.notes ? `
                                 </div>
                               )
                             })()}
+                          </div>
                           </div>
 
                         </div>
@@ -4798,22 +4815,6 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ ESTIMATOR INNER NAV â”€â”€ */}
-            {activeTab === 'estimator' && (
-              <div style={{ display: 'flex', borderBottom: '1px solid #1a1a1a', marginBottom: '1.5rem', overflowX: 'auto' }}>
-                {[
-                  { key: 'overview', label: 'Pipeline' },
-                  { key: 'estimates', label: `Estimates (${estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length})` },
-                  { key: 'bids', label: `Bid Packages (${bidPackages.length})` },
-                  { key: 'archive', label: `Archive (${estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status)).length})` },
-                ].map(tab => (
-                  <button key={tab.key} className="nv-inner-tab" style={{ padding: '10px 18px', border: 'none', borderBottom: estimatorInnerTab === tab.key ? '2px solid #e8590c' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: estimatorInnerTab === tab.key ? '700' : '500', color: estimatorInnerTab === tab.key ? '#e8590c' : '#555', letterSpacing: '1px', textTransform: 'uppercase', whiteSpace: 'nowrap' }} onClick={() => setEstimatorInnerTab(tab.key)}>
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* â”€â”€ ESTIMATOR PIPELINE OVERVIEW â”€â”€ */}
             {activeTab === 'estimator' && estimatorInnerTab === 'overview' && (() => {
               const calcTotal = (est) => {
@@ -4956,6 +4957,7 @@ ${estimate.notes ? `
             {/* â”€â”€ ESTIMATES (inside Estimator) â”€â”€ */}
             {activeTab === 'estimator' && estimatorInnerTab === 'estimates' && (
               <>
+                <QuickEstimateIntro />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} â€” won/lost are in Archive</p>
                   {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}

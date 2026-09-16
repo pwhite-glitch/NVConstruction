@@ -1,0 +1,21 @@
+const fs=require('fs'); const path=require('path'); const Module=require('module'); const assert=require('node:assert/strict');
+const projectRequire=Module.createRequire(path.resolve('package.json'));
+(async()=>{
+const React=projectRequire('react'); const {renderToStaticMarkup:render}=projectRequire('react-dom/server');
+const filename=path.resolve('app/components/estimating/EstimatingWorkspace.js');
+const input=fs.readFileSync(filename,'utf8').replace("import './estimating.css'",'');
+const {code}=await projectRequire('next/dist/build/swc').transform(input,{filename,jsc:{parser:{syntax:'ecmascript',jsx:true},transform:{react:{runtime:'automatic'}}},module:{type:'commonjs'}});
+const mod=new Module(filename,module);mod.filename=filename;mod.paths=Module._nodeModulePaths(path.dirname(filename));mod._compile(code,filename);
+const c=mod.exports;const h=React.createElement;
+const pkg={id:'test',title:'Test office renovation',owner_name:'Example customer',status:'open'};
+const plans=[{id:'plan',file_name:'Office drawings Rev 2.pdf',storage_path:'example.pdf'}];
+const items=[{id:'item',trade:'Concrete',description:'Patch slab openings shown on the drawings.',scope_review:{status:'question',notes:'Confirm final slab thickness.',source_plan_id:'plan',page:'4',revision:'S-101 / Rev 2'}}];
+const base={step:'scope',pkg,plans,items,submissions:[],onChange:()=>{},onBack:()=>{}};
+let html=render(h(c.BidWorkspaceNav,base));assert.match(html,/1 documents/);assert.match(html,/1 open questions/);assert.equal((html.match(/aria-current="step"/g)||[]).length,1);
+html=render(h(c.BidWorkspaceNav,{...base,loading:true}));assert.match(html,/Loading package/);assert.equal((html.match(/disabled=""/g)||[]).length,5);
+html=render(h(c.BidWorkspaceNav,{...base,error:'Cannot load package',onRetry:()=>{}}));assert.match(html,/role="alert"/);assert.match(html,/Try again/);assert.doesNotMatch(html,/0 quotes received/);
+html=render(h(c.ScopeReview,{items:[],plans:[]}));assert.match(html,/add your first item/);assert.match(html,/disabled=""/);assert.match(html,/No paid fallback/);
+html=render(h(c.ScopeReview,{items,plans}));assert.match(html,/Confirm final slab thickness/);assert.match(html,/value="4"/);assert.match(html,/S-101 \/ Rev 2/);assert.match(html,/Question open/);
+html=render(h(c.ScopeReview,{items,plans:[]}));assert.match(html,/no longer in this package/);
+console.log('PASS: readiness counts, loading navigation, error/retry, empty state and disabled AI, saved review fields, missing source warning (6 checks).');
+})().catch(e=>{console.error(e);process.exitCode=1});

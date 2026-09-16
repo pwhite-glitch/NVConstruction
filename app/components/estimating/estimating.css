@@ -1,0 +1,51 @@
+.nv-estimator { color: #edf0f4; --est-border: #363d45; --est-muted: #b2bbc5; --est-surface: #171b20; }
+.nv-estimator .est-header { margin-bottom: 28px; }
+.nv-estimator .est-eyebrow { color: #f5a777; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; }
+.nv-estimator .est-header h1 { margin: 8px 0; font-size: 30px; font-weight: 700; }
+.nv-estimator .est-header p, .nv-estimator .est-workspace-header p, .nv-estimator .est-quick-intro p { color: var(--est-muted); line-height: 1.6; margin: 6px 0 18px; }
+.nv-estimator .est-tabs, .nv-estimator .est-steps, .nv-estimator .est-actions, .nv-estimator .est-readiness { display: flex; flex-wrap: wrap; gap: 8px; }
+.nv-estimator .est-tabs { border-bottom: 1px solid var(--est-border); padding: 12px 0; }
+.nv-estimator .est-tabs button, .nv-estimator .est-steps button, .nv-estimator .est-back, .nv-estimator .est-scope-review button, .nv-estimator .est-readiness button { border: 1px solid var(--est-border); background: #20262d; color: #e4e9ef; padding: 10px 14px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
+.nv-estimator button:focus-visible, .nv-estimator input:focus-visible, .nv-estimator textarea:focus-visible, .nv-estimator select:focus-visible { outline: 2px solid #ffb285; outline-offset: 3px; }
+.nv-estimator .est-tabs button[aria-current], .nv-estimator .est-steps button[aria-current], .nv-estimator .est-scope-list button[aria-pressed=true] { background: #37271d; color: #ffc19d; border-color: #ad633e; }
+.nv-estimator .est-tabs button span { margin-left: 10px; opacity: .85; }
+.nv-estimator .est-workspace-header { padding: 20px 0; }
+.nv-estimator .est-title-row { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.nv-estimator .est-title-row h2 { font-size: 24px; margin: 20px 0 6px; }
+.nv-estimator .est-title-row h3 { font-size: 17px; margin: 0 0 18px; }
+.nv-estimator .est-status { display: inline-block; padding: 5px 9px; background: #2a3037; border-radius: 5px; font-size: 12px; color: #d1d8df; text-transform: capitalize; }
+.nv-estimator .est-steps { margin: 12px 0; }
+.nv-estimator .est-steps button span { margin-right: 8px; opacity: .75; }
+.nv-estimator .est-readiness { font-size: 13px; padding: 12px 0; border-top: 1px solid var(--est-border); color: var(--est-muted); }
+.nv-estimator .est-readiness > span { margin-right: 18px; }
+.nv-estimator .est-step-panel { padding: 22px; border: 1px solid var(--est-border); border-radius: 12px; background: #12161b; }
+.nv-estimator .est-step-panel[hidden] { display: none; }
+.nv-estimator .est-ai-notice { margin: 20px 0; padding: 18px; border: 1px solid var(--est-border); border-radius: 10px; background: #20262d; }
+.nv-estimator .est-ai-notice > div { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.nv-estimator .est-ai-notice p, .nv-estimator .est-evidence p { color: var(--est-muted); font-size: 13px; line-height: 1.65; }
+.nv-estimator .est-ai-notice small { display: block; margin-top: 10px; color: var(--est-muted); }
+.nv-estimator button:disabled { cursor: not-allowed; opacity: .55; }
+.nv-estimator .est-review-filter { display: flex; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+.nv-estimator .est-scope-review label { display: block; font-size: 13px; color: #cdd5dd; margin: 10px 0 6px; }
+.nv-estimator .est-scope-review input, .nv-estimator .est-scope-review textarea, .nv-estimator .est-scope-review select { background: #101419; border: 1px solid #48515c; color: #edf0f4; border-radius: 7px; padding: 10px; width: 100%; font: inherit; font-size: 14px; }
+.nv-estimator .est-review-filter select { width: auto; }
+.nv-estimator .est-scope-review textarea { min-height: 110px; resize: vertical; }
+.nv-estimator .est-scope-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.nv-estimator .est-scope-list button { max-width: 280px; text-align: left; overflow-wrap: anywhere; }
+.nv-estimator .est-scope-list button span { display: block; font-size: 11px; margin-bottom: 5px; color: #ffc19d; }
+.nv-estimator .est-scope-editor { padding: 20px; border: 1px solid var(--est-border); border-radius: 10px; background: var(--est-surface); }
+.nv-estimator .est-review-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px; }
+.nv-estimator .est-evidence { padding: 18px; background: #20262d; border-radius: 8px; }
+.nv-estimator .est-source-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.nv-estimator .est-actions { margin-top: 14px; }
+.nv-estimator .est-actions .est-primary { background: #a84819; color: white; border-color: #b95420; }
+.nv-estimator .est-error { color: #ffa99e; }
+.nv-estimator .est-delete { margin-top: 20px; color: #ffa99e !important; }
+.nv-estimator .est-empty { padding: 24px 0; color: var(--est-muted); line-height: 1.6; }
+.nv-estimator .est-quick-intro { margin-bottom: 24px; }
+.nv-estimator .est-quick-intro h2 { font-size: 23px; margin: 0; }
+.nv-estimator .est-quick-intro ol { display: flex; gap: 24px; flex-wrap: wrap; list-style-position: inside; padding: 16px 0; color: #f3b68d; border-bottom: 1px solid var(--est-border); }
+.nv-estimator .est-quick-intro ol li { list-style: none; }
+.nv-estimator [style*="color: rgb(85, 85, 85)"], .nv-estimator [style*="color: #555"], .nv-estimator [style*="color: rgb(68, 68, 68)"], .nv-estimator [style*="color: #444"] { color: #aab5c0 !important; }
+.nv-estimator .est-package-row { width: 100%; text-align: left; border: 1px solid var(--est-border); border-radius: 10px; margin-bottom: 10px; }
+@media (max-width: 760px) { .nv-estimator .est-review-grid { grid-template-columns: 1fr; } .nv-estimator .est-step-panel, .nv-estimator .est-scope-editor { padding: 14px; } .nv-estimator .est-steps button { flex: 1 1 145px; } .nv-estimator .est-scope-list button { max-width: 100%; } .nv-estimator .est-tabs button { flex: 1 1 130px; } .nv-estimator .est-title-row h2 { font-size: 20px; } .nv-estimator .est-scope-review input, .nv-estimator .est-scope-review textarea { font-size: 16px; } }

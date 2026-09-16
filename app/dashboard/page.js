@@ -1625,7 +1625,20 @@ export default function Dashboard() {
   .sig-company { font-size: 12px; color: #888; }
   .sig-line { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 20px; }
   .sig-field { font-size: 11px; color: #999; margin-top: 4px; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  @page { size: letter portrait; margin: 1cm 1.5cm; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .header { padding: 18px 28px 14px; }
+    .body { padding: 18px 28px; }
+    .section { margin-bottom: 16px; }
+    .amount-box { padding: 12px 16px; margin-bottom: 14px; }
+    .amount-value { font-size: 24px; }
+    .terms { font-size: 10.5px; line-height: 1.55; padding: 10px 12px; }
+    .sigs { margin-top: 18px; gap: 24px; }
+    .sig-line { margin-top: 18px; padding-bottom: 14px; }
+    .parties { gap: 14px; }
+    .party-card { padding: 10px 12px; }
+  }
 </style></head><body>
 <div class="header">
   <div class="header-left">

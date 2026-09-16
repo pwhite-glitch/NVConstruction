@@ -46,6 +46,6 @@
 .nv-estimator .est-quick-intro h2 { font-size: 23px; margin: 0; }
 .nv-estimator .est-quick-intro ol { display: flex; gap: 24px; flex-wrap: wrap; list-style-position: inside; padding: 16px 0; color: #f3b68d; border-bottom: 1px solid var(--est-border); }
 .nv-estimator .est-quick-intro ol li { list-style: none; }
-.nv-estimator [style*="color: rgb(85, 85, 85)"], .nv-estimator [style*="color: #555"], .nv-estimator [style*="color: rgb(68, 68, 68)"], .nv-estimator [style*="color: #444"] { color: #aab5c0 !important; }
+.nv-estimator [style*="color: rgb(85, 85, 85)"], .nv-estimator [style*="color: #555"], .nv-estimator [style*="color: rgb(68, 68, 68)"], .nv-estimator [style*="color: #444"], .nv-estimator [style*="color: rgb(51, 51, 51)"], .nv-estimator [style*="color: #333"], .nv-estimator [style*="color: rgb(136, 136, 136)"], .nv-estimator [style*="color: #888"] { color: #aab5c0 !important; }
 .nv-estimator .est-package-row { width: 100%; text-align: left; border: 1px solid var(--est-border); border-radius: 10px; margin-bottom: 10px; }
 @media (max-width: 760px) { .nv-estimator .est-review-grid { grid-template-columns: 1fr; } .nv-estimator .est-step-panel, .nv-estimator .est-scope-editor { padding: 14px; } .nv-estimator .est-steps button { flex: 1 1 145px; } .nv-estimator .est-scope-list button { max-width: 100%; } .nv-estimator .est-tabs button { flex: 1 1 130px; } .nv-estimator .est-title-row h2 { font-size: 20px; } .nv-estimator .est-scope-review input, .nv-estimator .est-scope-review textarea { font-size: 16px; } }

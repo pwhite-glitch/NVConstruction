@@ -15,16 +15,16 @@ const TRADES = [
 ]
 
 function fmtDate(val) {
-  if (!val) return 'â€”'
+  if (!val) return '—'
   // For date-only strings (YYYY-MM-DD), parse as local noon to avoid timezone shift
   const d = /^\d{4}-\d{2}-\d{2}$/.test(val) ? new Date(val + 'T12:00:00') : new Date(val)
-  if (isNaN(d.getTime()) || d.getFullYear() < 2000 || d.getFullYear() > 2100) return 'â€”'
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000 || d.getFullYear() > 2100) return '—'
   return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
 }
 
 function fmtMoney(val) {
   const n = parseFloat(val)
-  if (isNaN(n)) return 'â€”'
+  if (isNaN(n)) return '—'
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
@@ -294,7 +294,7 @@ export default function Dashboard() {
   const [newScopeItemForm, setNewScopeItemForm] = useState({ description: '', budget_amount: '', trade: '' })
   const [showScopeTemplate, setShowScopeTemplate] = useState(null)
 
-  // Phase 4: Bid â†’ Job handoff
+  // Phase 4: Bid → Job handoff
   const [showCreateJobFor, setShowCreateJobFor] = useState(null)
   const [createJobFromBidForm, setCreateJobFromBidForm] = useState({ job_number: '', start_date: '', contract_value: '' })
   const [creatingJobFromBid, setCreatingJobFromBid] = useState(false)
@@ -555,10 +555,10 @@ export default function Dashboard() {
     if (sub.sub_email) {
       const approved = status === 'approved'
       const color = approved ? '#4ade80' : '#ff6b6b'
-      sendEmail(sub.sub_email, `Billing ${status} â€” ${sub.jobs?.project_name}`,
+      sendEmail(sub.sub_email, `Billing ${status} — ${sub.jobs?.project_name}`,
         emailWrap(`
           <h2 style="color:${color};margin:0 0 1rem">Billing ${status}</h2>
-          <p style="color:#aaa">Your billing submission of <strong style="color:#f1f1f1">$${sub.amount_billed?.toLocaleString()}</strong> for <strong style="color:#f1f1f1">#${sub.jobs?.job_number} â€” ${sub.jobs?.project_name}</strong> has been <strong style="color:${color}">${status}</strong>.</p>
+          <p style="color:#aaa">Your billing submission of <strong style="color:#f1f1f1">$${sub.amount_billed?.toLocaleString()}</strong> for <strong style="color:#f1f1f1">#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</strong> has been <strong style="color:${color}">${status}</strong>.</p>
           ${!approved && rejectionReason ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${rejectionReason}</p></div>` : ''}
           ${!approved && !rejectionReason ? `<p style="color:#888;font-size:13px">Contact NV Construction if you have questions.</p>` : ''}
         `)
@@ -683,7 +683,7 @@ export default function Dashboard() {
     if (urlData.error) { alert('Upload error: ' + urlData.error); setUploadingPlanFor(null); return }
     // Upload directly to signed URL
     const uploadRes = await fetch(urlData.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!uploadRes.ok) { alert('Upload failed â€” please try again'); setUploadingPlanFor(null); return }
+    if (!uploadRes.ok) { alert('Upload failed — please try again'); setUploadingPlanFor(null); return }
     // Insert record
     const insertRes = await fetch('/api/bid-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'insert', bid_package_id: bidId, file_name: file.name, storage_path: path }) })
     const insertData = await insertRes.json()
@@ -732,13 +732,13 @@ export default function Dashboard() {
       const dueStr = pkg.due_date ? new Date(pkg.due_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : null
       const scopeTableHtml = pkgScopeItems.length > 0 ? `
         <div style="margin:20px 0">
-          <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#e8590c;margin:0 0 10px">Scope Items â€” Confirm Coverage in Your Bid</p>
+          <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#e8590c;margin:0 0 10px">Scope Items — Confirm Coverage in Your Bid</p>
           ${Object.entries(byTrade).map(([trade, tItems]) => `
             <p style="font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#888;margin:12px 0 4px;border-bottom:1px solid #222;padding-bottom:4px">${trade}</p>
             ${tItems.map((item, i) => `<p style="font-size:13px;color:#ccc;margin:4px 0;padding-left:12px">${i + 1}. ${item.description}</p>`).join('')}
           `).join('')}
         </div>` : ''
-      sendEmail(email, `Invitation to Bid â€” ${pkg.title}`,
+      sendEmail(email, `Invitation to Bid — ${pkg.title}`,
         emailWrap(`
           <p style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:#e8590c;margin:0 0 8px">Invitation to Bid</p>
           <h2 style="color:#f1f1f1;margin:0 0 6px;font-size:20px">${pkg.title}</h2>
@@ -758,7 +758,7 @@ export default function Dashboard() {
             <p style="color:#aaa;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">${pkg.insurance_req}</p>
           </div>` : ''}
           <p style="color:#888;font-size:13px;margin:20px 0 8px;line-height:1.6">Log in to the NV Construction sub portal to view plans and submit your bid. All questions and clarifications must be submitted through the portal.</p>
-          <a href="${process.env.NEXT_PUBLIC_SITE_URL}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:1px">Submit Bid in Portal â†’</a>
+          <a href="${process.env.NEXT_PUBLIC_SITE_URL}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:1px">Submit Bid in Portal →</a>
           <p style="color:#444;font-size:11px;margin-top:20px;line-height:1.7">This invitation is confidential and intended solely for invited bidders. NV Construction reserves the right to reject any or all bids.</p>
         `)
       )
@@ -775,7 +775,7 @@ export default function Dashboard() {
     setQuickInviteSending(bidId)
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
     await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
-    sendEmail(email, `You're invited to bid â€” ${pkg.title}`,
+    sendEmail(email, `You're invited to bid — ${pkg.title}`,
       emailWrap(`
         <h2 style="color:#f1f1f1;margin:0 0 1rem">Bid invitation</h2>
         <p style="color:#aaa">NV Construction has invited you to submit a bid for <strong style="color:#f1f1f1">${pkg.title}</strong>.</p>
@@ -800,7 +800,7 @@ export default function Dashboard() {
     await supabase.from('bid_packages').update({ status: 'awarded' }).eq('id', bidId)
     const pkg = bidPackages.find(p => p.id === bidId)
     if (submission.sub_email) {
-      sendEmail(submission.sub_email, `Your bid has been awarded â€” ${pkg?.title || 'Bid Package'}`,
+      sendEmail(submission.sub_email, `Your bid has been awarded — ${pkg?.title || 'Bid Package'}`,
         emailWrap(`
           <h2 style="color:#4ade80;margin:0 0 1rem">Congratulations!</h2>
           <p style="color:#aaa">Your bid of <strong style="color:#f1f1f1">$${Number(submission.amount).toLocaleString()}</strong> for <strong style="color:#f1f1f1">${pkg?.title || 'Bid Package'}</strong> has been awarded.</p>
@@ -1165,7 +1165,7 @@ export default function Dashboard() {
       await supabase.rpc('sync_job_assignments')
       await loadAll()
       setAssignTarget(prev => ({ ...prev, [sub.id]: '' }))
-      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned â€” sub can now bill this job.', ok: true } }))
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned — sub can now bill this job.', ok: true } }))
       setTimeout(() => setAssignMsg(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
     }
     setAssigningId(null)
@@ -1318,7 +1318,7 @@ export default function Dashboard() {
     if (json.error) {
       setFixProfileMsg({ ok: false, text: json.error })
     } else {
-      setFixProfileMsg({ ok: true, text: `Done â€” ${fixProfileForm.email} is now set as ${fixProfileForm.role.toUpperCase()}.` })
+      setFixProfileMsg({ ok: true, text: `Done — ${fixProfileForm.email} is now set as ${fixProfileForm.role.toUpperCase()}.` })
       setFixProfileForm({ email: '', role: 'super' })
       await loadTeamData()
     }
@@ -1374,7 +1374,7 @@ export default function Dashboard() {
     setSavingTeamEdit(false)
   }
 
-  // â”€â”€ Estimates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Estimates ───────────────────────────────────────────────
   async function loadEstimates() {
     const { data: { session } } = await supabase.auth.getSession()
     let q = supabase.from('estimates').select('*, estimate_line_items(*)').order('created_at', { ascending: false })
@@ -1590,7 +1590,7 @@ export default function Dashboard() {
     const contractNum = `SC-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const w = window.open('', '_blank')
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Subcontract â€” ${sub.company_name}</title>
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Subcontract — ${sub.company_name}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #111; font-size: 13px; }
@@ -1688,7 +1688,7 @@ export default function Dashboard() {
     ${coveredItems.length > 0 ? Object.entries(tradeGroups).map(([trade, tItems]) => `
       <div class="scope-group">
         ${trade !== 'General' ? `<div class="trade-label">${trade}</div>` : ''}
-        ${tItems.map(item => `<div class="scope-item"><span class="scope-check">âœ“</span>${item.description}</div>`).join('')}
+        ${tItems.map(item => `<div class="scope-item"><span class="scope-check">✓</span>${item.description}</div>`).join('')}
       </div>`).join('') : `<p style="color:#888;font-size:13px">${pkg.scope_of_work || 'See attached scope documents.'}</p>`}
   </div>
   <div class="section">
@@ -1738,7 +1738,7 @@ export default function Dashboard() {
 
     const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head>
-<title>ITB â€” ${pkg.title}</title>
+<title>ITB — ${pkg.title}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1827,7 +1827,7 @@ ${dueStr ? `
   <div class="project-cell">
     <div class="cell-label">Owner / Client</div>
     <div class="cell-value">${pkg.owner_name || 'NV Construction Client'}</div>
-    <div class="cell-sub">c/o NV Construction, LLC â€” General Contractor</div>
+    <div class="cell-sub">c/o NV Construction, LLC — General Contractor</div>
   </div>
 </div>
 
@@ -1836,7 +1836,7 @@ ${pkg.description ? `<div class="section-eyebrow">Project Overview</div><div cla
 ${pkg.scope_of_work ? `<div class="section-eyebrow">Scope of Work Narrative</div><div class="prose">${pkg.scope_of_work.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
 
 ${items.length > 0 ? `
-<div class="section-eyebrow" style="margin-top:24px">Scope Items â€” Bidders Shall Confirm Coverage</div>
+<div class="section-eyebrow" style="margin-top:24px">Scope Items — Bidders Shall Confirm Coverage</div>
 <p style="font-size:10px;color:#777;margin-bottom:10px;">For each item below, your bid shall explicitly state whether the scope is Included, Excluded, or provided as an Alternate.</p>
 <table class="scope-table">
 ${Object.entries(byTrade).map(([trade, tItems]) => `
@@ -1869,7 +1869,7 @@ ${pkg.bid_instructions ? `
 </div>
 
 <div class="footer">
-  <div>NV Construction, LLC &nbsp;Â·&nbsp; General Contractor &nbsp;Â·&nbsp; management@nvim.co</div>
+  <div>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; management@nvim.co</div>
   <div>ITB Issued ${genDate}</div>
 </div>
 
@@ -1904,7 +1904,7 @@ ${pkg.bid_instructions ? `
     const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
     w.document.write(`<!DOCTYPE html><html><head>
-<title>Proposal â€” ${estimate.project_name}</title>
+<title>Proposal — ${estimate.project_name}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -2014,7 +2014,7 @@ tbody td.right { text-align: right; color: #111; font-variant-numeric: tabular-n
       <div class="co-contact">
         management@nvim.co<br>
         nvim.co<br>
-        License #&nbsp;â€”
+        License #&nbsp;—
       </div>
     </div>
   </div>
@@ -2096,7 +2096,7 @@ ${estimate.notes ? `
     <div class="totals-amount">${fmt(total)}</div>
   </div>
 </div>
-<div class="table-note">All amounts in USD &nbsp;Â·&nbsp; Prices subject to revision upon scope changes &nbsp;Â·&nbsp; Valid 30 days from date of issue</div>
+<div class="table-note">All amounts in USD &nbsp;·&nbsp; Prices subject to revision upon scope changes &nbsp;·&nbsp; Valid 30 days from date of issue</div>
 
 <div class="acceptance">
   <div class="acceptance-title">Authorization &amp; Acceptance</div>
@@ -2124,8 +2124,8 @@ ${estimate.notes ? `
 
 <div class="doc-footer">
   <div class="doc-footer-left">
-    NV Construction, LLC &nbsp;Â·&nbsp; General Contractor<br>
-    management@nvim.co &nbsp;Â·&nbsp; nvim.co
+    NV Construction, LLC &nbsp;·&nbsp; General Contractor<br>
+    management@nvim.co &nbsp;·&nbsp; nvim.co
   </div>
   <div class="doc-footer-right">
     Proposal No. ${estimate.estimate_number}<br>
@@ -2144,7 +2144,7 @@ ${estimate.notes ? `
     setEstDocs(prev => ({ ...prev, [estimateId]: data || [] }))
   }
 
-  // â”€â”€ Business Development â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Business Development ─────────────────────────────────────────
   async function loadBD() {
     const [res, { data: bids }] = await Promise.all([
       fetch('/api/bd').then(r => r.json()),
@@ -2543,7 +2543,7 @@ ${estimate.notes ? `
         .nv-btn:active { transform: scale(0.96) !important; }
       `}</style>
 
-      {/* â”€â”€ SIDEBAR â”€â”€ */}
+      {/* ── SIDEBAR ── */}
       <nav style={s.sidebar} className="rx-sidebar">
         <div style={s.sidebarTop}>
           <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
@@ -2566,7 +2566,7 @@ ${estimate.notes ? `
         </div>
       </nav>
 
-      {/* â”€â”€ BOTTOM NAV (mobile only) â”€â”€ */}
+      {/* ── BOTTOM NAV (mobile only) ── */}
       <div className="rx-bottom-nav" style={{ display: 'none' }}>
         {[
           { tab: 'overview',  icon: <IconHome />,       label: 'Home' },
@@ -2585,7 +2585,7 @@ ${estimate.notes ? `
         ))}
       </div>
 
-      {/* â”€â”€ MAIN CONTENT â”€â”€ */}
+      {/* ── MAIN CONTENT ── */}
       <main style={s.content} className={`rx-content ${activeTab === 'estimator' ? 'nv-estimator' : ''}`}>
 
         {/* Overview section (stats shown above calendar) */}
@@ -2609,9 +2609,9 @@ ${estimate.notes ? `
                 {(expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) > 0 && (
                   <p style={s.ovSub}>
                     {expiredCOIs.length > 0 && `${expiredCOIs.length} expired`}
-                    {expiredCOIs.length > 0 && expiringSoonCOIs.length > 0 && ' Â· '}
+                    {expiredCOIs.length > 0 && expiringSoonCOIs.length > 0 && ' · '}
                     {expiringSoonCOIs.length > 0 && `${expiringSoonCOIs.length} expiring`}
-                    {(expiredCOIs.length > 0 || expiringSoonCOIs.length > 0) && missingCOIs.length > 0 && ' Â· '}
+                    {(expiredCOIs.length > 0 || expiringSoonCOIs.length > 0) && missingCOIs.length > 0 && ' · '}
                     {missingCOIs.length > 0 && `${missingCOIs.length} missing`}
                   </p>
                 )}
@@ -2622,7 +2622,7 @@ ${estimate.notes ? `
                 {unsignedWaivers.length > 0 && (() => {
                   const over30 = unsignedWaivers.filter(w => (Date.now() - new Date(w.submitted_at)) > 30*24*60*60*1000).length
                   const over60 = unsignedWaivers.filter(w => (Date.now() - new Date(w.submitted_at)) > 60*24*60*60*1000).length
-                  return <p style={s.ovSub}>{over60 > 0 ? `${over60} over 60d Â· ` : ''}{over30 > 0 ? `${over30} over 30d Â· ` : ''}click to review</p>
+                  return <p style={s.ovSub}>{over60 > 0 ? `${over60} over 60d · ` : ''}{over30 > 0 ? `${over30} over 30d · ` : ''}click to review</p>
                 })()}
               </div>
               <div className="nv-stat-card" style={s.ovCard}>
@@ -2634,7 +2634,7 @@ ${estimate.notes ? `
           </>
         )}
 
-            {/* â”€â”€ BILLING â”€â”€ */}
+            {/* ── BILLING ── */}
             {activeTab === 'billing' && (
               <>
                 <div style={s.filterRow}>
@@ -2643,11 +2643,11 @@ ${estimate.notes ? `
                     <option value="pending">Pending</option>
                     <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
-                    <option value="unsigned_waiver">âš  Unsigned waivers (oldest first)</option>
+                    <option value="unsigned_waiver">⚠ Unsigned waivers (oldest first)</option>
                   </select>
                   <select value={filterJob} onChange={e => { setFilterJob(e.target.value); setBillingPage(1) }} style={s.filterSelect}>
                     <option value="">All jobs</option>
-                    {jobs.map(j => <option key={j.id} value={j.job_number}>#{j.job_number} â€” {j.project_name}</option>)}
+                    {jobs.map(j => <option key={j.id} value={j.job_number}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
                 </div>
                 {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : pagedFiltered.map(sub => {
@@ -2659,8 +2659,8 @@ ${estimate.notes ? `
                       <div>
                         <p style={s.company}>{sub.company_name}</p>
                         <p style={s.meta}>
-                          {new Date(sub.submitted_at).toLocaleDateString()} Â· {sub.contact_name}
-                          {isUnsignedView && sub.jobs?.project_name && <> Â· <span style={{ color: '#888' }}>{sub.jobs.project_name}</span></>}
+                          {new Date(sub.submitted_at).toLocaleDateString()} · {sub.contact_name}
+                          {isUnsignedView && sub.jobs?.project_name && <> · <span style={{ color: '#888' }}>{sub.jobs.project_name}</span></>}
                         </p>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', color: '#888', fontSize: '14px' }}>#{sub.jobs?.job_number}</div>
@@ -2709,8 +2709,8 @@ ${estimate.notes ? `
                         ) : (
                           <>
                             <div style={s.detailGrid} className="rx-grid-2">
-                              <div><div style={s.detailLabel}>Contact</div><div style={s.detailValue}>{sub.contact_name} Â· {sub.contact_info}</div></div>
-                              <div><div style={s.detailLabel}>% complete</div><div style={s.detailValue}>{sub.pct_complete ?? 'â€”'}%</div></div>
+                              <div><div style={s.detailLabel}>Contact</div><div style={s.detailValue}>{sub.contact_name} · {sub.contact_info}</div></div>
+                              <div><div style={s.detailLabel}>% complete</div><div style={s.detailValue}>{sub.pct_complete ?? '—'}%</div></div>
                             </div>
                             <div style={{ marginBottom: '1rem' }}>
                               <div style={s.detailLabel}>Work description</div>
@@ -2718,7 +2718,7 @@ ${estimate.notes ? `
                             </div>
                             {sub.doc_url && (
                               <div style={{ marginBottom: '1rem' }}>
-                                <button onClick={() => openBillingDoc(sub.doc_url)} style={s.btnSm('gray')}>ðŸ“Ž View attachment</button>
+                                <button onClick={() => openBillingDoc(sub.doc_url)} style={s.btnSm('gray')}>📎 View attachment</button>
                               </div>
                             )}
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -2756,7 +2756,7 @@ ${estimate.notes ? `
                                 })
                               }} style={s.btnSm('orange')}>Edit</button>
                             </div>
-                            {sub.status !== 'pending' && <div style={{ ...s.meta, marginTop: '8px' }}>Reviewed {sub.reviewed_at ? new Date(sub.reviewed_at).toLocaleDateString() : 'â€”'}</div>}
+                            {sub.status !== 'pending' && <div style={{ ...s.meta, marginTop: '8px' }}>Reviewed {sub.reviewed_at ? new Date(sub.reviewed_at).toLocaleDateString() : '—'}</div>}
                           </>
                         )}
                       </div>
@@ -2773,14 +2773,14 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ DIRECTORY â”€â”€ */}
+            {/* ── DIRECTORY ── */}
             {activeTab === 'directory' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                   <div style={s.applyLink}>
                     <span style={s.applyLinkText}>Share with subs to apply:</span>
                     <span style={{ ...s.applyLinkUrl, marginLeft: '12px' }} onClick={() => navigator.clipboard.writeText(window.location.origin + '/apply')} title="Click to copy">
-                      {typeof window !== 'undefined' ? window.location.origin : ''}/apply â§‰
+                      {typeof window !== 'undefined' ? window.location.origin : ''}/apply ⧉
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -2814,7 +2814,7 @@ ${estimate.notes ? `
                         <div>
                           <label style={s.label}>Trade</label>
                           <select style={s.input} value={newSubManual.trade} onChange={e => setNewSubManual(f => ({ ...f, trade: e.target.value }))}>
-                            <option value="">â€” Select trade â€”</option>
+                            <option value="">— Select trade —</option>
                             {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
                         </div>
@@ -2841,7 +2841,7 @@ ${estimate.notes ? `
                           <label style={s.label}>Job</label>
                           <select style={s.input} value={inviteJobId} onChange={e => setInviteJobId(e.target.value)} required>
                             <option value="">Select a job...</option>
-                            {activeJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
+                            {activeJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                           </select>
                         </div>
                       </div>
@@ -2858,17 +2858,17 @@ ${estimate.notes ? `
                   <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {expiredCOIs.length > 0 && (
                       <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#ff6b6b' }}>
-                        ðŸš¨ <strong>{expiredCOIs.length} expired COI{expiredCOIs.length > 1 ? 's' : ''}:</strong> {expiredCOIs.map(s => s.company_name).join(', ')}
+                        🚨 <strong>{expiredCOIs.length} expired COI{expiredCOIs.length > 1 ? 's' : ''}:</strong> {expiredCOIs.map(s => s.company_name).join(', ')}
                       </div>
                     )}
                     {expiringSoonCOIs.length > 0 && (
                       <div style={s.coiWarning}>
-                        âš  <strong>{expiringSoonCOIs.length} expiring within 30 days:</strong> {expiringSoonCOIs.map(s => s.company_name).join(', ')}
+                        ⚠ <strong>{expiringSoonCOIs.length} expiring within 30 days:</strong> {expiringSoonCOIs.map(s => s.company_name).join(', ')}
                       </div>
                     )}
                     {missingCOIs.length > 0 && (
                       <div style={{ background: '#1a1a0a', border: '1px solid #3a3a0a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#facc15' }}>
-                        ðŸ“‹ <strong>{missingCOIs.length} missing COI{missingCOIs.length > 1 ? 's' : ''}:</strong> {missingCOIs.map(s => s.company_name).join(', ')}
+                        📋 <strong>{missingCOIs.length} missing COI{missingCOIs.length > 1 ? 's' : ''}:</strong> {missingCOIs.map(s => s.company_name).join(', ')}
                       </div>
                     )}
                   </div>
@@ -2891,14 +2891,14 @@ ${estimate.notes ? `
                 {duplicateNames.size > 0 && (
                   <div style={{ background: '#1a0f00', border: '1px solid #4a3000', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                     <div>
-                      <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>âš  {duplicateNames.size} duplicate company name{duplicateNames.size > 1 ? 's' : ''} detected</p>
+                      <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>⚠ {duplicateNames.size} duplicate company name{duplicateNames.size > 1 ? 's' : ''} detected</p>
                       <p style={{ margin: 0, fontSize: '12px', color: '#7a4a00' }}>Auto-merge combines all info into the best record and removes the extras.</p>
                     </div>
                     <button
                       style={{ flexShrink: 0, padding: '8px 16px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: mergingDuplicates ? 'not-allowed' : 'pointer', opacity: mergingDuplicates ? 0.6 : 1, whiteSpace: 'nowrap' }}
                       disabled={mergingDuplicates}
                       onClick={mergeAllDuplicates}>
-                      {mergingDuplicates ? 'Mergingâ€¦' : 'Auto-merge'}
+                      {mergingDuplicates ? 'Merging…' : 'Auto-merge'}
                     </button>
                   </div>
                 )}
@@ -2915,10 +2915,10 @@ ${estimate.notes ? `
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
                               <p style={{ ...s.company, margin: 0 }}>{sub.company_name}</p>
                               {isDuplicate && <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '4px', background: '#2a1500', color: '#e8590c', border: '1px solid #4a2800', fontWeight: '700', letterSpacing: '0.5px' }}>DUPLICATE</span>}
-                              {avgRating > 0 && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'â˜…'.repeat(avgRating)}{'â˜†'.repeat(5 - avgRating)}</span>}
+                              {avgRating > 0 && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(avgRating)}{'☆'.repeat(5 - avgRating)}</span>}
                               {ratings.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{ratings.length} rating{ratings.length > 1 ? 's' : ''}</span>}
                             </div>
-                            <p style={{ ...s.meta, margin: 0 }}>{sub.trade}{sub.trade ? ' Â· ' : ''}Added {new Date(sub.applied_at).toLocaleDateString()}</p>
+                            <p style={{ ...s.meta, margin: 0 }}>{sub.trade}{sub.trade ? ' · ' : ''}Added {new Date(sub.applied_at).toLocaleDateString()}</p>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
@@ -2934,7 +2934,7 @@ ${estimate.notes ? `
                     {expandedDir === sub.id && (
                       <div style={s.detail}>
 
-                        {/* â”€â”€ Portal Users â”€â”€ */}
+                        {/* ── Portal Users ── */}
                         {(() => {
                           const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
                           const subNameKey = sub.company_name?.toLowerCase().trim()
@@ -2959,8 +2959,8 @@ ${estimate.notes ? `
                                   <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Portal Access</p>
                                   <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#3a3a3a' }}>
                                     {members.length === 0
-                                      ? 'No users yet â€” add someone to get started'
-                                      : [activeCount > 0 && `${activeCount} active`, pendingCount > 0 && `${pendingCount} pending`].filter(Boolean).join(' Â· ')}
+                                      ? 'No users yet — add someone to get started'
+                                      : [activeCount > 0 && `${activeCount} active`, pendingCount > 0 && `${pendingCount} pending`].filter(Boolean).join(' · ')}
                                   </p>
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -2969,7 +2969,7 @@ ${estimate.notes ? `
                                       style={{ padding: '7px 14px', background: '#1a0a00', border: '1px solid #5a2200', borderRadius: '7px', color: '#f97316', fontSize: '12px', fontWeight: '600', cursor: repairingCompanyFor === sub.id ? 'not-allowed' : 'pointer', opacity: repairingCompanyFor === sub.id ? 0.6 : 1 }}
                                       onClick={() => repairCompanyLinks(sub.id, sub.company_name)}
                                       disabled={repairingCompanyFor === sub.id}>
-                                      {repairingCompanyFor === sub.id ? 'Fixingâ€¦' : 'âš  Fix Company Links'}
+                                      {repairingCompanyFor === sub.id ? 'Fixing…' : '⚠ Fix Company Links'}
                                     </button>
                                   )}
                                   <button
@@ -2979,7 +2979,7 @@ ${estimate.notes ? `
                                       setSubTeamInviteForm(prev => ({ ...prev, [sub.id]: { name: '', email: '' } }))
                                       setSubTeamInviteResult(prev => ({ ...prev, [sub.id]: null }))
                                     }}>
-                                    {isAddOpen ? 'âœ• Cancel' : '+ Add Member'}
+                                    {isAddOpen ? '✕ Cancel' : '+ Add Member'}
                                   </button>
                                 </div>
                               </div>
@@ -3043,7 +3043,7 @@ ${estimate.notes ? `
                                       </div>
                                       <div style={{ marginBottom: '14px' }}>
                                         <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: editingSubUser.company_id ? '#444' : '#c2410c', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                                          Company{!editingSubUser.company_id && ' âš  not linked â€” select to fix'}
+                                          Company{!editingSubUser.company_id && ' ⚠ not linked — select to fix'}
                                         </p>
                                         <select style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box', borderColor: editingSubUser.company_id ? '' : '#5a2a0a' }}
                                           value={editingSubUser.company_id || ''}
@@ -3051,13 +3051,13 @@ ${estimate.notes ? `
                                             const co = companiesData.find(c => c.id === e.target.value)
                                             setEditingSubUser(prev => ({ ...prev, company_id: e.target.value || null, company_name: co?.name || prev.company_name }))
                                           }}>
-                                          <option value="">â€” No company assigned â€”</option>
+                                          <option value="">— No company assigned —</option>
                                           {companiesData.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
                                         </select>
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px' }}>
                                         <button style={{ ...s.btnSm('orange'), opacity: isActioning ? 0.6 : 1 }} disabled={isActioning} onClick={saveSubUserEdit}>
-                                          {isActioning ? 'Savingâ€¦' : 'Save Changes'}
+                                          {isActioning ? 'Saving…' : 'Save Changes'}
                                         </button>
                                         <button style={s.btnSm('gray')} onClick={() => setEditingSubUser(null)}>Cancel</button>
                                       </div>
@@ -3096,13 +3096,13 @@ ${estimate.notes ? `
                                         </span>
                                       )}
                                       <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#181800', color: isRegistered ? '#4ade80' : '#d4a017', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a3000'}` }}>
-                                        {isRegistered ? 'â— Active' : 'â—‹ Pending'}
+                                        {isRegistered ? '● Active' : '○ Pending'}
                                       </span>
                                       {!isRegistered && (
                                         <button title="Resend invite email" disabled={isActioning}
                                           style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #1e1e1e', borderRadius: '6px', color: '#4a4a4a', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
                                           onClick={() => resendSubInvite(m.id, m.invite_email, company?.id, sub.company_name)}>
-                                          â†© Resend
+                                          ↩ Resend
                                         </button>
                                       )}
                                       <button title="Edit user" disabled={isActioning}
@@ -3113,7 +3113,7 @@ ${estimate.notes ? `
                                       <button title="Revoke portal access" disabled={isActioning}
                                         style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #1e1010', borderRadius: '6px', color: '#7a3030', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
                                         onClick={() => revokeSubUser(m.id, m.invite_email, sub.company_name)}>
-                                        {isActioning ? 'â€¦' : 'Revoke'}
+                                        {isActioning ? '…' : 'Revoke'}
                                       </button>
                                     </div>
                                   </div>
@@ -3154,9 +3154,9 @@ ${estimate.notes ? `
                                     <button style={{ padding: '9px 20px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer', opacity: isInviting || !invForm.email ? 0.5 : 1 }}
                                       disabled={isInviting || !invForm.email}
                                       onClick={() => inviteSubTeamMember(sub.id, sub.company_name)}>
-                                      {isInviting ? 'Sendingâ€¦' : 'Send Invite'}
+                                      {isInviting ? 'Sending…' : 'Send Invite'}
                                     </button>
-                                    {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80', fontWeight: '600' }}>âœ“ Invite sent</span>}
+                                    {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80', fontWeight: '600' }}>✓ Invite sent</span>}
                                     {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
                                   </div>
                                 </div>
@@ -3166,12 +3166,12 @@ ${estimate.notes ? `
                           )
                         })()}
 
-                        {/* â”€â”€ Document status â”€â”€ */}
+                        {/* ── Document status ── */}
                         <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                           <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Documents</p>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.w9_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.w9_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#4ade80' : '#ff6b6b' }}>{sub.w9_url ? 'âœ“' : 'âœ—'} W-9</span>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#4ade80' : '#ff6b6b' }}>{sub.w9_url ? '✓' : '✗'} W-9</span>
                             </div>
                             {sub.w9_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(sub.w9_url)}>View</button>}
                             {sub.w9_url && <button style={s.btnSm('gray')} onClick={() => downloadDoc(sub.w9_url, `W9-${sub.company_name}.pdf`)}>Download</button>}
@@ -3182,14 +3182,14 @@ ${estimate.notes ? `
                             </label>
                             {!sub.w9_url && sub.email && (
                               <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === `${sub.id}-w9` ? 0.6 : 1 }} disabled={!!requestingDoc} onClick={() => sendDocRequest(sub.id, 'w9')}>
-                                {docRequestSent[`${sub.id}-w9`] ? 'âœ“ Sent' : requestingDoc === `${sub.id}-w9` ? '...' : 'Email Reminder'}
+                                {docRequestSent[`${sub.id}-w9`] ? '✓ Sent' : requestingDoc === `${sub.id}-w9` ? '...' : 'Email Reminder'}
                               </button>
                             )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.coi_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
                               <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#4ade80' : '#ff6b6b' }}>
-                                {sub.coi_url ? 'âœ“' : 'âœ—'} COI{sub.coi_expiration ? ` Â· ${new Date(sub.coi_expiration).toLocaleDateString()}` : ''}
+                                {sub.coi_url ? '✓' : '✗'} COI{sub.coi_expiration ? ` · ${new Date(sub.coi_expiration).toLocaleDateString()}` : ''}
                               </span>
                             </div>
                             {sub.coi_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(sub.coi_url)}>View</button>}
@@ -3201,21 +3201,21 @@ ${estimate.notes ? `
                             </label>
                             {(!sub.coi_url || new Date(sub.coi_expiration) < new Date()) && sub.email && (
                               <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === `${sub.id}-coi` ? 0.6 : 1 }} disabled={!!requestingDoc} onClick={() => sendDocRequest(sub.id, 'coi')}>
-                                {docRequestSent[`${sub.id}-coi`] ? 'âœ“ Sent' : requestingDoc === `${sub.id}-coi` ? '...' : 'Email Reminder'}
+                                {docRequestSent[`${sub.id}-coi`] ? '✓ Sent' : requestingDoc === `${sub.id}-coi` ? '...' : 'Email Reminder'}
                               </button>
                             )}
                           </div>
                         </div>
 
-                        {/* â”€â”€ View / Edit toggle â”€â”€ */}
+                        {/* ── View / Edit toggle ── */}
                         {editingSubId !== sub.id ? (
                           <>
                             <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
-                              <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{sub.phone || 'â€”'}</div></div>
-                              <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{sub.address || 'â€”'}</div></div>
-                              <div><div style={s.detailLabel}>Trade</div><div style={s.detailValue}>{sub.trade || 'â€”'}</div></div>
-                              <div><div style={s.detailLabel}>COI expiration</div><div style={s.detailValue}>{sub.coi_expiration ? new Date(sub.coi_expiration).toLocaleDateString() : 'â€”'}</div></div>
-                              <div><div style={s.detailLabel}>License</div><div style={s.detailValue}>{sub.license_number || 'â€”'}</div></div>
+                              <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{sub.phone || '—'}</div></div>
+                              <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{sub.address || '—'}</div></div>
+                              <div><div style={s.detailLabel}>Trade</div><div style={s.detailValue}>{sub.trade || '—'}</div></div>
+                              <div><div style={s.detailLabel}>COI expiration</div><div style={s.detailValue}>{sub.coi_expiration ? new Date(sub.coi_expiration).toLocaleDateString() : '—'}</div></div>
+                              <div><div style={s.detailLabel}>License</div><div style={s.detailValue}>{sub.license_number || '—'}</div></div>
                             </div>
                             {sub.scope_description && (
                               <div style={{ marginBottom: '1rem' }}>
@@ -3250,7 +3250,7 @@ ${estimate.notes ? `
                               <div>
                                 <label style={s.label}>Trade</label>
                                 <select style={s.input} value={editSubForm.trade} onChange={e => setEditSubForm(f => ({ ...f, trade: e.target.value }))}>
-                                  <option value="">â€” Select trade â€”</option>
+                                  <option value="">— Select trade —</option>
                                   {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                               </div>
@@ -3282,7 +3282,7 @@ ${estimate.notes ? `
                                 onChange={e => setAssignTarget(prev => ({ ...prev, [sub.id]: e.target.value }))}
                               >
                                 <option value="">Select a job...</option>
-                                {activeJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
+                                {activeJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                               </select>
                               <button
                                 style={{ ...s.btnSm('orange'), opacity: assigningId === sub.id ? 0.6 : 1 }}
@@ -3303,12 +3303,12 @@ ${estimate.notes ? `
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                   {assignments.filter(a => a.sub_email === sub.email).map(a => (
                                     <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '3px 10px' }}>
-                                      #{a.jobs?.job_number} â€” {a.jobs?.project_name}
+                                      #{a.jobs?.job_number} — {a.jobs?.project_name}
                                       <button
                                         title="Remove from job"
                                         onClick={() => removeJobAssignment(a.id)}
                                         style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: '0 0 0 2px', display: 'flex', alignItems: 'center' }}>
-                                        Ã—
+                                        ×
                                       </button>
                                     </span>
                                   ))}
@@ -3368,7 +3368,7 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ MERGE ACCOUNTS â”€â”€ */}
+            {/* ── MERGE ACCOUNTS ── */}
             {activeTab === 'directory' && (() => {
               const doMerge = async () => {
                 if (!mergePersonA || !mergePersonB) return
@@ -3382,7 +3382,7 @@ ${estimate.notes ? `
                 const data = await res.json()
                 setMergingCompanies(false)
                 if (data.error) { setMergeResult({ error: data.error }); return }
-                setMergeResult({ ok: true, msg: `Done â€” ${data.profiles_moved} account${data.profiles_moved !== 1 ? 's' : ''} moved to "${data.kept}"` })
+                setMergeResult({ ok: true, msg: `Done — ${data.profiles_moved} account${data.profiles_moved !== 1 ? 's' : ''} moved to "${data.kept}"` })
                 setMergePersonA(null); setMergePersonB(null); setMergeSearchA(''); setMergeSearchB(''); setMergeKeep('a')
                 refreshSubProfiles()
               }
@@ -3403,16 +3403,16 @@ ${estimate.notes ? `
                           <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <div style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{person.full_name || person.invite_email}</div>
-                              <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{person.company_name} Â· {person.invite_email}</div>
+                              <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{person.company_name} · {person.invite_email}</div>
                             </div>
-                            <button onClick={() => { setPerson(null); setSearch('') }} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '18px' }}>Ã—</button>
+                            <button onClick={() => { setPerson(null); setSearch('') }} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '18px' }}>×</button>
                           </div>
                         ) : (
                           <div style={{ position: 'relative' }}>
                             <input
                               value={search}
                               onChange={e => setSearch(e.target.value)}
-                              placeholder="Search by name, email, or companyâ€¦"
+                              placeholder="Search by name, email, or company…"
                               style={s.input}
                             />
                             {filtered.length > 0 && (
@@ -3423,7 +3423,7 @@ ${estimate.notes ? `
                                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                   >
                                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{p.full_name || '(no name)'}</div>
-                                    <div style={{ fontSize: '11px', color: '#555' }}>{p.company_name} Â· {p.invite_email}</div>
+                                    <div style={{ fontSize: '11px', color: '#555' }}>{p.company_name} · {p.invite_email}</div>
                                   </div>
                                 ))}
                               </div>
@@ -3438,8 +3438,8 @@ ${estimate.notes ? `
                     <div style={{ marginTop: '1.5rem', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem' }}>
                       <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Which company name to keep?</p>
                       {[
-                        { val: 'a', name: mergePersonA.company_name, sub: `Keep this â€” move ${mergePersonB.company_name} into it` },
-                        { val: 'b', name: mergePersonB.company_name, sub: `Keep this â€” move ${mergePersonA.company_name} into it` },
+                        { val: 'a', name: mergePersonA.company_name, sub: `Keep this — move ${mergePersonB.company_name} into it` },
+                        { val: 'b', name: mergePersonB.company_name, sub: `Keep this — move ${mergePersonA.company_name} into it` },
                       ].map(opt => (
                         <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '7px', background: mergeKeep === opt.val ? '#1a1a1a' : 'transparent', cursor: 'pointer', marginBottom: '4px' }}>
                           <input type="radio" name="mergeKeep" value={opt.val} checked={mergeKeep === opt.val} onChange={() => setMergeKeep(opt.val)} style={{ accentColor: '#e8590c' }} />
@@ -3450,7 +3450,7 @@ ${estimate.notes ? `
                         </label>
                       ))}
                       <button onClick={doMerge} disabled={mergingCompanies} style={{ ...s.btn, marginTop: '1rem' }}>
-                        {mergingCompanies ? 'Mergingâ€¦' : 'Merge Accounts'}
+                        {mergingCompanies ? 'Merging…' : 'Merge Accounts'}
                       </button>
                     </div>
                   )}
@@ -3468,7 +3468,7 @@ ${estimate.notes ? `
               )
             })()}
 
-            {/* â”€â”€ CALENDAR â”€â”€ */}
+            {/* ── CALENDAR ── */}
             {(activeTab === 'calendar' || activeTab === 'overview') && (() => {
               const { year, month } = calMonth
               const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -3534,9 +3534,9 @@ ${estimate.notes ? `
               return (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-                    <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>â€¹ Prev</button>
+                    <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹ Prev</button>
                     <span style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>{monthNames[month]} {year}</span>
-                    <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>Next â€º</button>
+                    <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>Next ›</button>
                   </div>
                   <div style={{ display: 'flex', gap: '16px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#1a3a5a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Sub billing due</span></div>
@@ -3579,13 +3579,13 @@ ${estimate.notes ? `
               )
             })()}
 
-            {/* â”€â”€ JOBS â”€â”€ */}
+            {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedJobs && !showStarredJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredJobs ? '#1a1500' : '#0a0a0a', color: showStarredJobs ? '#facc15' : '#555' }}>â˜… Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
+                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredJobs ? '#1a1500' : '#0a0a0a', color: showStarredJobs ? '#facc15' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
                     <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
@@ -3624,7 +3624,7 @@ ${estimate.notes ? `
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>PM contact (for sub emails)</label>
                         <select style={s.input} value={newJob.pm_email} onChange={e => setNewJob(j => ({ ...j, pm_email: e.target.value }))}>
-                          <option value="">â€” Select PM â€”</option>
+                          <option value="">— Select PM —</option>
                           {teamMembers.filter(m => m.role === 'pm' || m.role === 'apm').map(m => (
                             <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
                           ))}
@@ -3696,7 +3696,7 @@ ${estimate.notes ? `
                     if (showStarredJobs) return starredJobIds.has(j.id)
                     return showCompletedJobs ? j.status === 'complete' : j.status !== 'complete'
                   })
-                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showStarredJobs ? 'No starred commercial jobs. Click â˜† on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
+                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
                   return visibleJobs.map(j => {
                     const billed = billedByJob[j.id] || 0
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
@@ -3705,12 +3705,12 @@ ${estimate.notes ? `
                     const isStarred = starredJobIds.has(j.id)
                     return (
                       <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this job'}>{isStarred ? 'â˜…' : 'â˜†'}</button>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this job'}>{isStarred ? '★' : '☆'}</button>
                         <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                              <p style={s.company}>#{j.job_number} â€” {j.project_name}</p>
-                              <p style={s.meta}>{j.location}{contract > 0 ? ' Â· ' + fmtMoney(contract) + ' contract' : ''}{j.start_date ? ' Â· ' + fmtDate(j.start_date) : ''}</p>
+                              <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                              <p style={s.meta}>{j.location}{contract > 0 ? ' · ' + fmtMoney(contract) + ' contract' : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               {contract > 0 && (
@@ -3721,7 +3721,7 @@ ${estimate.notes ? `
                               )}
                               {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
                               <span style={s.jobBadge(j.status)}>{j.status}</span>
-                              <span style={{ color: '#555', fontSize: '18px' }}>â€º</span>
+                              <span style={{ color: '#555', fontSize: '18px' }}>›</span>
                             </div>
                           </div>
                           {contract > 0 && (
@@ -3737,13 +3737,13 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ RESIDENTIAL JOBS â”€â”€ */}
+            {/* ── RESIDENTIAL JOBS ── */}
             {activeTab === 'residential' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredResJobs ? '#1a1500' : '#0a0a0a', color: showStarredResJobs ? '#facc15' : '#555' }}>â˜… Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredResJobs ? '#1a1500' : '#0a0a0a', color: showStarredResJobs ? '#facc15' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
                     <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedResJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedResJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
@@ -3774,7 +3774,7 @@ ${estimate.notes ? `
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>PM contact (for sub emails)</label>
                         <select style={s.input} value={newResJob.pm_email} onChange={e => setNewResJob(j => ({ ...j, pm_email: e.target.value }))}>
-                          <option value="">â€” Select PM â€”</option>
+                          <option value="">— Select PM —</option>
                           {teamMembers.filter(m => m.role === 'pm' || m.role === 'apm').map(m => (
                             <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
                           ))}
@@ -3819,23 +3819,23 @@ ${estimate.notes ? `
                     if (showStarredResJobs) return starredJobIds.has(j.id)
                     return showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete'
                   })
-                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{showStarredResJobs ? 'No starred residential projects. Click â˜† on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
+                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
                   return resJobs.map(j => {
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
                     const isStarred = starredJobIds.has(j.id)
                     return (
                       <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #1a1a1a', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this project'}>{isStarred ? 'â˜…' : 'â˜†'}</button>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this project'}>{isStarred ? '★' : '☆'}</button>
                         <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                              <p style={s.company}>#{j.job_number} â€” {j.project_name}</p>
-                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' Â· ' : ''}{j.location || ''}{contract > 0 ? ' Â· $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' Â· ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                              <p style={s.company}>#{j.job_number} — {j.project_name}</p>
+                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', color: '#4ade80', border: '1px solid #1a4a1a', letterSpacing: '0.5px' }}>RESIDENTIAL</span>
                               <span style={s.jobBadge(j.status)}>{j.status}</span>
-                              <span style={{ color: '#555', fontSize: '18px' }}>â€º</span>
+                              <span style={{ color: '#555', fontSize: '18px' }}>›</span>
                             </div>
                           </div>
                         </div>
@@ -3848,11 +3848,11 @@ ${estimate.notes ? `
 
             {activeTab === 'estimator' && <EstimatingHeader active={estimatorInnerTab} onChange={tab => { if (tab === estimatorInnerTab || leaveScope()) setEstimatorInnerTab(tab) }} estimates={estimates} packages={bidPackages} />}
 
-            {/* â”€â”€ BID INVITES (inside Estimator) â”€â”€ */}
+            {/* ── BID INVITES (inside Estimator) ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'bids' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} Â· {bidPackages.filter(b => b.status === 'open').length} open{bidPackages.filter(b => b.status === 'won').length > 0 ? ` Â· ${bidPackages.filter(b => b.status === 'won').length} won` : ''}{bidPackages.filter(b => b.status === 'lost').length > 0 ? ` Â· ${bidPackages.filter(b => b.status === 'lost').length} lost` : ''}</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open{bidPackages.filter(b => b.status === 'won').length > 0 ? ` · ${bidPackages.filter(b => b.status === 'won').length} won` : ''}{bidPackages.filter(b => b.status === 'lost').length > 0 ? ` · ${bidPackages.filter(b => b.status === 'lost').length} lost` : ''}</p>
                   {profile?.role === 'pm' && <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>{showCreateBid ? 'Cancel' : '+ New bid package'}</button>}
                 </div>
 
@@ -3867,8 +3867,8 @@ ${estimate.notes ? `
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>Link to job (optional)</label>
                         <select style={s.input} value={bidForm.job_id} onChange={e => setBidForm(f => ({ ...f, job_id: e.target.value }))}>
-                          <option value="">â€” No job linked â€”</option>
-                          {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
+                          <option value="">— No job linked —</option>
+                          {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                         </select>
                       </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
@@ -3932,7 +3932,7 @@ ${estimate.notes ? `
 
                       {isExp && (
                         <div className="est-package-workspace">
-                          <BidWorkspaceNav step={bidWorkspaceStep} pkg={pkg} plans={plans} items={scopeItems[pkg.id] || []} submissions={submissions} loading={bidWorkspaceLoading[pkg.id]} error={bidWorkspaceErrors[pkg.id]} onRetry={() => { loadBidDetail(pkg.id); loadScopeItems(pkg.id) }} onBack={() => { if (!leaveScope()) return; setExpandedBid(null); setShowCreateBid(false) }} onChange={step => { setBidWorkspaceStep(step); if (step === 'compare') { loadLevelingEntries(pkg.id) } }} />
+                          <BidWorkspaceNav step={bidWorkspaceStep} pkg={pkg} plans={plans} items={scopeItems[pkg.id] || []} submissions={submissions} loading={bidWorkspaceLoading[pkg.id]} error={bidWorkspaceErrors[pkg.id]} onRetry={() => { loadBidDetail(pkg.id); loadScopeItems(pkg.id) }} onBack={() => { if (!leaveScope()) return; setExpandedBid(null); setShowCreateBid(false) }} onChange={step => { if (step !== bidWorkspaceStep && !leaveScope()) return; setBidWorkspaceStep(step); if (step === 'compare') { loadLevelingEntries(pkg.id) } }} />
                           <div className="est-step-panel" hidden={bidWorkspaceStep !== 'proposal'}>
                           {pkg.description && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{pkg.description}</p>}
                           {pkg.scope_of_work && (
@@ -3943,9 +3943,9 @@ ${estimate.notes ? `
                           )}
 
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <button style={s.btnSm('orange')} onClick={() => { loadScopeItems(pkg.id); setTimeout(() => generateITBDocument(pkg), 300) }}>ðŸ“„ ITB Document</button>
+                            <button style={s.btnSm('orange')} onClick={() => { loadScopeItems(pkg.id); setTimeout(() => generateITBDocument(pkg), 300) }}>📄 ITB Document</button>
                             {pkg.job_id
-                              ? <button style={s.btnSm('green')} onClick={() => router.push(`/jobdetail?id=${pkg.job_id}`)}>ðŸ— View Job â†’</button>
+                              ? <button style={s.btnSm('green')} onClick={() => router.push(`/jobdetail?id=${pkg.job_id}`)}>🏗 View Job →</button>
                               : pkg.status === 'awarded' && (
                                 <button style={s.btnSm('green')} onClick={() => {
                                   const det = bidDetails[pkg.id] || {}
@@ -3953,19 +3953,19 @@ ${estimate.notes ? `
                                   setShowCreateJobFor(showCreateJobFor === pkg.id ? null : pkg.id)
                                   setCreateJobFromBidForm({ job_number: '', start_date: '', contract_value: awardedSub ? String(awardedSub.amount) : '' })
                                   if (showCreateJobFor !== pkg.id) { loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
-                                }}>ðŸ— Create Job</button>
+                                }}>🏗 Create Job</button>
                               )
                             }
                             {pkg.status === 'awarded' && (scopeItems[pkg.id] || []).length > 0 && (
                               <button style={s.btnSm(showScopeMatrix === pkg.id ? 'orange' : 'gray')} onClick={() => {
                                 setShowScopeMatrix(showScopeMatrix === pkg.id ? null : pkg.id)
                                 if (showScopeMatrix !== pkg.id) { loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
-                              }}>ðŸ“‹ Coverage Matrix</button>
+                              }}>📋 Coverage Matrix</button>
                             )}
                             {profile?.role === 'pm' && <>
                               {pkg.status === 'open' && <>
-                                <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>âœ“ Won</button>
-                                <button style={s.btnSm('red')} onClick={() => setBidStatus(pkg.id, 'lost')}>âœ— Lost</button>
+                                <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>✓ Won</button>
+                                <button style={s.btnSm('red')} onClick={() => setBidStatus(pkg.id, 'lost')}>✗ Lost</button>
                               </>}
                               {(pkg.status === 'won' || pkg.status === 'lost' || pkg.status === 'closed') && <button style={s.btnSm('orange')} onClick={() => setBidStatus(pkg.id, 'open')}>Re-open</button>}
                               {editingBidId === pkg.id
@@ -3982,13 +3982,13 @@ ${estimate.notes ? `
                           {/* Create Job from Bid form */}
                           {showCreateJobFor === pkg.id && (
                             <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1rem' }}>
-                              <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 1rem' }}>ðŸ— Create job from bid â€” {pkg.title}</p>
+                              <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 1rem' }}>🏗 Create job from bid — {pkg.title}</p>
                               {(() => {
                                 const det = bidDetails[pkg.id] || {}
                                 const awardedSub = (det.submissions || []).find(s => s.status === 'awarded')
                                 return (
                                   <>
-                                    {awardedSub && <p style={{ fontSize: '12px', color: '#888', margin: '0 0 1rem' }}>Awarded to: <strong style={{ color: '#4ade80' }}>{awardedSub.company_name}</strong> â€” a subcontract will be auto-created for their scope.</p>}
+                                    {awardedSub && <p style={{ fontSize: '12px', color: '#888', margin: '0 0 1rem' }}>Awarded to: <strong style={{ color: '#4ade80' }}>{awardedSub.company_name}</strong> — a subcontract will be auto-created for their scope.</p>}
                                     <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                                       <div>
                                         <label style={s.label}>Job number *</label>
@@ -4028,7 +4028,7 @@ ${estimate.notes ? `
                               <div style={{ marginBottom: '1.5rem', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
                                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Superintendent Scope Matrix</span>
-                                  <span style={{ fontSize: '11px', color: '#444' }}>{subs.length} sub{subs.length !== 1 ? 's' : ''} Â· {items.length} scope items</span>
+                                  <span style={{ fontSize: '11px', color: '#444' }}>{subs.length} sub{subs.length !== 1 ? 's' : ''} · {items.length} scope items</span>
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '500px' }}>
@@ -4057,7 +4057,7 @@ ${estimate.notes ? `
                                               return (
                                                 <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,107,107,0.06)' : 'transparent' }}>
                                                   <td style={{ padding: '9px 12px', color: isGap ? '#ff6b6b' : '#ccc' }}>
-                                                    {isGap && <span style={{ color: '#ff6b6b', fontWeight: '700', marginRight: '4px' }}>âš </span>}
+                                                    {isGap && <span style={{ color: '#ff6b6b', fontWeight: '700', marginRight: '4px' }}>⚠</span>}
                                                     {item.description}
                                                   </td>
                                                   {subs.map(sub => {
@@ -4066,10 +4066,10 @@ ${estimate.notes ? `
                                                     return (
                                                       <td key={sub.id} style={{ padding: '9px 12px', textAlign: 'center' }}>
                                                         {included === null
-                                                          ? <span style={{ color: '#333', fontSize: '11px' }}>â€”</span>
+                                                          ? <span style={{ color: '#333', fontSize: '11px' }}>—</span>
                                                           : included
-                                                            ? <span style={{ color: '#4ade80', fontWeight: '700', fontSize: '13px' }}>âœ“</span>
-                                                            : <span style={{ color: '#ff6b6b', fontWeight: '700', fontSize: '13px' }}>âœ—</span>
+                                                            ? <span style={{ color: '#4ade80', fontWeight: '700', fontSize: '13px' }}>✓</span>
+                                                            : <span style={{ color: '#ff6b6b', fontWeight: '700', fontSize: '13px' }}>✗</span>
                                                         }
                                                         {entry?.amount > 0 && <div style={{ fontSize: '10px', color: '#555', marginTop: '2px' }}>${Number(entry.amount).toLocaleString()}</div>}
                                                       </td>
@@ -4096,7 +4096,7 @@ ${estimate.notes ? `
                                 </div>
                                 {items.some(item => { const aEntry = awardedSub && entries.find(e => e.bid_scope_item_id === item.id && e.bid_submission_id === awardedSub.id); return aEntry?.included === false }) && (
                                   <div style={{ padding: '10px 14px', background: '#1a0a0a', borderTop: '1px solid #2a1a1a', fontSize: '12px', color: '#ff6b6b' }}>
-                                    âš  Gap detected â€” awarded sub excluded one or more scope items. Confirm coverage with another subcontractor.
+                                    ⚠ Gap detected — awarded sub excluded one or more scope items. Confirm coverage with another subcontractor.
                                   </div>
                                 )}
                               </div>
@@ -4114,7 +4114,7 @@ ${estimate.notes ? `
                                     const hasAccess = (pkg.allowed_users || []).includes(apm.id)
                                     return (
                                       <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#4ade80' : '#333'}`, background: hasAccess ? '#0a2a0a' : '#111', color: hasAccess ? '#4ade80' : '#555', transition: 'all 0.15s' }} onClick={() => toggleBidAccess(pkg.id, apm.id)}>
-                                        {hasAccess ? 'âœ“ ' : ''}{apm.full_name || apm.email}
+                                        {hasAccess ? '✓ ' : ''}{apm.full_name || apm.email}
                                       </button>
                                     )
                                   })}
@@ -4140,7 +4140,7 @@ ${estimate.notes ? `
                             </div>
                             {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No plans uploaded yet.</p> : plans.map(plan => (
                               <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
-                                <span style={{ fontSize: '13px', color: '#ccc' }}>ðŸ“„ {plan.file_name}</span>
+                                <span style={{ fontSize: '13px', color: '#ccc' }}>📄 {plan.file_name}</span>
                                 <div style={{ display: 'flex', gap: '6px' }}>
                                   <button style={s.btnSm('gray')} onClick={() => openPlan(plan.storage_path)}>Open</button>
                                   <button style={s.btnSm('red')} onClick={() => deletePlan(plan, pkg.id)}>Delete</button>
@@ -4194,7 +4194,7 @@ ${estimate.notes ? `
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                                 <input
                                   type="email"
-                                  placeholder="Invite by email â€” they'll be sent a link to register"
+                                  placeholder="Invite by email — they'll be sent a link to register"
                                   style={{ ...s.input, flex: 1, minWidth: '220px', fontSize: '13px', padding: '8px 12px' }}
                                   value={quickInviteEmail[pkg.id] || ''}
                                   onChange={e => setQuickInviteEmail(prev => ({ ...prev, [pkg.id]: e.target.value }))}
@@ -4291,7 +4291,7 @@ ${estimate.notes ? `
                                         const isAwarded = sub.status === 'awarded'
                                         return (
                                           <tr key={sub.id} style={{ borderBottom: '1px solid #111', background: isLow ? 'rgba(74,222,128,0.04)' : isAwarded ? 'rgba(74,222,128,0.07)' : 'transparent' }}>
-                                            <td style={{ padding: '10px 12px', color: isLow ? '#4ade80' : '#666', fontWeight: '700', fontSize: '12px' }}>#{rank + 1}{isLow && ' â˜…'}</td>
+                                            <td style={{ padding: '10px 12px', color: isLow ? '#4ade80' : '#666', fontWeight: '700', fontSize: '12px' }}>#{rank + 1}{isLow && ' ★'}</td>
                                             <td style={{ padding: '10px 12px' }}>
                                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <span style={{ color: '#f1f1f1', fontWeight: '600' }}>{sub.company_name}</span>
@@ -4301,13 +4301,13 @@ ${estimate.notes ? `
                                             </td>
                                             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: isLow ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</td>
                                             <td style={{ padding: '10px 12px', textAlign: 'right', color: isLow ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600' }}>
-                                              {isLow ? 'â€”' : `+$${diff.toLocaleString()}`}
+                                              {isLow ? '—' : `+$${diff.toLocaleString()}`}
                                             </td>
-                                            <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px', maxWidth: '180px' }}>{sub.notes || 'â€”'}</td>
+                                            <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px', maxWidth: '180px' }}>{sub.notes || '—'}</td>
                                             <td style={{ padding: '10px 12px' }}>
                                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                                {sub.doc_url && <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>ðŸ“Ž</button>}
-                                                {sub.status === 'awarded' && <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>ðŸ“„</button>}
+                                                {sub.doc_url && <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎</button>}
+                                                {sub.status === 'awarded' && <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>📄</button>}
                                                 {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                                   <>
                                                     <button style={s.btnSm('green')} onClick={() => awardBid(sub, pkg.id)}>Award</button>
@@ -4337,10 +4337,10 @@ ${estimate.notes ? `
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                   <span style={{ fontSize: '20px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</span>
                                   {sub.doc_url && (
-                                    <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>ðŸ“Ž Estimate</button>
+                                    <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎 Estimate</button>
                                   )}
                                   {sub.status === 'awarded' && (
-                                    <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>ðŸ“„ Subcontract</button>
+                                    <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>📄 Subcontract</button>
                                   )}
                                   {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -4355,7 +4355,7 @@ ${estimate.notes ? `
 
                           </div>
 
-                          {/* â”€â”€ SCOPE BUILDER / BID LEVELING â”€â”€ */}
+                          {/* ── SCOPE BUILDER / BID LEVELING ── */}
                           <div className={'est-step-panel'} hidden={bidWorkspaceStep !== 'scope' && bidWorkspaceStep !== 'compare'}>
                           <div>
                             <div hidden={bidWorkspaceStep !== 'scope'}>
@@ -4393,8 +4393,8 @@ ${estimate.notes ? `
                                   { trade: 'Doors & Hardware', description: 'Doors, frames & hardware' },
                                   { trade: 'Glass & Glazing', description: 'Storefront & glazing' },
                                   { trade: 'Drywall & Insulation', description: 'Drywall, insulation & ACT ceiling' },
-                                  { trade: 'Tile', description: 'Tile â€” kitchen & restrooms' },
-                                  { trade: 'Flooring', description: 'Flooring â€” dining & entry' },
+                                  { trade: 'Tile', description: 'Tile — kitchen & restrooms' },
+                                  { trade: 'Flooring', description: 'Flooring — dining & entry' },
                                   { trade: 'Painting', description: 'Interior & exterior painting' },
                                   { trade: 'Specialties', description: 'Restroom accessories' },
                                   { trade: 'Mechanical/HVAC', description: 'HVAC system' },
@@ -4431,7 +4431,7 @@ ${estimate.notes ? `
                                   { trade: 'Structural Steel', description: 'Structural steel & erection' },
                                   { trade: 'Rough Carpentry', description: 'Framing' },
                                   { trade: 'Roofing', description: 'Roofing system' },
-                                  { trade: 'Exterior Envelope', description: 'Exterior walls & faÃ§ade' },
+                                  { trade: 'Exterior Envelope', description: 'Exterior walls & façade' },
                                   { trade: 'Doors & Hardware', description: 'Storefront doors' },
                                   { trade: 'Glass & Glazing', description: 'Storefront glazing' },
                                   { trade: 'Mechanical/HVAC', description: 'HVAC rough-in to shell' },
@@ -4445,7 +4445,7 @@ ${estimate.notes ? `
                                   { trade: 'Drywall & Insulation', description: 'Drywall, lead-lined walls & ceiling' },
                                   { trade: 'Doors & Hardware', description: 'Doors, frames & hardware' },
                                   { trade: 'Glass & Glazing', description: 'Interior glass' },
-                                  { trade: 'Tile', description: 'Tile â€” exam rooms & restrooms' },
+                                  { trade: 'Tile', description: 'Tile — exam rooms & restrooms' },
                                   { trade: 'Flooring', description: 'Sheet vinyl & carpet' },
                                   { trade: 'Painting', description: 'Painting' },
                                   { trade: 'Specialties', description: 'Casework & millwork' },
@@ -4479,7 +4479,7 @@ ${estimate.notes ? `
                                   <div>
                                     <label style={s.label}>Trade / Division</label>
                                     <select style={s.input} value={newScopeItemForm.trade} onChange={e => setNewScopeItemForm(f => ({ ...f, trade: e.target.value }))}>
-                                      <option value="">â€” Trade â€”</option>
+                                      <option value="">— Trade —</option>
                                       {['Site Work','Concrete','Masonry','Structural Steel','Rough Carpentry','Exterior Envelope','Roofing','Doors & Hardware','Glass & Glazing','Drywall & Insulation','Flooring','Tile','Painting','Specialties','Equipment','Mechanical/HVAC','Plumbing','Electrical','Fire Protection','General Conditions'].map(t => (
                                         <option key={t} value={t}>{t}</option>
                                       ))}
@@ -4529,7 +4529,7 @@ ${estimate.notes ? `
                               const colW = 120
                               return (
                                 <div style={{ marginTop: '8px' }}>
-                                  {gapItems.length > 0 && <div style={{ background: '#2a0a00', border: '1px solid #5a1a00', borderRadius: '6px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', color: '#ff6b6b' }}>âš  {gapItems.length} scope item{gapItems.length !== 1 ? 's' : ''} excluded by all subs â€” potential gap in coverage</div>}
+                                  {gapItems.length > 0 && <div style={{ background: '#2a0a00', border: '1px solid #5a1a00', borderRadius: '6px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', color: '#ff6b6b' }}>⚠ {gapItems.length} scope item{gapItems.length !== 1 ? 's' : ''} excluded by all subs — potential gap in coverage</div>}
                                   <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${300 + subs.length * colW}px` }}>
                                       <thead>
@@ -4555,11 +4555,11 @@ ${estimate.notes ? `
                                               return (
                                                 <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,50,0,0.05)' : 'transparent' }}>
                                                   <td style={{ padding: '8px 10px', color: isGap ? '#ff6b6b' : '#ccc', fontSize: '12px' }}>
-                                                    {isGap && <span style={{ marginRight: '5px', fontSize: '11px' }}>âš </span>}
+                                                    {isGap && <span style={{ marginRight: '5px', fontSize: '11px' }}>⚠</span>}
                                                     {item.description}
                                                   </td>
                                                   <td style={{ padding: '8px 10px', textAlign: 'right', color: '#555', fontVariantNumeric: 'tabular-nums' }}>
-                                                    {item.budget_amount > 0 ? `$${Number(item.budget_amount).toLocaleString()}` : 'â€”'}
+                                                    {item.budget_amount > 0 ? `$${Number(item.budget_amount).toLocaleString()}` : '—'}
                                                   </td>
                                                   {subs.map(sub => {
                                                     const entry = getEntry(sub.id, item.id)
@@ -4573,13 +4573,13 @@ ${estimate.notes ? `
                                                             title={excluded ? 'Click to mark included' : hasEntry ? 'Click to mark excluded' : 'Click to mark included'}
                                                             style={{ width: '30px', height: '24px', border: `1px solid ${excluded ? '#5a1a1a' : hasEntry ? '#1a4a1a' : '#222'}`, borderRadius: '4px', background: excluded ? '#2a0808' : hasEntry ? '#081a08' : '#111', color: excluded ? '#ff6b6b' : hasEntry ? '#4ade80' : '#444', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.12s ease' }}
                                                           >
-                                                            {excluded ? 'âœ—' : hasEntry ? 'âœ“' : 'Â·'}
+                                                            {excluded ? '✗' : hasEntry ? '✓' : '·'}
                                                           </button>
                                                           <input
                                                             type="number"
                                                             step="0.01"
                                                             value={entry?.amount ?? ''}
-                                                            placeholder="â€”"
+                                                            placeholder="—"
                                                             disabled={excluded}
                                                             onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, e.target.value, !excluded)}
                                                             style={{ width: `${colW - 24}px`, background: excluded ? '#080808' : '#111', border: '1px solid #1a1a1a', borderRadius: '4px', color: excluded ? '#2a2a2a' : '#ccc', padding: '3px 6px', fontSize: '11px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
@@ -4595,14 +4595,14 @@ ${estimate.notes ? `
                                         ))}
                                         <tr style={{ borderTop: '2px solid #2a2a2a', background: '#111' }}>
                                           <td style={{ padding: '10px 10px', fontSize: '11px', fontWeight: '800', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
-                                          <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '700', color: '#555', fontVariantNumeric: 'tabular-nums' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : 'â€”'}</td>
+                                          <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '700', color: '#555', fontVariantNumeric: 'tabular-nums' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : '—'}</td>
                                           {subs.map(sub => {
                                             const levTotal = subLeveledTotal(sub)
                                             const rawBid = Number(sub.amount)
                                             const diff = levTotal - rawBid
                                             return (
                                               <td key={sub.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '15px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : 'â€”'}</div>
+                                                <div style={{ fontSize: '15px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
                                                 {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#facc15' : '#4ade80', marginTop: '2px' }}>{diff > 0 ? '+' : '-'}${Math.round(Math.abs(diff)).toLocaleString()} vs bid</div>}
                                               </td>
                                             )
@@ -4625,12 +4625,12 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ NV DIRECTORY â”€â”€ */}
+            {/* ── NV DIRECTORY ── */}
             {activeTab === 'nv-directory' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
-                    Internal team â€” {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
+                    Internal team — {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
                   </p>
                   <button style={s.btnSm('orange')} onClick={() => { setShowTeamInviteForm(v => !v); setTeamInviteMsg(null) }}>
                     {showTeamInviteForm ? 'Cancel' : '+ Add Team Member'}
@@ -4700,11 +4700,11 @@ ${estimate.notes ? `
                         onClick={() => setTeamExpandedId(isExp ? null : member.id)}>
                         <div>
                           <p style={s.company}>{member.full_name || member.email}</p>
-                          <p style={s.meta}>{member.email}{member.phone ? ' Â· ' + member.phone : ''}</p>
+                          <p style={s.meta}>{member.email}{member.phone ? ' · ' + member.phone : ''}</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <span style={s.roleBadge(member.role)}>{member.role}</span>
-                          <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? 'â–²' : 'â–¼'}</span>
+                          <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                         </div>
                       </div>
 
@@ -4738,9 +4738,9 @@ ${estimate.notes ? `
                             <>
                               {/* Details row */}
                               <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
-                                <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{member.email || 'â€”'}</div></div>
-                                <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{member.phone || 'â€”'}</div></div>
-                                <div><div style={s.detailLabel}>Title</div><div style={s.detailValue}>{member.company_name || 'â€”'}</div></div>
+                                <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{member.email || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{member.phone || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Title</div><div style={s.detailValue}>{member.company_name || '—'}</div></div>
                               </div>
 
                               {/* Edit / Delete buttons */}
@@ -4783,8 +4783,8 @@ ${estimate.notes ? `
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 1rem' }}>
                                       {memberAssigns.map(a => (
                                         <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#aaa', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '4px 10px' }}>
-                                          #{a.jobs?.job_number} â€” {a.jobs?.project_name}
-                                          <button onClick={() => removeApmFromJob(a.id)} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1 }}>Ã—</button>
+                                          #{a.jobs?.job_number} — {a.jobs?.project_name}
+                                          <button onClick={() => removeApmFromJob(a.id)} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1 }}>×</button>
                                         </span>
                                       ))}
                                     </div>
@@ -4799,7 +4799,7 @@ ${estimate.notes ? `
                                       >
                                         <option value="">Select a job...</option>
                                         {jobs.filter(j => !memberAssigns.some(a => a.job_id === j.id)).map(j => (
-                                          <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>
+                                          <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
                                         ))}
                                       </select>
                                       <button
@@ -4828,7 +4828,7 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ ESTIMATOR PIPELINE OVERVIEW â”€â”€ */}
+            {/* ── ESTIMATOR PIPELINE OVERVIEW ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'overview' && (() => {
               const calcTotal = (est) => {
                 const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
@@ -4871,9 +4871,9 @@ ${estimate.notes ? `
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
                     {[
                       { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active`, color: '#f1f1f1', bg: '#0f0f0f', border: '#1e1e1e' },
-                      { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} est. won Â· ${completedJobs.length} jobs complete`, color: '#4ade80', bg: '#0a1a0e', border: '#1a3a1e' },
-                      { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed Â· ${lost.length} lost`, color: winRate >= 50 ? '#4ade80' : winRate >= 25 ? '#facc15' : '#ff6b6b', bg: '#0f0f0f', border: '#1e1e1e' },
-                      { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : 'â€”', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} est. won · ${completedJobs.length} jobs complete`, color: '#4ade80', bg: '#0a1a0e', border: '#1a3a1e' },
+                      { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#4ade80' : winRate >= 25 ? '#facc15' : '#ff6b6b', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#0f0f0f', border: '#1e1e1e' },
                     ].map(m => (
                       <div key={m.label} className="nv-metric-card" style={{ background: m.bg, border: `1px solid ${m.border}`, borderRadius: '10px', padding: '1rem 1.25rem' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>{m.label}</div>
@@ -4915,10 +4915,10 @@ ${estimate.notes ? `
                                     {est.project_type && <span style={{ fontSize: '10px', color: '#444', background: '#111', border: '1px solid #1e1e1e', borderRadius: '3px', padding: '1px 5px' }}>{est.project_type}</span>}
                                   </div>
                                   <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
-                                    {PREV[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid #222', borderRadius: '4px', color: '#444', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, PREV[stage.key])}>â† Back</button>}
-                                    {NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: `1px solid ${stage.border}`, borderRadius: '4px', color: stage.color, cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} â†’</button>}
-                                    {stage.key !== 'won' && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', color: '#4ade80', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'won')}>Won âœ“</button>}
-                                    <button style={{ fontSize: '10px', padding: '2px 6px', background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '4px', color: '#ff6b6b', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost âœ—</button>
+                                    {PREV[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid #222', borderRadius: '4px', color: '#444', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, PREV[stage.key])}>← Back</button>}
+                                    {NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: `1px solid ${stage.border}`, borderRadius: '4px', color: stage.color, cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} →</button>}
+                                    {stage.key !== 'won' && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', color: '#4ade80', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'won')}>Won ✓</button>}
+                                    <button style={{ fontSize: '10px', padding: '2px 6px', background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '4px', color: '#ff6b6b', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost ✗</button>
                                   </div>
                                 </div>
                               )
@@ -4967,12 +4967,12 @@ ${estimate.notes ? `
               )
             })()}
 
-            {/* â”€â”€ ESTIMATES (inside Estimator) â”€â”€ */}
+            {/* ── ESTIMATES (inside Estimator) ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'estimates' && (
               <>
                 <QuickEstimateIntro />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} â€” won/lost are in Archive</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} — won/lost are in Archive</p>
                   {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
@@ -4995,7 +4995,7 @@ ${estimate.notes ? `
                       <div>
                         <label style={s.label}>Project type</label>
                         <select style={s.input} value={estimateForm.project_type} onChange={e => setEstimateForm(f => ({ ...f, project_type: e.target.value }))}>
-                          <option value="">â€” Select â€”</option>
+                          <option value="">— Select —</option>
                           {['Office TI', 'Retail TI', 'Restaurant', 'Medical', 'Industrial', 'Warehouse', 'Multifamily', 'Ground-up', 'Renovation', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
                       </div>
@@ -5019,7 +5019,7 @@ ${estimate.notes ? `
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', alignItems: 'center' }}>
                               <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
                               <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
-                              <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>Ã—</button>
+                              <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
                             </div>
                             <textarea
                               rows={1}
@@ -5088,7 +5088,7 @@ ${estimate.notes ? `
                       </div>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: estimateForm.taxable ? '#f1f1f1' : '#555' }}>
                         <input type="checkbox" checked={!!estimateForm.taxable} onChange={e => setEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
-                        Taxable (8.25% sales tax â€” applied before markup)
+                        Taxable (8.25% sales tax — applied before markup)
                       </label>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -5118,12 +5118,12 @@ ${estimate.notes ? `
                         onClick={() => { const newId = isExp ? null : est.id; setExpandedEstimate(newId); if (newId) loadEstDocs(newId) }}>
                         <div>
                           <p style={s.company}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#555', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
-                          <p style={s.meta}>{est.estimate_number} Â· {fmtDate(est.created_at)}{est.owner_name ? ' Â· ' + est.owner_name : ''}{psf ? ` Â· $${psf}/sqft` : ''}</p>
+                          <p style={s.meta}>{est.estimate_number} · {fmtDate(est.created_at)}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: stageCfg.bg, color: stageCfg.color, border: `1px solid ${stageCfg.border}` }}>{stageCfg.label}</span>
-                          <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? 'â–²' : 'â–¼'}</span>
+                          <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                         </div>
                       </div>
 
@@ -5161,7 +5161,7 @@ ${estimate.notes ? `
                                 <div>
                                   <label style={s.label}>Project type</label>
                                   <select style={s.input} value={editEstimateForm.project_type || ''} onChange={e => setEditEstimateForm(f => ({ ...f, project_type: e.target.value }))}>
-                                    <option value="">â€” Select â€”</option>
+                                    <option value="">— Select —</option>
                                     {['Office TI', 'Retail TI', 'Restaurant', 'Medical', 'Industrial', 'Warehouse', 'Multifamily', 'Ground-up', 'Renovation', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
                                   </select>
                                 </div>
@@ -5185,7 +5185,7 @@ ${estimate.notes ? `
                                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', alignItems: 'center' }}>
                                         <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
                                         <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
-                                        <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEditEstimateLines(l => l.filter((_, i) => i !== idx))}>Ã—</button>
+                                        <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEditEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
                                       </div>
                                       <textarea
                                         rows={1}
@@ -5254,7 +5254,7 @@ ${estimate.notes ? `
                                 </div>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: editEstimateForm.taxable ? '#f1f1f1' : '#555' }}>
                                   <input type="checkbox" checked={!!editEstimateForm.taxable} onChange={e => setEditEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
-                                  Taxable (8.25% sales tax â€” applied before markup)
+                                  Taxable (8.25% sales tax — applied before markup)
                                 </label>
                               </div>
                               <div style={{ display: 'flex', gap: '8px' }}>
@@ -5265,10 +5265,10 @@ ${estimate.notes ? `
                           ) : (
                             <>
                               <div style={{ ...s.detailGrid, marginBottom: '1rem' }}>
-                                <div><div style={s.detailLabel}>Owner / Contact</div><div style={s.detailValue}>{[est.owner_name, est.owner_company].filter(Boolean).join(' Â· ') || 'â€”'}</div></div>
-                                <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{est.address || 'â€”'}</div></div>
-                                <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{est.owner_email || 'â€”'}</div></div>
-                                <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{est.owner_phone || 'â€”'}</div></div>
+                                <div><div style={s.detailLabel}>Owner / Contact</div><div style={s.detailValue}>{[est.owner_name, est.owner_company].filter(Boolean).join(' · ') || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{est.address || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Email</div><div style={s.detailValue}>{est.owner_email || '—'}</div></div>
+                                <div><div style={s.detailLabel}>Phone</div><div style={s.detailValue}>{est.owner_phone || '—'}</div></div>
                               </div>
                               {est.notes && (
                                 <div style={{ marginBottom: '1rem' }}>
@@ -5329,7 +5329,7 @@ ${estimate.notes ? `
                                   <p style={{ fontSize: '12px', color: '#444', margin: 0 }}>No documents uploaded.</p>
                                 ) : (estDocs[est.id] || []).map(doc => (
                                   <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '4px' }}>
-                                    <span style={{ fontSize: '12px', color: '#ccc' }}>ðŸ“„ {doc.file_name}</span>
+                                    <span style={{ fontSize: '12px', color: '#ccc' }}>📄 {doc.file_name}</span>
                                     <button style={s.btnSm('gray')} onClick={() => openEstDoc(doc.storage_path)}>Open</button>
                                   </div>
                                 ))}
@@ -5345,7 +5345,7 @@ ${estimate.notes ? `
                                         const hasAccess = (est.allowed_users || []).includes(apm.id)
                                         return (
                                           <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#4ade80' : '#333'}`, background: hasAccess ? '#0a2a0a' : '#111', color: hasAccess ? '#4ade80' : '#555', transition: 'all 0.15s' }} onClick={() => toggleEstimateAccess(est.id, apm.id)}>
-                                            {hasAccess ? 'âœ“ ' : ''}{apm.full_name || apm.email}
+                                            {hasAccess ? '✓ ' : ''}{apm.full_name || apm.email}
                                           </button>
                                         )
                                       })}
@@ -5401,7 +5401,7 @@ ${estimate.notes ? `
               </>
             )}
 
-            {/* â”€â”€ ESTIMATOR ARCHIVE â”€â”€ */}
+            {/* ── ESTIMATOR ARCHIVE ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'archive' && (() => {
               const calcTotal = (est) => {
                 const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
@@ -5434,10 +5434,10 @@ ${estimate.notes ? `
                           <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>$/SqFt Range</div>
                           {psfs.length > 0 ? (
                             <>
-                              <div style={{ fontSize: '22px', fontWeight: '800', color: '#e8590c' }}>${Math.round(Math.min(...psfs.map(p=>p.psf)))}â€“${Math.round(Math.max(...psfs.map(p=>p.psf)))}</div>
+                              <div style={{ fontSize: '22px', fontWeight: '800', color: '#e8590c' }}>${Math.round(Math.min(...psfs.map(p=>p.psf)))}–${Math.round(Math.max(...psfs.map(p=>p.psf)))}</div>
                               <div style={{ fontSize: '11px', color: '#444', marginTop: '4px' }}>across {withSqft.length} estimate{withSqft.length !== 1?'s':''}</div>
                             </>
-                          ) : <div style={{ fontSize: '22px', fontWeight: '800', color: '#333' }}>â€”</div>}
+                          ) : <div style={{ fontSize: '22px', fontWeight: '800', color: '#333' }}>—</div>}
                         </div>
                       </div>
 
@@ -5475,12 +5475,12 @@ ${estimate.notes ? `
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 8px' }}>
                               <div>
                                 <p style={{ ...s.company, color: isWon ? '#4ade80' : '#888' }}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#444', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
-                                <p style={s.meta}>{est.estimate_number} Â· {fmtDate(est.created_at)}{est.owner_name ? ' Â· ' + est.owner_name : ''}{psf ? ` Â· $${psf}/sqft` : ''}{est.square_footage ? ` Â· ${Number(est.square_footage).toLocaleString()} sqft` : ''}</p>
+                                <p style={s.meta}>{est.estimate_number} · {fmtDate(est.created_at)}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}{est.square_footage ? ` · ${Number(est.square_footage).toLocaleString()} sqft` : ''}</p>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ fontSize: '16px', fontWeight: '800', color: isWon ? '#4ade80' : '#555' }}>{fmtC(tot)}</span>
                                 <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isWon ? '#0a2a0a' : '#2a0a0a', color: isWon ? '#4ade80' : '#ff6b6b', border: `1px solid ${isWon ? '#1a4a1a' : '#5a1a1a'}` }}>{isWon ? 'Won' : 'Lost'}</span>
-                                <button style={{ ...s.btnSm('orange'), fontSize: '11px' }} onClick={() => moveEstimateStage(est.id, 'lead')}>Restore â†’</button>
+                                <button style={{ ...s.btnSm('orange'), fontSize: '11px' }} onClick={() => moveEstimateStage(est.id, 'lead')}>Restore →</button>
                               </div>
                             </div>
                           </div>
@@ -5492,9 +5492,9 @@ ${estimate.notes ? `
               )
             })()}
 
-            {/* â”€â”€ BUSINESS DEVELOPMENT â”€â”€ */}
+            {/* ── BUSINESS DEVELOPMENT ── */}
             {activeTab === 'bd' && (() => {
-              const fmt = (n) => n != null && n !== '' ? '$' + Number(n).toLocaleString() : 'â€”'
+              const fmt = (n) => n != null && n !== '' ? '$' + Number(n).toLocaleString() : '—'
               const stageCfg = {
                 prospect: { label: 'Prospect', color: '#a78bfa', bg: '#1a0a2a', border: '#3a1a5a' },
                 bidding:  { label: 'Bidding',  color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
@@ -5579,7 +5579,7 @@ ${estimate.notes ? `
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontSize: '12px', color: '#666' }}>Revenue Goal</span>
                       <input style={{ ...s.input, width: '140px' }} placeholder="$0" value={bdGoalInput} onChange={e => setBdGoalInput(e.target.value)} onFocus={e => e.target.select()} />
-                      <button style={s.btnGray} onClick={saveBdGoal} disabled={savingBdGoal}>{savingBdGoal ? 'Savingâ€¦' : 'Set Goal'}</button>
+                      <button style={s.btnGray} onClick={saveBdGoal} disabled={savingBdGoal}>{savingBdGoal ? 'Saving…' : 'Set Goal'}</button>
                     </div>
                   </div>
 
@@ -5592,8 +5592,8 @@ ${estimate.notes ? `
                       { label: 'Active Jobs',   value: activeJobs.length,     accent: '#60a5fa' },
                       { label: 'Complete',      value: completeJobs.length,   accent: '#4ade80' },
                       { label: 'Revenue',       value: fmt(totalRev || null), accent: '#f1f1f1' },
-                      { label: 'Proj. Profit',  value: jobsWithBudget.length > 0 ? fmt(totalProjProfit) : 'â€”', accent: totalProjProfit >= 0 ? '#4ade80' : '#ff6b6b' },
-                      { label: 'Avg Margin',    value: avgMargin != null ? avgMargin + '%' : 'â€”', accent: avgMargin != null && avgMargin >= 15 ? '#4ade80' : avgMargin != null ? '#e8590c' : '#555' },
+                      { label: 'Proj. Profit',  value: jobsWithBudget.length > 0 ? fmt(totalProjProfit) : '—', accent: totalProjProfit >= 0 ? '#4ade80' : '#ff6b6b' },
+                      { label: 'Avg Margin',    value: avgMargin != null ? avgMargin + '%' : '—', accent: avgMargin != null && avgMargin >= 15 ? '#4ade80' : avgMargin != null ? '#e8590c' : '#555' },
                     ].map(({ label, value, accent }) => (
                       <div key={label} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '14px 16px' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
@@ -5642,7 +5642,7 @@ ${estimate.notes ? `
                       </div>
                       <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} value={addBdForm.notes} onChange={e => setAddBdForm(f => ({ ...f, notes: e.target.value }))} /></div>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button style={s.btn} onClick={saveBdOpportunity} disabled={savingBd}>{savingBd ? 'Savingâ€¦' : 'Save Opportunity'}</button>
+                        <button style={s.btn} onClick={saveBdOpportunity} disabled={savingBd}>{savingBd ? 'Saving…' : 'Save Opportunity'}</button>
                         <button style={s.btnGray} onClick={() => setShowAddBd(false)}>Cancel</button>
                       </div>
                     </div>
@@ -5664,15 +5664,15 @@ ${estimate.notes ? `
 
                   {/* Unified list */}
                   {filtered.length === 0 ? (
-                    <p style={s.emptyMsg}>Nothing to show for {bdYear}{bdFilterStage !== 'all' ? ` â€” ${stageCfg[bdFilterStage]?.label || bdFilterStage}` : ''}.</p>
+                    <p style={s.emptyMsg}>Nothing to show for {bdYear}{bdFilterStage !== 'all' ? ` — ${stageCfg[bdFilterStage]?.label || bdFilterStage}` : ''}.</p>
                   ) : filtered.map(item => {
                     const isExp = expandedBd === item.id
                     const isEditing = editingBdId === item.id
                     const dateStr = item.bid_date ? new Date(item.bid_date + 'T12:00:00').toLocaleDateString()
                       : item.due_date ? new Date(item.due_date + 'T12:00:00').toLocaleDateString()
                       : item.created_at ? new Date(item.created_at).toLocaleDateString()
-                      : 'â€”'
-                    const valStr = item._type === 'job' ? fmt(item._val) : item.bid_amount ? fmt(item.bid_amount) : 'â€”'
+                      : '—'
+                    const valStr = item._type === 'job' ? fmt(item._val) : item.bid_amount ? fmt(item.bid_amount) : '—'
                     return (
                       <div key={`${item._type}-${item.id}`} style={{ borderBottom: '1px solid #1a1a1a' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1fr 1fr 30px', gap: '1rem', padding: '14px 8px', cursor: 'pointer', borderRadius: '8px' }} onClick={() => { setExpandedBd(isExp ? null : item.id); setEditingBdId(null) }}>
@@ -5687,12 +5687,12 @@ ${estimate.notes ? `
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: '13px', color: '#ccc' }}>{valStr}</span></div>
                           <div style={{ display: 'flex', alignItems: 'center' }}><span style={{ fontSize: '12px', color: '#555' }}>{dateStr}</span></div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}><span style={{ fontSize: '12px', color: '#444' }}>{isExp ? 'â–²' : 'â–¼'}</span></div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}><span style={{ fontSize: '12px', color: '#444' }}>{isExp ? '▲' : '▼'}</span></div>
                         </div>
 
                         {isExp && (
                           <div style={{ ...s.detail, marginBottom: '8px' }}>
-                            {/* Job row â€” read only, link to detail */}
+                            {/* Job row — read only, link to detail */}
                             {item._type === 'job' && (() => {
                               const p = bdProfits[item.id]
                               const profitColor = p && p.projected_profit >= 0 ? '#4ade80' : '#ff6b6b'
@@ -5709,7 +5709,7 @@ ${estimate.notes ? `
                                         <div><p style={s.detailLabel}>Margin</p><p style={{ ...s.detailValue, color: profitColor, fontWeight: '700' }}>{p.margin_pct}%</p></div>
                                       </>
                                     ) : (
-                                      <div style={{ gridColumn: '1/-1' }}><p style={{ fontSize: '12px', color: '#555' }}>No budget set â€” open job to add budget items for profit tracking.</p></div>
+                                      <div style={{ gridColumn: '1/-1' }}><p style={{ fontSize: '12px', color: '#555' }}>No budget set — open job to add budget items for profit tracking.</p></div>
                                     )}
                                   </div>
                                   <button style={s.btnSm('orange')} onClick={() => router.push(`/jobdetail?id=${item.id}`)}>Open Job</button>
@@ -5717,13 +5717,13 @@ ${estimate.notes ? `
                               )
                             })()}
 
-                            {/* Bid package row â€” read only */}
+                            {/* Bid package row — read only */}
                             {item._type === 'bid' && (
                               <>
                                 <div style={s.detailGrid} className="rx-grid-2">
-                                  <div><p style={s.detailLabel}>Linked Job</p><p style={s.detailValue}>{item.jobs?.project_name || 'â€”'}</p></div>
+                                  <div><p style={s.detailLabel}>Linked Job</p><p style={s.detailValue}>{item.jobs?.project_name || '—'}</p></div>
                                   <div><p style={s.detailLabel}>Status</p><p style={s.detailValue}>{item.status}</p></div>
-                                  <div><p style={s.detailLabel}>Due Date</p><p style={s.detailValue}>{item.due_date ? new Date(item.due_date + 'T12:00:00').toLocaleDateString() : 'â€”'}</p></div>
+                                  <div><p style={s.detailLabel}>Due Date</p><p style={s.detailValue}>{item.due_date ? new Date(item.due_date + 'T12:00:00').toLocaleDateString() : '—'}</p></div>
                                   <div><p style={s.detailLabel}>Created</p><p style={s.detailValue}>{new Date(item.created_at).toLocaleDateString()}</p></div>
                                 </div>
                                 {item.description && <div style={{ marginBottom: '1rem' }}><p style={s.detailLabel}>Description</p><p style={s.detailValue}>{item.description}</p></div>}
@@ -5731,7 +5731,7 @@ ${estimate.notes ? `
                               </>
                             )}
 
-                            {/* BD opportunity â€” editable */}
+                            {/* BD opportunity — editable */}
                             {item._type === 'opp' && (
                               isEditing ? (
                                 <>
@@ -5759,19 +5759,19 @@ ${estimate.notes ? `
                                   </div>
                                   <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editBdForm.notes || ''} onChange={e => setEditBdForm(f => ({ ...f, notes: e.target.value }))} /></div>
                                   <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button style={s.btnSm('orange')} onClick={updateBdOpportunity} disabled={savingBdEdit}>{savingBdEdit ? 'Savingâ€¦' : 'Save'}</button>
+                                    <button style={s.btnSm('orange')} onClick={updateBdOpportunity} disabled={savingBdEdit}>{savingBdEdit ? 'Saving…' : 'Save'}</button>
                                     <button style={s.btnSm('gray')} onClick={() => setEditingBdId(null)}>Cancel</button>
                                   </div>
                                 </>
                               ) : (
                                 <>
                                   <div style={s.detailGrid} className="rx-grid-2">
-                                    <div><p style={s.detailLabel}>Client / GC</p><p style={s.detailValue}>{item.client_name || 'â€”'}</p></div>
+                                    <div><p style={s.detailLabel}>Client / GC</p><p style={s.detailValue}>{item.client_name || '—'}</p></div>
                                     <div><p style={s.detailLabel}>Stage</p><p style={s.detailValue}><span style={stageBadge(item.stage)}>{stageCfg[item.stage]?.label || item.stage}</span></p></div>
                                     <div><p style={s.detailLabel}>Bid Amount</p><p style={s.detailValue}>{fmt(item.bid_amount)}</p></div>
                                     <div><p style={s.detailLabel}>Contract Value</p><p style={s.detailValue}>{fmt(item.contract_value)}</p></div>
-                                    <div><p style={s.detailLabel}>Bid Date</p><p style={s.detailValue}>{item.bid_date ? new Date(item.bid_date + 'T12:00:00').toLocaleDateString() : 'â€”'}</p></div>
-                                    <div><p style={s.detailLabel}>Trade Type</p><p style={s.detailValue}>{item.trade_type || 'â€”'}</p></div>
+                                    <div><p style={s.detailLabel}>Bid Date</p><p style={s.detailValue}>{item.bid_date ? new Date(item.bid_date + 'T12:00:00').toLocaleDateString() : '—'}</p></div>
+                                    <div><p style={s.detailLabel}>Trade Type</p><p style={s.detailValue}>{item.trade_type || '—'}</p></div>
                                   </div>
                                   {item.notes && <div style={{ marginBottom: '1rem' }}><p style={s.detailLabel}>Notes</p><p style={{ ...s.detailValue, whiteSpace: 'pre-wrap' }}>{item.notes}</p></div>}
                                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -5790,9 +5790,9 @@ ${estimate.notes ? `
               )
             })()}
 
-            {/* â”€â”€ EMPLOYEES â”€â”€ */}
+            {/* ── EMPLOYEES ── */}
             {activeTab === 'employees' && profile?.role === 'pm' && (() => {
-              const fmtW = (n) => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'â€”'
+              const fmtW = (n) => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
               const weeklyTotal = (e) =>
                 Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
               const activeEmps = employees.filter(e => e.active)
@@ -5834,15 +5834,15 @@ ${estimate.notes ? `
                           Weekly total: <strong style={{ color: '#f1f1f1' }}>{fmtW(
                             Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)
                           )}</strong>
-                          &nbsp;Â·&nbsp; Annual: <strong style={{ color: '#f1f1f1' }}>{fmtW(
+                          &nbsp;·&nbsp; Annual: <strong style={{ color: '#f1f1f1' }}>{fmtW(
                             (Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)) * 52
                           )}</strong>
-                          &nbsp;Â·&nbsp; Daily rate: <strong style={{ color: '#e8590c' }}>{fmtW(
+                          &nbsp;·&nbsp; Daily rate: <strong style={{ color: '#e8590c' }}>{fmtW(
                             (Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)) / 5
                           )}</strong>
                         </div>
                       )}
-                      <button style={{ ...s.btnSm('orange'), opacity: savingEmp ? 0.6 : 1 }} onClick={saveEmployee} disabled={savingEmp}>{savingEmp ? 'Savingâ€¦' : 'Add Employee'}</button>
+                      <button style={{ ...s.btnSm('orange'), opacity: savingEmp ? 0.6 : 1 }} onClick={saveEmployee} disabled={savingEmp}>{savingEmp ? 'Saving…' : 'Add Employee'}</button>
                     </div>
                   )}
 
@@ -5889,7 +5889,7 @@ ${estimate.notes ? `
                                       <div><label style={s.label}>Taxes/wk</label><input type="number" step="0.01" style={s.input} value={editEmpForm.weekly_taxes || ''} onChange={ev => setEditEmpForm(f => ({ ...f, weekly_taxes: ev.target.value }))} /></div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                      <button style={s.btnSm('orange')} onClick={updateEmployee} disabled={savingEmpEdit}>{savingEmpEdit ? 'Savingâ€¦' : 'Save'}</button>
+                                      <button style={s.btnSm('orange')} onClick={updateEmployee} disabled={savingEmpEdit}>{savingEmpEdit ? 'Saving…' : 'Save'}</button>
                                       <button style={s.btnSm('gray')} onClick={() => setEditingEmpId(null)}>Cancel</button>
                                     </div>
                                   </td>
@@ -5900,14 +5900,14 @@ ${estimate.notes ? `
                                   <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>
                                     {e.name}
                                   </td>
-                                  <td style={{ padding: '10px 12px', color: '#888' }}>{e.title || 'â€”'}</td>
+                                  <td style={{ padding: '10px 12px', color: '#888' }}>{e.title || '—'}</td>
                                   <td style={{ padding: '10px 12px' }}>
                                     <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#0a1e2a' : '#1a1a0a', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#1a3a5a' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{fmtW(e.weekly_salary)}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_truck ? '#f1f1f1' : '#333' }}>{e.weekly_truck ? fmtW(e.weekly_truck) : 'â€”'}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_healthcare ? '#f1f1f1' : '#333' }}>{e.weekly_healthcare ? fmtW(e.weekly_healthcare) : 'â€”'}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_taxes ? '#f1f1f1' : '#333' }}>{e.weekly_taxes ? fmtW(e.weekly_taxes) : 'â€”'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_truck ? '#f1f1f1' : '#333' }}>{e.weekly_truck ? fmtW(e.weekly_truck) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_healthcare ? '#f1f1f1' : '#333' }}>{e.weekly_healthcare ? fmtW(e.weekly_healthcare) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_taxes ? '#f1f1f1' : '#333' }}>{e.weekly_taxes ? fmtW(e.weekly_taxes) : '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1', fontWeight: '700' }}>{fmtW(wk)}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtW(daily)}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtW(wk * 52)}</td>
@@ -5922,7 +5922,7 @@ ${estimate.notes ? `
                                           else { setExpandedEmpId(e.id); loadEmpAllocations(e.id) }
                                         }}
                                       >
-                                        {expandedEmpId === e.id ? 'â–² Jobs' : 'â–¼ Jobs'}
+                                        {expandedEmpId === e.id ? '▲ Jobs' : '▼ Jobs'}
                                       </button>
                                     </div>
                                   </td>
@@ -5940,7 +5940,7 @@ ${estimate.notes ? `
                                             <>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                                                 <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                                                  Job Allocations â€” {e.name}
+                                                  Job Allocations — {e.name}
                                                 </p>
                                                 <button style={s.btnSm('gray')} onClick={() => setShowAllocFormFor(showAllocFormFor === e.id ? null : e.id)}>
                                                   {showAllocFormFor === e.id ? 'Cancel' : '+ Add Allocation'}
@@ -5962,9 +5962,9 @@ ${estimate.notes ? `
                                                           setAllocBudgetItems([])
                                                         }
                                                       }} style={{ ...s.input, color: '#f1f1f1' }}>
-                                                        <option value="">Select jobâ€¦</option>
+                                                        <option value="">Select job…</option>
                                                         {jobs.filter(j => j.status === 'active').map(j => (
-                                                          <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>
+                                                          <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>
                                                         ))}
                                                       </select>
                                                     </div>
@@ -5992,14 +5992,14 @@ ${estimate.notes ? `
                                                           value={allocForm.budget_item_id}
                                                           onChange={ev => {
                                                             const item = allocBudgetItems.find(b => b.id === ev.target.value)
-                                                            setAllocForm(f => ({ ...f, budget_item_id: ev.target.value, budget_line: item ? `${item.cost_code ? item.cost_code + ' â€” ' : ''}${item.description}` : '' }))
+                                                            setAllocForm(f => ({ ...f, budget_item_id: ev.target.value, budget_line: item ? `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` : '' }))
                                                           }}
                                                           style={{ ...s.input, color: '#f1f1f1' }}
                                                         >
-                                                          <option value="">Select budget lineâ€¦</option>
+                                                          <option value="">Select budget line…</option>
                                                           {allocBudgetItems.map(b => (
                                                             <option key={b.id} value={b.id}>
-                                                              {b.cost_code ? `${b.cost_code} â€” ` : ''}{b.description}{b.budget_amount ? ` ($${Number(b.budget_amount).toLocaleString()})` : ''}
+                                                              {b.cost_code ? `${b.cost_code} — ` : ''}{b.description}{b.budget_amount ? ` ($${Number(b.budget_amount).toLocaleString()})` : ''}
                                                             </option>
                                                           ))}
                                                         </select>
@@ -6037,7 +6037,7 @@ ${estimate.notes ? `
                                                         }
                                                         setSavingAlloc(false)
                                                       }}
-                                                    >{savingAlloc ? 'Savingâ€¦' : 'Save'}</button>
+                                                    >{savingAlloc ? 'Saving…' : 'Save'}</button>
                                                   </div>
                                                 </div>
                                               )}
@@ -6066,7 +6066,7 @@ ${estimate.notes ? `
                                                       return (
                                                         <tr key={a.id} style={{ borderBottom: '1px solid #141414' }}>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1' }}>
-                                                            {a.jobs ? `#${a.jobs.job_number} ${a.jobs.project_name}` : 'â€”'}
+                                                            {a.jobs ? `#${a.jobs.job_number} ${a.jobs.project_name}` : '—'}
                                                             {isPM && (
                                                               editingAllocBudget?.allocId === a.id ? (
                                                                 <select
@@ -6076,14 +6076,14 @@ ${estimate.notes ? `
                                                                   onChange={async ev => {
                                                                     const item = editingAllocBudget.items.find(b => b.id === ev.target.value)
                                                                     if (!item) return
-                                                                    await fetch('/api/employee-allocations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' â€” ' : ''}${item.description}` }) })
-                                                                    setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).map(x => x.id === a.id ? { ...x, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' â€” ' : ''}${item.description}` } : x) }))
+                                                                    await fetch('/api/employee-allocations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` }) })
+                                                                    setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).map(x => x.id === a.id ? { ...x, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` } : x) }))
                                                                     setEditingAllocBudget(null)
                                                                   }}
                                                                   onBlur={() => setEditingAllocBudget(null)}
                                                                 >
-                                                                  <option value="">Select budget lineâ€¦</option>
-                                                                  {editingAllocBudget.items.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} â€” ` : ''}{b.description}</option>)}
+                                                                  <option value="">Select budget line…</option>
+                                                                  {editingAllocBudget.items.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} — ` : ''}{b.description}</option>)}
                                                                 </select>
                                                               ) : (
                                                                 <div
@@ -6094,7 +6094,7 @@ ${estimate.notes ? `
                                                                   }}
                                                                   style={{ marginTop: '3px', fontSize: '11px', color: a.budget_line ? '#555' : '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
                                                                 >
-                                                                  {a.budget_line || 'Set budget line â–¾'}
+                                                                  {a.budget_line || 'Set budget line ▾'}
                                                                 </div>
                                                               )
                                                             )}
@@ -6105,13 +6105,13 @@ ${estimate.notes ? `
                                                             </span>
                                                           </td>
                                                           <td style={{ padding: '8px 8px 8px 0', color: pct < 100 ? '#facc15' : '#aaa', fontWeight: pct < 100 ? '700' : '400' }}>{pct}%</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#aaa' }}>{a.start_date || 'â€”'}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#aaa' }}>{a.start_date || '—'}</td>
                                                           <td style={{ padding: '8px 8px 8px 0', color: isOngoing ? '#4ade80' : '#aaa' }}>
-                                                            {days != null ? days : 'â€”'}
-                                                            {isOngoing && <span style={{ fontSize: '10px', marginLeft: '4px', color: '#4ade80' }}>â–²</span>}
+                                                            {days != null ? days : '—'}
+                                                            {isOngoing && <span style={{ fontSize: '10px', marginLeft: '4px', color: '#4ade80' }}>▲</span>}
                                                           </td>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#f1f1f1', fontWeight: '600' }}>${effectiveWeekly.toLocaleString()}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#4ade80', fontWeight: '700' }}>{total != null ? `$${total.toLocaleString()}` : 'â€”'}</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: '#4ade80', fontWeight: '700' }}>{total != null ? `$${total.toLocaleString()}` : '—'}</td>
                                                           <td style={{ padding: '8px 0' }}>
                                                             <button
                                                               onClick={async () => {
@@ -6120,7 +6120,7 @@ ${estimate.notes ? `
                                                                 setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).filter(x => x.id !== a.id) }))
                                                               }}
                                                               style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px' }}
-                                                            >Ã—</button>
+                                                            >×</button>
                                                           </td>
                                                         </tr>
                                                       )
@@ -6140,7 +6140,7 @@ ${estimate.notes ? `
                                                       return (
                                                         <tr style={{ borderTop: '1px solid #2a2a2a' }}>
                                                           <td colSpan={4} style={{ padding: '8px 0', fontSize: '11px', color: '#555' }}>
-                                                            {profitAllocs.length} against profit Â· {pmAllocs.length} PM/Super Â· {totalPct}% allocated
+                                                            {profitAllocs.length} against profit · {pmAllocs.length} PM/Super · {totalPct}% allocated
                                                           </td>
                                                           <td style={{ padding: '8px 0' }}></td>
                                                           <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: totalPct > 100 ? '#f87171' : '#f1f1f1' }}>${totalEffectiveWeekly.toLocaleString()}/wk</td>
@@ -6266,7 +6266,7 @@ ${estimate.notes ? `
                                   </div>
                                   <div style={{ fontSize: '12px', color: '#555' }}>
                                     {new Date(l.log_date + 'T12:00:00').toLocaleDateString()}
-                                    {l.notes && ` Â· ${l.notes}`}
+                                    {l.notes && ` · ${l.notes}`}
                                   </div>
                                 </div>
                                 {l.photo_url && <button style={s.btnSm('gray')} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>}
@@ -6313,7 +6313,7 @@ ${estimate.notes ? `
                           <div>
                             <label style={s.label}>Assign to Superintendent</label>
                             <select style={s.input} value={vehicleForm.assigned_to} onChange={e => setVehicleForm(f => ({ ...f, assigned_to: e.target.value }))}>
-                              <option value="">â€” Unassigned â€”</option>
+                              <option value="">— Unassigned —</option>
                               {supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
                             </select>
                           </div>
@@ -6353,7 +6353,7 @@ ${estimate.notes ? `
                               <div>
                                 <label style={s.label}>Assign to Superintendent</label>
                                 <select style={s.input} value={editVehicleForm.assigned_to || ''} onChange={e => setEditVehicleForm(f => ({ ...f, assigned_to: e.target.value }))}>
-                                  <option value="">â€” Unassigned â€”</option>
+                                  <option value="">— Unassigned —</option>
                                   {supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
                                 </select>
                               </div>
@@ -6377,14 +6377,14 @@ ${estimate.notes ? `
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#555' }}>
                                   {v.assigned_profile ? <span style={{ color: '#e8590c' }}>{v.assigned_profile.full_name}</span> : <span>Unassigned</span>}
-                                  {lastMileage && <span> Â· {Number(lastMileage).toLocaleString()} mi</span>}
-                                  {lastOilChange && <span> Â· Last oil change {new Date(lastOilChange.log_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                  {lastMileage && <span> · {Number(lastMileage).toLocaleString()} mi</span>}
+                                  {lastOilChange && <span> · Last oil change {new Date(lastOilChange.log_date + 'T12:00:00').toLocaleDateString()}</span>}
                                 </div>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button style={s.btnSm('gray')} onClick={e => { e.stopPropagation(); setEditingVehicleId(v.id); setEditVehicleForm({ name: v.name, make: v.make || '', model: v.model || '', year: v.year || '', vin: v.vin || '', license_plate: v.license_plate || '', color: v.color || '', assigned_to: v.assigned_to || '', notes: v.notes || '' }) }}>Edit</button>
                                 <button style={s.btnSm('red')} onClick={e => { e.stopPropagation(); deleteVehicle(v.id) }}>Delete</button>
-                                <span style={{ color: '#555', fontSize: '12px' }}>{isExpanded ? 'â–²' : 'â–¼'}</span>
+                                <span style={{ color: '#555', fontSize: '12px' }}>{isExpanded ? '▲' : '▼'}</span>
                               </div>
                             </div>
 
@@ -6399,12 +6399,12 @@ ${estimate.notes ? `
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
                                           <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: logTypeBadgeColor(l.log_type), border: '1px solid #2a2a2a' }}>{l.log_type}</span>
                                           {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
-                                          {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#888' }}>{l.fuel_gallons} gal{l.fuel_cost ? ` Â· $${Number(l.fuel_cost).toFixed(2)}` : ''}</span>}
+                                          {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#888' }}>{l.fuel_gallons} gal{l.fuel_cost ? ` · $${Number(l.fuel_cost).toFixed(2)}` : ''}</span>}
                                         </div>
                                         <div style={{ fontSize: '12px', color: '#555' }}>
                                           {new Date(l.log_date + 'T12:00:00').toLocaleDateString()}
-                                          {l.logged_by_profile?.full_name && ` Â· ${l.logged_by_profile.full_name}`}
-                                          {l.notes && ` Â· ${l.notes}`}
+                                          {l.logged_by_profile?.full_name && ` · ${l.logged_by_profile.full_name}`}
+                                          {l.notes && ` · ${l.notes}`}
                                         </div>
                                       </div>
                                       {l.photo_url && (
@@ -6509,7 +6509,7 @@ ${estimate.notes ? `
                           <div>
                             <label style={s.label}>Assign to Superintendent</label>
                             <select style={s.input} value={toolForm.assigned_to} onChange={e => setToolForm(f => ({ ...f, assigned_to: e.target.value }))}>
-                              <option value="">â€” Available / Unassigned â€”</option>
+                              <option value="">— Available / Unassigned —</option>
                               {supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
                             </select>
                           </div>
@@ -6544,7 +6544,7 @@ ${estimate.notes ? `
                             </div>
                             <div style={{ ...s.grid3, marginBottom: '12px' }}>
                               <div><label style={s.label}>Status</label><select style={s.input} value={editToolForm.status || 'available'} onChange={e => setEditToolForm(f => ({ ...f, status: e.target.value }))}><option value="available">Available</option><option value="checked_out">Checked Out</option><option value="repair">In Repair</option><option value="lost">Lost</option></select></div>
-                              <div><label style={s.label}>Assign to Super</label><select style={s.input} value={editToolForm.assigned_to || ''} onChange={e => setEditToolForm(f => ({ ...f, assigned_to: e.target.value, status: e.target.value ? 'checked_out' : 'available' }))}><option value="">â€” Available â€”</option>{supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select></div>
+                              <div><label style={s.label}>Assign to Super</label><select style={s.input} value={editToolForm.assigned_to || ''} onChange={e => setEditToolForm(f => ({ ...f, assigned_to: e.target.value, status: e.target.value ? 'checked_out' : 'available' }))}><option value="">— Available —</option>{supers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}</select></div>
                               <div><label style={s.label}>Job Site</label><input style={s.input} value={editToolForm.job_site || ''} onChange={e => setEditToolForm(f => ({ ...f, job_site: e.target.value }))} /></div>
                             </div>
                             <div style={{ marginBottom: '12px' }}><label style={s.label}>Notes</label><input style={s.input} value={editToolForm.notes || ''} onChange={e => setEditToolForm(f => ({ ...f, notes: e.target.value }))} /></div>
@@ -6565,16 +6565,16 @@ ${estimate.notes ? `
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#555' }}>
                                   {[t.brand, t.model].filter(Boolean).join(' ')}
-                                  {t.serial_number && ` Â· SN: ${t.serial_number}`}
-                                  {t.assigned_profile && <span style={{ color: '#e8590c' }}> Â· {t.assigned_profile.full_name}</span>}
-                                  {t.job_site && ` Â· ${t.job_site}`}
-                                  {t.purchase_cost && <span style={{ color: '#4ade80' }}> Â· ${Number(t.purchase_cost).toLocaleString()}</span>}
+                                  {t.serial_number && ` · SN: ${t.serial_number}`}
+                                  {t.assigned_profile && <span style={{ color: '#e8590c' }}> · {t.assigned_profile.full_name}</span>}
+                                  {t.job_site && ` · ${t.job_site}`}
+                                  {t.purchase_cost && <span style={{ color: '#4ade80' }}> · ${Number(t.purchase_cost).toLocaleString()}</span>}
                                 </div>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button style={s.btnSm('gray')} onClick={e => { e.stopPropagation(); setEditingToolId(t.id); setEditToolForm({ name: t.name, brand: t.brand || '', model: t.model || '', serial_number: t.serial_number || '', category: t.category || 'Other', purchase_date: t.purchase_date || '', purchase_cost: t.purchase_cost || '', condition: t.condition || 'good', status: t.status || 'available', assigned_to: t.assigned_to || '', job_site: t.job_site || '', notes: t.notes || '' }) }}>Edit</button>
                                 <button style={s.btnSm('red')} onClick={e => { e.stopPropagation(); deleteTool(t.id) }}>Delete</button>
-                                <span style={{ color: '#555', fontSize: '12px' }}>{isExpanded ? 'â–²' : 'â–¼'}</span>
+                                <span style={{ color: '#555', fontSize: '12px' }}>{isExpanded ? '▲' : '▼'}</span>
                               </div>
                             </div>
                             {isExpanded && (
@@ -6585,7 +6585,7 @@ ${estimate.notes ? `
                                       <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #2a2a2a' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
                                       <span style={{ fontSize: '12px', color: '#555' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
                                       {l.assigned_profile?.full_name && <span style={{ fontSize: '12px', color: '#e8590c' }}>{l.assigned_profile.full_name}</span>}
-                                      {l.notes && <span style={{ fontSize: '12px', color: '#555' }}>Â· {l.notes}</span>}
+                                      {l.notes && <span style={{ fontSize: '12px', color: '#555' }}>· {l.notes}</span>}
                                     </div>
                                   </div>
                                 ))}
@@ -6600,7 +6600,7 @@ ${estimate.notes ? `
               )
             })()}
 
-            {/* â”€â”€ ORDERS â”€â”€ */}
+            {/* ── ORDERS ── */}
             {activeTab === 'orders' && (() => {
               const STATUS_COLORS = {
                 ordered:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
@@ -6663,18 +6663,18 @@ ${estimate.notes ? `
                         <div>
                           <label style={s.label}>Job *</label>
                           <select value={newOrderForm.job_id} onChange={e => setNewOrderForm(f => ({ ...f, job_id: e.target.value }))} required style={{ ...s.input, color: '#f1f1f1' }}>
-                            <option value="">Select jobâ€¦</option>
-                            {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
+                            <option value="">Select job…</option>
+                            {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                           </select>
                         </div>
                         <div>
                           <label style={s.label}>Vendor</label>
-                          <input value={newOrderForm.vendor} onChange={e => setNewOrderForm(f => ({ ...f, vendor: e.target.value }))} style={s.input} placeholder="Home Depot, Amazonâ€¦" />
+                          <input value={newOrderForm.vendor} onChange={e => setNewOrderForm(f => ({ ...f, vendor: e.target.value }))} style={s.input} placeholder="Home Depot, Amazon…" />
                         </div>
                       </div>
                       <div style={{ marginTop: '12px' }}>
                         <label style={s.label}>Description *</label>
-                        <input value={newOrderForm.description} onChange={e => setNewOrderForm(f => ({ ...f, description: e.target.value }))} required style={s.input} placeholder="What was orderedâ€¦" />
+                        <input value={newOrderForm.description} onChange={e => setNewOrderForm(f => ({ ...f, description: e.target.value }))} required style={s.input} placeholder="What was ordered…" />
                       </div>
                       <div style={{ ...s.grid3, marginTop: '12px' }}>
                         <div>
@@ -6713,7 +6713,7 @@ ${estimate.notes ? `
                         <input value={newOrderForm.notes} onChange={e => setNewOrderForm(f => ({ ...f, notes: e.target.value }))} style={s.input} />
                       </div>
                       <div style={{ marginTop: '1rem', display: 'flex', gap: '12px' }}>
-                        <button type="submit" disabled={savingOrder} style={s.btn}>{savingOrder ? 'Savingâ€¦' : 'Save Order'}</button>
+                        <button type="submit" disabled={savingOrder} style={s.btn}>{savingOrder ? 'Saving…' : 'Save Order'}</button>
                       </div>
                     </form>
                   )}
@@ -6722,7 +6722,7 @@ ${estimate.notes ? `
                   <div style={s.filterRow}>
                     <select value={ordersJobFilter} onChange={e => setOrdersJobFilter(e.target.value)} style={s.filterSelect}>
                       <option value="">All jobs</option>
-                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                     </select>
                     <select value={ordersStatusFilter} onChange={e => setOrdersStatusFilter(e.target.value)} style={s.filterSelect}>
                       <option value="">All statuses</option>
@@ -6741,14 +6741,14 @@ ${estimate.notes ? `
                           <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                             <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1', marginBottom: '2px' }}>{o.description}</div>
                             <div style={{ fontSize: '12px', color: '#555' }}>
-                              {o.jobs?.job_number ? `#${o.jobs.job_number} â€” ${o.jobs.project_name}` : ''}{o.vendor ? ` Â· ${o.vendor}` : ''}{o.po_number ? ` Â· PO ${o.po_number}` : ''}
+                              {o.jobs?.job_number ? `#${o.jobs.job_number} — ${o.jobs.project_name}` : ''}{o.vendor ? ` · ${o.vendor}` : ''}{o.po_number ? ` · PO ${o.po_number}` : ''}
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', flexShrink: 0 }}>
                             {o.amount != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${Number(o.amount).toLocaleString()}</span>}
                             {tUrl ? (
                               <a href={tUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#60a5fa', textDecoration: 'none' }}>
-                                {o.carrier} {o.tracking_number?.slice(-6)} â†—
+                                {o.carrier} {o.tracking_number?.slice(-6)} ↗
                               </a>
                             ) : o.tracking_number ? (
                               <span style={{ fontSize: '12px', color: '#555' }}>{o.tracking_number}</span>
@@ -6761,7 +6761,7 @@ ${estimate.notes ? `
                             >
                               {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                             </select>
-                            <button onClick={() => deleteOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }} title="Delete">Ã—</button>
+                            <button onClick={() => deleteOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px', padding: '0 4px' }} title="Delete">×</button>
                           </div>
                         </div>
                       )
@@ -6779,7 +6779,7 @@ ${estimate.notes ? `
                       <div style={s.grid2}>
                         <div>
                           <label style={s.label}>Template Name *</label>
-                          <input value={newTplForm.name} onChange={e => setNewTplForm(f => ({ ...f, name: e.target.value }))} required style={s.input} placeholder="Braum's Standard, Hotel Renoâ€¦" />
+                          <input value={newTplForm.name} onChange={e => setNewTplForm(f => ({ ...f, name: e.target.value }))} required style={s.input} placeholder="Braum's Standard, Hotel Reno…" />
                         </div>
                         <div>
                           <label style={s.label}>Description</label>
@@ -6794,13 +6794,13 @@ ${estimate.notes ? `
                             <input value={item.category} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, category: e.target.value } : x))} style={s.input} placeholder="Category" />
                             <input type="number" value={item.default_qty} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, default_qty: e.target.value } : x))} style={s.input} placeholder="Qty" />
                             <input value={item.unit} onChange={e => setNewTplItems(prev => prev.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x))} style={s.input} placeholder="Unit" />
-                            <button type="button" onClick={() => setNewTplItems(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '18px' }}>Ã—</button>
+                            <button type="button" onClick={() => setNewTplItems(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '18px' }}>×</button>
                           </div>
                         ))}
                         <button type="button" onClick={() => setNewTplItems(prev => [...prev, { item_name: '', category: '', default_qty: '1', unit: 'each' }])} style={s.btnSm(null)}>+ Add Item</button>
                       </div>
                       <div style={{ marginTop: '1rem' }}>
-                        <button type="submit" disabled={savingTemplate} style={s.btn}>{savingTemplate ? 'Savingâ€¦' : 'Save Template'}</button>
+                        <button type="submit" disabled={savingTemplate} style={s.btn}>{savingTemplate ? 'Saving…' : 'Save Template'}</button>
                       </div>
                     </form>
                   )}
@@ -6817,7 +6817,7 @@ ${estimate.notes ? `
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <button onClick={e => { e.stopPropagation(); deleteTemplate(tpl.id) }} style={s.btnSm('red')}>Delete</button>
-                          <span style={{ color: '#555' }}>{expandedTpl === tpl.id ? 'â–²' : 'â–¼'}</span>
+                          <span style={{ color: '#555' }}>{expandedTpl === tpl.id ? '▲' : '▼'}</span>
                         </div>
                       </div>
                       {expandedTpl === tpl.id && (
@@ -6837,7 +6837,7 @@ ${estimate.notes ? `
                                 {[...(tpl.order_template_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map(item => (
                                   <tr key={item.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
                                     <td style={{ padding: '8px 0', color: '#f1f1f1' }}>{item.item_name}</td>
-                                    <td style={{ padding: '8px 8px', color: '#555' }}>{item.category || 'â€”'}</td>
+                                    <td style={{ padding: '8px 8px', color: '#555' }}>{item.category || '—'}</td>
                                     <td style={{ padding: '8px 0', textAlign: 'right' }}>{item.default_qty} {item.unit}</td>
                                   </tr>
                                 ))}

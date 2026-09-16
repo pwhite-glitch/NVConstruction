@@ -1618,12 +1618,12 @@ export default function Dashboard() {
   .scope-item:last-child { border-bottom: none; }
   .scope-check { color: #4ade80; font-weight: 700; flex-shrink: 0; }
   .terms { background: #f9f9f9; border: 1px solid #eee; border-radius: 6px; padding: 16px; font-size: 11.5px; color: #666; line-height: 1.7; }
-  .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 32px; }
-  .sig-block { border-top: 2px solid #111; padding-top: 10px; }
+  .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 32px; break-inside: avoid; page-break-inside: avoid; }
+  .sig-block { border-top: 2px solid #111; padding-top: 10px; break-inside: avoid; page-break-inside: avoid; }
   .sig-label { font-size: 11px; font-weight: 700; color: #555; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
   .sig-name { font-size: 15px; font-weight: 700; color: #111; }
   .sig-company { font-size: 12px; color: #888; }
-  .sig-line { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 20px; }
+  .sig-line { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 16px; }
   .sig-field { font-size: 11px; color: #999; margin-top: 4px; }
   @page { size: letter portrait; margin: 1cm 1.5cm; }
   @media print {
@@ -1634,8 +1634,8 @@ export default function Dashboard() {
     .amount-box { padding: 12px 16px; margin-bottom: 14px; }
     .amount-value { font-size: 24px; }
     .terms { font-size: 10.5px; line-height: 1.55; padding: 10px 12px; }
-    .sigs { margin-top: 18px; gap: 24px; }
-    .sig-line { margin-top: 18px; padding-bottom: 14px; }
+    .sigs { margin-top: 14px; gap: 20px; }
+    .sig-line { margin-top: 14px; padding-bottom: 12px; }
     .parties { gap: 14px; }
     .party-card { padding: 10px 12px; }
   }
@@ -1701,17 +1701,17 @@ export default function Dashboard() {
     <div class="sig-block">
       <div class="sig-label">Contractor</div>
       <div class="sig-name">NV Construction, LLC</div>
-      <div class="sig-line" style="margin-top:32px"></div>
+      <div class="sig-line"></div>
       <div class="sig-field">Signature / Date</div>
-      <div style="margin-top:12px;border-bottom:1px solid #ccc;padding-bottom:20px"></div>
+      <div class="sig-line"></div>
       <div class="sig-field">Print name &amp; title</div>
     </div>
     <div class="sig-block">
       <div class="sig-label">Subcontractor</div>
       <div class="sig-name">${sub.company_name}</div>
-      <div class="sig-line" style="margin-top:32px"></div>
+      <div class="sig-line"></div>
       <div class="sig-field">Signature / Date</div>
-      <div style="margin-top:12px;border-bottom:1px solid #ccc;padding-bottom:20px"></div>
+      <div class="sig-line"></div>
       <div class="sig-field">Print name &amp; title</div>
     </div>
   </div>

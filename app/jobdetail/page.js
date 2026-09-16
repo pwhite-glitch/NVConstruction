@@ -5,6 +5,9 @@ import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import MeetingsTab from './MeetingsTab'
+import PaymentTypeSelector from './PaymentTypeSelector'
+import NewPOForm from './NewPOForm'
+import EditPOForm from './EditPOForm'
 
 const s = {
   page: { minHeight: '100vh', background: '#0a0a0a' },
@@ -268,7 +271,7 @@ function JobDetailInner() {
   // Purchase Orders state
   const [purchaseOrders, setPurchaseOrders] = useState([])
   const [showNewPO, setShowNewPO] = useState(false)
-  const [poForm, setPOForm] = useState({ vendor_name: '', description: '', budget_item_id: '', notes: '', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
+  const [poForm, setPOForm] = useState({ vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
   const [savingPO, setSavingPO] = useState(false)
   const [expandedPOId, setExpandedPOId] = useState(null)
   const [updatingPOId, setUpdatingPOId] = useState(null)
@@ -1695,6 +1698,7 @@ ${sovLines.length > 0 ? `
       description: poForm.description || null,
       budget_item_id: poForm.budget_item_id || null,
       notes: poForm.notes || null,
+      payment_type: poForm.payment_type || 'check',
       status: issueImmediately ? 'issued' : 'draft',
       created_by: session.user.id,
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
@@ -1708,7 +1712,7 @@ ${sovLines.length > 0 ? `
       await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     }
     setShowNewPO(false)
-    setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
+    setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
     setPOFile(null)
     await loadPurchaseOrders()
     await loadBudgetItems()
@@ -1733,6 +1737,7 @@ ${sovLines.length > 0 ? `
       description: editPOForm.description || null,
       budget_item_id: editPOForm.budget_item_id || null,
       notes: editPOForm.notes || null,
+      payment_type: editPOForm.payment_type || 'check',
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
     }
     if (editPOFile) {
@@ -8678,9 +8683,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', gap: '6px' }}>
                             {userRole === 'pm' && (
                               <button
-                                style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.budget_item_id) ? 0.4 : 1, cursor: !c.budget_item_id ? 'not-allowed' : 'pointer' }}
-                                disabled={updatingCostId === c.id || !c.budget_item_id}
-                                title={!c.budget_item_id ? 'Assign a budget line item before approving' : ''}
+                                style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.budget_item_id || !c.receipt_url) ? 0.4 : 1, cursor: (!c.budget_item_id || !c.receipt_url) ? 'not-allowed' : 'pointer' }}
+                                disabled={updatingCostId === c.id || !c.budget_item_id || !c.receipt_url}
+                                title={!c.receipt_url ? 'Attach a receipt before approving' : !c.budget_item_id ? 'Assign a budget line item before approving' : ''}
                                 onClick={() => updateCostStatus(c.id, 'approved', c.notes)}>
                                 Approve
                               </button>
@@ -11490,63 +11495,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
 
                       {showNewPO && (
-                        <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '1.25rem' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
-                            <div><label style={s.label}>Vendor / Supplier *</label><input style={s.input} value={poForm.vendor_name} onChange={e => setPOForm(f => ({ ...f, vendor_name: e.target.value }))} placeholder="Vendor name" /></div>
-                            <div><label style={s.label}>Description</label><input style={s.input} value={poForm.description} onChange={e => setPOForm(f => ({ ...f, description: e.target.value }))} placeholder="What is this PO for?" /></div>
-                          </div>
-                          <div style={{ marginBottom: '12px' }}>
-                            <label style={s.label}>Budget line item</label>
-                            <select style={s.input} value={poForm.budget_item_id} onChange={e => setPOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                              <option value="">â€” Unassigned â€”</option>
-                              {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
-                            </select>
-                          </div>
-                          <div style={{ marginBottom: '12px' }}>
-                            <label style={s.label}>Line items</label>
-                            <div>
-                              <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                                  <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
-                                </div>
-                                {poForm.items.map((item, idx) => (
-                                  <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', borderBottom: idx < poForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
-                                    <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
-                                    <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
-                                    <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
-                                    <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
-                                    <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>Ã—</button>
-                                  </div>
-                                ))}
-                                <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
-                                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
-                                  <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(poForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
-                                  <span />
-                                </div>
-                              </div>
-                              <button type="button" style={{ marginTop: '8px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '5px 14px', cursor: 'pointer' }}
-                                onClick={() => setPOForm(f => ({ ...f, items: [...f.items, { uid: Date.now(), description: '', qty: '1', unit: '', unit_price: '' }] }))}>
-                                + Add item
-                              </button>
-                            </div>
-                          </div>
-                          <div style={{ marginBottom: '1.25rem' }}>
-                            <label style={s.label}>Notes</label>
-                            <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={poForm.notes} onChange={e => setPOForm(f => ({ ...f, notes: e.target.value }))} placeholder="Delivery instructions, payment terms..." />
-                          </div>
-                          <div style={{ marginBottom: '1.25rem' }}>
-                            <label style={s.label}>Attachment</label>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '7px 14px', background: '#0a0a0a', border: '1px dashed #2a2a2a', borderRadius: '6px', fontSize: '12px', color: poFile ? '#f1f1f1' : '#555' }}>
-                              {poFile ? poFile.name : '+ Attach file (PDF, image, etc.)'}
-                              <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setPOFile(e.target.files[0] || null)} />
-                            </label>
-                            {poFile && <button onClick={() => setPOFile(null)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '12px' }}>Remove</button>}
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button style={{ ...s.btnSmallGreen, padding: '8px 20px', opacity: (savingPO || !poForm.vendor_name) ? 0.6 : 1 }} disabled={savingPO || !poForm.vendor_name} onClick={() => savePO(true)}>{savingPO ? 'Saving...' : 'Issue PO'}</button>
-                            <button style={{ ...s.btnSmall, padding: '8px 20px', opacity: (savingPO || !poForm.vendor_name) ? 0.6 : 1 }} disabled={savingPO || !poForm.vendor_name} onClick={() => savePO(false)}>Save as Draft</button>
-                          </div>
-                        </div>
+                        <NewPOForm s={s} poForm={poForm} setPOForm={setPOForm} poFile={poFile} setPOFile={setPOFile} budgetItems={budgetItems} savingPO={savingPO} savePO={savePO} />
                       )}
                     </div>
 
@@ -11561,64 +11510,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         return (
                           <div key={po.id} style={{ borderBottom: '1px solid #111', paddingBottom: '0', marginBottom: '0' }}>
                             {isEditing ? (
-                              <div style={{ padding: '14px 0' }}>
-                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Edit {po.po_number}</p>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
-                                  <div><label style={s.label}>Vendor *</label><input style={s.input} value={editPOForm.vendor_name} onChange={e => setEditPOForm(f => ({ ...f, vendor_name: e.target.value }))} /></div>
-                                  <div><label style={s.label}>Description</label><input style={s.input} value={editPOForm.description} onChange={e => setEditPOForm(f => ({ ...f, description: e.target.value }))} /></div>
-                                </div>
-                                <div style={{ marginBottom: '12px' }}>
-                                  <label style={s.label}>Budget line item</label>
-                                  <select style={s.input} value={editPOForm.budget_item_id} onChange={e => setEditPOForm(f => ({ ...f, budget_item_id: e.target.value }))}>
-                                    <option value="">â€” Unassigned â€”</option>
-                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} Â· ` : ''}{b.description}</option>)}
-                                  </select>
-                                </div>
-                                <div style={{ marginBottom: '12px' }}>
-                                  <label style={s.label}>Line items</label>
-                                  <div>
-                                    <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                                        <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span />
-                                      </div>
-                                      {editPOForm.items.map((item, idx) => (
-                                        <div key={item.uid} style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', borderBottom: idx < editPOForm.items.length - 1 ? '1px solid #111' : 'none', alignItems: 'center' }}>
-                                          <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="Item description" value={item.description} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, description: e.target.value } : x) }))} />
-                                          <input type="number" min="0" max={100000} step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} value={item.qty} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, qty: e.target.value } : x) }))} />
-                                          <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #111' }} placeholder="ea" value={item.unit} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit: e.target.value } : x) }))} />
-                                          <input type="number" min="0" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #111' }} placeholder="0.00" value={item.unit_price} onChange={e => setEditPOForm(f => ({ ...f, items: f.items.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x) }))} />
-                                          <button onClick={() => setEditPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>Ã—</button>
-                                        </div>
-                                      ))}
-                                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
-                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
-                                        <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(editPOForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
-                                        <span />
-                                      </div>
-                                    </div>
-                                    <button type="button" style={{ marginTop: '8px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px dashed #3a1a00', borderRadius: '6px', padding: '5px 14px', cursor: 'pointer' }}
-                                      onClick={() => setEditPOForm(f => ({ ...f, items: [...f.items, { uid: Date.now(), description: '', qty: '1', unit: '', unit_price: '' }] }))}>
-                                      + Add item
-                                    </button>
-                                  </div>
-                                </div>
-                                <div style={{ marginBottom: '1rem' }}>
-                                  <label style={s.label}>Notes</label>
-                                  <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editPOForm.notes} onChange={e => setEditPOForm(f => ({ ...f, notes: e.target.value }))} />
-                                </div>
-                                <div style={{ marginBottom: '1rem' }}>
-                                  <label style={s.label}>Replace attachment</label>
-                                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '7px 14px', background: '#0a0a0a', border: '1px dashed #2a2a2a', borderRadius: '6px', fontSize: '12px', color: editPOFile ? '#f1f1f1' : '#555' }}>
-                                    {editPOFile ? editPOFile.name : '+ Attach file (PDF, image, etc.)'}
-                                    <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setEditPOFile(e.target.files[0] || null)} />
-                                  </label>
-                                  {editPOFile && <button onClick={() => setEditPOFile(null)} style={{ marginLeft: '8px', background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '12px' }}>Remove</button>}
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                  <button style={{ ...s.btnSmall, opacity: savingPOEdit ? 0.6 : 1 }} disabled={savingPOEdit} onClick={savePOEdit}>{savingPOEdit ? 'Saving...' : 'Save changes'}</button>
-                                  <button style={s.btnGray} onClick={() => setEditingPOId(null)}>Cancel</button>
-                                </div>
-                              </div>
+                              <EditPOForm s={s} fmt={fmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} />
                             ) : (
                               <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', cursor: 'pointer' }}
@@ -11646,21 +11538,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {isExpanded && (
                                   <div style={{ paddingBottom: '14px' }}>
                                     {po.notes && <p style={{ fontSize: '13px', color: '#666', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
-                                    {po.attachment_url && (
-                                      <button onClick={() => openPOAttachment(po.attachment_url)} style={{ marginBottom: '10px', fontSize: '12px', color: '#e8590c', background: 'none', border: '1px solid #3a1a00', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}>
-                                        ðŸ“Ž View Attachment
-                                      </button>
-                                    )}
+                                    <div style={{ display: 'flex', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                                      {po.payment_type && (
+                                        <span style={{ fontSize: '12px', color: '#888' }}>
+                                          Payment: <span style={{ color: po.payment_type === 'reimbursement' ? '#60a5fa' : '#f1f1f1', fontWeight: '600' }}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
+                                        </span>
+                                      )}
+                                      {po.attachment_url && (
+                                        <button onClick={() => openPOAttachment(po.attachment_url)} style={{ fontSize: '12px', color: '#e8590c', background: 'none', border: '1px solid #3a1a00', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}>
+                                          View Attachment
+                                        </button>
+                                      )}
+                                    </div>
                                     <POLineItemsTable items={po.purchase_order_items} />
-                                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                                       {po.status === 'draft' && <>
-                                        <button style={{ ...s.btnSmallGreen, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>
-                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
+                                        <button style={{ ...s.btnSmallGreen, opacity: (updatingPOId === po.id || !po.attachment_url) ? 0.6 : 1 }} disabled={updatingPOId === po.id || !po.attachment_url} title={!po.attachment_url ? 'Attach a document before issuing' : ''} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>
+                                        {!po.attachment_url && <span style={{ fontSize: '12px', color: '#888' }}>Attachment required to issue</span>}
+                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', payment_type: po.payment_type || 'check', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
                                         <button style={s.btnSmallRed} onClick={() => deletePO(po.id)}>Delete</button>
                                       </>}
                                       {po.status === 'issued' && <>
                                         <button style={{ ...s.btnSmallGreen, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'received')}>Mark Received</button>
-                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
+                                        <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', payment_type: po.payment_type || 'check', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
                                         <button style={{ ...s.btnSmallRed, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'closed')}>Cancel PO</button>
                                       </>}
                                       {po.status === 'received' && <>

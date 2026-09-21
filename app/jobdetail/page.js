@@ -11677,7 +11677,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             } else {
                               res = await fetch('/api/general-conditions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, ...gcForm }) })
                             }
-                            if (!res.ok) { alert('Failed to save. Try again.'); setSavingGC(false); return; }
+                            if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to save: ' + (e.error || res.status)); setSavingGC(false); return; }
                             setGcForm({ description: '', amount: '', category: 'salary', entry_date: '', budget_item_id: '', notes: '', draw_request_id: '' })
                             setGcFile(null)
                             await loadGeneralConditions()
@@ -11745,7 +11745,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         } else {
                                           res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcEditForm }) })
                                         }
-                                        if (!res.ok) { alert('Failed to save. Try again.'); setSavingGC(false); return; }
+                                        if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to save: ' + (e.error || res.status)); setSavingGC(false); return; }
                                         setEditingGCId(null)
                                         setGcEditForm({})
                                         setGcEditFile(null)
@@ -11780,7 +11780,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       <button style={s.btnSmallRed} onClick={async () => {
                                         if (!window.confirm('Delete this entry?')) return
                                         const res = await fetch('/api/general-conditions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id }) })
-                                        if (!res.ok) { alert('Failed to save. Try again.'); return; }
+                                        if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to delete: ' + (e.error || res.status)); return; }
                                         await loadGeneralConditions()
                                       }}>Delete</button>
                                     </div>

@@ -5644,19 +5644,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* Cost to Complete Forecast */}
             {budgetView === 'eac' && budgetItems.length > 0 && (() => {
+              // Profit line items (cost_code 1111 or description "profit") are revenue,
+              // not costs — exclude from EAC and variance so totals reflect true margin.
+              const isProfitItem = item =>
+                item.cost_code === '1111' || item.description?.trim().toLowerCase() === 'profit'
               const forecastRows = budgetItems.map(item => {
+                const profit = isProfitItem(item)
                 const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
-                const contracted = committedForItem(item.id) // already includes approved direct costs
+                const contracted = committedForItem(item.id)
                 const totalActual = contracted
                 const autoEac = totalActual > 0 ? totalActual : Number(item.budget_amount)
                 const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
                 const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
-                return { item, spent, contracted, autoEac, eac, revenue, variance: Number(item.budget_amount) - eac, projProfit: revenue - eac }
+                return { item, profit, spent, contracted, autoEac, eac, revenue,
+                  variance: profit ? null : Number(item.budget_amount) - eac,
+                  projProfit: profit ? revenue : revenue - eac }
               })
               const T = forecastRows.reduce((acc, r) => ({
                 budget: acc.budget + Number(r.item.budget_amount), revenue: acc.revenue + r.revenue,
                 spent: acc.spent + r.spent, contracted: acc.contracted + r.contracted,
-                eac: acc.eac + r.eac, variance: acc.variance + r.variance, projProfit: acc.projProfit + r.projProfit,
+                eac: acc.eac + r.eac,
+                variance: acc.variance + (r.profit ? 0 : r.variance),
+                projProfit: acc.projProfit + (r.profit ? r.revenue : r.projProfit),
               }), { budget: 0, revenue: 0, spent: 0, contracted: 0, eac: 0, variance: 0, projProfit: 0 })
               const hdr = { fontSize: '11px', color: '#555', textAlign: 'right' }
               const col = { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1.2fr 1fr 1fr', gap: '8px', padding: '8px 12px' }
@@ -5666,38 +5675,45 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates from committed (contracts + approved direct costs + labor). Enter a value to override.</p>
                   <div style={{ ...s.statRow, marginBottom: '1.25rem' }} className="rx-stats">
                     <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#4ade80' : '#ff6b6b')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
-                    <div style={s.statCard}><div style={s.statLabel}>Budget variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Cost variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Direct costs spent</div><div style={s.statValue()}>${T.spent.toLocaleString()}</div></div>
-                    <div style={s.statCard}><div style={s.statLabel}>Total EAC</div><div style={s.statValue()}>${T.eac.toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Cost EAC</div><div style={s.statValue()}>${(T.eac - forecastRows.filter(r => r.profit).reduce((a, r) => a + r.eac, 0)).toLocaleString()}</div></div>
                   </div>
                   <div style={{ ...col, borderBottom: '1px solid #1a1a1a', marginBottom: '4px' }}>
                     <span style={{ fontSize: '11px', color: '#555' }}>Description</span>
-                    {['Budget', 'Revenue', 'DC Spent', 'Contracted', 'EAC override', 'Variance', 'Proj. Profit'].map(h => <span key={h} style={hdr}>{h}</span>)}
+                    {['Budget', 'Revenue', 'DC Spent', 'Contracted', 'EAC override', 'Cost variance', 'Proj. Profit'].map(h => <span key={h} style={hdr}>{h}</span>)}
                   </div>
-                  {forecastRows.map(({ item, spent, contracted, autoEac, eac, revenue, variance, projProfit }) => (
-                    <div key={item.id} style={{ ...col, borderBottom: '1px solid #111', alignItems: 'center' }}>
+                  {forecastRows.map(({ item, profit, spent, contracted, autoEac, eac, revenue, variance, projProfit }) => (
+                    <div key={item.id} style={{ ...col, borderBottom: '1px solid #111', alignItems: 'center', background: profit ? 'rgba(250,204,21,0.03)' : undefined }}>
                       <div>
                         {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code} · </span>}
                         <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
+                        {profit && <span style={{ fontSize: '10px', background: '#facc1520', color: '#facc15', border: '1px solid #facc1540', borderRadius: '3px', padding: '1px 5px', marginLeft: '6px' }}>PROFIT</span>}
                       </div>
                       <div style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1' }}>${Number(item.budget_amount).toLocaleString()}</div>
                       <div style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa' }}>${revenue.toLocaleString()}</div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${spent.toLocaleString()}</div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${contracted.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>{profit ? <span style={{ color: '#333' }}>—</span> : `$${spent.toLocaleString()}`}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>{profit ? <span style={{ color: '#333' }}>—</span> : `$${contracted.toLocaleString()}`}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <input
-                          type="number" step="1"
-                          style={{ ...s.input, textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: item.forecast_eac != null ? '#e8590c' : '#aaa' }}
-                          value={item.forecast_eac != null ? String(item.forecast_eac) : String(Math.round(autoEac))}
-                          onChange={e => setBudgetItems(prev => prev.map(b => b.id === item.id ? { ...b, forecast_eac: e.target.value === '' ? null : e.target.value } : b))}
-                          onFocus={e => e.target.select()}
-                          onBlur={e => saveForecastEac(item.id, e.target.value === '' ? '' : e.target.value)}
-                        />
-                        {item.forecast_eac != null && (
-                          <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                        {profit ? <span style={{ fontSize: '12px', color: '#333', flex: 1, textAlign: 'right' }}>—</span> : (
+                          <>
+                            <input
+                              type="number" step="1"
+                              style={{ ...s.input, textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: item.forecast_eac != null ? '#e8590c' : '#aaa' }}
+                              value={item.forecast_eac != null ? String(item.forecast_eac) : String(Math.round(autoEac))}
+                              onChange={e => setBudgetItems(prev => prev.map(b => b.id === item.id ? { ...b, forecast_eac: e.target.value === '' ? null : e.target.value } : b))}
+                              onFocus={e => e.target.select()}
+                              onBlur={e => saveForecastEac(item.id, e.target.value === '' ? '' : e.target.value)}
+                            />
+                            {item.forecast_eac != null && (
+                              <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                            )}
+                          </>
                         )}
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{variance >= 0 ? '+' : '-'}${Math.abs(variance).toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance == null ? '#333' : variance >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                        {variance == null ? '—' : `${variance >= 0 ? '+' : '-'}$${Math.abs(variance).toLocaleString()}`}
+                      </div>
                       <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{projProfit >= 0 ? '+' : '-'}${Math.abs(projProfit).toLocaleString()}</div>
                     </div>
                   ))}
@@ -5711,6 +5727,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</span>
                   </div>
+                  {forecastRows.some(r => r.profit) && (
+                    <p style={{ fontSize: '11px', color: '#444', margin: '0.5rem 0 0', textAlign: 'right' }}>
+                      Cost variance and EAC exclude profit line items. Proj. profit = revenue − cost EAC.
+                    </p>
+                  )}
                 </div>
               )
             })()}

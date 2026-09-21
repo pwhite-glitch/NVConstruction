@@ -21,7 +21,7 @@ export async function POST(request) {
       { data: jobsData }
     ] = await Promise.all([
       adminSupabase.from('budget_items')
-        .select('id, job_id, budget_amount, owner_amount, forecast_eac')
+        .select('id, job_id, budget_amount, owner_amount, forecast_eac, cost_code, description')
         .in('job_id', job_ids),
       adminSupabase.from('direct_costs')
         .select('job_id, budget_item_id, amount')
@@ -69,6 +69,8 @@ export async function POST(request) {
       let totalRevenue = 0
 
       for (const item of jobItems) {
+        const isProfitLine = item.cost_code === '1111' ||
+          item.description?.trim().toLowerCase() === 'profit'
         const spent = spentByItem[item.id] || 0
         const contracted = contractedByItem[item.id] || 0
         const autoEac = contracted > 0
@@ -76,8 +78,8 @@ export async function POST(request) {
           : Math.max(spent, Number(item.budget_amount ?? 0))
         const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
         const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount ?? 0)
-        totalEac += eac
         totalRevenue += revenue
+        if (!isProfitLine) totalEac += eac  // profit line is revenue, not a cost to complete
       }
 
       // Add unassigned costs and commitments — they count against profit even without a budget line

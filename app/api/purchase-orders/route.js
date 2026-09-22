@@ -73,9 +73,12 @@ export async function POST(request) {
 
     const amount = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)
 
+    const insertRow = { job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url }
+    if (payment_type) insertRow.payment_type = payment_type
+
     const { data: po, error: poErr } = await adminSupabase
       .from('purchase_orders')
-      .insert({ job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, payment_type: payment_type || 'check', status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url })
+      .insert(insertRow)
       .select()
       .single()
 
@@ -129,7 +132,7 @@ export async function PUT(request) {
     if (fields.description !== undefined) updates.description = fields.description || null
     if (fields.budget_item_id !== undefined) updates.budget_item_id = fields.budget_item_id || null
     if (fields.notes !== undefined) updates.notes = fields.notes || null
-    if (fields.payment_type !== undefined) updates.payment_type = fields.payment_type || 'check'
+    if (fields.payment_type) updates.payment_type = fields.payment_type
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
     if (newAttachmentUrl !== undefined) updates.attachment_url = newAttachmentUrl

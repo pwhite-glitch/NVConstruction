@@ -204,9 +204,10 @@ export default function AdminPortal() {
   async function markPaid(subId) {
     setSavingPay(true)
     setPayMsg('')
+    const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch('/api/billing-entry', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
       body: JSON.stringify({
         id: subId,
         paid_at: payForm.paid_at ? new Date(payForm.paid_at + 'T12:00:00').toISOString() : new Date().toISOString(),
@@ -230,16 +231,18 @@ export default function AdminPortal() {
     if (editBillForm.amount_billed !== '') body.amount_billed = parseFloat(editBillForm.amount_billed)
     if (editBillForm.retainage_held !== '') body.retainage_held = parseFloat(editBillForm.retainage_held)
     if (editBillForm.work_description !== '') body.work_description = editBillForm.work_description
-    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify(body) })
     setSavingBillEdit(false)
     setEditingBillId(null)
     await loadBilling()
   }
 
   async function toggleReadyToPay(subId, current) {
+    const { data: { session } } = await supabase.auth.getSession()
     await fetch('/api/billing-entry', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
       body: JSON.stringify({ id: subId, ready_to_pay: !current }),
     })
     await loadBilling()
@@ -254,9 +257,10 @@ export default function AdminPortal() {
 
   async function toggleNvCutsCheck(subId, current) {
     setTogglingNvCheck(subId)
+    const { data: { session } } = await supabase.auth.getSession()
     await fetch('/api/billing-entry', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
       body: JSON.stringify({ id: subId, nv_cuts_check: !current }),
     })
     setTogglingNvCheck(null)
@@ -264,9 +268,10 @@ export default function AdminPortal() {
   }
 
   async function saveCheckNumber(subId) {
+    const { data: { session } } = await supabase.auth.getSession()
     await fetch('/api/billing-entry', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
       body: JSON.stringify({ id: subId, check_number: editCheckNum || null }),
     })
     setEditingCheckFor(null)

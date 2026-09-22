@@ -14,7 +14,7 @@ const PM_INSERT_FIELDS = new Set(['job_id', 'sub_id', 'company_name', 'amount_bi
 const SUB_INSERT_FIELDS = new Set(['job_id', 'amount_billed', 'retainage_held', 'notes', 'billing_period', 'doc_url'])
 
 // Fields a PM may PATCH
-const PM_PATCH_FIELDS = new Set(['status', 'amount_billed', 'retainage_held', 'notes', 'ready_to_pay', 'lien_waiver_signed_at', 'paid_at', 'doc_url', 'billing_period'])
+const PM_PATCH_FIELDS = new Set(['status', 'amount_billed', 'retainage_held', 'notes', 'ready_to_pay', 'lien_waiver_signed_at', 'paid_at', 'doc_url', 'billing_period', 'payment_amount', 'payment_method', 'check_number', 'payment_notes', 'nv_cuts_check', 'invoice_number', 'work_description'])
 // Sub may only update their own pending submission's safe fields
 const SUB_PATCH_FIELDS = new Set(['notes', 'billing_period', 'doc_url'])
 

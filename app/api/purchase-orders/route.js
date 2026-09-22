@@ -62,7 +62,7 @@ export async function POST(request) {
       body = await request.json()
     }
 
-    const { job_id, vendor_name, description, budget_item_id, notes, status = 'draft', items = [], created_by } = body
+    const { job_id, vendor_name, description, budget_item_id, notes, payment_type, status = 'draft', items = [], created_by } = body
 
     if (!job_id || !vendor_name) return Response.json({ error: 'job_id and vendor_name required' }, { status: 400 })
 
@@ -75,7 +75,7 @@ export async function POST(request) {
 
     const { data: po, error: poErr } = await adminSupabase
       .from('purchase_orders')
-      .insert({ job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url })
+      .insert({ job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, payment_type: payment_type || 'check', status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url })
       .select()
       .single()
 
@@ -129,6 +129,7 @@ export async function PUT(request) {
     if (fields.description !== undefined) updates.description = fields.description || null
     if (fields.budget_item_id !== undefined) updates.budget_item_id = fields.budget_item_id || null
     if (fields.notes !== undefined) updates.notes = fields.notes || null
+    if (fields.payment_type !== undefined) updates.payment_type = fields.payment_type || 'check'
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
     if (newAttachmentUrl !== undefined) updates.attachment_url = newAttachmentUrl

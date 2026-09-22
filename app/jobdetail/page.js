@@ -11544,6 +11544,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{po.status}</span>
+                                      {po.payment_type === 'reimbursement'
+                                        ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#0a1525', color: '#60a5fa', border: '1px solid #1a3050' }}>Reimbursement</span>
+                                        : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#111', color: '#888', border: '1px solid #222' }}>Check to vendor</span>
+                                      }
                                       {bi && <span style={{ fontSize: '11px', color: '#555' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
                                       {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
                                       <span style={{ fontSize: '11px', color: '#444' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>

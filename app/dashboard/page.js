@@ -4857,9 +4857,11 @@ ${estimate.notes ? `
               const lost = estimates.filter(e => ['lost','declined'].includes(e.status))
               const pipeline = active.filter(e => !['won','accepted'].includes(e.status))
               const completedJobs = (jobs || []).filter(j => j.status === 'complete')
+              const activeJobs = (jobs || []).filter(j => j.status === 'active')
               const pipelineVal = pipeline.reduce((a, e) => a + calcTotal(e), 0)
               const wonVal = won.reduce((a, e) => a + calcTotal(e), 0)
               const completedVal = completedJobs.reduce((a, j) => a + Number(j.contract_value || 0), 0)
+              const activeVal = activeJobs.reduce((a, j) => a + Number(j.contract_value || 0), 0)
               const closed = won.length + lost.length
               const winRate = closed > 0 ? Math.round(won.length / closed * 100) : 0
               const withSqft = estimates.filter(e => e.square_footage > 0)
@@ -4868,9 +4870,10 @@ ${estimate.notes ? `
               return (
                 <>
                   {/* Metrics bar */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
                     {[
-                      { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active`, color: '#f1f1f1', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active estimate${pipeline.length !== 1 ? 's' : ''}`, color: '#f1f1f1', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Under Construction', value: fmtK(activeVal), sub: `${activeJobs.length} active job${activeJobs.length !== 1 ? 's' : ''}`, color: '#38bdf8', bg: '#0a1520', border: '#1a3040' },
                       { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} est. won · ${completedJobs.length} jobs complete`, color: '#4ade80', bg: '#0a1a0e', border: '#1a3a1e' },
                       { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#4ade80' : winRate >= 25 ? '#facc15' : '#ff6b6b', bg: '#0f0f0f', border: '#1e1e1e' },
                       { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#0f0f0f', border: '#1e1e1e' },
@@ -4933,6 +4936,34 @@ ${estimate.notes ? `
                         </div>
                       )
                     })}
+
+                    {/* Active jobs column */}
+                    {(() => {
+                      const stage = { color: '#38bdf8', bg: '#0a1520', border: '#1a3040', hdr: '#0d1825' }
+                      return (
+                        <div style={{ minWidth: '230px', flex: '0 0 230px', background: stage.bg, border: `1px solid ${stage.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ background: stage.hdr, padding: '10px 14px', borderBottom: `1px solid ${stage.border}`, borderRadius: '10px 10px 0 0' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '9px', fontWeight: '800', color: stage.color, letterSpacing: '2px' }}>UNDER CONSTRUCTION</span>
+                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '99px', padding: '1px 7px' }}>{activeJobs.length}</span>
+                            </div>
+                            {activeVal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(activeVal)}</div>}
+                          </div>
+                          <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
+                            {activeJobs.length === 0 && <div style={{ textAlign: 'center', color: '#2a2a2a', fontSize: '12px', paddingTop: '1.5rem' }}>No active jobs</div>}
+                            {activeJobs.map(job => (
+                              <div key={job.id} style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
+                                onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3', marginBottom: '2px' }}>{job.project_name}</div>
+                                {job.job_number && <div style={{ fontSize: '11px', color: '#555', marginBottom: '5px' }}>#{job.job_number}</div>}
+                                {job.contract_value > 0 && <div style={{ fontSize: '15px', fontWeight: '800', color: stage.color, fontVariantNumeric: 'tabular-nums' }}>{fmtK(Number(job.contract_value))}</div>}
+                                <div style={{ fontSize: '10px', color: '#0a2a3a', background: '#0a1a2a', border: '1px solid #1a3a4a', borderRadius: '3px', padding: '2px 6px', display: 'inline-block', marginTop: '5px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', color: stage.color }}>Active</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Completed jobs column */}
                     {(() => {

@@ -14,7 +14,7 @@ export async function POST(request) {
 
   let body
   try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
-  const { email, role, full_name } = body
+  const { email, role, full_name, company_name, company_id, invite_email } = body
 
   if (!email || !role) return Response.json({ error: 'email and role required' }, { status: 400 })
   if (!ALLOWED_ROLES.includes(role)) return Response.json({ error: 'Invalid role' }, { status: 400 })
@@ -25,17 +25,23 @@ export async function POST(request) {
   const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase())
   if (!user) return Response.json({ error: `No account found for ${email}` }, { status: 404 })
 
-  const { data: existing } = await adminSupabase.from('profiles').select('id').eq('id', user.id).maybeSingle()
+  const { data: existing } = await adminSupabase.from('profiles').select('id, company_name, invite_email').eq('id', user.id).maybeSingle()
+
+  const profileFields = {
+    role,
+    invite_email: invite_email || user.email,
+    ...(full_name ? { full_name } : {}),
+    ...(company_name ? { company_name } : {}),
+    ...(company_id ? { company_id } : {}),
+  }
 
   let dbError
   if (existing) {
-    const { error } = await adminSupabase.from('profiles')
-      .update({ role, ...(full_name ? { full_name } : {}) })
-      .eq('id', user.id)
+    const { error } = await adminSupabase.from('profiles').update(profileFields).eq('id', user.id)
     dbError = error
   } else {
     const { error } = await adminSupabase.from('profiles')
-      .insert({ id: user.id, role, full_name: full_name || user.user_metadata?.full_name || null })
+      .insert({ id: user.id, full_name: full_name || user.user_metadata?.full_name || 'Invited User', ...profileFields })
     dbError = error
   }
 

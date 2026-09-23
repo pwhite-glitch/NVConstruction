@@ -212,6 +212,9 @@ export default function Dashboard() {
   const [subTeamInviteResult, setSubTeamInviteResult] = useState({})
   const [repairingCompanyFor, setRepairingCompanyFor] = useState(null)
   const [repairMsg, setRepairMsg] = useState({})
+  const [syncEmail, setSyncEmail] = useState({})
+  const [syncLoading, setSyncLoading] = useState(null)
+  const [syncMsg, setSyncMsg] = useState({})
   const [addMemberOpenFor, setAddMemberOpenFor] = useState(null)
   const [editingSubUser, setEditingSubUser] = useState(null)
   const [subUserActionLoading, setSubUserActionLoading] = useState(null)
@@ -1044,6 +1047,34 @@ export default function Dashboard() {
       setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: err.message } }))
     } finally {
       setRepairingCompanyFor(null)
+    }
+  }
+
+  async function syncSubProfile(dirId, companyName) {
+    const email = (syncEmail[dirId] || '').trim().toLowerCase()
+    if (!email) return
+    setSyncLoading(dirId)
+    setSyncMsg(prev => ({ ...prev, [dirId]: null }))
+    try {
+      const company = companiesData.find(c => c.name?.toLowerCase().trim() === companyName?.toLowerCase().trim())
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/fix-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ email, role: 'sub_estimator', company_name: companyName, company_id: company?.id || undefined, invite_email: email }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSyncMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: json.error || 'Sync failed' } }))
+      } else {
+        setSyncMsg(prev => ({ ...prev, [dirId]: { type: 'ok', text: `Profile ${json.action} for ${email}` } }))
+        setSyncEmail(prev => ({ ...prev, [dirId]: '' }))
+        await refreshSubProfiles()
+      }
+    } catch (err) {
+      setSyncMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: err.message } }))
+    } finally {
+      setSyncLoading(null)
     }
   }
 
@@ -2992,6 +3023,30 @@ ${estimate.notes ? `
                                   {repairMsg[sub.id].text}
                                 </div>
                               )}
+
+                              {/* Sync missing user by email */}
+                              {(() => {
+                                const isSyncing = syncLoading === sub.id
+                                const sMsg = syncMsg[sub.id]
+                                return (
+                                  <div style={{ padding: '10px 16px', borderBottom: members.length > 0 ? '1px solid #0d0d0d' : 'none', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '11px', color: '#333', flexShrink: 0 }}>Not seeing someone?</span>
+                                    <input
+                                      type="email"
+                                      placeholder="Enter their email to sync"
+                                      value={syncEmail[sub.id] || ''}
+                                      onChange={e => setSyncEmail(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                                      style={{ flex: '1', minWidth: '180px', padding: '5px 9px', background: '#0c0c0c', border: '1px solid #1e1e1e', borderRadius: '6px', color: '#aaa', fontSize: '12px', outline: 'none' }} />
+                                    <button
+                                      disabled={isSyncing || !(syncEmail[sub.id] || '').trim()}
+                                      onClick={() => syncSubProfile(sub.id, sub.company_name)}
+                                      style={{ padding: '5px 12px', background: '#0f1a2a', border: '1px solid #1a3050', borderRadius: '6px', color: '#60a5fa', fontSize: '12px', fontWeight: '600', cursor: isSyncing ? 'not-allowed' : 'pointer', opacity: isSyncing || !(syncEmail[sub.id] || '').trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                                      {isSyncing ? 'Syncing…' : 'Sync Profile'}
+                                    </button>
+                                    {sMsg && <span style={{ fontSize: '12px', color: sMsg.type === 'err' ? '#ff6b6b' : '#4ade80' }}>{sMsg.text}</span>}
+                                  </div>
+                                )
+                              })()}
 
                               {/* User rows */}
                               {members.map((m, idx) => {

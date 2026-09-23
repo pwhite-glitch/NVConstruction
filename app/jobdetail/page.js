@@ -1703,13 +1703,21 @@ ${sovLines.length > 0 ? `
       created_by: session.user.id,
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
     }
+    let res
     if (poFile) {
       const fd = new FormData()
       fd.append('file', poFile)
       fd.append('data', JSON.stringify(payload))
-      await fetch('/api/purchase-orders', { method: 'POST', body: fd })
+      res = await fetch('/api/purchase-orders', { method: 'POST', body: fd })
     } else {
-      await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      res = await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setErrMsg('PO save failed: ' + (j.error || res.statusText))
+      setTimeout(() => setErrMsg(''), 6000)
+      setSavingPO(false)
+      return
     }
     setShowNewPO(false)
     setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
@@ -1740,13 +1748,21 @@ ${sovLines.length > 0 ? `
       payment_type: editPOForm.payment_type || 'check',
       items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
     }
+    let editRes
     if (editPOFile) {
       const fd = new FormData()
       fd.append('file', editPOFile)
       fd.append('data', JSON.stringify(payload))
-      await fetch('/api/purchase-orders', { method: 'PUT', body: fd })
+      editRes = await fetch('/api/purchase-orders', { method: 'PUT', body: fd })
     } else {
-      await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      editRes = await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    }
+    if (!editRes.ok) {
+      const j = await editRes.json().catch(() => ({}))
+      setErrMsg('PO update failed: ' + (j.error || editRes.statusText))
+      setTimeout(() => setErrMsg(''), 6000)
+      setSavingPOEdit(false)
+      return
     }
     setEditingPOId(null)
     setEditPOFile(null)

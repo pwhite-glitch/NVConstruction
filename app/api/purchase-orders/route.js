@@ -74,13 +74,15 @@ export async function POST(request) {
     const amount = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)
 
     const insertRow = { job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url }
-    if (payment_type) insertRow.payment_type = payment_type
 
-    const { data: po, error: poErr } = await adminSupabase
-      .from('purchase_orders')
-      .insert(insertRow)
-      .select()
-      .single()
+    // Try with payment_type first; if the column doesn't exist yet, retry without it
+    if (payment_type) insertRow.payment_type = payment_type
+    let { data: po, error: poErr } = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
+    if (poErr?.message?.includes('payment_type')) {
+      delete insertRow.payment_type
+      const retry = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
+      po = retry.data; poErr = retry.error
+    }
 
     if (poErr) return Response.json({ error: poErr.message }, { status: 500 })
 
@@ -132,7 +134,7 @@ export async function PUT(request) {
     if (fields.description !== undefined) updates.description = fields.description || null
     if (fields.budget_item_id !== undefined) updates.budget_item_id = fields.budget_item_id || null
     if (fields.notes !== undefined) updates.notes = fields.notes || null
-    if (fields.payment_type) updates.payment_type = fields.payment_type
+    if (fields.payment_type) updates.payment_type = fields.payment_type  // requires migration 004
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
     if (newAttachmentUrl !== undefined) updates.attachment_url = newAttachmentUrl
@@ -156,7 +158,13 @@ export async function PUT(request) {
     }
 
     if (Object.keys(updates).length > 0) {
-      await adminSupabase.from('purchase_orders').update(updates).eq('id', id)
+      const { error: upErr } = await adminSupabase.from('purchase_orders').update(updates).eq('id', id)
+      if (upErr?.message?.includes('payment_type')) {
+        const { payment_type: _pt, ...updatesWithout } = updates
+        if (Object.keys(updatesWithout).length > 0) {
+          await adminSupabase.from('purchase_orders').update(updatesWithout).eq('id', id)
+        }
+      }
     }
 
     return Response.json({ ok: true })

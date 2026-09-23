@@ -68,15 +68,22 @@ export async function POST(request) {
     let profileWarning = null
     if (userId) {
       const validSubRoles = ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin']
+      const desiredRole = validSubRoles.includes(reqRole) ? reqRole : 'subcontractor'
       const profileData = {
         id: userId,
         full_name: dir.contact_name || reqFullName || 'Invited User',
-        role: validSubRoles.includes(reqRole) ? reqRole : 'subcontractor',
+        role: desiredRole,
         company_name: dir.company_name || reqCompanyName || null,
         invite_email: dir.email,
       }
       if (company_id) profileData.company_id = company_id
-      const { error: profileErr } = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+      let { error: profileErr } = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+      // If the DB check constraint doesn't include sub_* roles yet, fall back to 'subcontractor'
+      if (profileErr?.message?.includes('role_check') && desiredRole !== 'subcontractor') {
+        profileData.role = 'subcontractor'
+        const retry = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+        profileErr = retry.error
+      }
       if (profileErr) profileWarning = profileErr.message
     }
 

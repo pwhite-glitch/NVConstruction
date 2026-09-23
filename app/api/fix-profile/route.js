@@ -45,6 +45,15 @@ export async function POST(request) {
     dbError = error
   }
 
+  // If sub_* role not in DB constraint yet, retry with 'subcontractor'
+  if (dbError?.message?.includes('role_check') && profileFields.role !== 'subcontractor') {
+    profileFields.role = 'subcontractor'
+    const { error: retryErr } = existing
+      ? await adminSupabase.from('profiles').update(profileFields).eq('id', user.id)
+      : await adminSupabase.from('profiles').insert({ id: user.id, full_name: full_name || user.user_metadata?.full_name || 'Invited User', ...profileFields })
+    dbError = retryErr
+  }
+
   if (dbError) return Response.json({ error: dbError.message }, { status: 500 })
   return Response.json({ ok: true, user_id: user.id, action: existing ? 'updated' : 'created' })
 }

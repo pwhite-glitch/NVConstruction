@@ -1061,7 +1061,7 @@ export default function Dashboard() {
       const res = await fetch('/api/fix-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ email, role: 'sub_estimator', company_name: companyName, company_id: company?.id || undefined, invite_email: email }),
+        body: JSON.stringify({ email, role: 'subcontractor', company_name: companyName, company_id: company?.id || undefined, invite_email: email }),
       })
       const json = await res.json()
       if (!res.ok) {

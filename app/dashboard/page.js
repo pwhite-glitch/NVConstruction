@@ -649,7 +649,8 @@ export default function Dashboard() {
     const pkg = bidPackages.find(b => b.id === bidId)
     const current = pkg?.allowed_users || []
     const updated = current.includes(userId) ? current.filter(id => id !== userId) : [...current, userId]
-    await supabase.from('bid_packages').update({ allowed_users: updated }).eq('id', bidId)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, allowed_users: updated }) })
     setBidPackages(prev => prev.map(b => b.id === bidId ? { ...b, allowed_users: updated } : b))
   }
 
@@ -659,21 +660,14 @@ export default function Dashboard() {
     setCreateBidError('')
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const { error } = await supabase.from('bid_packages').insert({
-        title: bidForm.title,
-        description: bidForm.description || null,
-        scope_of_work: bidForm.scope_of_work || null,
-        due_date: bidForm.due_date || null,
-        job_id: bidForm.job_id || null,
-        project_address: bidForm.project_address || null,
-        owner_name: bidForm.owner_name || null,
-        insurance_req: bidForm.insurance_req || null,
-        bid_instructions: bidForm.bid_instructions || null,
-        created_by: session?.user?.id || null,
-        status: 'open',
+      const res = await fetch('/api/bid-packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify(bidForm),
       })
-      if (error) {
-        setCreateBidError(error.message)
+      const json = await res.json()
+      if (!res.ok) {
+        setCreateBidError(json.error || 'Failed to create package')
       } else {
         setShowCreateBid(false)
         setCreateBidError('')
@@ -808,9 +802,10 @@ export default function Dashboard() {
 
   async function awardBid(submission, bidId) {
     if (!window.confirm(`Award this bid to ${submission.company_name} for $${Number(submission.amount).toLocaleString()}?`)) return
+    const { data: { session } } = await supabase.auth.getSession()
     await supabase.from('bid_submissions').update({ status: 'awarded' }).eq('id', submission.id)
     await supabase.from('bid_submissions').update({ status: 'rejected' }).eq('bid_package_id', bidId).neq('id', submission.id)
-    await supabase.from('bid_packages').update({ status: 'awarded' }).eq('id', bidId)
+    await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, status: 'awarded' }) })
     const pkg = bidPackages.find(p => p.id === bidId)
     if (submission.sub_email) {
       sendEmail(submission.sub_email, `Your bid has been awarded — ${pkg?.title || 'Bid Package'}`,
@@ -851,20 +846,23 @@ export default function Dashboard() {
   }
 
   async function setBidStatus(bidId, status) {
-    const { error } = await supabase.from('bid_packages').update({ status }).eq('id', bidId)
-    if (error) { alert('Could not update bid status: ' + error.message); return }
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, status }) })
+    if (!res.ok) { const j = await res.json(); alert('Could not update bid status: ' + j.error); return }
     await loadBidPackages()
   }
 
   async function deleteBidPackage(bidId) {
     if (!window.confirm('Delete this bid package and all its plans and bids?')) return
-    await supabase.from('bid_packages').delete().eq('id', bidId)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/bid-packages', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId }) })
     setExpandedBid(null)
     await loadBidPackages()
   }
 
   async function saveBidDueDate(bidId) {
-    await supabase.from('bid_packages').update({ due_date: editBidDueDate || null }).eq('id', bidId)
+    const { data: { session } } = await supabase.auth.getSession()
+    await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, due_date: editBidDueDate || null }) })
     setBidPackages(prev => prev.map(p => p.id === bidId ? { ...p, due_date: editBidDueDate || null } : p))
     setEditingBidId(null)
   }
@@ -1592,7 +1590,8 @@ export default function Dashboard() {
       }).select('id').single()
       if (jobErr) { setCreateJobFromBidError('DB error: ' + jobErr.message); setCreatingJobFromBid(false); return }
 
-      await supabase.from('bid_packages').update({ job_id: job.id }).eq('id', pkg.id)
+      const { data: { session: jobSess } } = await supabase.auth.getSession()
+      await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jobSess?.access_token}` }, body: JSON.stringify({ id: pkg.id, job_id: job.id }) })
 
       if (awardedSub) {
         const items = scopeItems[pkg.id] || []

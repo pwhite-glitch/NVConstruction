@@ -226,6 +226,7 @@ export default function Dashboard() {
   const [showCreateBid, setShowCreateBid] = useState(false)
   const [bidForm, setBidForm] = useState({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '', project_address: '', owner_name: '', insurance_req: '', bid_instructions: '' })
   const [creatingBid, setCreatingBid] = useState(false)
+  const [createBidError, setCreateBidError] = useState('')
   const [bidDetails, setBidDetails] = useState({})
   const [editingBidId, setEditingBidId] = useState(null)
   const [editBidDueDate, setEditBidDueDate] = useState('')
@@ -655,25 +656,33 @@ export default function Dashboard() {
   async function createBidPackage(e) {
     e.preventDefault()
     setCreatingBid(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    const { error } = await supabase.from('bid_packages').insert({
-      title: bidForm.title,
-      description: bidForm.description || null,
-      scope_of_work: bidForm.scope_of_work || null,
-      due_date: bidForm.due_date || null,
-      job_id: bidForm.job_id || null,
-      project_address: bidForm.project_address || null,
-      owner_name: bidForm.owner_name || null,
-      insurance_req: bidForm.insurance_req || null,
-      bid_instructions: bidForm.bid_instructions || null,
-      created_by: session.user.id,
-      status: 'open',
-    })
-    if (!error) {
-      setShowCreateBid(false)
-      setBidForm({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '', project_address: '', owner_name: '', insurance_req: '', bid_instructions: '' })
-      await loadBidPackages()
-      if (bdLoaded) loadBD()
+    setCreateBidError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const { error } = await supabase.from('bid_packages').insert({
+        title: bidForm.title,
+        description: bidForm.description || null,
+        scope_of_work: bidForm.scope_of_work || null,
+        due_date: bidForm.due_date || null,
+        job_id: bidForm.job_id || null,
+        project_address: bidForm.project_address || null,
+        owner_name: bidForm.owner_name || null,
+        insurance_req: bidForm.insurance_req || null,
+        bid_instructions: bidForm.bid_instructions || null,
+        created_by: session?.user?.id || null,
+        status: 'open',
+      })
+      if (error) {
+        setCreateBidError(error.message)
+      } else {
+        setShowCreateBid(false)
+        setCreateBidError('')
+        setBidForm({ title: '', description: '', scope_of_work: '', due_date: '', job_id: '', project_address: '', owner_name: '', insurance_req: '', bid_instructions: '' })
+        await loadBidPackages()
+        if (bdLoaded) loadBD()
+      }
+    } catch (err) {
+      setCreateBidError(err.message || 'Unexpected error — check console')
     }
     setCreatingBid(false)
   }
@@ -3962,9 +3971,14 @@ ${estimate.notes ? `
                         <label style={s.label}>Special bid instructions (optional)</label>
                         <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={bidForm.bid_instructions} onChange={e => setBidForm(f => ({ ...f, bid_instructions: e.target.value }))} placeholder="Any special instructions, substitution procedures, pre-bid meeting info, etc." />
                       </div>
+                      {createBidError && (
+                        <div style={{ marginBottom: '12px', padding: '10px 14px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', fontSize: '12px', color: '#ff6b6b' }}>
+                          Error: {createBidError}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button type="submit" style={{ ...s.btn, opacity: creatingBid ? 0.6 : 1 }} disabled={creatingBid}>{creatingBid ? 'Creating...' : 'Create package'}</button>
-                        <button type="button" style={s.btnGray} onClick={() => setShowCreateBid(false)}>Cancel</button>
+                        <button type="button" style={s.btnGray} onClick={() => { setShowCreateBid(false); setCreateBidError('') }}>Cancel</button>
                       </div>
                     </form>
                   </div>

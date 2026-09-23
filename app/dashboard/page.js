@@ -2049,7 +2049,7 @@ tbody td.right { text-align: right; color: #111; font-variant-numeric: tabular-n
       <div class="co-contact">
         management@nvim.co<br>
         nvim.co<br>
-        License #&nbsp;—
+        LA License #&nbsp;CL 10283
       </div>
     </div>
   </div>
@@ -2083,7 +2083,8 @@ tbody td.right { text-align: right; color: #111; font-variant-numeric: tabular-n
     <div class="party-detail">
       General Contractor<br>
       management@nvim.co<br>
-      nvim.co
+      nvim.co<br>
+      LA License # CL 10283
     </div>
   </div>
 </div>
@@ -2159,7 +2160,7 @@ ${estimate.notes ? `
 
 <div class="doc-footer">
   <div class="doc-footer-left">
-    NV Construction, LLC &nbsp;·&nbsp; General Contractor<br>
+    NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; LA License # CL 10283<br>
     management@nvim.co &nbsp;·&nbsp; nvim.co
   </div>
   <div class="doc-footer-right">

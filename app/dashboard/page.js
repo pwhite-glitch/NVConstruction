@@ -1065,7 +1065,11 @@ export default function Dashboard() {
       body: JSON.stringify({ email, company_id: company?.id, company_name: companyName, full_name: name || undefined, role }),
     })
     const json = await res.json()
-    setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
+    if (res.ok && json.profile_warning) {
+      setSubTeamInviteResult(prev => ({ ...prev, [dirId]: `sent — but profile save failed: ${json.profile_warning}. Try "Fix Company Links" or re-add them.` }))
+    } else {
+      setSubTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
+    }
     if (res.ok) {
       setSubTeamInviteForm(prev => ({ ...prev, [dirId]: { name: '', email: '' } }))
       setAddMemberOpenFor(null)

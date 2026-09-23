@@ -65,11 +65,19 @@ export async function POST(request) {
       inviteUrl = data.properties?.action_link
     }
 
+    let profileWarning = null
     if (userId) {
       const validSubRoles = ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin']
-      const profileData = { id: userId, full_name: dir.contact_name || reqFullName || null, role: validSubRoles.includes(reqRole) ? reqRole : 'subcontractor', company_name: dir.company_name || reqCompanyName || null, invite_email: dir.email }
+      const profileData = {
+        id: userId,
+        full_name: dir.contact_name || reqFullName || 'Invited User',
+        role: validSubRoles.includes(reqRole) ? reqRole : 'subcontractor',
+        company_name: dir.company_name || reqCompanyName || null,
+        invite_email: dir.email,
+      }
       if (company_id) profileData.company_id = company_id
-      await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+      const { error: profileErr } = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+      if (profileErr) profileWarning = profileErr.message
     }
 
     const subject = action === 'reset'
@@ -136,7 +144,7 @@ export async function POST(request) {
     })
 
     if (emailErr) return Response.json({ error: emailErr.message }, { status: 500 })
-    return Response.json({ ok: true, action })
+    return Response.json({ ok: true, action, profile_warning: profileWarning || undefined })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

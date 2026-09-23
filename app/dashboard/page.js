@@ -1574,6 +1574,9 @@ export default function Dashboard() {
       status: 'active',
       job_type: 'commercial',
       nv_role: 'gc',
+      billing_type: 'aia',
+      sub_billing_frequency: 'monthly',
+      owner_billing_frequency: 'monthly',
     }).select('id').single()
     if (jobErr) { alert('Error creating job: ' + jobErr.message); setCreatingJobFromBid(false); return }
 

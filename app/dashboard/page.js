@@ -300,6 +300,7 @@ export default function Dashboard() {
   // Phase 4: Bid → Job handoff
   const [showCreateJobFor, setShowCreateJobFor] = useState(null)
   const [createJobFromBidForm, setCreateJobFromBidForm] = useState({ job_number: '', start_date: '', contract_value: '' })
+  const [createJobFromBidError, setCreateJobFromBidError] = useState('')
   const [creatingJobFromBid, setCreatingJobFromBid] = useState(false)
   const [showScopeMatrix, setShowScopeMatrix] = useState(null)
 
@@ -1558,55 +1559,62 @@ export default function Dashboard() {
   }
 
   async function createJobFromBid(pkg) {
-    if (!createJobFromBidForm.job_number.trim()) { alert('Job number is required.'); return }
+    if (!createJobFromBidForm.job_number.trim()) { setCreateJobFromBidError('Job number is required.'); return }
     setCreatingJobFromBid(true)
-    const det = bidDetails[pkg.id] || {}
-    const subs = det.submissions || []
-    const awardedSub = subs.find(s => s.status === 'awarded')
-    const contractVal = parseFloat(createJobFromBidForm.contract_value) || (awardedSub ? Number(awardedSub.amount) : null)
+    setCreateJobFromBidError('')
+    try {
+      const det = bidDetails[pkg.id] || {}
+      const subs = det.submissions || []
+      const awardedSub = subs.find(s => s.status === 'awarded')
+      const contractVal = parseFloat(createJobFromBidForm.contract_value) || (awardedSub ? Number(awardedSub.amount) : null)
 
-    const { data: job, error: jobErr } = await supabase.from('jobs').insert({
-      job_number: createJobFromBidForm.job_number.trim(),
-      project_name: pkg.title,
-      location: pkg.project_address || null,
-      contract_value: contractVal || null,
-      start_date: createJobFromBidForm.start_date || null,
-      status: 'active',
-      job_type: 'commercial',
-      nv_role: 'gc',
-      billing_type: 'aia',
-      sub_billing_frequency: 'monthly',
-      owner_billing_frequency: 'monthly',
-    }).select('id').single()
-    if (jobErr) { alert('Error creating job: ' + jobErr.message); setCreatingJobFromBid(false); return }
+      const { data: job, error: jobErr } = await supabase.from('jobs').insert({
+        job_number: createJobFromBidForm.job_number.trim(),
+        project_name: pkg.title,
+        location: pkg.project_address || null,
+        contract_value: contractVal || null,
+        start_date: createJobFromBidForm.start_date || null,
+        status: 'active',
+        job_type: 'commercial',
+        nv_role: 'gc',
+        billing_type: 'aia',
+        sub_billing_frequency: 'monthly',
+        owner_billing_frequency: 'monthly',
+      }).select('id').single()
+      if (jobErr) { setCreateJobFromBidError('DB error: ' + jobErr.message); setCreatingJobFromBid(false); return }
 
-    await supabase.from('bid_packages').update({ job_id: job.id }).eq('id', pkg.id)
+      await supabase.from('bid_packages').update({ job_id: job.id }).eq('id', pkg.id)
 
-    if (awardedSub) {
-      const items = scopeItems[pkg.id] || []
-      const entries = levelingEntries[pkg.id] || []
-      const coveredItems = entries.length > 0
-        ? items.filter(item => {
-            const e = entries.find(en => en.bid_scope_item_id === item.id && en.bid_submission_id === awardedSub.id)
-            return !e || e.included !== false
-          })
-        : items
-      const scopeDesc = coveredItems.length > 0
-        ? coveredItems.map(i => (i.trade ? `[${i.trade}] ` : '') + i.description).join('\n')
-        : pkg.scope_of_work || null
-      const { data: { session } } = await supabase.auth.getSession()
-      await fetch('/api/subcontracts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ job_id: job.id, vendor_name: awardedSub.company_name, description: scopeDesc, contract_value: Number(awardedSub.amount), status: 'active', created_by: session.user.id }),
-      })
+      if (awardedSub) {
+        const items = scopeItems[pkg.id] || []
+        const entries = levelingEntries[pkg.id] || []
+        const coveredItems = entries.length > 0
+          ? items.filter(item => {
+              const e = entries.find(en => en.bid_scope_item_id === item.id && en.bid_submission_id === awardedSub.id)
+              return !e || e.included !== false
+            })
+          : items
+        const scopeDesc = coveredItems.length > 0
+          ? coveredItems.map(i => (i.trade ? `[${i.trade}] ` : '') + i.description).join('\n')
+          : pkg.scope_of_work || null
+        const { data: { session } } = await supabase.auth.getSession()
+        await fetch('/api/subcontracts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ job_id: job.id, vendor_name: awardedSub.company_name, description: scopeDesc, contract_value: Number(awardedSub.amount), status: 'active', created_by: session.user.id }),
+        })
+      }
+
+      setCreatingJobFromBid(false)
+      setShowCreateJobFor(null)
+      setCreateJobFromBidForm({ job_number: '', start_date: '', contract_value: '' })
+      setCreateJobFromBidError('')
+      await loadBidPackages()
+      router.push(`/jobdetail?id=${job.id}`)
+    } catch (err) {
+      setCreateJobFromBidError('Unexpected error: ' + err.message)
+      setCreatingJobFromBid(false)
     }
-
-    setCreatingJobFromBid(false)
-    setShowCreateJobFor(null)
-    setCreateJobFromBidForm({ job_number: '', start_date: '', contract_value: '' })
-    await loadBidPackages()
-    router.push(`/jobdetail?id=${job.id}`)
   }
 
   async function generateSubcontractPDF(pkg, sub) {
@@ -4066,11 +4074,16 @@ ${estimate.notes ? `
                                         <input type="number" step="0.01" style={s.input} value={createJobFromBidForm.contract_value} onChange={e => setCreateJobFromBidForm(f => ({ ...f, contract_value: e.target.value }))} placeholder={awardedSub ? String(awardedSub.amount) : '0'} />
                                       </div>
                                     </div>
+                                    {createJobFromBidError && (
+                                      <div style={{ marginBottom: '10px', padding: '10px 14px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', fontSize: '12px', color: '#ff6b6b' }}>
+                                        {createJobFromBidError}
+                                      </div>
+                                    )}
                                     <div style={{ display: 'flex', gap: '8px' }}>
                                       <button style={{ ...s.btn, opacity: creatingJobFromBid || !createJobFromBidForm.job_number ? 0.6 : 1 }} disabled={creatingJobFromBid || !createJobFromBidForm.job_number} onClick={() => createJobFromBid(pkg)}>
                                         {creatingJobFromBid ? 'Creating...' : 'Create job & open'}
                                       </button>
-                                      <button style={s.btnGray} onClick={() => setShowCreateJobFor(null)}>Cancel</button>
+                                      <button style={s.btnGray} onClick={() => { setShowCreateJobFor(null); setCreateJobFromBidError('') }}>Cancel</button>
                                     </div>
                                   </>
                                 )

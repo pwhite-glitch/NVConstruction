@@ -5489,7 +5489,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div style={{ fontSize: '13px', color: '#ccc', fontWeight: '600' }}>{m.full_name || m.invite_email}</div>
                                 {m.full_name && m.invite_email && <div style={{ fontSize: '12px', color: '#444' }}>{m.invite_email}</div>}
                                 <div style={{ fontSize: '11px', color: '#444', marginTop: '2px' }}>
-                                  {{ sub_estimator: 'Estimator', sub_pm: 'PM', sub_admin: 'Admin' }[m.role] || 'Portal access'} · Not directly assigned to this job
+                                  {{ sub_estimator: 'Estimator', sub_pm: 'Project Manager', sub_admin: 'Admin' }[m.role] || 'Member'} at this company · has portal access
                                 </div>
                               </div>
                             </div>

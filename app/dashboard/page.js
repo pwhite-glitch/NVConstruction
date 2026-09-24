@@ -1814,6 +1814,23 @@ export default function Dashboard() {
       logoSrc = await new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob) })
     } catch { /* logo optional */ }
 
+    // Fetch plans and generate 30-day signed URLs for the PDF
+    let planLinks = []
+    try {
+      const { data: pkgPlans } = await supabase.from('bid_plans').select('*').eq('bid_package_id', pkg.id).order('uploaded_at')
+      if (pkgPlans?.length > 0) {
+        const bulkRes = await fetch('/api/bid-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'bulk-signed-urls', paths: pkgPlans.map(p => p.storage_path), expiry: 2592000 }),
+        })
+        if (bulkRes.ok) {
+          const { urls } = await bulkRes.json()
+          planLinks = pkgPlans.map(p => ({ name: p.file_name, url: urls?.[p.storage_path] || null }))
+        }
+      }
+    } catch { /* plans optional */ }
+
     const items = scopeItems[pkg.id] || []
     const byTrade = {}
     items.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
@@ -1868,6 +1885,11 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color:
 .submit-link { display: inline-block; padding: 10px 24px; background: #e8590c; color: #fff; text-decoration: none; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
 .footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid #efefef; display: flex; justify-content: space-between; font-size: 9px; color: #bbb; }
 .notice { margin-top: 16px; font-size: 10px; color: #bbb; font-style: italic; line-height: 1.7; }
+.plans-box { border: 1px solid #e8e8e8; border-left: 3px solid #22863a; padding: 16px 20px; margin-bottom: 4px; }
+.plans-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f4f4f4; }
+.plans-row:last-child { border-bottom: none; }
+.plans-name { font-size: 12px; color: #333; }
+.plans-link { font-size: 11px; font-weight: 700; color: #22863a; text-decoration: none; padding: 4px 12px; border: 1px solid #22863a; border-radius: 3px; }
 </style></head><body>
 <div class="no-print">
   <button class="btn" onclick="window.print()">Print / Save PDF</button>
@@ -1939,6 +1961,16 @@ ${pkg.insurance_req ? `
 ${pkg.bid_instructions ? `
 <div class="section-eyebrow" style="margin-top:24px">Special Instructions</div>
 <div class="prose">${pkg.bid_instructions.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+
+${planLinks.length > 0 ? `
+<div class="section-eyebrow" style="margin-top:24px">Project Plans &amp; Documents</div>
+<div class="plans-box">
+${planLinks.map(p => p.url
+  ? `<div class="plans-row"><span class="plans-name">📄 ${p.name}</span><a href="${p.url}" class="plans-link">Download</a></div>`
+  : `<div class="plans-row"><span class="plans-name">📄 ${p.name}</span><span style="font-size:11px;color:#bbb;">Log in to portal</span></div>`
+).join('')}
+<p style="font-size:9px;color:#bbb;margin-top:10px;">Download links valid for 30 days. Plans also available at any time via the sub portal.</p>
+</div>` : ''}
 
 <div class="submit-box">
   <div class="submit-title">Bid Submission Instructions</div>

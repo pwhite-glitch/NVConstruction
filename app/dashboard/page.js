@@ -719,6 +719,36 @@ export default function Dashboard() {
   async function inviteSubs(bidId, pkg) {
     if (selectedEmails.length === 0) return
     setSendingInvites(true)
+
+    // Fetch plans and generate 30-day signed URLs for email download links
+    const { data: pkgPlans } = await supabase.from('bid_plans').select('*').eq('bid_package_id', bidId).order('uploaded_at')
+    let planSignedUrls = {}
+    if (pkgPlans?.length > 0) {
+      const bulkRes = await fetch('/api/bid-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk-signed-urls', paths: pkgPlans.map(p => p.storage_path), expiry: 2592000 }),
+      })
+      if (bulkRes.ok) {
+        const { urls } = await bulkRes.json()
+        planSignedUrls = urls || {}
+      }
+    }
+    const plansHtml = pkgPlans?.length > 0 ? `
+      <div style="background:#111;border:1px solid #1e3a1e;border-left:3px solid #22c55e;border-radius:6px;padding:14px 16px;margin:16px 0">
+        <p style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#22c55e;margin:0 0 10px">Project Plans &amp; Documents</p>
+        ${pkgPlans.map(plan => {
+          const url = planSignedUrls[plan.storage_path]
+          return url
+            ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1a1a">
+                <span style="font-size:13px;color:#ccc">📄 ${plan.file_name}</span>
+                <a href="${url}" style="display:inline-block;padding:5px 14px;background:#1a3a1a;color:#4ade80;text-decoration:none;border-radius:4px;font-size:12px;font-weight:600;border:1px solid #1e4a1e">Download</a>
+              </div>`
+            : `<div style="padding:8px 0;border-bottom:1px solid #1a1a1a"><span style="font-size:13px;color:#ccc">📄 ${plan.file_name}</span></div>`
+        }).join('')}
+        <p style="font-size:11px;color:#444;margin:8px 0 0">Download links expire in 30 days. Log in to the portal to access plans at any time.</p>
+      </div>` : ''
+
     // Build full send list: selected sub_directory emails + estimator portal users for those companies
     const allEmails = new Set(selectedEmails.map(e => e.toLowerCase()))
     for (const email of selectedEmails) {
@@ -760,6 +790,7 @@ export default function Dashboard() {
             <p style="color:#aaa;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">${pkg.scope_of_work}</p>
           </div>` : ''}
           ${scopeTableHtml}
+          ${plansHtml}
           ${pkg.insurance_req ? `<div style="background:#111;border:1px solid #222;border-radius:6px;padding:14px 16px;margin:16px 0">
             <p style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#888;margin:0 0 6px">Insurance &amp; Bonding Requirements</p>
             <p style="color:#aaa;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">${pkg.insurance_req}</p>

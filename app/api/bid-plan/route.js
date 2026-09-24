@@ -18,11 +18,23 @@ export async function POST(request) {
     }
 
     if (body.action === 'signed-url') {
+      const expiry = body.expiry || 3600
       const { data, error } = await adminSupabase.storage
         .from('bid-plans')
-        .createSignedUrl(body.path, 3600)
+        .createSignedUrl(body.path, expiry)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ url: data.signedUrl })
+    }
+
+    if (body.action === 'bulk-signed-urls') {
+      const expiry = body.expiry || 3600
+      const paths = body.paths || []
+      const urls = {}
+      for (const path of paths) {
+        const { data, error } = await adminSupabase.storage.from('bid-plans').createSignedUrl(path, expiry)
+        if (!error && data?.signedUrl) urls[path] = data.signedUrl
+      }
+      return Response.json({ urls })
     }
 
     if (body.action === 'insert') {

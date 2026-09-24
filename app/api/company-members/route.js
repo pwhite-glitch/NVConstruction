@@ -8,6 +8,7 @@ const adminSupabase = createClient(
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const company_id = searchParams.get('company_id')
+  const company_name = searchParams.get('company_name')
   const email = searchParams.get('email')
 
   let query = adminSupabase
@@ -16,6 +17,7 @@ export async function GET(request) {
     .in('role', ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin'])
 
   if (company_id) query = query.eq('company_id', company_id)
+  else if (company_name) query = query.ilike('company_name', company_name)
   if (email) query = query.eq('invite_email', email.toLowerCase())
 
   const { data, error } = await query

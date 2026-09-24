@@ -225,6 +225,7 @@ function JobDetailInner() {
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
   const [expandedCompanyKey, setExpandedCompanyKey] = useState(null)
+  const [companyMembersCache, setCompanyMembersCache] = useState({})
   const [showAssignSub, setShowAssignSub] = useState(false)
   const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
   const [assigningSubLoading, setAssigningSubLoading] = useState(false)
@@ -5328,7 +5329,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {/* Company header — click to expand/collapse */}
                     <div
                       style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#0f0f0f' : 'transparent', userSelect: 'none' }}
-                      onClick={() => setExpandedCompanyKey(isExpanded ? null : gKey)}
+                      onClick={() => {
+                        const nextKey = isExpanded ? null : gKey
+                        setExpandedCompanyKey(nextKey)
+                        if (nextKey && !companyMembersCache[nextKey]) {
+                          const params = group.company_id
+                            ? `company_id=${group.company_id}`
+                            : `company_name=${encodeURIComponent(group.name)}`
+                          fetch(`/api/company-members?${params}`)
+                            .then(r => r.json())
+                            .then(({ members }) => {
+                              if (members) setCompanyMembersCache(prev => ({ ...prev, [nextKey]: members }))
+                            })
+                        }
+                      }}
                     >
                       <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', flex: 1 }}>{group.name}</span>
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#0a2a0a' : '#1a1a1a', color: registeredCount > 0 ? '#4ade80' : '#555', border: `1px solid ${registeredCount > 0 ? '#1a4a1a' : '#2a2a2a'}` }}>
@@ -5456,6 +5470,33 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )
                     })}
+
+                    {/* Additional portal users from the same company not directly assigned */}
+                    {(() => {
+                      const cached = companyMembersCache[gKey] || []
+                      const assignedIds = new Set(group.members.map(a => a.sub_id).filter(Boolean))
+                      const extra = cached.filter(m => !assignedIds.has(m.id))
+                      if (extra.length === 0) return null
+                      return (
+                        <div style={{ borderTop: '1px solid #111', marginTop: '4px', paddingTop: '8px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Also on this company</p>
+                          {extra.map(m => (
+                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #0d0d0d' }}>
+                              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#0d1e2a', border: '2px solid #1a3050', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#60a5fa', flexShrink: 0 }}>
+                                {(m.full_name || m.invite_email || '?').slice(0, 2).toUpperCase()}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '13px', color: '#ccc', fontWeight: '600' }}>{m.full_name || m.invite_email}</div>
+                                {m.full_name && m.invite_email && <div style={{ fontSize: '12px', color: '#444' }}>{m.invite_email}</div>}
+                                <div style={{ fontSize: '11px', color: '#444', marginTop: '2px' }}>
+                                  {{ sub_estimator: 'Estimator', sub_pm: 'PM', sub_admin: 'Admin' }[m.role] || 'Portal access'} · Not directly assigned to this job
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
                     </div>}
                   </div>
                 )

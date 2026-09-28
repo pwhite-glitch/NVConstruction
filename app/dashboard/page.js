@@ -1500,26 +1500,14 @@ export default function Dashboard() {
 
   async function saveEstimateEdit() {
     setSavingEstimateEdit(true)
-    const { error: estErr } = await supabase.from('estimates').update({
-      project_name: editEstimateForm.project_name,
-      address: editEstimateForm.address || null,
-      owner_name: editEstimateForm.owner_name || null,
-      owner_company: editEstimateForm.owner_company || null,
-      owner_email: editEstimateForm.owner_email || null,
-      owner_phone: editEstimateForm.owner_phone || null,
-      notes: editEstimateForm.notes || null,
-      markup_pct: parseFloat(editEstimateForm.markup_pct) || 0,
-      markup_flat: parseFloat(editEstimateForm.markup_flat) || 0,
-      taxable: editEstimateForm.taxable || false,
-      square_footage: parseFloat(editEstimateForm.square_footage) || null,
-      project_type: editEstimateForm.project_type || null,
-      status: editEstimateForm.status,
-      updated_at: new Date().toISOString(),
-    }).eq('id', editingEstimate)
-    if (estErr) {
-      // If markup_flat column doesn't exist yet, retry without it
-      if (estErr.message?.includes('markup_flat')) {
-        const { error: retryErr } = await supabase.from('estimates').update({
+    const validLines = editEstimateLines.filter(l => l.description)
+    const res = await fetch('/api/estimates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'update',
+        id: editingEstimate,
+        fields: {
           project_name: editEstimateForm.project_name,
           address: editEstimateForm.address || null,
           owner_name: editEstimateForm.owner_name || null,
@@ -1528,23 +1516,27 @@ export default function Dashboard() {
           owner_phone: editEstimateForm.owner_phone || null,
           notes: editEstimateForm.notes || null,
           markup_pct: parseFloat(editEstimateForm.markup_pct) || 0,
+          markup_flat: parseFloat(editEstimateForm.markup_flat) || 0,
           taxable: editEstimateForm.taxable || false,
           square_footage: parseFloat(editEstimateForm.square_footage) || null,
           project_type: editEstimateForm.project_type || null,
           status: editEstimateForm.status,
           updated_at: new Date().toISOString(),
-        }).eq('id', editingEstimate)
-        if (retryErr) { alert('Save failed: ' + retryErr.message); setSavingEstimateEdit(false); return }
-      } else {
-        alert('Save failed: ' + estErr.message)
-        setSavingEstimateEdit(false)
-        return
-      }
-    }
-    await supabase.from('estimate_line_items').delete().eq('estimate_id', editingEstimate)
-    const validLines = editEstimateLines.filter(l => l.description)
-    if (validLines.length > 0) {
-      await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: editingEstimate, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i })))
+        },
+        line_items: validLines.map((l, i) => ({
+          estimate_id: editingEstimate,
+          description: l.description,
+          amount: parseFloat(l.amount) || 0,
+          scope: l.scope || null,
+          sort_order: i,
+        })),
+      }),
+    })
+    const result = await res.json()
+    if (result.error) {
+      alert('Save failed: ' + result.error)
+      setSavingEstimateEdit(false)
+      return
     }
     setEditingEstimate(null)
     await loadEstimates()

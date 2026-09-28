@@ -2208,14 +2208,16 @@ ${estimate.notes ? `
     </tr>
   </thead>
   <tbody>
-    ${lines.map((l, i) => `<tr>
+    ${lines.map((l, i) => {
+      const flatShare = rawTotal > 0 ? markupFlatAmt * (Number(l.amount) / rawTotal) : 0
+      return `<tr>
       <td style="color:#ccc;font-size:10px;padding-top:13px">${i + 1}</td>
       <td>
         <div class="item-desc">${l.description}</div>
         ${l.scope ? `<div class="item-note">${l.scope.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
       </td>
-      <td class="right">${fmt(Number(l.amount) * markupMult)}</td>
-    </tr>`).join('')}
+      <td class="right">${fmt(Number(l.amount) * markupMult + flatShare)}</td>
+    </tr>`}).join('')}
   </tbody>
 </table>
 </div>
@@ -2224,16 +2226,11 @@ ${estimate.notes ? `
   ${estimate.taxable ? `
   <div class="totals-row">
     <div class="totals-label">Subtotal</div>
-    <div class="totals-amount">${fmt(rawTotal * markupMult)}</div>
+    <div class="totals-amount">${fmt(rawTotal * markupMult + markupFlatAmt)}</div>
   </div>
   <div class="totals-row">
     <div class="totals-label">Sales Tax (8.25%)</div>
     <div class="totals-amount">${fmt(taxAmt)}</div>
-  </div>` : ''}
-  ${markupFlatAmt > 0 ? `
-  <div class="totals-row">
-    <div class="totals-label">Additional</div>
-    <div class="totals-amount">${fmt(markupFlatAmt)}</div>
   </div>` : ''}
   <div class="totals-row grand">
     <div class="totals-label">Total</div>

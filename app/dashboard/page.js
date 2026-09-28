@@ -276,7 +276,7 @@ export default function Dashboard() {
   const [estimates, setEstimates] = useState([])
   const [expandedEstimate, setExpandedEstimate] = useState(null)
   const [showNewEstimate, setShowNewEstimate] = useState(false)
-  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' })
+  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
   const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '', scope: '' }])
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [editingEstimate, setEditingEstimate] = useState(null)
@@ -1479,6 +1479,7 @@ export default function Dashboard() {
       owner_phone: estimateForm.owner_phone || null,
       notes: estimateForm.notes || null,
       markup_pct: parseFloat(estimateForm.markup_pct) || 0,
+      markup_flat: parseFloat(estimateForm.markup_flat) || 0,
       taxable: estimateForm.taxable || false,
       square_footage: parseFloat(estimateForm.square_footage) || null,
       project_type: estimateForm.project_type || null,
@@ -1490,7 +1491,7 @@ export default function Dashboard() {
         await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i })))
       }
       setShowNewEstimate(false)
-      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' })
+      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
       setEstimateLines([{ description: '', amount: '', scope: '' }])
       await loadEstimates()
     }
@@ -1508,6 +1509,7 @@ export default function Dashboard() {
       owner_phone: editEstimateForm.owner_phone || null,
       notes: editEstimateForm.notes || null,
       markup_pct: parseFloat(editEstimateForm.markup_pct) || 0,
+      markup_flat: parseFloat(editEstimateForm.markup_flat) || 0,
       taxable: editEstimateForm.taxable || false,
       square_footage: parseFloat(editEstimateForm.square_footage) || null,
       project_type: editEstimateForm.project_type || null,
@@ -2014,8 +2016,10 @@ ${planLinks.map(p => p.url
     const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
     const taxAmt = estimate.taxable ? rawTotal * 0.0825 : 0
     const markupMult = 1 + (Number(estimate.markup_pct || 0) / 100)
-    const markupAmt = rawTotal * (markupMult - 1)
-    const total = rawTotal * markupMult + taxAmt
+    const markupPctAmt = rawTotal * (markupMult - 1)
+    const markupFlatAmt = Number(estimate.markup_flat || 0)
+    const markupAmt = markupPctAmt + markupFlatAmt
+    const total = rawTotal * markupMult + markupFlatAmt + taxAmt
     const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const estDate = new Date(estimate.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -2208,6 +2212,11 @@ ${estimate.notes ? `
   <div class="totals-row">
     <div class="totals-label">Sales Tax (8.25%)</div>
     <div class="totals-amount">${fmt(taxAmt)}</div>
+  </div>` : ''}
+  ${markupFlatAmt > 0 ? `
+  <div class="totals-row">
+    <div class="totals-label">Additional</div>
+    <div class="totals-amount">${fmt(markupFlatAmt)}</div>
   </div>` : ''}
   <div class="totals-row grand">
     <div class="totals-label">Total</div>
@@ -2552,7 +2561,7 @@ ${estimate.notes ? `
     const markupMult = 1 + (Number(estimate.markup_pct || 0) / 100)
     const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
     const taxAmt2 = estimate.taxable ? rawTotal * 0.0825 : 0
-    const total = Math.round(rawTotal * markupMult * 100) / 100 + taxAmt2
+    const total = Math.round(rawTotal * markupMult * 100) / 100 + Number(estimate.markup_flat || 0) + taxAmt2
     const { data: job, error: jobError } = await supabase.from('jobs').insert({
       job_number: convertJobForm.job_number.trim(),
       project_name: estimate.project_name,
@@ -4984,7 +4993,7 @@ ${estimate.notes ? `
             {activeTab === 'estimator' && estimatorInnerTab === 'overview' && (() => {
               const calcTotal = (est) => {
                 const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
-                return raw * (1 + Number(est.markup_pct || 0) / 100) + (est.taxable ? raw * 0.0825 : 0)
+                return raw * (1 + Number(est.markup_pct || 0) / 100) + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
               }
               const getStage = (est) => {
                 const s = (est.status || 'lead').toLowerCase()
@@ -5218,10 +5227,12 @@ ${estimate.notes ? `
                           const rawTotal = estimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
                           const taxAmt = estimateForm.taxable ? rawTotal * 0.0825 : 0
                           const markupPct = parseFloat(estimateForm.markup_pct) || 0
-                          const markupAmt = rawTotal * markupPct / 100
+                          const markupFlat = parseFloat(estimateForm.markup_flat) || 0
+                          const markupPctAmt = rawTotal * markupPct / 100
+                          const markupAmt = markupPctAmt + markupFlat
                           const grandTotal = rawTotal + markupAmt + taxAmt
                           const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                          const hasExtra = estimateForm.taxable || markupPct > 0
+                          const hasExtra = estimateForm.taxable || markupPct > 0 || markupFlat > 0
                           return (
                             <div style={{ padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: hasExtra ? '4px' : 0 }}>
@@ -5236,38 +5247,47 @@ ${estimate.notes ? `
                                   <div></div>
                                 </div>
                               )}
-                              {markupPct > 0 && <>
+                              {markupPct > 0 && (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
                                   <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Markup ({markupPct}%):</div>
-                                  <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(markupAmt)}</div>
-                                  <div></div>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: '1px solid #2a2a2a', paddingTop: '6px', marginTop: '2px' }}>
-                                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#e8590c', textAlign: 'right' }}>Owner total:</div>
-                                  <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '15px', fontFamily: 'monospace' }}>{fmt2(grandTotal)}</div>
-                                  <div></div>
-                                </div>
-                              </>}
-                              {markupPct === 0 && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: hasExtra ? '1px solid #2a2a2a' : 'none', paddingTop: hasExtra ? '6px' : 0, marginTop: hasExtra ? '2px' : 0 }}>
-                                  <div style={{ fontSize: '12px', fontWeight: '700', color: hasExtra ? '#e8590c' : '#555', textAlign: 'right' }}>{hasExtra ? 'Owner total:' : 'Total:'}</div>
-                                  <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: hasExtra ? '15px' : '14px', fontFamily: 'monospace' }}>{fmt2(grandTotal)}</div>
+                                  <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(markupPctAmt)}</div>
                                   <div></div>
                                 </div>
                               )}
+                              {markupFlat > 0 && (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
+                                  <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Flat markup:</div>
+                                  <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(markupFlat)}</div>
+                                  <div></div>
+                                </div>
+                              )}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: hasExtra ? '1px solid #2a2a2a' : 'none', paddingTop: hasExtra ? '6px' : 0, marginTop: hasExtra ? '2px' : 0 }}>
+                                <div style={{ fontSize: '12px', fontWeight: '700', color: hasExtra ? '#e8590c' : '#555', textAlign: 'right' }}>{hasExtra ? 'Owner total:' : 'Total:'}</div>
+                                <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: hasExtra ? '15px' : '14px', fontFamily: 'monospace' }}>{fmt2(grandTotal)}</div>
+                                <div></div>
+                              </div>
                             </div>
                           )
                         })()}
                       </div>
                     </div>
                     <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Markup %</span>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Markup</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <input type="number" min="0" max="200" step="0.5" style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'center' }}
                           value={estimateForm.markup_pct}
                           onChange={e => setEstimateForm(f => ({ ...f, markup_pct: e.target.value }))}
                           placeholder="0" />
                         <span style={{ fontSize: '13px', color: '#555' }}>%</span>
+                      </div>
+                      <span style={{ fontSize: '12px', color: '#333' }}>or</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '13px', color: '#555' }}>$</span>
+                        <input type="number" min="0" step="0.01" style={{ ...s.input, width: '110px', padding: '6px 10px', textAlign: 'center' }}
+                          value={estimateForm.markup_flat}
+                          onChange={e => setEstimateForm(f => ({ ...f, markup_flat: e.target.value }))}
+                          placeholder="0.00" />
+                        <span style={{ fontSize: '11px', color: '#444' }}>flat</span>
                       </div>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: estimateForm.taxable ? '#f1f1f1' : '#555' }}>
                         <input type="checkbox" checked={!!estimateForm.taxable} onChange={e => setEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
@@ -5276,7 +5296,7 @@ ${estimate.notes ? `
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...s.btn, opacity: savingEstimate || !estimateForm.project_name ? 0.6 : 1 }} disabled={savingEstimate || !estimateForm.project_name} onClick={saveEstimate}>{savingEstimate ? 'Saving...' : 'Save estimate'}</button>
-                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>Cancel</button>
+                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>Cancel</button>
                     </div>
                   </div>
                 )}
@@ -5384,10 +5404,12 @@ ${estimate.notes ? `
                                     const editRaw = editEstimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
                                     const editTaxAmt = editEstimateForm.taxable ? editRaw * 0.0825 : 0
                                     const editMarkupPct = parseFloat(editEstimateForm.markup_pct) || 0
-                                    const editMarkupAmt = editRaw * editMarkupPct / 100
+                                    const editMarkupFlat = parseFloat(editEstimateForm.markup_flat) || 0
+                                    const editMarkupPctAmt = editRaw * editMarkupPct / 100
+                                    const editMarkupAmt = editMarkupPctAmt + editMarkupFlat
                                     const editGrand = editRaw + editMarkupAmt + editTaxAmt
                                     const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                    const editHasExtra = editEstimateForm.taxable || editMarkupPct > 0
+                                    const editHasExtra = editEstimateForm.taxable || editMarkupPct > 0 || editMarkupFlat > 0
                                     return (
                                       <div style={{ padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: editHasExtra ? '4px' : 0 }}>
@@ -5402,38 +5424,47 @@ ${estimate.notes ? `
                                             <div></div>
                                           </div>
                                         )}
-                                        {editMarkupPct > 0 && <>
+                                        {editMarkupPct > 0 && (
                                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
                                             <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Markup ({editMarkupPct}%):</div>
-                                            <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editMarkupAmt)}</div>
-                                            <div></div>
-                                          </div>
-                                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: '1px solid #2a2a2a', paddingTop: '6px', marginTop: '2px' }}>
-                                            <div style={{ fontSize: '12px', fontWeight: '700', color: '#e8590c', textAlign: 'right' }}>Owner total:</div>
-                                            <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '15px', fontFamily: 'monospace' }}>{fmt2(editGrand)}</div>
-                                            <div></div>
-                                          </div>
-                                        </>}
-                                        {editMarkupPct === 0 && (
-                                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: editHasExtra ? '1px solid #2a2a2a' : 'none', paddingTop: editHasExtra ? '6px' : 0, marginTop: editHasExtra ? '2px' : 0 }}>
-                                            <div style={{ fontSize: '12px', fontWeight: '700', color: editHasExtra ? '#e8590c' : '#555', textAlign: 'right' }}>{editHasExtra ? 'Owner total:' : 'Total:'}</div>
-                                            <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: editHasExtra ? '15px' : '14px', fontFamily: 'monospace' }}>{fmt2(editGrand)}</div>
+                                            <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editMarkupPctAmt)}</div>
                                             <div></div>
                                           </div>
                                         )}
+                                        {editMarkupFlat > 0 && (
+                                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
+                                            <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Flat markup:</div>
+                                            <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editMarkupFlat)}</div>
+                                            <div></div>
+                                          </div>
+                                        )}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: editHasExtra ? '1px solid #2a2a2a' : 'none', paddingTop: editHasExtra ? '6px' : 0, marginTop: editHasExtra ? '2px' : 0 }}>
+                                          <div style={{ fontSize: '12px', fontWeight: '700', color: editHasExtra ? '#e8590c' : '#555', textAlign: 'right' }}>{editHasExtra ? 'Owner total:' : 'Total:'}</div>
+                                          <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: editHasExtra ? '15px' : '14px', fontFamily: 'monospace' }}>{fmt2(editGrand)}</div>
+                                          <div></div>
+                                        </div>
                                       </div>
                                     )
                                   })()}
                                 </div>
                               </div>
                               <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '16px', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Markup %</span>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Markup</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   <input type="number" min="0" max="200" step="0.5" style={{ ...s.input, width: '80px', padding: '6px 10px', textAlign: 'center' }}
                                     value={editEstimateForm.markup_pct}
                                     onChange={e => setEditEstimateForm(f => ({ ...f, markup_pct: e.target.value }))}
                                     placeholder="0" />
                                   <span style={{ fontSize: '13px', color: '#555' }}>%</span>
+                                </div>
+                                <span style={{ fontSize: '12px', color: '#333' }}>or</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '13px', color: '#555' }}>$</span>
+                                  <input type="number" min="0" step="0.01" style={{ ...s.input, width: '110px', padding: '6px 10px', textAlign: 'center' }}
+                                    value={editEstimateForm.markup_flat}
+                                    onChange={e => setEditEstimateForm(f => ({ ...f, markup_flat: e.target.value }))}
+                                    placeholder="0.00" />
+                                  <span style={{ fontSize: '11px', color: '#444' }}>flat</span>
                                 </div>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: editEstimateForm.taxable ? '#f1f1f1' : '#555' }}>
                                   <input type="checkbox" checked={!!editEstimateForm.taxable} onChange={e => setEditEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
@@ -5541,7 +5572,7 @@ ${estimate.notes ? `
                                 {['pm', 'apm'].includes(profile?.role) && <>
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
-                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), taxable: !!est.taxable, square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
+                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), markup_flat: String(est.markup_flat || ''), taxable: !!est.taxable, square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
                                     setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '' })))
                                   }}>Edit</button>
                                   {est.status !== 'won' && (
@@ -5588,7 +5619,7 @@ ${estimate.notes ? `
             {activeTab === 'estimator' && estimatorInnerTab === 'archive' && (() => {
               const calcTotal = (est) => {
                 const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
-                return raw * (1 + Number(est.markup_pct || 0) / 100) + (est.taxable ? raw * 0.0825 : 0)
+                return raw * (1 + Number(est.markup_pct || 0) / 100) + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
               }
               const archived = estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status))
               const won = archived.filter(e => ['won','accepted'].includes(e.status))

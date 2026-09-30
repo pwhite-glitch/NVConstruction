@@ -373,6 +373,12 @@ export default function Dashboard() {
   const [editEmpForm, setEditEmpForm] = useState({})
   const [savingEmpEdit, setSavingEmpEdit] = useState(false)
 
+  const [subcontractModal, setSubcontractModal] = useState(null) // { pkg, sub }
+  const [subcontractForm, setSubcontractForm] = useState({ contract_value: '', retainage_pct: '10', start_date: '', special_terms: '', description: '' })
+  const [subcontractRowId, setSubcontractRowId] = useState(null)
+  const [loadingSubcontractModal, setLoadingSubcontractModal] = useState(false)
+  const [savingSubcontract, setSavingSubcontract] = useState(false)
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1675,7 +1681,74 @@ export default function Dashboard() {
     }
   }
 
-  async function generateSubcontractPDF(pkg, sub) {
+  async function openSubcontractModal(pkg, sub) {
+    setSubcontractModal({ pkg, sub })
+    setSubcontractRowId(null)
+    setLoadingSubcontractModal(true)
+    if (!scopeItems[pkg.id]) await loadScopeItems(pkg.id)
+    const items = scopeItems[pkg.id] || []
+    const entries = levelingEntries[pkg.id] || []
+    const covered = entries.length > 0
+      ? items.filter(item => { const e = entries.find(en => en.bid_scope_item_id === item.id && en.bid_submission_id === sub.id); return !e || e.included !== false })
+      : items
+    const defaultScope = covered.map(i => (i.trade ? `[${i.trade}] ` : '') + i.description).join('\n') || pkg.scope_of_work || ''
+    const defaults = { contract_value: String(sub.amount || ''), retainage_pct: '10', start_date: '', special_terms: '', description: defaultScope }
+
+    if (pkg.job_id) {
+      try {
+        const res = await fetch(`/api/subcontracts?job_id=${pkg.job_id}&vendor_name=${encodeURIComponent(sub.company_name)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.row) {
+            setSubcontractRowId(data.row.id)
+            setSubcontractForm({
+              contract_value: String(data.row.contract_value || sub.amount || ''),
+              retainage_pct: String(data.row.retainage_pct ?? 10),
+              start_date: data.row.start_date || '',
+              special_terms: data.row.special_terms || '',
+              description: data.row.description || defaultScope,
+            })
+            setLoadingSubcontractModal(false)
+            return
+          }
+        }
+      } catch {}
+    }
+    setSubcontractForm(defaults)
+    setLoadingSubcontractModal(false)
+  }
+
+  async function saveSubcontract() {
+    setSavingSubcontract(true)
+    const { pkg, sub } = subcontractModal
+    const body = {
+      vendor_name: sub.company_name,
+      contract_value: parseFloat(subcontractForm.contract_value) || 0,
+      retainage_pct: parseFloat(subcontractForm.retainage_pct) || 10,
+      start_date: subcontractForm.start_date || null,
+      special_terms: subcontractForm.special_terms || null,
+      description: subcontractForm.description || null,
+      status: 'active',
+      ...(pkg.job_id ? { job_id: pkg.job_id } : {}),
+      ...(sub.sub_id ? { sub_id: sub.sub_id } : {}),
+    }
+    let id = subcontractRowId
+    if (id) {
+      const res = await fetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...body }) })
+      const data = await res.json()
+      if (data.error) { alert('Save failed: ' + data.error); setSavingSubcontract(false); return null }
+    } else {
+      const res = await fetch('/api/subcontracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const data = await res.json()
+      if (data.error) { alert('Save failed: ' + data.error); setSavingSubcontract(false); return null }
+      id = data.id
+      setSubcontractRowId(id)
+    }
+    setSavingSubcontract(false)
+    return id
+  }
+
+  async function generateSubcontractPDF(pkg, sub, formData) {
     if (!scopeItems[pkg.id]) await loadScopeItems(pkg.id)
     const items = scopeItems[pkg.id] || []
     const entries = levelingEntries[pkg.id] || []
@@ -1693,6 +1766,10 @@ export default function Dashboard() {
     })
     const contractNum = `SC-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const contractValue = formData ? parseFloat(formData.contract_value) || Number(sub.amount) : Number(sub.amount)
+    const retainagePct = formData ? parseFloat(formData.retainage_pct) || 10 : 10
+    const startDateStr = formData?.start_date ? new Date(formData.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
+    const specialTerms = formData?.special_terms || null
     const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Subcontract — ${sub.company_name}</title>
 <style>
@@ -1791,11 +1868,12 @@ export default function Dashboard() {
         ${pkg.owner_name ? `<div class="party-sub">Owner: ${pkg.owner_name}</div>` : ''}
       </div>
       ${pkg.due_date ? `<div class="party-card"><div class="party-role">Bid reference date</div><div class="party-name">${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})}</div></div>` : ''}
+      ${startDateStr ? `<div class="party-card"><div class="party-role">Start date</div><div class="party-name">${startDateStr}</div></div>` : ''}
     </div>
   </div>
   <div class="amount-box">
-    <div><div class="amount-label">Subcontract value</div></div>
-    <div class="amount-value">$${Number(sub.amount).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    <div><div class="amount-label">Subcontract value</div>${retainagePct > 0 ? `<div style="font-size:10px;color:#888;margin-top:4px">${retainagePct}% retainage withheld from progress payments</div>` : ''}</div>
+    <div class="amount-value">$${contractValue.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
   </div>
   <div class="section">
     <div class="section-title">Scope of Work</div>
@@ -1803,12 +1881,12 @@ export default function Dashboard() {
       <div class="scope-group">
         ${trade !== 'General' ? `<div class="trade-label">${trade}</div>` : ''}
         ${tItems.map(item => `<div class="scope-item"><span class="scope-check">✓</span>${item.description}</div>`).join('')}
-      </div>`).join('') : `<p style="color:#888;font-size:13px">${pkg.scope_of_work || 'See attached scope documents.'}</p>`}
+      </div>`).join('') : `<p style="color:#888;font-size:13px">${(formData?.description || pkg.scope_of_work || 'See attached scope documents.').replace(/\n/g,'<br>')}</p>`}
   </div>
   <div class="section">
     <div class="section-title">Terms & Conditions</div>
     <div class="terms">
-      Subcontractor shall perform the scope of work described herein in a workmanlike manner, in accordance with all applicable codes and regulations, and to the satisfaction of NV Construction, LLC. Work shall commence upon written notice to proceed and shall be completed in accordance with the project schedule. Subcontractor shall maintain general liability insurance of not less than $1,000,000 per occurrence / $2,000,000 aggregate and workers' compensation as required by law, naming NV Construction, LLC as additional insured. Subcontractor shall submit lien waivers with each payment application. Retainage of 10% shall be withheld from each progress payment until final completion and acceptance. This subcontract is subject to the terms of the Prime Contract between NV Construction, LLC and the project owner.
+      Subcontractor shall perform the scope of work described herein in a workmanlike manner, in accordance with all applicable codes and regulations, and to the satisfaction of NV Construction, LLC. Work shall commence upon written notice to proceed and shall be completed in accordance with the project schedule. Subcontractor shall maintain general liability insurance of not less than $1,000,000 per occurrence / $2,000,000 aggregate and workers' compensation as required by law, naming NV Construction, LLC as additional insured. Subcontractor shall submit lien waivers with each payment application. Retainage of ${retainagePct}% shall be withheld from each progress payment until final completion and acceptance. This subcontract is subject to the terms of the Prime Contract between NV Construction, LLC and the project owner.${specialTerms ? `\n\n${specialTerms}` : ''}
     </div>
   </div>
   <div class="sigs">
@@ -2693,6 +2771,81 @@ ${estimate.notes ? `
         .nv-btn:hover { opacity: 0.82 !important; }
         .nv-btn:active { transform: scale(0.96) !important; }
       `}</style>
+
+      {/* ── SUBCONTRACT EDITOR MODAL ── */}
+      {subcontractModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '10px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflow: 'auto' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', color: '#e8590c', margin: 0 }}>Subcontract</p>
+                <p style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1', margin: '3px 0 0' }}>{subcontractModal.sub.company_name}</p>
+              </div>
+              <button onClick={() => setSubcontractModal(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '20px', cursor: 'pointer', padding: '4px 8px' }}>✕</button>
+            </div>
+
+            {loadingSubcontractModal ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#555' }}>Loading…</div>
+            ) : (
+              <div style={{ padding: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
+                  <div>
+                    <label style={s.label}>Contract Value ($)</label>
+                    <input style={s.input} type="number" value={subcontractForm.contract_value} onChange={e => setSubcontractForm(f => ({ ...f, contract_value: e.target.value }))} placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label style={s.label}>Retainage (%)</label>
+                    <input style={s.input} type="number" value={subcontractForm.retainage_pct} onChange={e => setSubcontractForm(f => ({ ...f, retainage_pct: e.target.value }))} placeholder="10" />
+                  </div>
+                </div>
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={s.label}>Start Date</label>
+                  <input style={s.input} type="date" value={subcontractForm.start_date} onChange={e => setSubcontractForm(f => ({ ...f, start_date: e.target.value }))} />
+                </div>
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={s.label}>Scope of Work</label>
+                  <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical', fontFamily: 'monospace', fontSize: '12px' }} value={subcontractForm.description} onChange={e => setSubcontractForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the scope of work…" />
+                </div>
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={s.label}>Special Terms / Notes <span style={{ color: '#444', fontWeight: '400' }}>(optional — appended to standard terms)</span></label>
+                  <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={subcontractForm.special_terms} onChange={e => setSubcontractForm(f => ({ ...f, special_terms: e.target.value }))} placeholder="Any project-specific terms, payment schedule details, or notes…" />
+                </div>
+                {!subcontractModal.pkg.job_id && (
+                  <div style={{ background: '#1a1a0a', border: '1px solid #3a3000', borderRadius: '6px', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: '#888' }}>
+                    ⚠ This bid package hasn't been converted to a job yet. Save will store the subcontract, but it won't appear in the sub portal until a job is linked.
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    style={{ ...s.btn('orange'), opacity: savingSubcontract ? 0.6 : 1 }}
+                    disabled={savingSubcontract}
+                    onClick={async () => {
+                      const id = await saveSubcontract()
+                      if (id) {
+                        generateSubcontractPDF(subcontractModal.pkg, subcontractModal.sub, subcontractForm)
+                      }
+                    }}
+                  >
+                    {savingSubcontract ? 'Saving…' : 'Save & Print PDF'}
+                  </button>
+                  <button
+                    style={{ ...s.btn('gray'), opacity: savingSubcontract ? 0.6 : 1 }}
+                    disabled={savingSubcontract}
+                    onClick={async () => {
+                      await saveSubcontract()
+                      if (!savingSubcontract) setSubcontractModal(null)
+                    }}
+                  >
+                    {savingSubcontract ? 'Saving…' : subcontractRowId ? 'Save Changes' : 'Save'}
+                  </button>
+                  <button style={s.btn('gray')} onClick={() => setSubcontractModal(null)}>Cancel</button>
+                </div>
+                {subcontractRowId && <p style={{ fontSize: '11px', color: '#3a3', marginTop: '10px' }}>✓ Saved — visible in sub portal</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── SIDEBAR ── */}
       <nav style={s.sidebar} className="rx-sidebar">
@@ -4492,7 +4645,7 @@ ${estimate.notes ? `
                                             <td style={{ padding: '10px 12px' }}>
                                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                                 {sub.doc_url && <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎</button>}
-                                                {sub.status === 'awarded' && <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>📄</button>}
+                                                {sub.status === 'awarded' && <button style={s.btnSm('gray')} onClick={() => openSubcontractModal(pkg, sub)}>📄</button>}
                                                 {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                                   <>
                                                     <button style={s.btnSm('green')} onClick={() => awardBid(sub, pkg.id)}>Award</button>
@@ -4525,7 +4678,7 @@ ${estimate.notes ? `
                                     <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎 Estimate</button>
                                   )}
                                   {sub.status === 'awarded' && (
-                                    <button style={s.btnSm('gray')} onClick={() => generateSubcontractPDF(pkg, sub)}>📄 Subcontract</button>
+                                    <button style={s.btnSm('gray')} onClick={() => openSubcontractModal(pkg, sub)}>📄 Subcontract</button>
                                   )}
                                   {sub.status === 'pending' && pkg.status !== 'awarded' && (
                                     <div style={{ display: 'flex', gap: '6px' }}>

@@ -1729,19 +1729,29 @@ export default function Dashboard() {
   .sig-company { font-size: 12px; color: #888; }
   .sig-line { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 16px; }
   .sig-field { font-size: 11px; color: #999; margin-top: 4px; }
-  @page { size: letter portrait; margin: 1cm 1.5cm; }
+  @page { size: letter portrait; margin: 0.4cm 0.8cm; }
   @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .header { padding: 18px 28px 14px; }
-    .body { padding: 18px 28px; }
-    .section { margin-bottom: 16px; }
-    .amount-box { padding: 12px 16px; margin-bottom: 14px; }
-    .amount-value { font-size: 24px; }
-    .terms { font-size: 10.5px; line-height: 1.55; padding: 10px 12px; }
-    .sigs { margin-top: 14px; gap: 20px; }
-    .sig-line { margin-top: 14px; padding-bottom: 12px; }
-    .parties { gap: 14px; }
-    .party-card { padding: 10px 12px; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11px; }
+    .header { padding: 12px 22px 10px; }
+    .header-left h1 { font-size: 17px; }
+    .body { padding: 12px 22px; }
+    .section { margin-bottom: 10px; }
+    .section-title { margin-bottom: 8px; padding-bottom: 4px; }
+    .parties { gap: 10px; }
+    .party-card { padding: 8px 10px; }
+    .party-name { font-size: 13px; }
+    .party-sub { font-size: 11px; }
+    .amount-box { padding: 8px 14px; margin-bottom: 10px; border-radius: 4px; }
+    .amount-value { font-size: 20px; }
+    .amount-label { font-size: 10px; }
+    .scope-item { padding: 4px 8px; font-size: 11px; }
+    .trade-label { font-size: 9px; padding: 3px 8px; margin-bottom: 4px; }
+    .terms { font-size: 10px; line-height: 1.5; padding: 8px 10px; }
+    .sigs { margin-top: 10px; gap: 16px; }
+    .sig-block { padding-top: 6px; }
+    .sig-name { font-size: 13px; }
+    .sig-line { margin-top: 10px; padding-bottom: 10px; }
+    .sig-field { font-size: 10px; }
   }
 </style></head><body>
 <div class="header">

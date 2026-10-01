@@ -373,6 +373,8 @@ export default function Dashboard() {
   const [editEmpForm, setEditEmpForm] = useState({})
   const [savingEmpEdit, setSavingEmpEdit] = useState(false)
 
+  const [pipelineExportOpen, setPipelineExportOpen] = useState(false)
+  const [pipelineExportStages, setPipelineExportStages] = useState({ lead: true, estimating: true, bid_out: true, negotiating: true, won: true })
   const [subcontractModal, setSubcontractModal] = useState(null) // { pkg, sub }
   const [subcontractForm, setSubcontractForm] = useState({ contract_value: '', retainage_pct: '10', start_date: '', special_terms: '', description: '' })
   const [subcontractRowId, setSubcontractRowId] = useState(null)
@@ -1562,6 +1564,181 @@ export default function Dashboard() {
     const { error } = await supabase.from('estimates').update({ status: newStage, updated_at: new Date().toISOString() }).eq('id', estimateId)
     if (error) { alert('Error: ' + error.message); return }
     await loadEstimates()
+  }
+
+  function generatePipelineReport(enabledStages) {
+    const calcTotal = (est) => {
+      const lines = est.estimate_line_items || []
+      const globalPct = Number(est.markup_pct || 0)
+      const globalFlat = Number(est.markup_flat || 0)
+      const billed = lines.reduce((a, l) => {
+        const pct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPct
+        const flat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0
+        return a + Number(l.amount || 0) * (1 + pct / 100) + flat
+      }, 0)
+      const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+      return billed + globalFlat + (est.taxable ? raw * 0.0825 : 0)
+    }
+    const STAGE_META = {
+      lead:        { label: 'Lead',         color: '#6b7280' },
+      estimating:  { label: 'Estimating',   color: '#3b82f6' },
+      bid_out:     { label: 'Bid Out',      color: '#e8590c' },
+      negotiating: { label: 'Negotiating',  color: '#eab308' },
+      won:         { label: 'Won',          color: '#22c55e' },
+    }
+    const getStage = (est) => {
+      const s = (est.status || 'lead').toLowerCase()
+      if (s === 'won' || s === 'accepted') return 'won'
+      if (s === 'sent' || s === 'bid_out') return 'bid_out'
+      if (s === 'negotiating') return 'negotiating'
+      if (s === 'lead') return 'lead'
+      return 'estimating'
+    }
+    const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+    const fmtFull = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+
+    const stageKeys = Object.keys(STAGE_META).filter(k => enabledStages[k])
+    const rows = stageKeys.flatMap(k => {
+      const ests = estimates.filter(e => getStage(e) === k)
+      return ests.map(e => ({ ...e, _stage: k, _total: calcTotal(e) }))
+    })
+    const grandTotal = rows.reduce((a, r) => a + r._total, 0)
+
+    const w = window.open('', '_blank')
+    w.document.write(`<!DOCTYPE html><html><head>
+<title>Pipeline Report — ${today}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #111; background: #fff; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@page { margin: 0.75in; }
+@media print { .no-print { display: none !important; } }
+.no-print { padding: 12px 32px; background: #111; display: flex; gap: 10px; align-items: center; }
+.btn { padding: 8px 22px; background: #e8590c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.btn-outline { padding: 8px 16px; background: transparent; color: #888; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.page { max-width: 900px; margin: 0 auto; padding: 0 0 48px; }
+.header { border-bottom: 3px solid #111; padding-bottom: 18px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-end; }
+.co-name { font-size: 22px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #111; }
+.doc-title { font-size: 10px; color: #888; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; }
+.report-meta { text-align: right; }
+.report-date { font-size: 11px; color: #888; }
+.report-label { font-size: 9px; color: #bbb; letter-spacing: 2px; text-transform: uppercase; }
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+.summary-card { border: 1px solid #e5e5e5; border-radius: 6px; padding: 14px 18px; }
+.summary-card .label { font-size: 9px; font-weight: 700; color: #aaa; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
+.summary-card .val { font-size: 26px; font-weight: 800; color: #111; font-variant-numeric: tabular-nums; }
+.summary-card .sub { font-size: 11px; color: #aaa; margin-top: 3px; }
+.stage-section { margin-bottom: 28px; page-break-inside: avoid; }
+.stage-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-radius: 4px 4px 0 0; }
+.stage-label { font-size: 9px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: #fff; }
+.stage-total { font-size: 13px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; }
+th { font-size: 9px; font-weight: 700; color: #888; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 14px; text-align: left; border-bottom: 1px solid #e5e5e5; background: #fafafa; }
+th.right { text-align: right; }
+td { padding: 9px 14px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+td.right { text-align: right; font-variant-numeric: tabular-nums; }
+.proj-name { font-weight: 700; font-size: 13px; color: #111; }
+.proj-sub { font-size: 11px; color: #888; margin-top: 1px; }
+.type-pill { display: inline-block; font-size: 9px; color: #888; background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 3px; padding: 1px 5px; margin-top: 3px; }
+.total-row td { border-bottom: none; border-top: 2px solid #111; font-weight: 800; font-size: 13px; padding-top: 10px; background: #f9f9f9; }
+.grand-total { border-top: 3px double #111; margin-top: 32px; padding-top: 16px; display: flex; justify-content: space-between; align-items: center; }
+.grand-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #555; }
+.grand-val { font-size: 28px; font-weight: 900; color: #111; font-variant-numeric: tabular-nums; }
+.footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #e5e5e5; display: flex; justify-content: space-between; font-size: 10px; color: #bbb; }
+.disclaimer { margin-top: 20px; font-size: 10px; color: #aaa; line-height: 1.6; font-style: italic; }
+</style>
+</head><body>
+<div class="no-print">
+  <button class="btn" onclick="window.print()">Print / Save PDF</button>
+  <button class="btn-outline" onclick="window.close()">Close</button>
+</div>
+<div class="page">
+  <div class="header">
+    <div>
+      <div class="co-name">NV Construction</div>
+      <div class="doc-title">Work-In-Progress &amp; Pipeline Report</div>
+    </div>
+    <div class="report-meta">
+      <div class="report-label">Prepared</div>
+      <div class="report-date">${today}</div>
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="label">Total Pipeline Value</div>
+      <div class="val">${fmt(grandTotal)}</div>
+      <div class="sub">${rows.length} project${rows.length !== 1 ? 's' : ''} across ${stageKeys.length} stage${stageKeys.length !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Stages Included</div>
+      <div class="val" style="font-size:18px">${stageKeys.map(k => STAGE_META[k].label).join(', ')}</div>
+      <div class="sub">Selected by preparer</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Report Date</div>
+      <div class="val" style="font-size:18px">${today}</div>
+      <div class="sub">Figures are estimates — not guaranteed</div>
+    </div>
+  </div>
+
+  ${stageKeys.map(stageKey => {
+    const meta = STAGE_META[stageKey]
+    const stageRows = rows.filter(r => r._stage === stageKey)
+    if (stageRows.length === 0) return ''
+    const stageTotal = stageRows.reduce((a, r) => a + r._total, 0)
+    const bgColor = stageKey === 'lead' ? '#6b7280' : stageKey === 'estimating' ? '#2563eb' : stageKey === 'bid_out' ? '#c2410c' : stageKey === 'negotiating' ? '#a16207' : '#16a34a'
+    return `
+    <div class="stage-section">
+      <div class="stage-header" style="background:${bgColor}">
+        <span class="stage-label">${meta.label}</span>
+        <span class="stage-total">${fmt(stageTotal)} · ${stageRows.length} project${stageRows.length !== 1 ? 's' : ''}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Owner / Company</th>
+            <th>Type</th>
+            <th class="right">Contract Value</th>
+            <th class="right">$/SqFt</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stageRows.map(est => {
+            const psf = est.square_footage > 0 ? Math.round(est._total / est.square_footage) : null
+            return `<tr>
+              <td><div class="proj-name">${est.project_name || '—'}</div>${est.address ? `<div class="proj-sub">${est.address}</div>` : ''}</td>
+              <td><div style="font-size:12px;color:#333">${est.owner_company || est.owner_name || '—'}</div>${est.owner_company && est.owner_name ? `<div class="proj-sub">${est.owner_name}</div>` : ''}</td>
+              <td>${est.project_type ? `<span class="type-pill">${est.project_type}</span>` : '<span style="color:#ccc">—</span>'}</td>
+              <td class="right" style="font-weight:700;font-size:13px">${fmtFull(est._total)}</td>
+              <td class="right" style="color:#888">${psf ? `$${psf}` : '—'}</td>
+            </tr>`
+          }).join('')}
+          <tr class="total-row">
+            <td colspan="3">Stage Total — ${meta.label}</td>
+            <td class="right">${fmtFull(stageTotal)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`
+  }).join('')}
+
+  <div class="grand-total">
+    <div class="grand-label">Total Pipeline Value</div>
+    <div class="grand-val">${fmtFull(grandTotal)}</div>
+  </div>
+
+  <div class="disclaimer">This report was prepared for informational purposes only. All values are internal estimates and are subject to change based on final contract negotiations, scope revisions, and bid results. This document does not constitute a financial guarantee or commitment.</div>
+
+  <div class="footer">
+    <span>NV Construction — Confidential</span>
+    <span>Generated ${today}</span>
+  </div>
+</div>
+</body></html>`)
+    w.document.close()
   }
 
   async function loadScopeItems(bidId) {
@@ -5215,6 +5392,32 @@ ${estimate.notes ? `
               const fmtK = n => n >= 1000000 ? '$' + (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? '$' + Math.round(n / 1000) + 'K' : '$' + Math.round(n)
               return (
                 <>
+                  {/* Export button + stage picker */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem', position: 'relative' }}>
+                    <button style={{ ...s.btnSm('gray'), fontSize: '12px', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      onClick={() => setPipelineExportOpen(v => !v)}>
+                      ↓ Export Report
+                    </button>
+                    {pipelineExportOpen && (
+                      <div style={{ position: 'absolute', top: '36px', right: 0, background: '#111', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px 16px', zIndex: 50, minWidth: '240px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '10px' }}>Include stages</div>
+                        {STAGES.map(st => (
+                          <label key={st.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
+                            <input type="checkbox"
+                              checked={!!pipelineExportStages[st.key]}
+                              onChange={e => setPipelineExportStages(prev => ({ ...prev, [st.key]: e.target.checked }))}
+                              style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: st.color }} />
+                            <span style={{ fontSize: '12px', color: pipelineExportStages[st.key] ? st.color : '#555', fontWeight: pipelineExportStages[st.key] ? '700' : '400' }}>{st.label}</span>
+                          </label>
+                        ))}
+                        <button style={{ ...s.btn, width: '100%', marginTop: '10px', fontSize: '12px', padding: '8px' }}
+                          onClick={() => { setPipelineExportOpen(false); generatePipelineReport(pipelineExportStages) }}>
+                          Generate PDF
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Metrics bar */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
                     {[

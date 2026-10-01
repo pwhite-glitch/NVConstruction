@@ -1618,7 +1618,9 @@ export default function Dashboard() {
 body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #111; background: #fff; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 @page { margin: 0.75in; }
 @media print { .no-print { display: none !important; } }
-.no-print { padding: 12px 32px; background: #111; display: flex; gap: 10px; align-items: center; }
+.no-print { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 12px 32px; background: #111; display: flex; gap: 10px; align-items: center; }
+body { padding-top: 50px; }
+@media print { body { padding-top: 0; } }
 .btn { padding: 8px 22px; background: #e8590c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 700; }
 .btn-outline { padding: 8px 16px; background: transparent; color: #888; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 12px; }
 .page { max-width: 900px; margin: 0 auto; padding: 0 0 48px; }

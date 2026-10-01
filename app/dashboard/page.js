@@ -1605,7 +1605,9 @@ export default function Dashboard() {
     })
     const activeJobs = (jobs || []).filter(j => j.status === 'active')
     const showConstruction = !!enabledStages['under_construction']
-    const constructionTotal = showConstruction ? activeJobs.reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0) : 0
+    const constructionGCTotal = showConstruction ? activeJobs.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0) : 0
+    const constructionSubTotal = showConstruction ? activeJobs.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0) : 0
+    const constructionTotal = constructionGCTotal + constructionSubTotal
     const grandTotal = rows.reduce((a, r) => a + r._total, 0) + constructionTotal
 
     const w = window.open('', '_blank')
@@ -1626,7 +1628,7 @@ body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color:
 .report-meta { text-align: right; }
 .report-date { font-size: 11px; color: #888; }
 .report-label { font-size: 9px; color: #bbb; letter-spacing: 2px; text-transform: uppercase; }
-.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
 .summary-card { border: 1px solid #e5e5e5; border-radius: 6px; padding: 14px 18px; }
 .summary-card .label { font-size: 9px; font-weight: 700; color: #aaa; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
 .summary-card .val { font-size: 26px; font-weight: 800; color: #111; font-variant-numeric: tabular-nums; }
@@ -1683,6 +1685,11 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
       <div class="val" style="font-size:18px">${today}</div>
       <div class="sub">Figures are estimates — not guaranteed</div>
     </div>
+    ${showConstruction && constructionTotal > 0 ? `<div class="summary-card" style="border-color:#bfdbfe">
+      <div class="label">Active Contract Sum</div>
+      <div class="val" style="color:#1d4ed8">${fmt(constructionTotal)}</div>
+      <div class="sub">${activeJobs.length} job${activeJobs.length !== 1 ? 's' : ''} under construction${constructionSubTotal > 0 ? ' · incl. ' + fmt(constructionSubTotal) + ' sub' : ''}</div>
+    </div>` : ''}
   </div>
 
   ${stageKeys.map(stageKey => {
@@ -1740,20 +1747,25 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
           <th>Job #</th>
           <th>Project</th>
           <th>Owner</th>
+          <th>Role</th>
           <th>Location</th>
           <th class="right">Contract Value</th>
         </tr>
       </thead>
       <tbody>
-        ${activeJobs.map(j => `<tr>
+        ${activeJobs.map(j => {
+          const isSub = j.nv_role === 'sub'
+          const roleLabel = isSub ? '<span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:3px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe">SUB</span>' : '<span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:3px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0">GC</span>'
+          return `<tr>
           <td style="font-weight:700;color:#0369a1">#${j.job_number}</td>
           <td><div class="proj-name">${j.project_name || '—'}</div></td>
           <td style="font-size:12px;color:#555">${j.owner_name || '—'}</td>
+          <td>${roleLabel}</td>
           <td style="font-size:12px;color:#888">${j.location || '—'}</td>
-          <td class="right" style="font-weight:700;font-size:13px">${j.contract_value ? fmtFull(parseFloat(j.contract_value)) : '—'}</td>
-        </tr>`).join('')}
+          <td class="right" style="font-weight:700;font-size:13px;color:${isSub ? '#1d4ed8' : '#111'}">${j.contract_value ? fmtFull(parseFloat(j.contract_value)) : '<span style="color:#ccc;font-weight:400">— not set</span>'}</td>
+        </tr>`}).join('')}
         <tr class="total-row">
-          <td colspan="4">Stage Total — Under Construction</td>
+          <td colspan="5">Stage Total — Under Construction${constructionSubTotal > 0 ? ` (GC: ${fmtFull(constructionGCTotal)} · Sub: ${fmtFull(constructionSubTotal)})` : ''}</td>
           <td class="right">${fmtFull(constructionTotal)}</td>
         </tr>
       </tbody>
@@ -4237,6 +4249,34 @@ ${estimate.notes ? `
                     </form>
                   </div>
                 )}
+
+                {!showCompletedJobs && !showStarredJobs && (() => {
+                  const activeCommercial = jobs.filter(j => j.job_type !== 'residential' && j.status !== 'complete')
+                  const gcTotal = activeCommercial.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0)
+                  const subTotal = activeCommercial.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0)
+                  const activeContractTotal = gcTotal + subTotal
+                  if (activeContractTotal === 0) return null
+                  return (
+                    <div style={{ background: '#0a0f1a', border: '1px solid #1a2a3a', borderRadius: '8px', padding: '12px 18px', marginBottom: '14px', display: 'flex', gap: '28px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#3a5a8a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Contract Sum to Date</div>
+                        <div style={{ fontSize: '20px', fontWeight: '900', color: '#60a5fa', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(activeContractTotal)}</div>
+                      </div>
+                      {gcTotal > 0 && <div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>GC Contracts</div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(gcTotal)}</div>
+                      </div>}
+                      {subTotal > 0 && <div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Sub Contracts</div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#60a5fa', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(subTotal)}</div>
+                      </div>}
+                      <div style={{ marginLeft: 'auto' }}>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Active Jobs</div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#555' }}>{activeCommercial.length}</div>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {(() => {
                   const visibleJobs = jobs.filter(j => {

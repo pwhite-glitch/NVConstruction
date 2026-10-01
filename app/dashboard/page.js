@@ -374,7 +374,7 @@ export default function Dashboard() {
   const [savingEmpEdit, setSavingEmpEdit] = useState(false)
 
   const [pipelineExportOpen, setPipelineExportOpen] = useState(false)
-  const [pipelineExportStages, setPipelineExportStages] = useState({ lead: true, estimating: true, bid_out: true, negotiating: true, won: true })
+  const [pipelineExportStages, setPipelineExportStages] = useState({ lead: true, estimating: true, bid_out: true, negotiating: true, won: true, under_construction: true })
   const [subcontractModal, setSubcontractModal] = useState(null) // { pkg, sub }
   const [subcontractForm, setSubcontractForm] = useState({ contract_value: '', retainage_pct: '10', start_date: '', special_terms: '', description: '' })
   const [subcontractRowId, setSubcontractRowId] = useState(null)
@@ -1603,7 +1603,10 @@ export default function Dashboard() {
       const ests = estimates.filter(e => getStage(e) === k)
       return ests.map(e => ({ ...e, _stage: k, _total: calcTotal(e) }))
     })
-    const grandTotal = rows.reduce((a, r) => a + r._total, 0)
+    const activeJobs = (jobs || []).filter(j => j.status === 'active')
+    const showConstruction = !!enabledStages['under_construction']
+    const constructionTotal = showConstruction ? activeJobs.reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0) : 0
+    const grandTotal = rows.reduce((a, r) => a + r._total, 0) + constructionTotal
 
     const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head>
@@ -1724,6 +1727,38 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
       </table>
     </div>`
   }).join('')}
+
+  ${showConstruction && activeJobs.length > 0 ? `
+  <div class="stage-section">
+    <div class="stage-header" style="background:#0369a1">
+      <span class="stage-label">Under Construction</span>
+      <span class="stage-total">${fmt(constructionTotal)} · ${activeJobs.length} job${activeJobs.length !== 1 ? 's' : ''}</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Job #</th>
+          <th>Project</th>
+          <th>Owner</th>
+          <th>Location</th>
+          <th class="right">Contract Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${activeJobs.map(j => `<tr>
+          <td style="font-weight:700;color:#0369a1">#${j.job_number}</td>
+          <td><div class="proj-name">${j.project_name || '—'}</div></td>
+          <td style="font-size:12px;color:#555">${j.owner_name || '—'}</td>
+          <td style="font-size:12px;color:#888">${j.location || '—'}</td>
+          <td class="right" style="font-weight:700;font-size:13px">${j.contract_value ? fmtFull(parseFloat(j.contract_value)) : '—'}</td>
+        </tr>`).join('')}
+        <tr class="total-row">
+          <td colspan="4">Stage Total — Under Construction</td>
+          <td class="right">${fmtFull(constructionTotal)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
 
   <div class="grand-total">
     <div class="grand-label">Total Pipeline Value</div>
@@ -5401,7 +5436,7 @@ ${estimate.notes ? `
                     {pipelineExportOpen && (
                       <div style={{ position: 'absolute', top: '36px', right: 0, background: '#111', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px 16px', zIndex: 50, minWidth: '240px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '10px' }}>Include stages</div>
-                        {STAGES.map(st => (
+                        {[...STAGES, { key: 'under_construction', label: 'UNDER CONSTRUCTION', color: '#38bdf8' }].map(st => (
                           <label key={st.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', cursor: 'pointer' }}>
                             <input type="checkbox"
                               checked={!!pipelineExportStages[st.key]}

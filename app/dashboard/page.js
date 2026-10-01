@@ -4261,18 +4261,27 @@ ${estimate.notes ? `
                               <p style={s.meta}>{j.location}{contract > 0 ? ' · ' + fmtMoney(contract) + ' contract' : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              {contract > 0 && (
-                                <div style={{ textAlign: 'right' }}>
-                                  <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
-                                  <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
-                                </div>
+                              {j.nv_role === 'sub' ? (
+                                contract > 0 && (
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#60a5fa' }}>{fmtMoney(contract)}</div>
+                                    <div style={{ fontSize: '11px', color: '#3a5a8a' }}>our contract</div>
+                                  </div>
+                                )
+                              ) : (
+                                contract > 0 && (
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
+                                    <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
+                                  </div>
+                                )
                               )}
                               {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px' }}>SUB</span>}
                               <span style={s.jobBadge(j.status)}>{j.status}</span>
                               <span style={{ color: '#555', fontSize: '18px' }}>›</span>
                             </div>
                           </div>
-                          {contract > 0 && (
+                          {j.nv_role !== 'sub' && contract > 0 && (
                             <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '10px' }}>
                               <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
                             </div>

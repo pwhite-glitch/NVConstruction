@@ -1635,11 +1635,10 @@ body { padding-top: 50px; }
 .summary-card .label { font-size: 9px; font-weight: 700; color: #aaa; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
 .summary-card .val { font-size: 26px; font-weight: 800; color: #111; font-variant-numeric: tabular-nums; }
 .summary-card .sub { font-size: 11px; color: #aaa; margin-top: 3px; }
-.stage-section { margin-bottom: 28px; page-break-inside: avoid; }
-.stage-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-radius: 4px 4px 0 0; page-break-after: avoid; break-after: avoid; }
+.stage-section { margin-bottom: 28px; }
+table { width: 100%; border-collapse: collapse; }
 .stage-label { font-size: 9px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: #fff; }
 .stage-total { font-size: 13px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
-table { width: 100%; border-collapse: collapse; }
 th { font-size: 9px; font-weight: 700; color: #888; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 14px; text-align: left; border-bottom: 1px solid #e5e5e5; background: #fafafa; }
 th.right { text-align: right; }
 td { padding: 9px 14px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
@@ -1702,21 +1701,10 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
     const bgColor = stageKey === 'lead' ? '#6b7280' : stageKey === 'estimating' ? '#2563eb' : stageKey === 'bid_out' ? '#c2410c' : stageKey === 'negotiating' ? '#a16207' : '#16a34a'
     return `
     <div class="stage-section">
-      <div class="stage-header" style="background:${bgColor}">
-        <span class="stage-label">${meta.label}</span>
-        <span class="stage-total">${fmt(stageTotal)} · ${stageRows.length} project${stageRows.length !== 1 ? 's' : ''}</span>
-      </div>
       <table>
-        <thead>
-          <tr>
-            <th>Project</th>
-            <th>Owner / Company</th>
-            <th>Type</th>
-            <th class="right">Contract Value</th>
-            <th class="right">$/SqFt</th>
-          </tr>
-        </thead>
         <tbody>
+          <tr><td colspan="5" style="background:${bgColor};padding:8px 14px;border-radius:4px 4px 0 0;border-bottom:none"><div style="display:flex;justify-content:space-between;align-items:center"><span class="stage-label">${meta.label}</span><span class="stage-total">${fmt(stageTotal)} · ${stageRows.length} project${stageRows.length !== 1 ? 's' : ''}</span></div></td></tr>
+          <tr style="background:#fafafa"><th>Project</th><th>Owner / Company</th><th>Type</th><th class="right">Contract Value</th><th class="right">$/SqFt</th></tr>
           ${stageRows.map(est => {
             const psf = est.square_footage > 0 ? Math.round(est._total / est.square_footage) : null
             return `<tr>
@@ -1739,22 +1727,10 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
 
   ${showConstruction && activeJobs.length > 0 ? `
   <div class="stage-section">
-    <div class="stage-header" style="background:#0369a1">
-      <span class="stage-label">Under Construction</span>
-      <span class="stage-total">${fmt(constructionTotal)} · ${activeJobs.length} job${activeJobs.length !== 1 ? 's' : ''}</span>
-    </div>
     <table>
-      <thead>
-        <tr>
-          <th>Job #</th>
-          <th>Project</th>
-          <th>Owner</th>
-          <th>Role</th>
-          <th>Location</th>
-          <th class="right">Contract Value</th>
-        </tr>
-      </thead>
       <tbody>
+        <tr><td colspan="6" style="background:#0369a1;padding:8px 14px;border-radius:4px 4px 0 0;border-bottom:none"><div style="display:flex;justify-content:space-between;align-items:center"><span class="stage-label">Under Construction</span><span class="stage-total">${fmt(constructionTotal)} · ${activeJobs.length} job${activeJobs.length !== 1 ? 's' : ''}</span></div></td></tr>
+        <tr style="background:#fafafa"><th>Job #</th><th>Project</th><th>Owner</th><th>Role</th><th>Location</th><th class="right">Contract Value</th></tr>
         ${activeJobs.map(j => {
           const isSub = j.nv_role === 'sub'
           const roleLabel = isSub ? '<span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:3px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe">SUB</span>' : '<span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:3px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0">GC</span>'

@@ -1636,7 +1636,7 @@ body { padding-top: 50px; }
 .summary-card .val { font-size: 26px; font-weight: 800; color: #111; font-variant-numeric: tabular-nums; }
 .summary-card .sub { font-size: 11px; color: #aaa; margin-top: 3px; }
 .stage-section { margin-bottom: 28px; page-break-inside: avoid; }
-.stage-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-radius: 4px 4px 0 0; }
+.stage-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; border-radius: 4px 4px 0 0; page-break-after: avoid; break-after: avoid; }
 .stage-label { font-size: 9px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: #fff; }
 .stage-total { font-size: 13px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
 table { width: 100%; border-collapse: collapse; }

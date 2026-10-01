@@ -1494,7 +1494,7 @@ export default function Dashboard() {
     if (!error && est) {
       const validLines = estimateLines.filter(l => l.description)
       if (validLines.length > 0) {
-        await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i })))
+        await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i, markup_pct: l.markup_pct !== '' && l.markup_pct !== undefined ? parseFloat(l.markup_pct) : null, markup_flat: parseFloat(l.markup_flat) || null })))
       }
       setShowNewEstimate(false)
       setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
@@ -1535,7 +1535,8 @@ export default function Dashboard() {
           amount: parseFloat(l.amount) || 0,
           scope: l.scope || null,
           sort_order: i,
-          apply_markup: l.apply_markup !== false,
+          markup_pct: l.markup_pct !== '' && l.markup_pct !== undefined ? parseFloat(l.markup_pct) : null,
+          markup_flat: parseFloat(l.markup_flat) || null,
         })),
       }),
     })
@@ -2119,17 +2120,15 @@ ${planLinks.map(p => p.url
 
     const w = window.open('', '_blank')
     const lines = estimate.estimate_line_items || []
-    const markedPdfLines = lines.filter(l => l.apply_markup !== false)
-    const passThruPdfLines = lines.filter(l => l.apply_markup === false)
-    const rawMarkedPdf = markedPdfLines.reduce((a, l) => a + Number(l.amount || 0), 0)
-    const rawPassThruPdf = passThruPdfLines.reduce((a, l) => a + Number(l.amount || 0), 0)
-    const rawTotal = rawMarkedPdf + rawPassThruPdf
+    const globalPdfPct = Number(estimate.markup_pct || 0)
+    const globalPdfFlat = Number(estimate.markup_flat || 0)
+    // rawTotal is cost before any markup (used for tax base and flat distribution)
+    const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+    // Lines that have any per-line markup (pct or flat) OR inherit global pct
+    // For flat distribution: distribute globalPdfFlat proportionally across all lines
     const taxAmt = estimate.taxable ? rawTotal * 0.0825 : 0
-    const markupMult = 1 + (Number(estimate.markup_pct || 0) / 100)
-    const markupPctAmt = rawMarkedPdf * (markupMult - 1)
-    const markupFlatAmt = Number(estimate.markup_flat || 0)
-    const markupAmt = markupPctAmt + markupFlatAmt
-    const total = rawMarkedPdf * markupMult + rawPassThruPdf + markupFlatAmt + taxAmt
+    // For PDF display: each line shows cost inflated by its own markup
+    const markupFlatAmt = globalPdfFlat
     const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const estDate = new Date(estimate.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -2303,9 +2302,10 @@ ${estimate.notes ? `
   <tbody>
     ${lines.map((l, i) => {
       const amt = Number(l.amount)
-      const applyM = l.apply_markup !== false
-      const flatShare = applyM && rawMarkedPdf > 0 ? markupFlatAmt * (amt / rawMarkedPdf) : 0
-      const displayAmt = applyM ? amt * markupMult + flatShare : amt
+      const linePct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPdfPct
+      const lineFlat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0
+      const globalFlatShare = rawTotal > 0 ? markupFlatAmt * (amt / rawTotal) : 0
+      const displayAmt = amt * (1 + linePct / 100) + lineFlat + globalFlatShare
       return `<tr>
       <td style="color:#ccc;font-size:10px;padding-top:13px">${i + 1}</td>
       <td>
@@ -2322,7 +2322,7 @@ ${estimate.notes ? `
   ${estimate.taxable ? `
   <div class="totals-row">
     <div class="totals-label">Subtotal</div>
-    <div class="totals-amount">${fmt(rawMarkedPdf * markupMult + rawPassThruPdf + markupFlatAmt)}</div>
+    <div class="totals-amount">${fmt(lines.reduce((a, l) => { const amt = Number(l.amount); const pct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPdfPct; const flat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0; return a + amt * (1 + pct / 100) + flat; }, 0) + markupFlatAmt)}</div>
   </div>
   <div class="totals-row">
     <div class="totals-label">Sales Tax (8.25%)</div>
@@ -2330,7 +2330,7 @@ ${estimate.notes ? `
   </div>` : ''}
   <div class="totals-row grand">
     <div class="totals-label">Total</div>
-    <div class="totals-amount">${fmt(total)}</div>
+    <div class="totals-amount">${fmt(lines.reduce((a, l) => { const amt = Number(l.amount); const pct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPdfPct; const flat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0; return a + amt * (1 + pct / 100) + flat; }, 0) + markupFlatAmt + taxAmt)}</div>
   </div>
 </div>
 <div class="table-note">All amounts in USD &nbsp;·&nbsp; Prices subject to revision upon scope changes &nbsp;·&nbsp; Valid 30 days from date of issue</div>
@@ -5385,17 +5385,19 @@ ${estimate.notes ? `
                     <div style={{ marginBottom: '1.25rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <label style={s.label}>Schedule of values <span style={{ color: '#555', fontWeight: '400' }}>(enter your costs)</span></label>
-                        <button type="button" style={s.btnSm('green')} onClick={() => setEstimateLines(l => [...l, { description: '', amount: '', scope: '' }])}>+ Add line</button>
+                        <button type="button" style={s.btnSm('green')} onClick={() => setEstimateLines(l => [...l, { description: '', amount: '', scope: '', markup_pct: '', markup_flat: '' }])}>+ Add line</button>
                       </div>
                       <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-                          <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                          <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center' }}>M%</div><div style={{ textAlign: 'center' }}>M$</div><div></div>
                         </div>
                         {estimateLines.map((line, idx) => (
                           <div key={idx} style={{ borderBottom: idx < estimateLines.length - 1 ? '1px solid #1a1a1a' : 'none' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', alignItems: 'center' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', alignItems: 'center' }}>
                               <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
                               <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
+                              <input type="number" step="0.1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #1e1e1e', fontSize: '12px', padding: '0 4px' }} value={line.markup_pct} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_pct: e.target.value } : x))} placeholder="%" />
+                              <input type="number" step="1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #1e1e1e', fontSize: '12px', padding: '0 4px' }} value={line.markup_flat} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_flat: e.target.value } : x))} placeholder="$" />
                               <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
                             </div>
                             <textarea
@@ -5409,12 +5411,16 @@ ${estimate.notes ? `
                           </div>
                         ))}
                         {(() => {
+                          const globalPct = parseFloat(estimateForm.markup_pct) || 0
+                          const globalFlat = parseFloat(estimateForm.markup_flat) || 0
                           const rawTotal = estimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
+                          const lineMarkupTotal = estimateLines.reduce((a, l) => {
+                            const pct = l.markup_pct !== '' ? parseFloat(l.markup_pct) || 0 : globalPct
+                            const flat = parseFloat(l.markup_flat) || 0
+                            return a + (parseFloat(l.amount) || 0) * pct / 100 + flat
+                          }, 0)
                           const taxAmt = estimateForm.taxable ? rawTotal * 0.0825 : 0
-                          const markupPct = parseFloat(estimateForm.markup_pct) || 0
-                          const markupFlat = parseFloat(estimateForm.markup_flat) || 0
-                          const markupPctAmt = rawTotal * markupPct / 100
-                          const markupAmt = markupPctAmt + markupFlat
+                          const markupAmt = lineMarkupTotal + globalFlat
                           const grandTotal = rawTotal + markupAmt + taxAmt
                           const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                           const hasExtra = estimateForm.taxable || markupPct > 0 || markupFlat > 0
@@ -5491,15 +5497,16 @@ ${estimate.notes ? `
                 {estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).map(est => {
                   const isExp = expandedEstimate === est.id
                   const lines = est.estimate_line_items || []
-                  const markedLines = lines.filter(l => l.apply_markup !== false)
-                  const passThruLines = lines.filter(l => l.apply_markup === false)
-                  const rawMarked = markedLines.reduce((a, l) => a + Number(l.amount || 0), 0)
-                  const rawPassThru = passThruLines.reduce((a, l) => a + Number(l.amount || 0), 0)
-                  const rawTotal = rawMarked + rawPassThru
-                  const estMarkupPct = Number(est.markup_pct || 0)
+                  const globalPct = Number(est.markup_pct || 0)
                   const estMarkupFlat = Number(est.markup_flat || 0)
+                  const billedTotal = lines.reduce((a, l) => {
+                    const pct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPct
+                    const flat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0
+                    return a + Number(l.amount || 0) * (1 + pct / 100) + flat
+                  }, 0)
+                  const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
                   const estTaxAmt = est.taxable ? rawTotal * 0.0825 : 0
-                  const total = Math.round((rawMarked * (1 + estMarkupPct / 100) + estMarkupFlat + rawPassThru + estTaxAmt) * 100) / 100
+                  const total = Math.round((billedTotal + estMarkupFlat + estTaxAmt) * 100) / 100
                   const psf = est.square_footage > 0 ? Math.round(total / est.square_footage) : null
                   const stageLabels = { lead: { label: 'Lead', color: '#9ca3af', bg: '#111', border: '#2a2a2a' }, estimating: { label: 'Estimating', color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' }, bid_out: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, negotiating: { label: 'Negotiating', color: '#facc15', bg: '#1a1400', border: '#3a2a00' }, sent: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, draft: { label: 'Estimating', color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' } }
                   const stageCfg = stageLabels[est.status] || { label: est.status, color: '#888', bg: '#1a1a1a', border: '#2a2a2a' }
@@ -5566,18 +5573,19 @@ ${estimate.notes ? `
                               <div style={{ marginBottom: '1.25rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                   <label style={s.label}>Schedule of values <span style={{ color: '#555', fontWeight: '400' }}>(enter your costs)</span></label>
-                                  <button type="button" style={s.btnSm('green')} onClick={() => setEditEstimateLines(l => [...l, { description: '', amount: '', scope: '' }])}>+ Add line</button>
+                                  <button type="button" style={s.btnSm('green')} onClick={() => setEditEstimateLines(l => [...l, { description: '', amount: '', scope: '', markup_pct: '', markup_flat: '' }])}>+ Add line</button>
                                 </div>
                                 <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-                                    <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center', fontSize: '10px' }} title="Apply markup to this line?">M%</div><div></div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', padding: '8px 12px', borderBottom: '1px solid #1e1e1e', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                                    <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center' }}>M%</div><div style={{ textAlign: 'center' }}>M$</div><div></div>
                                   </div>
                                   {editEstimateLines.map((line, idx) => (
                                     <div key={idx} style={{ borderBottom: idx < editEstimateLines.length - 1 ? '1px solid #1a1a1a' : 'none' }}>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px 40px', alignItems: 'center' }}>
+                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', alignItems: 'center' }}>
                                         <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} />
                                         <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} />
-                                        <button title={line.apply_markup !== false ? 'Markup ON — click to exclude' : 'Markup OFF — click to include'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: 0, width: '40px', textAlign: 'center', color: line.apply_markup !== false ? '#e8590c' : '#333', borderRight: '1px solid #1e1e1e' }} onClick={() => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, apply_markup: !(x.apply_markup !== false) } : x))}>●</button>
+                                        <input type="number" step="0.1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #1e1e1e', fontSize: '12px', padding: '0 4px' }} value={line.markup_pct} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_pct: e.target.value } : x))} placeholder="%" />
+                                        <input type="number" step="1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #1e1e1e', fontSize: '12px', padding: '0 4px' }} value={line.markup_flat} onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_flat: e.target.value } : x))} placeholder="$" />
                                         <button style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEditEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
                                       </div>
                                       <textarea
@@ -5591,19 +5599,19 @@ ${estimate.notes ? `
                                     </div>
                                   ))}
                                   {(() => {
-                                    const editMarked = editEstimateLines.filter(l => l.apply_markup !== false)
-                                    const editPassThru = editEstimateLines.filter(l => l.apply_markup === false)
-                                    const editRawMarked = editMarked.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
-                                    const editRawPassThru = editPassThru.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
-                                    const editRaw = editRawMarked + editRawPassThru
+                                    const editGlobalPct = parseFloat(editEstimateForm.markup_pct) || 0
+                                    const editGlobalFlat = parseFloat(editEstimateForm.markup_flat) || 0
+                                    const editRaw = editEstimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
+                                    const editLineMarkup = editEstimateLines.reduce((a, l) => {
+                                      const pct = l.markup_pct !== '' ? parseFloat(l.markup_pct) || 0 : editGlobalPct
+                                      const flat = parseFloat(l.markup_flat) || 0
+                                      return a + (parseFloat(l.amount) || 0) * pct / 100 + flat
+                                    }, 0)
                                     const editTaxAmt = editEstimateForm.taxable ? editRaw * 0.0825 : 0
-                                    const editMarkupPct = parseFloat(editEstimateForm.markup_pct) || 0
-                                    const editMarkupFlat = parseFloat(editEstimateForm.markup_flat) || 0
-                                    const editMarkupPctAmt = editRawMarked * editMarkupPct / 100
-                                    const editMarkupAmt = editMarkupPctAmt + editMarkupFlat
+                                    const editMarkupAmt = editLineMarkup + editGlobalFlat
                                     const editGrand = editRaw + editMarkupAmt + editTaxAmt
                                     const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                    const editHasExtra = editEstimateForm.taxable || editMarkupPct > 0 || editMarkupFlat > 0
+                                    const editHasExtra = editEstimateForm.taxable || editMarkupAmt > 0
                                     return (
                                       <div style={{ padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: editHasExtra ? '4px' : 0 }}>
@@ -5611,24 +5619,17 @@ ${estimate.notes ? `
                                           <div style={{ textAlign: 'right', fontWeight: '700', color: '#888', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(editRaw)}</div>
                                           <div></div>
                                         </div>
-                                        {editEstimateForm.taxable && (
+                                        {editTaxAmt > 0 && (
                                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
                                             <div style={{ fontSize: '12px', color: '#aaa', textAlign: 'right' }}>Sales tax (8.25%):</div>
                                             <div style={{ textAlign: 'right', color: '#aaa', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editTaxAmt)}</div>
                                             <div></div>
                                           </div>
                                         )}
-                                        {editMarkupPct > 0 && (
+                                        {editMarkupAmt > 0 && (
                                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
-                                            <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Markup ({editMarkupPct}%):</div>
-                                            <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editMarkupPctAmt)}</div>
-                                            <div></div>
-                                          </div>
-                                        )}
-                                        {editMarkupFlat > 0 && (
-                                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
-                                            <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Flat markup:</div>
-                                            <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editMarkupFlat)}</div>
+                                            <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Markup (all lines):</div>
+                                            <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editMarkupAmt)}</div>
                                             <div></div>
                                           </div>
                                         )}
@@ -5767,7 +5768,7 @@ ${estimate.notes ? `
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
                                     setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), markup_flat: String(est.markup_flat || ''), taxable: !!est.taxable, square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
-                                    setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '', apply_markup: l.apply_markup !== false })))
+                                    setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '', markup_pct: l.markup_pct !== null && l.markup_pct !== undefined ? String(l.markup_pct) : '', markup_flat: l.markup_flat !== null && l.markup_flat !== undefined ? String(l.markup_flat) : '' })))
                                   }}>Edit</button>
                                   {est.status !== 'won' && (
                                     <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }) }}>Convert to Job</button>

@@ -5423,7 +5423,7 @@ ${estimate.notes ? `
                           const markupAmt = lineMarkupTotal + globalFlat
                           const grandTotal = rawTotal + markupAmt + taxAmt
                           const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                          const hasExtra = estimateForm.taxable || markupPct > 0 || markupFlat > 0
+                          const hasExtra = estimateForm.taxable || markupAmt > 0
                           return (
                             <div style={{ padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: hasExtra ? '4px' : 0 }}>
@@ -5431,24 +5431,17 @@ ${estimate.notes ? `
                                 <div style={{ textAlign: 'right', fontWeight: '700', color: '#888', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(rawTotal)}</div>
                                 <div></div>
                               </div>
-                              {estimateForm.taxable && (
+                              {taxAmt > 0 && (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
                                   <div style={{ fontSize: '12px', color: '#aaa', textAlign: 'right' }}>Sales tax (8.25%):</div>
                                   <div style={{ textAlign: 'right', color: '#aaa', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(taxAmt)}</div>
                                   <div></div>
                                 </div>
                               )}
-                              {markupPct > 0 && (
+                              {markupAmt > 0 && (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
-                                  <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Markup ({markupPct}%):</div>
-                                  <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(markupPctAmt)}</div>
-                                  <div></div>
-                                </div>
-                              )}
-                              {markupFlat > 0 && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
-                                  <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Flat markup:</div>
-                                  <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(markupFlat)}</div>
+                                  <div style={{ fontSize: '12px', color: '#e8590c', textAlign: 'right' }}>Markup (all lines):</div>
+                                  <div style={{ textAlign: 'right', color: '#e8590c', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(markupAmt)}</div>
                                   <div></div>
                                 </div>
                               )}

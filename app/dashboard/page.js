@@ -5687,12 +5687,12 @@ ${estimate.notes ? `
                                         <span style={{ color: '#ccc' }}>{l.description}</span>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                           <span style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>${Number(l.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                          {estMarkupPct > 0 && <span style={{ color: '#f1f1f1', fontWeight: '600', fontFamily: 'monospace' }}>${Math.round(Number(l.amount) * (1 + estMarkupPct / 100) * 100 / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                                          {estMarkupPct === 0 && <span style={{ color: '#f1f1f1', fontWeight: '600', fontFamily: 'monospace' }}>${Number(l.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                                          {globalPct > 0 && <span style={{ color: '#f1f1f1', fontWeight: '600', fontFamily: 'monospace' }}>${Math.round(Number(l.amount) * (1 + globalPct / 100) * 100 / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                                          {globalPct === 0 && <span style={{ color: '#f1f1f1', fontWeight: '600', fontFamily: 'monospace' }}>${Number(l.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
                                         </div>
                                       </div>
                                     ))}
-                                    {(est.taxable || estMarkupPct > 0) && (
+                                    {(est.taxable || globalPct > 0) && (
                                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#0a0a0a', borderTop: '1px solid #1a1a1a', fontSize: '12px' }}>
                                         <span style={{ color: '#555' }}>Cost subtotal</span>
                                         <span style={{ color: '#555', fontFamily: 'monospace' }}>${rawTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -5704,14 +5704,14 @@ ${estimate.notes ? `
                                         <span style={{ color: '#aaa', fontFamily: 'monospace' }}>+${(rawTotal * 0.0825).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                       </div>
                                     )}
-                                    {estMarkupPct > 0 && (
+                                    {globalPct > 0 && (
                                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#0a0a0a', borderTop: '1px solid #1a1a1a', fontSize: '12px' }}>
-                                        <span style={{ color: '#e8590c' }}>Markup ({estMarkupPct}%)</span>
-                                        <span style={{ color: '#e8590c', fontFamily: 'monospace' }}>+${Math.round(rawTotal * estMarkupPct / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                        <span style={{ color: '#e8590c' }}>Markup ({globalPct}%)</span>
+                                        <span style={{ color: '#e8590c', fontFamily: 'monospace' }}>+${Math.round(rawTotal * globalPct / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                       </div>
                                     )}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#111', borderTop: '2px solid #1e1e1e', fontWeight: '800' }}>
-                                      <span style={{ color: '#888', fontSize: '12px' }}>{(est.taxable || estMarkupPct > 0) ? 'Owner total' : 'Total'}</span>
+                                      <span style={{ color: '#888', fontSize: '12px' }}>{(est.taxable || globalPct > 0) ? 'Owner total' : 'Total'}</span>
                                       <span style={{ color: '#e8590c', fontFamily: 'monospace', fontSize: '15px' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                     </div>
                                   </div>

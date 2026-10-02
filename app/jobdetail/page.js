@@ -8588,12 +8588,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: userRole === 'pm' ? '2fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'admin') ? '2fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
                       </div>
-                      {userRole === 'pm' && (
+                      {(userRole === 'pm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Budget line</label>
                           <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
@@ -8607,12 +8607,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: userRole === 'pm' ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'admin') ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Reason *</label>
                         <input style={s.input} required value={dcForm.reason} onChange={e => setDcForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why was this purchase made?" />
                       </div>
-                      {userRole === 'pm' && (
+                      {(userRole === 'pm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Assigned To</label>
                           <select style={s.input} value={dcForm.assigned_to} onChange={e => setDcForm(f => ({ ...f, assigned_to: e.target.value }))}>
@@ -8785,7 +8785,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         {c.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            {userRole === 'pm' && (
+                            {(userRole === 'pm' || userRole === 'admin') && (
                               <button
                                 style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.budget_item_id || !c.receipt_url) ? 0.4 : 1, cursor: (!c.budget_item_id || !c.receipt_url) ? 'not-allowed' : 'pointer' }}
                                 disabled={updatingCostId === c.id || !c.budget_item_id || !c.receipt_url}
@@ -8801,7 +8801,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </button>
                           </div>
                         )}
-                        {c.status === 'approved' && userRole === 'pm' && (
+                        {c.status === 'approved' && (userRole === 'pm' || userRole === 'admin') && (
                           <button style={s.btnSmallRed} onClick={() => updateCostStatus(c.id, 'rejected', c.notes)}>Undo approve</button>
                         )}
                         <button

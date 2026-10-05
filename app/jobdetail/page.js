@@ -596,32 +596,49 @@ function JobDetailInner() {
   }
 
   async function loadBillingByItem() {
-    const { data: latestApp } = await supabase.from('aia_applications').select('id, nv_subcontract_id').eq('job_id', id).order('app_number', { ascending: false }).limit(1).single()
-    if (!latestApp) { setBillingByItem({}); return }
-    const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, line_description, scheduled_value, pct_prev, pct_this_period, dollar_prev, dollar_this_period').eq('application_id', latestApp.id)
+    // Run both queries in parallel: latest sub billing app + latest prime app
+    const [{ data: latestSubApp }, { data: latestPrimeApp }] = await Promise.all([
+      supabase.from('aia_applications').select('id').eq('job_id', id).not('nv_subcontract_id', 'is', null).order('app_number', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('aia_applications').select('id').eq('job_id', id).is('nv_subcontract_id', null).order('app_number', { ascending: false }).limit(1).maybeSingle(),
+    ])
+
     const map = {}
-    let gcBillingTotal = 0
-    let hasGcLines = false
-    const gcLineItems = []
-    for (const l of lines || []) {
-      const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
-      const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
-      if (!l.budget_item_id) {
-        // Sub billing line — no budget item mapping, accumulate lump total and keep individual lines
-        hasGcLines = true
-        const lineBilled = dp != null ? (dp + (dt ?? 0)) : 0
+
+    // Load sub billing lines (NV billing to GC) if any sub apps exist
+    if (latestSubApp) {
+      const { data: subLines } = await supabase.from('aia_application_lines')
+        .select('line_description, scheduled_value, dollar_prev, dollar_this_period')
+        .eq('application_id', latestSubApp.id)
+      let gcBillingTotal = 0
+      const gcLineItems = []
+      for (const l of subLines || []) {
+        const dp = l.dollar_prev != null ? Number(l.dollar_prev) : 0
+        const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : 0
+        const lineBilled = dp + dt
         gcBillingTotal += lineBilled
         gcLineItems.push({ description: l.line_description || '—', scheduled: Number(l.scheduled_value || 0), billed: lineBilled })
-      } else {
+      }
+      if (gcLineItems.length > 0) {
+        map.__gc_total__ = { dollars: gcBillingTotal }
+        map.__gc_lines__ = { lines: gcLineItems }
+      }
+    }
+
+    // Load prime AIA lines (budget-item-mapped billing) if any prime apps exist
+    if (latestPrimeApp) {
+      const { data: primeLines } = await supabase.from('aia_application_lines')
+        .select('budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period')
+        .eq('application_id', latestPrimeApp.id)
+      for (const l of primeLines || []) {
+        if (!l.budget_item_id) continue
+        const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
+        const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
         // Store dollar amounts when available — accurate even when overbilled (>100%)
         // Fall back to pct-based for legacy lines that never stored dollars
         map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
       }
     }
-    if (hasGcLines) {
-      map.__gc_total__ = { dollars: gcBillingTotal }
-      map.__gc_lines__ = { lines: gcLineItems }
-    }
+
     setBillingByItem(map)
   }
 

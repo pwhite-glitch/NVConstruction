@@ -596,17 +596,26 @@ function JobDetailInner() {
   }
 
   async function loadBillingByItem() {
-    const { data: latestApp } = await supabase.from('aia_applications').select('id').eq('job_id', id).order('app_number', { ascending: false }).limit(1).single()
+    const { data: latestApp } = await supabase.from('aia_applications').select('id, nv_subcontract_id').eq('job_id', id).order('app_number', { ascending: false }).limit(1).single()
     if (!latestApp) { setBillingByItem({}); return }
     const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period').eq('application_id', latestApp.id)
     const map = {}
+    let gcBillingTotal = 0
+    let hasGcLines = false
     for (const l of lines || []) {
       const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
       const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
-      // Store dollar amounts when available — accurate even when overbilled (>100%)
-      // Fall back to pct-based for legacy lines that never stored dollars
-      map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
+      if (!l.budget_item_id) {
+        // Sub billing line — no budget item mapping, accumulate lump total
+        hasGcLines = true
+        gcBillingTotal += dp != null ? (dp + (dt ?? 0)) : 0
+      } else {
+        // Store dollar amounts when available — accurate even when overbilled (>100%)
+        // Fall back to pct-based for legacy lines that never stored dollars
+        map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
+      }
     }
+    if (hasGcLines) map.__gc_total__ = { dollars: gcBillingTotal }
     setBillingByItem(map)
   }
 
@@ -1507,7 +1516,15 @@ function JobDetailInner() {
     const totalCompleted = sovLines.reduce((a, l) => a + l.totalAmt, 0)
     const totalRetainage = sovLines.reduce((a, l) => a + l.retainage, 0)
     const totalEarnedLessRet = totalCompleted - totalRetainage
-    const prevCertificates = totalPrev * (1 - retPct)
+    // Previous certificates must use the PREVIOUS app's retainage rate, not the current one.
+    // On a final billing where retainage drops to 0%, the prior apps were paid at e.g. 90%.
+    // Using current retPct (0%) here would overcount prevCertificates and make Line 8 negative.
+    const appsInSequence = aiaApplications
+      .filter(a => app.nv_subcontract_id ? a.nv_subcontract_id === app.nv_subcontract_id : !a.nv_subcontract_id)
+      .sort((x, y) => x.app_number - y.app_number)
+    const prevAppInSeq = appsInSequence[appsInSequence.findIndex(a => a.id === app.id) - 1]
+    const prevRetPct = prevAppInSeq ? Math.max(0, Math.min(100, parseFloat(prevAppInSeq.retainage_pct) || 0)) / 100 : retPct
+    const prevCertificates = totalPrev * (1 - prevRetPct)
     const currentPaymentDue = totalEarnedLessRet - prevCertificates
     const balanceToFinish = contractSumToDate - totalCompleted
     const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
@@ -5819,7 +5836,35 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* ── Owner Billing vs Budget ── */}
             {budgetView === 'billing' && budgetItems.length > 0 && (() => {
-              const hasBilling = Object.keys(billingByItem).length > 0
+              const gcBillingTotal = billingByItem.__gc_total__?.dollars || 0
+              const hasGcBilling = !!billingByItem.__gc_total__
+              const hasBudgetBilling = Object.keys(billingByItem).some(k => k !== '__gc_total__')
+              const hasBilling = hasBudgetBilling || hasGcBilling
+
+              // Sub job: show GC billing summary instead of per-item breakdown
+              if (hasGcBilling && !hasBudgetBilling) {
+                const totalSOV = budgetItems.reduce((a, item) => a + (item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)), 0)
+                const pctDone = totalSOV > 0 ? gcBillingTotal / totalSOV * 100 : 0
+                return (
+                  <div style={s.card}>
+                    <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>GC Billing Progress</p>
+                    <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>Based on latest GC billing application. View line detail in the GC Billing tab.</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                      {[
+                        { label: 'Contract Value', val: `$${totalSOV.toLocaleString()}`, color: undefined },
+                        { label: 'Billed to GC', val: `$${gcBillingTotal.toLocaleString()}`, color: '#60a5fa' },
+                        { label: '% Complete', val: `${pctDone.toFixed(1)}%`, color: pctDone >= 100 ? '#4ade80' : '#f1f1f1' },
+                      ].map(stat => (
+                        <div key={stat.label} style={s.statCard}>
+                          <div style={s.statLabel}>{stat.label}</div>
+                          <div style={{ ...s.statValue(stat.color) }}>{stat.val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
+
               const rows = budgetItems.map(item => {
                 const ownerSOV = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                 const entry = billingByItem[item.id]
@@ -5841,7 +5886,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Owner Billing vs Budget</p>
                   <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>
-                    {hasBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found — create one in the Prime Contract tab to track billing progress per line.'}
+                    {hasBudgetBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found — create one in the Prime Contract tab to track billing progress per line.'}
                   </p>
 
                   {/* Summary stats */}

@@ -598,24 +598,30 @@ function JobDetailInner() {
   async function loadBillingByItem() {
     const { data: latestApp } = await supabase.from('aia_applications').select('id, nv_subcontract_id').eq('job_id', id).order('app_number', { ascending: false }).limit(1).single()
     if (!latestApp) { setBillingByItem({}); return }
-    const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period').eq('application_id', latestApp.id)
+    const { data: lines } = await supabase.from('aia_application_lines').select('budget_item_id, line_description, scheduled_value, pct_prev, pct_this_period, dollar_prev, dollar_this_period').eq('application_id', latestApp.id)
     const map = {}
     let gcBillingTotal = 0
     let hasGcLines = false
+    const gcLineItems = []
     for (const l of lines || []) {
       const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
       const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
       if (!l.budget_item_id) {
-        // Sub billing line — no budget item mapping, accumulate lump total
+        // Sub billing line — no budget item mapping, accumulate lump total and keep individual lines
         hasGcLines = true
-        gcBillingTotal += dp != null ? (dp + (dt ?? 0)) : 0
+        const lineBilled = dp != null ? (dp + (dt ?? 0)) : 0
+        gcBillingTotal += lineBilled
+        gcLineItems.push({ description: l.line_description || '—', scheduled: Number(l.scheduled_value || 0), billed: lineBilled })
       } else {
         // Store dollar amounts when available — accurate even when overbilled (>100%)
         // Fall back to pct-based for legacy lines that never stored dollars
         map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
       }
     }
-    if (hasGcLines) map.__gc_total__ = { dollars: gcBillingTotal }
+    if (hasGcLines) {
+      map.__gc_total__ = { dollars: gcBillingTotal }
+      map.__gc_lines__ = { lines: gcLineItems }
+    }
     setBillingByItem(map)
   }
 
@@ -5841,17 +5847,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const hasBudgetBilling = Object.keys(billingByItem).some(k => k !== '__gc_total__')
               const hasBilling = hasBudgetBilling || hasGcBilling
 
-              // Sub job: show GC billing summary instead of per-item breakdown
+              // Sub job: show GC billing summary with line items instead of per-item budget breakdown
               if (hasGcBilling && !hasBudgetBilling) {
-                const totalSOV = budgetItems.reduce((a, item) => a + (item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)), 0)
+                const gcLines = billingByItem.__gc_lines__?.lines || []
+                const totalSOV = gcLines.reduce((a, l) => a + l.scheduled, 0)
                 const pctDone = totalSOV > 0 ? gcBillingTotal / totalSOV * 100 : 0
+                const colStyle = { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '12px', padding: '10px 12px', alignItems: 'center' }
                 return (
                   <div style={s.card}>
                     <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>GC Billing Progress</p>
-                    <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>Based on latest GC billing application. View line detail in the GC Billing tab.</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                    <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>Based on latest GC billing application.</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
                       {[
-                        { label: 'Contract Value', val: `$${totalSOV.toLocaleString()}`, color: undefined },
+                        { label: 'Scheduled Value', val: `$${totalSOV.toLocaleString()}`, color: undefined },
                         { label: 'Billed to GC', val: `$${gcBillingTotal.toLocaleString()}`, color: '#60a5fa' },
                         { label: '% Complete', val: `${pctDone.toFixed(1)}%`, color: pctDone >= 100 ? '#4ade80' : '#f1f1f1' },
                       ].map(stat => (
@@ -5861,6 +5869,31 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       ))}
                     </div>
+                    {gcLines.length > 0 && (<>
+                      <div style={{ ...colStyle, padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e' }}>
+                        <span>Description</span>
+                        <span style={{ textAlign: 'right' }}>Scheduled</span>
+                        <span style={{ textAlign: 'right' }}>Billed</span>
+                        <span style={{ textAlign: 'right' }}>% Billed</span>
+                      </div>
+                      {gcLines.map((l, i) => {
+                        const pct = l.scheduled > 0 ? l.billed / l.scheduled * 100 : 0
+                        return (
+                          <div key={i} style={{ ...colStyle, borderBottom: '1px solid #111' }}>
+                            <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{l.description}</span>
+                            <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${l.scheduled.toLocaleString()}</span>
+                            <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '600' }}>${l.billed.toLocaleString()}</span>
+                            <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#4ade80' : '#f1f1f1' }}>{pct.toFixed(1)}%</span>
+                          </div>
+                        )
+                      })}
+                      <div style={{ ...colStyle, borderTop: '2px solid #222', marginTop: '2px' }}>
+                        <span style={{ fontSize: '13px', color: '#555', fontWeight: '700' }}>TOTAL</span>
+                        <span style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1', fontWeight: '700' }}>${totalSOV.toLocaleString()}</span>
+                        <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '700' }}>${gcBillingTotal.toLocaleString()}</span>
+                        <span style={{ textAlign: 'right', fontSize: '13px', color: pctDone >= 100 ? '#4ade80' : '#f1f1f1', fontWeight: '700' }}>{pctDone.toFixed(1)}%</span>
+                      </div>
+                    </>)}
                   </div>
                 )
               }
@@ -9760,7 +9793,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     return a + (line.dollar_prev != null ? r2(Number(line.dollar_prev)) : r2(sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100))
                                   }, 0)
                                   const earnedLessRet = totalCompleted - totalRetainage
-                                  const prevCerts = totalPrevCompleted * (1 - retPct)
+                                  const appsInSeq = aiaApplications
+                                    .filter(a => activeAia.nv_subcontract_id ? a.nv_subcontract_id === activeAia.nv_subcontract_id : !a.nv_subcontract_id)
+                                    .sort((x, y) => x.app_number - y.app_number)
+                                  const prevAppInSeq = appsInSeq[appsInSeq.findIndex(a => a.id === activeAia.id) - 1]
+                                  const prevRetPct = prevAppInSeq ? Math.max(0, Math.min(100, parseFloat(prevAppInSeq.retainage_pct) || 0)) / 100 : retPct
+                                  const prevCerts = totalPrevCompleted * (1 - prevRetPct)
                                   const currentDue = earnedLessRet - prevCerts
                                   return (
                                     <>

@@ -4336,7 +4336,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
     return a + Number(s.contract_value || 0) + coAdj
   }, 0)
-  const contractBaseForPct = job?.nv_role === 'sub' ? (subNvContractVal > 0 ? subNvContractVal : Number(job.contract_value || 0)) : Number(job.contract_value || 0)
+  const contractBaseForPct = job?.nv_role === 'sub' ? (subNvContractVal > 0 ? subNvContractVal : Number(job?.contract_value || 0)) : Number(job?.contract_value || 0)
   const pctContract = contractBaseForPct > 0 ? ((totalBilled / contractBaseForPct) * 100).toFixed(1) : null
   const totalContractValue = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
   const totalCOs = contracts.reduce((a, c) => a + Number(c.approved_change_orders || 0), 0)

@@ -1672,7 +1672,7 @@ ${sovLines.length > 0 ? `
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob(); reloadSubs() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations(); loadNvSubcontracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
     if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }
@@ -4328,9 +4328,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   }
 
   // ── Derived values ───────────────────────────────────────────
-  const totalBilled = billing.reduce((a, b) => a + (b.amount_billed || 0), 0)
+  const totalBilledFromSubmissions = billing.reduce((a, b) => a + (b.amount_billed || 0), 0)
+  const gcBilledTotal = job?.nv_role === 'sub' ? (billingByItem.__gc_total__?.dollars || 0) : 0
+  const totalBilled = gcBilledTotal > 0 ? gcBilledTotal : totalBilledFromSubmissions
   const pendingBilling = billing.filter(b => b.status === 'pending').length
-  const pctContract = job?.contract_value ? ((totalBilled / job.contract_value) * 100).toFixed(1) : null
+  const subNvContractVal = nvSubcontracts.reduce((a, s) => {
+    const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
+    return a + Number(s.contract_value || 0) + coAdj
+  }, 0)
+  const contractBaseForPct = job?.nv_role === 'sub' ? (subNvContractVal > 0 ? subNvContractVal : Number(job.contract_value || 0)) : Number(job.contract_value || 0)
+  const pctContract = contractBaseForPct > 0 ? ((totalBilled / contractBaseForPct) * 100).toFixed(1) : null
   const totalContractValue = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
   const totalCOs = contracts.reduce((a, c) => a + Number(c.approved_change_orders || 0), 0)
   const totalRevised = contracts.reduce((a, c) => a + Number(c.adjusted_contract_value || 0), 0)

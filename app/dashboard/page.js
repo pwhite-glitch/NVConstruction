@@ -329,6 +329,10 @@ export default function Dashboard() {
   const [editingSubUser, setEditingSubUser] = useState(null)
   const [subUserActionLoading, setSubUserActionLoading] = useState(null)
   const [mergingDuplicates, setMergingDuplicates] = useState(false)
+  const [showDuplicateReview, setShowDuplicateReview] = useState(false)
+  const [reviewGroupIdx, setReviewGroupIdx] = useState(0)
+  const [reviewKeepId, setReviewKeepId] = useState(null)
+  const [mergingGroup, setMergingGroup] = useState(false)
 
   // Bid invites state
   const [bidPackages, setBidPackages] = useState([])
@@ -1367,6 +1371,22 @@ export default function Dashboard() {
     if (data) setDirectory(data)
     await refreshSubProfiles()
     setMergingDuplicates(false)
+  }
+
+  async function mergeGroup(group, keepId) {
+    setMergingGroup(true)
+    for (const entry of group.filter(e => e.id !== keepId)) {
+      await authFetch('/api/merge-sub-directory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryId: keepId, duplicateId: entry.id }),
+      })
+    }
+    const { data } = await supabase.from('sub_directory').select('*').order('company_name')
+    if (data) setDirectory(data)
+    await refreshSubProfiles()
+    setMergingGroup(false)
+    setReviewKeepId(null)
   }
 
   async function removeJobAssignment(assignmentId) {
@@ -3065,13 +3085,21 @@ ${estimate.notes ? `
     if (coiFilter === 'missing') return missingCOIs.some(e => e.id === s.id)
     return true
   })
-  const duplicateNames = new Set(
-    Object.entries(directory.reduce((acc, s) => {
-      const k = s.company_name?.toLowerCase().trim() || ''
-      acc[k] = (acc[k] || 0) + 1
-      return acc
-    }, {})).filter(([, n]) => n > 1).map(([k]) => k)
-  )
+  const dupGroupsMap = {}
+  directory.forEach(s => {
+    const k = s.company_name?.toLowerCase().trim() || ''
+    if (!k) return
+    if (!dupGroupsMap[k]) dupGroupsMap[k] = []
+    dupGroupsMap[k].push(s)
+  })
+  const duplicateGroups = Object.values(dupGroupsMap)
+    .filter(g => g.length > 1)
+    .map(g => g.map(e => ({
+      ...e,
+      _score: (e.status === 'approved' ? 100 : 0) +
+        [e.email, e.phone, e.contact_name, e.address, e.trade, e.license_number, e.coi_url, e.w9_url, e.scope_description].filter(Boolean).length
+    })).sort((a, b) => b._score - a._score))
+  const duplicateNames = new Set(duplicateGroups.flatMap(g => g.map(e => e.company_name?.toLowerCase().trim())))
   const pendingApps = directory.filter(s => s.status === 'pending').length
   const activeJobs = jobs.filter(j => j.status === 'active')
   const billedByJob = submissions.reduce((map, sub) => {
@@ -3658,19 +3686,113 @@ ${estimate.notes ? `
                   </select>
                 </div>
 
-                {duplicateNames.size > 0 && (
-                  <div style={{ background: '#fff7ed', border: '1px solid #4a3000', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                    <div>
-                      <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>⚠ {duplicateNames.size} duplicate company name{duplicateNames.size > 1 ? 's' : ''} detected</p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#7a4a00' }}>Auto-merge combines all info into the best record and removes the extras.</p>
+                {duplicateGroups.length > 0 && (
+                  <>
+                    <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                        <div>
+                          <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>⚠ {duplicateGroups.length} duplicate company name{duplicateGroups.length > 1 ? 's' : ''} detected</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#92400e' }}>Review each duplicate side-by-side and choose which record to keep.</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                          <button style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d97706', borderRadius: '7px', color: '#92400e', fontSize: '12px', fontWeight: '700', cursor: mergingDuplicates ? 'not-allowed' : 'pointer', opacity: mergingDuplicates ? 0.6 : 1 }} disabled={mergingDuplicates} onClick={mergeAllDuplicates}>{mergingDuplicates ? 'Merging…' : 'Auto-merge all'}</button>
+                          <button style={{ padding: '7px 14px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }} onClick={() => { setShowDuplicateReview(v => !v); setReviewGroupIdx(0); setReviewKeepId(null) }}>{showDuplicateReview ? 'Close review' : 'Review & Merge'}</button>
+                        </div>
+                      </div>
                     </div>
-                    <button
-                      style={{ flexShrink: 0, padding: '8px 16px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: mergingDuplicates ? 'not-allowed' : 'pointer', opacity: mergingDuplicates ? 0.6 : 1, whiteSpace: 'nowrap' }}
-                      disabled={mergingDuplicates}
-                      onClick={mergeAllDuplicates}>
-                      {mergingDuplicates ? 'Merging…' : 'Auto-merge'}
-                    </button>
-                  </div>
+
+                    {showDuplicateReview && (() => {
+                      const safeIdx = Math.min(reviewGroupIdx, duplicateGroups.length - 1)
+                      const group = duplicateGroups[safeIdx]
+                      if (!group) return null
+                      const effectiveKeepId = reviewKeepId || group[0].id
+                      const fmtCoi = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null
+                      const coiExpired = d => d && new Date(d) < new Date()
+                      const coiExpiring = d => d && !coiExpired(d) && new Date(d) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                      return (
+                        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '20px', marginBottom: '1.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                            <div>
+                              <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: '700', color: '#111827' }}>Reviewing: <span style={{ color: '#e8590c' }}>{group[0].company_name}</span></p>
+                              <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>{group.length} records found — click a card to choose which to keep</p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <span style={{ fontSize: '12px', color: '#9ca3af' }}>{safeIdx + 1} / {duplicateGroups.length}</span>
+                              <button disabled={safeIdx === 0} onClick={() => { setReviewGroupIdx(i => i - 1); setReviewKeepId(null) }} style={{ padding: '5px 10px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '12px', cursor: safeIdx > 0 ? 'pointer' : 'not-allowed', color: safeIdx > 0 ? '#374151' : '#d1d5db' }}>← Prev</button>
+                              <button disabled={safeIdx >= duplicateGroups.length - 1} onClick={() => { setReviewGroupIdx(i => i + 1); setReviewKeepId(null) }} style={{ padding: '5px 10px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '12px', cursor: safeIdx < duplicateGroups.length - 1 ? 'pointer' : 'not-allowed', color: safeIdx < duplicateGroups.length - 1 ? '#374151' : '#d1d5db' }}>Next →</button>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${group.length}, 1fr)`, gap: '12px', marginBottom: '16px' }}>
+                            {group.map((entry, i) => {
+                              const isKeep = entry.id === effectiveKeepId
+                              const coiStatus = coiExpired(entry.coi_expiration) ? 'expired' : coiExpiring(entry.coi_expiration) ? 'expiring' : entry.coi_expiration ? 'ok' : null
+                              return (
+                                <div key={entry.id} onClick={() => setReviewKeepId(entry.id)} style={{ border: `2px solid ${isKeep ? '#e8590c' : '#e5e7eb'}`, borderRadius: '8px', padding: '14px', cursor: 'pointer', background: isKeep ? '#fff7ed' : '#f9fafb' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                                    <div>
+                                      {isKeep && <span style={{ fontSize: '10px', fontWeight: '800', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', display: 'block', marginBottom: '3px' }}>Keep this</span>}
+                                      {i === 0 && !isKeep && <span style={{ fontSize: '10px', color: '#6b7280', display: 'block', marginBottom: '3px' }}>Highest score</span>}
+                                      <span style={{ fontSize: '12px', fontWeight: '700', color: entry.status === 'approved' ? '#16a34a' : '#6b7280' }}>{entry.status === 'approved' ? '✓ Approved' : '○ Pending'}</span>
+                                    </div>
+                                    <input type="radio" checked={isKeep} onChange={() => setReviewKeepId(entry.id)} style={{ accentColor: '#e8590c', width: '16px', height: '16px', cursor: 'pointer' }} onClick={e => e.stopPropagation()} />
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                    {[
+                                      { label: 'Contact', val: entry.contact_name },
+                                      { label: 'Email', val: entry.email },
+                                      { label: 'Phone', val: entry.phone },
+                                      { label: 'Trade', val: entry.trade },
+                                      { label: 'License', val: entry.license_number },
+                                      { label: 'Address', val: entry.address },
+                                    ].map(row => (
+                                      <div key={row.label} style={{ display: 'flex', gap: '6px' }}>
+                                        <span style={{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', letterSpacing: '0.5px', textTransform: 'uppercase', width: '48px', flexShrink: 0, paddingTop: '1px' }}>{row.label}</span>
+                                        <span style={{ fontSize: '12px', color: row.val ? '#111827' : '#d1d5db', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.val || '—'}</span>
+                                      </div>
+                                    ))}
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', letterSpacing: '0.5px', textTransform: 'uppercase', width: '48px', flexShrink: 0, paddingTop: '1px' }}>COI</span>
+                                      {coiStatus === 'ok' && <span style={{ fontSize: '12px', color: '#16a34a' }}>{fmtCoi(entry.coi_expiration)}</span>}
+                                      {coiStatus === 'expiring' && <span style={{ fontSize: '12px', color: '#d97706', fontWeight: '700' }}>Exp {fmtCoi(entry.coi_expiration)}</span>}
+                                      {coiStatus === 'expired' && <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '700' }}>Expired {fmtCoi(entry.coi_expiration)}</span>}
+                                      {!coiStatus && <span style={{ fontSize: '12px', color: '#d1d5db' }}>—</span>}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px' }}>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', letterSpacing: '0.5px', textTransform: 'uppercase', width: '48px', flexShrink: 0, paddingTop: '1px' }}>W-9</span>
+                                      <span style={{ fontSize: '12px', color: entry.w9_url ? '#16a34a' : '#d1d5db' }}>{entry.w9_url ? 'On file' : '—'}</span>
+                                    </div>
+                                    {entry.scope_description && (
+                                      <div style={{ display: 'flex', gap: '6px' }}>
+                                        <span style={{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', letterSpacing: '0.5px', textTransform: 'uppercase', width: '48px', flexShrink: 0, paddingTop: '1px' }}>Scope</span>
+                                        <span style={{ fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.scope_description}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                            <button
+                              disabled={mergingGroup}
+                              onClick={async () => {
+                                await mergeGroup(group, effectiveKeepId)
+                                if (safeIdx < duplicateGroups.length - 1) setReviewGroupIdx(i => i + 1)
+                                else setShowDuplicateReview(false)
+                              }}
+                              style={{ padding: '9px 20px', background: '#e8590c', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: mergingGroup ? 'not-allowed' : 'pointer', opacity: mergingGroup ? 0.6 : 1 }}>
+                              {mergingGroup ? 'Merging…' : `Merge — keep ${group.find(e => e.id === effectiveKeepId)?.company_name || ''}`}
+                            </button>
+                            <button disabled={mergingGroup} onClick={() => { if (safeIdx < duplicateGroups.length - 1) { setReviewGroupIdx(i => i + 1); setReviewKeepId(null) } else setShowDuplicateReview(false) }} style={{ padding: '9px 16px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '7px', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                              {safeIdx < duplicateGroups.length - 1 ? 'Skip →' : 'Done'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </>
                 )}
 
                 {filteredDir.length === 0 ? <div style={s.emptyMsg}>No companies found.</div> : filteredDir.map(sub => (

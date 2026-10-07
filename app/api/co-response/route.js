@@ -46,8 +46,8 @@ export async function POST(request) {
 
   // Log the CO response
   const jobId = co.subcontracts?.jobs?.id || null
-  const amt = parseFloat(co.amount || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-  logChange({ job_id: jobId, entity_type: 'change_order', entity_id: co_id, field_name: 'status', old_value: 'pending', new_value: response, changed_by: sub_user_id, note: `Change order ${response} by ${co.subcontracts?.vendor_name || 'sub'} — ${amt}: ${co.description}` })
+  const logAmt = parseFloat(co.amount || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+  logChange({ job_id: jobId, entity_type: 'change_order', entity_id: co_id, field_name: 'status', old_value: 'pending', new_value: response, changed_by: sub_user_id, note: `Change order ${response} by ${co.subcontracts?.vendor_name || 'sub'} — ${logAmt}: ${co.description}` })
 
   // Add CO as a new SOV line so it appears in the sub's billing schedule of values
   if (response === 'approved' && co.subcontract_id && co.amount) {

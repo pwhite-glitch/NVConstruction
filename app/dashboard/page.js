@@ -219,6 +219,7 @@ const PERM_GROUPS = [
 ]
 const IconBox      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
 const IconResidential = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10.5z"/><path d="M9 22V14h6v8"/><path d="M15 3v3"/></svg>
+const IconClipboard = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
 
 export default function Dashboard() {
   const router = useRouter()
@@ -281,6 +282,8 @@ export default function Dashboard() {
   const [showStarredResJobs, setShowStarredResJobs] = useState(false)
   const [newResJob, setNewResJob] = useState({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' })
   const [resJobMsg, setResJobMsg] = useState('')
+  const [myWork, setMyWork] = useState(null)
+  const [myWorkLoading, setMyWorkLoading] = useState(false)
 
   // Per-sub assign-to-job state
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
@@ -557,6 +560,7 @@ export default function Dashboard() {
     if (activeTab === 'directory') loadDirRatings()
     if (activeTab === 'orders' && !ordersLoaded) loadOrders()
     if (activeTab === 'permissions') loadAllPermissions()
+    if (activeTab === 'my-work' && !myWork && !myWorkLoading) loadMyWork()
   }, [activeTab])
 
   async function loadAllPermissions() {
@@ -594,6 +598,18 @@ export default function Dashboard() {
       map[email].push(r)
     })
     setDirRatings(map)
+  }
+
+  async function loadMyWork() {
+    setMyWorkLoading(true)
+    try {
+      const data = await authFetch('/api/my-work')
+      setMyWork(data)
+    } catch (e) {
+      setMyWork({ rfis: [], billing: [], actionItems: [], milestones: [] })
+    } finally {
+      setMyWorkLoading(false)
+    }
   }
 
   async function loadOrders() {
@@ -3117,6 +3133,8 @@ ${estimate.notes ? `
   const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
   const billingBadge = pending.length || null
   const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
+  const myWorkTotal = myWork ? (myWork.rfis.length + myWork.billing.length + myWork.actionItems.length + myWork.milestones.length) : null
+  const myWorkBadge = myWorkTotal || null
 
   // p() checks the permissions table when loaded, falls back to role-based defaults while loading
   const p = userPerms
@@ -3125,7 +3143,8 @@ ${estimate.notes ? `
   const navGroups = [
     {
       items: [
-        { tab: 'overview', label: 'Overview', icon: <IconHome /> },
+        { tab: 'overview', label: 'Overview',  icon: <IconHome /> },
+        { tab: 'my-work',  label: 'My Work',   icon: <IconClipboard />, badge: myWorkBadge },
       ]
     },
     {
@@ -3418,6 +3437,100 @@ ${estimate.notes ? `
             <p style={s.ovSectionTitle}>Billing Calendar</p>
           </>
         )}
+
+            {/* ── MY WORK ── */}
+            {activeTab === 'my-work' && (() => {
+              const mwSection = (label, items, color, renderItem) => items.length === 0 ? null : (
+                <div style={{ marginBottom: '1.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
+                    <p style={{ ...s.ovSectionTitle, margin: 0 }}>{label}</p>
+                    <span style={{ fontSize: '11px', fontWeight: '700', background: color + '18', color, border: `1px solid ${color}40`, borderRadius: '10px', padding: '1px 8px' }}>{items.length}</span>
+                  </div>
+                  <div style={s.sectionCard}>
+                    {items.map((item, i) => (
+                      <div key={item.id} className="nv-table-row" style={{ ...s.rowBorder, padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: item.jobs ? 'pointer' : 'default', borderBottom: i < items.length - 1 ? '1px solid #f3f4f6' : 'none' }} onClick={() => item.jobs && router.push(`/jobdetail?id=${item.jobs.id}`)}>
+                        {renderItem(item)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+
+              const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+              const daysSince = (d) => Math.floor((Date.now() - new Date(d)) / (24*60*60*1000))
+              const isOverdue = (d) => d && new Date(d + 'T12:00:00') < new Date()
+              const jobTag = (item) => item.jobs ? <span style={{ fontSize: '12px', color: '#6b7280' }}>#{item.jobs.job_number} · {item.jobs.project_name}</span> : null
+
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '1.75rem' }}>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>My Work</h2>
+                    {myWorkTotal > 0 && <span style={{ fontSize: '13px', color: '#6b7280' }}>{myWorkTotal} open item{myWorkTotal !== 1 ? 's' : ''}</span>}
+                  </div>
+
+                  {myWorkLoading && <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading…</p>}
+
+                  {myWork && myWorkTotal === 0 && (
+                    <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center' }}>
+                      <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>All caught up — nothing pending.</p>
+                    </div>
+                  )}
+
+                  {myWork && mwSection('Pending billing review', myWork.billing, '#e8590c', (item) => (
+                    <>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.company_name}</p>
+                        <div style={{ marginTop: '2px' }}>{jobTag(item)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+                        {item.amount_billed != null && <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>${parseFloat(item.amount_billed).toLocaleString()}</span>}
+                        <span style={{ fontSize: '12px', color: '#9ca3af' }}>{daysSince(item.submitted_at)}d ago</span>
+                        <span style={{ fontSize: '12px', color: '#e8590c' }}>Review →</span>
+                      </div>
+                    </>
+                  ))}
+
+                  {myWork && mwSection('Open RFIs', myWork.rfis, '#2563eb', (item) => (
+                    <>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title || item.question || 'Untitled RFI'}</p>
+                        <div style={{ marginTop: '2px' }}>{jobTag(item)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '12px', color: '#9ca3af' }}>{daysSince(item.created_at)}d ago</span>
+                        <span style={{ fontSize: '12px', color: '#2563eb' }}>Respond →</span>
+                      </div>
+                    </>
+                  ))}
+
+                  {myWork && mwSection('My action items', myWork.actionItems, '#d97706', (item) => (
+                    <>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.description}</p>
+                        <div style={{ marginTop: '2px' }}>{jobTag(item)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+                        {item.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: isOverdue(item.due_date) ? '#dc2626' : '#374151' }}>Due {fmtDate(item.due_date)}</span>}
+                        <span style={{ fontSize: '12px', color: '#d97706' }}>View →</span>
+                      </div>
+                    </>
+                  ))}
+
+                  {myWork && mwSection('Upcoming milestones', myWork.milestones, '#16a34a', (item) => (
+                    <>
+                      <div>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title}</p>
+                        <div style={{ marginTop: '2px' }}>{jobTag(item)}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+                        {item.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: isOverdue(item.due_date) ? '#dc2626' : '#374151' }}>Due {fmtDate(item.due_date)}</span>}
+                        <span style={{ fontSize: '12px', color: '#16a34a' }}>View →</span>
+                      </div>
+                    </>
+                  ))}
+                </>
+              )
+            })()}
 
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (

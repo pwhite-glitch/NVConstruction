@@ -419,8 +419,14 @@ export default function Field() {
     const ts = Date.now()
     const path = `${selectedJobId}/gallery/${ts}.jpg`
     const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
-    const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
-    if (error) { alert('Upload failed: ' + error.message); setUploadingGalleryPhoto(false); return }
+    let uploadError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1200 * attempt))
+      const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
+      uploadError = error
+      if (!uploadError) break
+    }
+    if (uploadError) { alert('Upload failed after 3 attempts. Check your connection and try again.'); setUploadingGalleryPhoto(false); return }
     await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
     const usedCaption = captionOverride !== undefined ? captionOverride : captionDraft
     const usedTag = tagOverride !== undefined ? tagOverride : tagDraft

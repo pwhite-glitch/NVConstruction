@@ -6,6 +6,7 @@ import { sendEmail, emailWrap } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 
 const PM_EMAIL = 'pwhite@nvim.co'
+const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
 const s = {
   // ── Layout ──
@@ -125,6 +126,13 @@ export default function Submit() {
   const [activeTab, setActiveTab] = useState('calendar')
   const [calMonth, setCalMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() })
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
+
+  // Persist billing draft to localStorage whenever form changes
+  useEffect(() => {
+    if (form.job_id || form.amount_billed || form.work_description || form.invoice_number) {
+      try { localStorage.setItem(BILLING_DRAFT_KEY, JSON.stringify(form)) } catch {}
+    }
+  }, [form])
 
   // Bid invitations state
   const [bidInvitations, setBidInvitations] = useState([])
@@ -287,6 +295,14 @@ export default function Submit() {
       try {
         const nRes = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${session.access_token}` } })
         if (nRes.ok) { const nd = await nRes.json(); setNotifUnread(nd.unread || 0) }
+      } catch {}
+      // Restore billing draft from localStorage
+      try {
+        const saved = localStorage.getItem(BILLING_DRAFT_KEY)
+        if (saved) {
+          const draft = JSON.parse(saved)
+          setForm(f => ({ ...f, ...draft }))
+        }
       } catch {}
     }
     load()
@@ -832,9 +848,15 @@ export default function Submit() {
     }
     setLoading(true)
     const path = `${user.id}/${Date.now()}-${billingFile.name}`
-    const { error: upErr } = await supabase.storage.from('billing-docs').upload(path, billingFile)
+    let upErr = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1200 * attempt))
+      const { error: e } = await supabase.storage.from('billing-docs').upload(path, billingFile)
+      upErr = e
+      if (!upErr) break
+    }
     if (upErr) {
-      setSubmitError('Failed to upload your invoice. Please try again.')
+      setSubmitError('Failed to upload your invoice after 3 attempts. Check your connection and try again.')
       setLoading(false)
       return
     }
@@ -889,6 +911,7 @@ export default function Submit() {
         <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
       `)
     )
+    try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}
     setSuccess(true)
     setPrefillSub(null)
     setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' })
@@ -1240,6 +1263,16 @@ export default function Submit() {
           ) : (
             <div style={s.card}>
               <h2 style={s.cardTitle}>Submit billing</h2>
+              {!prefillSub && (form.job_id || form.amount_billed || form.work_description || form.invoice_number) && (() => {
+                let hasDraft = false
+                try { hasDraft = !!localStorage.getItem(BILLING_DRAFT_KEY) } catch {}
+                return hasDraft ? (
+                  <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '13px', color: '#c2410c', fontWeight: '600' }}>Draft restored — your previous entries have been loaded.</span>
+                    <button type="button" onClick={() => { try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}; setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' }) }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
+                  </div>
+                ) : null
+              })()}
               {prefillSub && (
                 <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                   <div>

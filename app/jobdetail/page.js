@@ -384,6 +384,7 @@ function JobDetailInner() {
   const [showDrawingUpload, setShowDrawingUpload] = useState(false)
   const [drawingFilter, setDrawingFilter] = useState('all')
   const [drawingSignedUrls, setDrawingSignedUrls] = useState({})
+  const [expandedDrawingSheets, setExpandedDrawingSheets] = useState({})
 
   const [teamMembers, setTeamMembers] = useState([])
   const [generatingReport, setGeneratingReport] = useState(false)
@@ -2360,7 +2361,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
     if (!up.ok) { alert('Upload failed'); setUploadingDrawing(false); return }
     const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('drawings').insert({
+    const { data: newRow } = await supabase.from('drawings').insert({
       job_id: id,
       file_name: file.name,
       storage_path: path,
@@ -2370,7 +2371,16 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       revision: drawingUploadForm.revision || '0',
       notes: drawingUploadForm.notes || null,
       uploaded_by: user?.id,
-    })
+      is_current: true,
+    }).select('id').single()
+    if (newRow?.id && drawingUploadForm.sheet_number) {
+      const { data: prev } = await supabase.from('drawings')
+        .select('id').eq('job_id', id).eq('sheet_number', drawingUploadForm.sheet_number)
+        .eq('is_current', true).neq('id', newRow.id)
+      if (prev?.length) {
+        await supabase.from('drawings').update({ is_current: false, superseded_by: newRow.id }).in('id', prev.map(r => r.id))
+      }
+    }
     await loadDrawings()
     setUploadingDrawing(false)
     setShowDrawingUpload(false)
@@ -12239,7 +12249,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'drawings' && (() => {
           const isSub = userRole === 'subcontractor'
           const DISCIPLINES = ['Architectural', 'Structural', 'Mechanical', 'Electrical', 'Plumbing', 'Civil', 'Landscape', 'Other']
-          const filtered = drawingFilter === 'all' ? drawings : drawings.filter(d => d.discipline === drawingFilter)
+          const currentDrawings = drawings.filter(d => d.is_current !== false)
+          const supersededDrawings = drawings.filter(d => d.is_current === false)
+          const historyBySheet = supersededDrawings.reduce((acc, d) => {
+            const key = d.sheet_number || ('__' + d.id)
+            if (!acc[key]) acc[key] = []
+            acc[key].push(d)
+            return acc
+          }, {})
+          const filtered = drawingFilter === 'all' ? currentDrawings : currentDrawings.filter(d => d.discipline === drawingFilter)
           const grouped = filtered.reduce((acc, d) => {
             const key = d.discipline || 'Other'
             if (!acc[key]) acc[key] = []
@@ -12252,7 +12270,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {['all', ...DISCIPLINES].map(d => (
                     <button key={d} onClick={() => setDrawingFilter(d)} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid', fontSize: '12px', fontWeight: '600', cursor: 'pointer', background: drawingFilter === d ? '#e8590c' : 'transparent', color: drawingFilter === d ? '#fff' : '#555', borderColor: drawingFilter === d ? '#e8590c' : '#d1d5db' }}>
-                      {d === 'all' ? `All (${drawings.length})` : d}
+                      {d === 'all' ? `All (${currentDrawings.length})` : d}
                     </button>
                   ))}
                 </div>
@@ -12298,7 +12316,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )}
 
-              {drawings.length === 0 ? (
+              {currentDrawings.length === 0 ? (
                 <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '10px', padding: '48px 24px', textAlign: 'center' }}>
                   <div style={{ fontSize: '32px', marginBottom: '12px' }}>📐</div>
                   <div style={{ fontSize: '14px', color: '#6b7280' }}>No drawings uploaded yet. Upload plan sheets to keep them accessible to the whole team.</div>
@@ -12312,26 +12330,54 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {discipline} · {sheets.length} sheet{sheets.length !== 1 ? 's' : ''}
                     </div>
                     <div style={{ display: 'grid', gap: '6px' }}>
-                      {sheets.map(d => (
-                        <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px' }}>
-                          <div style={{ fontSize: '20px', flexShrink: 0 }}>{d.file_name?.endsWith('.pdf') ? '📄' : '🖼'}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                              {d.sheet_number && <span style={{ fontSize: '12px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{d.sheet_number}</span>}
-                              <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{d.sheet_name || d.file_name}</span>
-                              {d.revision && d.revision !== '0' && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px' }}>Rev {d.revision}</span>}
+                      {sheets.map(d => {
+                        const sheetKey = d.sheet_number || ('__' + d.id)
+                        const history = (historyBySheet[sheetKey] || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                        const expanded = expandedDrawingSheets[sheetKey]
+                        return (
+                          <div key={d.id}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: history.length && expanded ? '8px 8px 0 0' : '8px', padding: '10px 14px' }}>
+                              <div style={{ fontSize: '20px', flexShrink: 0 }}>{d.file_name?.endsWith('.pdf') ? '📄' : '🖼'}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                                  {d.sheet_number && <span style={{ fontSize: '12px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{d.sheet_number}</span>}
+                                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{d.sheet_name || d.file_name}</span>
+                                  {d.revision && d.revision !== '0' && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px' }}>Rev {d.revision}</span>}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                                  {new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  {d.notes && <span> · {d.notes}</span>}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                                {history.length > 0 && (
+                                  <button onClick={() => setExpandedDrawingSheets(p => ({ ...p, [sheetKey]: !p[sheetKey] }))} style={{ padding: '4px 8px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}>
+                                    {expanded ? 'Hide' : `${history.length} prev`}
+                                  </button>
+                                )}
+                                <button onClick={() => openDrawing(d.storage_path)} style={{ padding: '6px 12px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>View</button>
+                                {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', cursor: 'pointer' }}>×</button>}
+                              </div>
                             </div>
-                            <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                              {new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              {d.notes && <span> · {d.notes}</span>}
-                            </div>
+                            {expanded && history.map((h, hi) => (
+                              <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: hi === history.length - 1 ? '0 0 8px 8px' : '0', padding: '8px 14px 8px 42px' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '11px', color: '#9ca3af' }}>Superseded</span>
+                                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{h.sheet_name || h.file_name}</span>
+                                    {h.revision && h.revision !== '0' && <span style={{ fontSize: '10px', color: '#9ca3af', background: '#f0f0f0', border: '1px solid #e5e7eb', borderRadius: '4px', padding: '1px 6px' }}>Rev {h.revision}</span>}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                                    {new Date(h.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    {h.notes && <span> · {h.notes}</span>}
+                                  </div>
+                                </div>
+                                <button onClick={() => openDrawing(h.storage_path)} style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#9ca3af', fontSize: '11px', cursor: 'pointer' }}>View</button>
+                              </div>
+                            ))}
                           </div>
-                          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                            <button onClick={() => openDrawing(d.storage_path)} style={{ padding: '6px 12px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>View</button>
-                            {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', cursor: 'pointer' }}>×</button>}
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 ))

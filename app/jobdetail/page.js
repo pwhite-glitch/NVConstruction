@@ -148,6 +148,10 @@ function JobDetailInner() {
   const [currentUserName, setCurrentUserName] = useState('')
   const [hideBudget, setHideBudget] = useState(false)
 
+  // Change history
+  const [changeLog, setChangeLog] = useState([])
+  const [changeLogLoading, setChangeLogLoading] = useState(false)
+
   // Labor / employee state
   const [laborAllocations, setLaborAllocations] = useState([])
   const [allEmployees, setAllEmployees] = useState([])
@@ -1741,6 +1745,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
+    if (activeTab === 'history' && userRole === 'pm') loadChangeLog()
     if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems(); loadDrawRequests() }
     if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment() }
   }, [activeTab, id])
@@ -2493,6 +2498,16 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const res = await fetch(`/api/punch-list?job_id=${id}`)
     const { items } = await res.json()
     setPunchItems(items || [])
+  }
+
+  async function loadChangeLog() {
+    setChangeLogLoading(true)
+    try {
+      const res = await authFetch(`/api/change-log?job_id=${id}`)
+      if (res.ok) { const { log } = await res.json(); setChangeLog(log || []) }
+    } finally {
+      setChangeLogLoading(false)
+    }
   }
 
   async function loadRetainageReleases() {
@@ -4289,7 +4304,19 @@ ${(budgets || []).length > 0 ? `
       nv_role: form.nv_role || 'gc',
     }).eq('id', id)
     if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000) }
-    else { setJob(j => ({ ...j, ...form })); setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000) }
+    else {
+      // Log high-value field changes
+      const logCalls = []
+      if (form.status !== job.status) {
+        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'status', old_value: job.status, new_value: form.status, note: `Job status changed: ${job.status} → ${form.status}` }) }))
+      }
+      if (form.contract_value && parseFloat(form.contract_value) !== parseFloat(job.contract_value || 0)) {
+        const fmtAmt = v => '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'contract_value', old_value: fmtAmt(job.contract_value || 0), new_value: fmtAmt(form.contract_value), note: `Contract value updated: ${fmtAmt(job.contract_value || 0)} → ${fmtAmt(form.contract_value)}` }) }))
+      }
+      if (logCalls.length) Promise.all(logCalls).catch(() => {})
+      setJob(j => ({ ...j, ...form })); setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000)
+    }
     setSaving(false)
   }
 
@@ -4746,6 +4773,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'schedule', label: 'Schedule' },
                   { key: 'closeout', label: 'Closeout' },
                   { key: 'warranty', label: 'Warranty', badge: warrantyOrders.filter(o => o.status !== 'resolved').length || null },
+                  ...(userRole === 'pm' ? [{ key: 'history', label: 'History' }] : []),
                 ],
               },
               {
@@ -4836,6 +4864,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <option value="schedule">Schedule</option>
             <option value="closeout">Closeout</option>
             <option value="warranty">Warranty</option>
+            {userRole === 'pm' && <option value="history">History</option>}
           </optgroup>
           <optgroup label="Financials">
             <option value="budget">Budget</option>
@@ -12310,6 +12339,48 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </>
           )
         })()}
+
+        {/* ── HISTORY TAB ── */}
+        {activeTab === 'history' && userRole === 'pm' && (
+          <div>
+            <p style={s.cardTitle}>Change History</p>
+            {changeLogLoading ? (
+              <p style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</p>
+            ) : changeLog.length === 0 ? (
+              <div style={{ ...s.card, color: '#6b7280', fontSize: '13px', textAlign: 'center', padding: '40px 24px' }}>
+                No recorded changes yet. Billing status transitions, contract value updates, job status changes, and change order responses will appear here.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {changeLog.map(entry => {
+                  const dotColor = { billing: '#2563eb', subcontract: '#16a34a', change_order: '#d97706', job: '#e8590c', coi: '#7c3aed' }[entry.entity_type] || '#9ca3af'
+                  return (
+                    <div key={entry.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <div style={{ flexShrink: 0, width: '10px', height: '10px', borderRadius: '50%', background: dotColor, marginTop: '4px' }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{entry.note || `${entry.entity_type} ${entry.field_name || ''} changed`}</span>
+                          <span style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} {new Date(entry.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        {(entry.old_value || entry.new_value) && (
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>
+                            {entry.old_value && <span style={{ textDecoration: 'line-through', color: '#dc2626', marginRight: '8px' }}>{entry.old_value}</span>}
+                            {entry.new_value && <span style={{ color: '#16a34a' }}>→ {entry.new_value}</span>}
+                          </div>
+                        )}
+                        {entry.changed_by_name && (
+                          <div style={{ fontSize: '11px', color: '#9ca3af' }}>by {entry.changed_by_name}</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
           </div>{/* end content area */}
         </div>{/* end sidebar + content flex */}

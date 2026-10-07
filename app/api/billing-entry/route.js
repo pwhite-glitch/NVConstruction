@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { logChange } from '../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -125,7 +126,7 @@ export async function PATCH(request) {
 
     const { data: current } = await adminSupabase
       .from('billing_submissions')
-      .select('status, sub_id')
+      .select('status, sub_id, job_id, amount_billed, company_name')
       .eq('id', id)
       .single()
 
@@ -159,6 +160,20 @@ export async function PATCH(request) {
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
     const { error } = await adminSupabase.from('billing_submissions').update(update).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+
+    // Log auditable changes
+    const fmtAmt = v => v != null ? '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null
+    if (isPM(auth.role)) {
+      if (fields.status && fields.status !== current.status) {
+        logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'status', old_value: current.status, new_value: fields.status, changed_by: auth.userId, note: `Billing status changed to "${fields.status}" — ${current.company_name || ''}` })
+      }
+      if ('amount_billed' in fields && String(fields.amount_billed) !== String(current.amount_billed)) {
+        logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'amount_billed', old_value: fmtAmt(current.amount_billed), new_value: fmtAmt(fields.amount_billed), changed_by: auth.userId, note: `Billing amount updated — ${current.company_name || ''}` })
+      }
+      if (fields.ready_to_pay === true && current.status === 'approved') {
+        logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'ready_to_pay', old_value: 'false', new_value: 'true', changed_by: auth.userId, note: `Marked ready to pay — ${current.company_name || ''}` })
+      }
+    }
 
     // Send ready-to-pay email notification (PM only)
     if (isPM(auth.role) && fields.ready_to_pay === true) {

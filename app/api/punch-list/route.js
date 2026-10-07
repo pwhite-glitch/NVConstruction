@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { notify } from '../../../lib/notify'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -52,6 +53,17 @@ export async function POST(request) {
           </table>
         </div>`,
       }).catch(() => {})
+      notify({
+        recipient_id: assigned_sub_id,
+        type:         'punch_assigned',
+        title:        `Punch list: ${title}`,
+        body:         jobRow ? `#${jobRow.job_number} — ${jobRow.project_name}${due_date ? ` · Due ${new Date(due_date + 'T00:00:00').toLocaleDateString()}` : ''}` : null,
+        link:         'punch',
+        job_id,
+        entity_type:  'punch_list_item',
+        entity_id:    item?.id,
+        dedup_key:    `punch:${item?.id}`,
+      })
     }
   }
   return Response.json({ item })

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
+import { notify } from '../../../lib/notify'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -166,6 +167,20 @@ export async function PATCH(request) {
     if (isPM(auth.role)) {
       if (fields.status && fields.status !== current.status) {
         logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'status', old_value: current.status, new_value: fields.status, changed_by: auth.userId, note: `Billing status changed to "${fields.status}" — ${current.company_name || ''}` })
+        if (current.sub_id && (fields.status === 'approved' || fields.status === 'rejected')) {
+          const fmtBill = v => '$' + parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          notify({
+            recipient_id: current.sub_id,
+            type:         `billing_${fields.status}`,
+            title:        fields.status === 'approved' ? `Billing approved — ${fmtBill(current.amount_billed)}` : `Billing returned — please review and resubmit`,
+            body:         fields.status === 'rejected' ? (rawFields.rejection_reason || 'Check your billing history for the reason.') : null,
+            link:         fields.status === 'rejected' ? 'history' : 'history',
+            job_id:       current.job_id,
+            entity_type:  'billing',
+            entity_id:    id,
+            dedup_key:    `billing:${fields.status}:${id}`,
+          })
+        }
       }
       if ('amount_billed' in fields && String(fields.amount_billed) !== String(current.amount_billed)) {
         logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'amount_billed', old_value: fmtAmt(current.amount_billed), new_value: fmtAmt(fields.amount_billed), changed_by: auth.userId, note: `Billing amount updated — ${current.company_name || ''}` })

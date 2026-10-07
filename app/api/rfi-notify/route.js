@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { notify } from '../../../lib/notify'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -79,6 +80,17 @@ export async function POST(request) {
         </div>
         <a href="${siteUrl}/field" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">View in Field Portal</a>
       `))
+      notify({
+        recipient_id: body.super_id,
+        type:         'rfi_answered',
+        title:        `RFI answered: ${body.title}`,
+        body:         body.response ? body.response.slice(0, 120) : null,
+        link:         'rfis',
+        job_id:       body.job_id || null,
+        entity_type:  'rfi',
+        entity_id:    body.rfi_id || null,
+        dedup_key:    body.rfi_id ? `rfi:answered:${body.rfi_id}` : null,
+      })
       return Response.json({ ok: !emailErr, emailError: emailErr?.message || null })
     }
 

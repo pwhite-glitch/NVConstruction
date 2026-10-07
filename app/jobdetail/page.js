@@ -725,7 +725,7 @@ function JobDetailInner() {
     const rfi = fieldRfis.find(r => r.id === rfiId)
     await supabase.from('rfis').update({ response: rfiResponse, status: 'answered', responded_at: new Date().toISOString(), responded_by: session.user.id }).eq('id', rfiId)
     if (rfi?.super_id) {
-      fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'responded', super_id: rfi.super_id, title: rfi.title, response: rfiResponse }) })
+      fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'responded', super_id: rfi.super_id, title: rfi.title, response: rfiResponse, rfi_id: rfiId, job_id: job?.id }) })
     }
     setRespondingRfi(null)
     setRfiResponse('')

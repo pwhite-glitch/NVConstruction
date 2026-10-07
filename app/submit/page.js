@@ -105,6 +105,7 @@ const IconMsg      = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconPunch    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
 const IconTeam     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 const IconGrid     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+const IconBell     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
 
 export default function Submit() {
   const router = useRouter()
@@ -153,6 +154,9 @@ export default function Submit() {
   const [docError, setDocError] = useState('')
   const [hasSigned, setHasSigned] = useState(false)
   const [prefillSub, setPrefillSub] = useState(null)
+  const [notifications, setNotifications] = useState([])
+  const [notifUnread, setNotifUnread] = useState(0)
+  const [notifLoaded, setNotifLoaded] = useState(false)
   const memberIdsRef = useRef([])
 
   // RFI state
@@ -279,6 +283,11 @@ export default function Submit() {
         setTeamMembers(teamData.members || [])
         setTeamCompanyId(teamData.company_id || null)
       }
+      // Load unread notification count for badge
+      try {
+        const nRes = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${session.access_token}` } })
+        if (nRes.ok) { const nd = await nRes.json(); setNotifUnread(nd.unread || 0) }
+      } catch {}
     }
     load()
   }, [router])
@@ -958,7 +967,36 @@ export default function Submit() {
 
   useEffect(() => {
     if (activeTab === 'upcoming' && user && !myLookaheadLoaded) loadMyLookahead()
+    if (activeTab === 'notifications' && user && !notifLoaded) loadNotifications()
   }, [activeTab, user])
+
+  async function loadNotifications() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const res = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const data = await res.json()
+      setNotifications(data.notifications || [])
+      setNotifUnread(data.unread || 0)
+      setNotifLoaded(true)
+    } catch {}
+  }
+
+  async function markNotifRead(id) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    await fetch('/api/notifications', { method: 'PATCH', headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
+    setNotifUnread(prev => Math.max(0, prev - 1))
+  }
+
+  async function markAllNotifRead() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    await fetch('/api/notifications', { method: 'PATCH', headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ mark_all_read: true }) })
+    setNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() })))
+    setNotifUnread(0)
+  }
 
   const role = profile?.role || 'subcontractor'
   // sub_admin: billing-focused only
@@ -976,7 +1014,8 @@ export default function Submit() {
     { tab: 'messages',   label: 'Messages',         icon: <IconMsg />,       roles: allSubRoles },
     { tab: 'punch',      label: 'Punch List',       icon: <IconPunch />,     roles: allSubRoles, badge: openPunch || null },
     { tab: 'team',       label: 'My Team',          icon: <IconTeam />,      roles: allSubRoles },
-    { tab: 'upcoming',   label: 'Upcoming Work',    icon: <IconGrid />,      roles: allSubRoles },
+    { tab: 'upcoming',      label: 'Upcoming Work',  icon: <IconGrid />,      roles: allSubRoles },
+    { tab: 'notifications', label: 'Notifications',  icon: <IconBell />,      roles: allSubRoles, badge: notifUnread || null },
   ]
   const navItems = allNavItems.filter(item => item.roles.includes(role))
 
@@ -2331,6 +2370,47 @@ export default function Submit() {
             </div>
           )
         })()}
+
+        {/* ── NOTIFICATIONS TAB ── */}
+        {activeTab === 'notifications' && (
+          <div style={s.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h2 style={{ ...s.cardTitle, margin: 0 }}>Notifications</h2>
+              {notifications.some(n => !n.read_at) && (
+                <button onClick={markAllNotifRead} style={{ fontSize: '12px', color: '#6b7280', background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>Mark all read</button>
+              )}
+            </div>
+            {!notifLoaded && <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading…</p>}
+            {notifLoaded && notifications.length === 0 && (
+              <p style={{ color: '#6b7280', fontSize: '14px', textAlign: 'center', padding: '2rem 0' }}>No notifications yet.</p>
+            )}
+            {notifications.map(n => {
+              const isUnread = !n.read_at
+              const typeColor = n.type === 'billing_approved' ? '#16a34a' : n.type === 'billing_rejected' ? '#dc2626' : n.type === 'punch_assigned' ? '#e8590c' : '#2563eb'
+              const typeLabel = n.type === 'billing_approved' ? 'Approved' : n.type === 'billing_rejected' ? 'Returned' : n.type === 'punch_assigned' ? 'Punch list' : n.type === 'rfi_answered' ? 'RFI answered' : n.type
+              const ago = (() => {
+                const d = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
+                if (d < 60) return `${d}m ago`
+                if (d < 1440) return `${Math.floor(d / 60)}h ago`
+                return `${Math.floor(d / 1440)}d ago`
+              })()
+              return (
+                <div key={n.id} onClick={() => { if (isUnread) markNotifRead(n.id); if (n.link) setActiveTab(n.link) }} style={{ padding: '12px 0', borderBottom: '1px solid #1e1e1e', cursor: 'pointer', opacity: isUnread ? 1 : 0.6, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  {isUnread && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: typeColor, marginTop: '5px', flexShrink: 0 }} />}
+                  {!isUnread && <div style={{ width: '7px', height: '7px', flexShrink: 0 }} />}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '13px', fontWeight: isUnread ? '700' : '500', color: '#111827' }}>{n.title}</span>
+                      <span style={{ fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap' }}>{ago}</span>
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: typeColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{typeLabel}</span>
+                    {n.body && <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#6b7280', lineHeight: '1.4' }}>{n.body}</p>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
       </div>
 

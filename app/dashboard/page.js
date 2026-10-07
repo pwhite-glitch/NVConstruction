@@ -220,6 +220,7 @@ const PERM_GROUPS = [
 const IconBox      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
 const IconResidential = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10.5z"/><path d="M9 22V14h6v8"/><path d="M15 3v3"/></svg>
 const IconClipboard = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+const IconBell      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
 
 export default function Dashboard() {
   const router = useRouter()
@@ -284,6 +285,9 @@ export default function Dashboard() {
   const [resJobMsg, setResJobMsg] = useState('')
   const [myWork, setMyWork] = useState(null)
   const [myWorkLoading, setMyWorkLoading] = useState(false)
+  const [pmNotifications, setPmNotifications] = useState([])
+  const [pmNotifUnread, setPmNotifUnread] = useState(0)
+  const [pmNotifLoaded, setPmNotifLoaded] = useState(false)
 
   // Per-sub assign-to-job state
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
@@ -561,6 +565,7 @@ export default function Dashboard() {
     if (activeTab === 'orders' && !ordersLoaded) loadOrders()
     if (activeTab === 'permissions') loadAllPermissions()
     if (activeTab === 'my-work' && !myWork && !myWorkLoading) loadMyWork()
+    if (activeTab === 'notifications' && !pmNotifLoaded) loadPmNotifications()
   }, [activeTab])
 
   async function loadAllPermissions() {
@@ -598,6 +603,27 @@ export default function Dashboard() {
       map[email].push(r)
     })
     setDirRatings(map)
+  }
+
+  async function loadPmNotifications() {
+    try {
+      const data = await authFetch('/api/notifications')
+      setPmNotifications(data.notifications || [])
+      setPmNotifUnread(data.unread || 0)
+      setPmNotifLoaded(true)
+    } catch {}
+  }
+
+  async function markPmNotifRead(id) {
+    await authFetch('/api/notifications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    setPmNotifications(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
+    setPmNotifUnread(prev => Math.max(0, prev - 1))
+  }
+
+  async function markAllPmNotifRead() {
+    await authFetch('/api/notifications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mark_all_read: true }) })
+    setPmNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() })))
+    setPmNotifUnread(0)
   }
 
   async function loadMyWork() {
@@ -3135,6 +3161,7 @@ ${estimate.notes ? `
   const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
   const myWorkTotal = myWork ? (myWork.rfis.length + myWork.billing.length + myWork.actionItems.length + myWork.milestones.length) : null
   const myWorkBadge = myWorkTotal || null
+  const notifBadge = pmNotifUnread || null
 
   // p() checks the permissions table when loaded, falls back to role-based defaults while loading
   const p = userPerms
@@ -3143,8 +3170,9 @@ ${estimate.notes ? `
   const navGroups = [
     {
       items: [
-        { tab: 'overview', label: 'Overview',  icon: <IconHome /> },
-        { tab: 'my-work',  label: 'My Work',   icon: <IconClipboard />, badge: myWorkBadge },
+        { tab: 'overview',      label: 'Overview',       icon: <IconHome /> },
+        { tab: 'my-work',       label: 'My Work',        icon: <IconClipboard />, badge: myWorkBadge },
+        { tab: 'notifications', label: 'Notifications',  icon: <IconBell />,      badge: notifBadge },
       ]
     },
     {
@@ -3531,6 +3559,49 @@ ${estimate.notes ? `
                 </>
               )
             })()}
+
+            {/* ── NOTIFICATIONS ── */}
+            {activeTab === 'notifications' && (
+              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ padding: '1.25rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f3f4f6' }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>Notifications</h2>
+                  {pmNotifications.some(n => !n.read_at) && (
+                    <button onClick={markAllPmNotifRead} style={{ fontSize: '12px', color: '#6b7280', background: 'none', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>Mark all read</button>
+                  )}
+                </div>
+                <div style={{ padding: '0 1.5rem' }}>
+                  {!pmNotifLoaded && <p style={{ color: '#6b7280', fontSize: '14px', padding: '1.5rem 0' }}>Loading…</p>}
+                  {pmNotifLoaded && pmNotifications.length === 0 && (
+                    <p style={{ color: '#6b7280', fontSize: '14px', textAlign: 'center', padding: '2.5rem 0' }}>No notifications yet.</p>
+                  )}
+                  {pmNotifications.map(n => {
+                    const isUnread = !n.read_at
+                    const typeColor = n.type === 'billing_approved' ? '#16a34a' : n.type === 'billing_rejected' ? '#dc2626' : n.type === 'punch_assigned' ? '#e8590c' : '#2563eb'
+                    const typeLabel = { billing_approved: 'Approved', billing_rejected: 'Returned', punch_assigned: 'Punch list', rfi_answered: 'RFI answered' }[n.type] || n.type
+                    const ago = (() => {
+                      const d = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
+                      if (d < 60) return `${d}m ago`
+                      if (d < 1440) return `${Math.floor(d / 60)}h ago`
+                      return `${Math.floor(d / 1440)}d ago`
+                    })()
+                    return (
+                      <div key={n.id} className="nv-table-row" onClick={() => { if (isUnread) markPmNotifRead(n.id); if (n.job_id) router.push(`/jobdetail?id=${n.job_id}`) }} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6', cursor: n.job_id ? 'pointer' : 'default', opacity: isUnread ? 1 : 0.55, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                        {isUnread && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: typeColor, marginTop: '5px', flexShrink: 0 }} />}
+                        {!isUnread && <div style={{ width: '7px', height: '7px', flexShrink: 0 }} />}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '13px', fontWeight: isUnread ? '700' : '500', color: '#111827' }}>{n.title}</span>
+                            <span style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>{ago}</span>
+                          </div>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: typeColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{typeLabel}</span>
+                          {n.body && <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#6b7280', lineHeight: '1.4' }}>{n.body}</p>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (

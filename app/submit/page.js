@@ -152,6 +152,7 @@ export default function Submit() {
   const [submitError, setSubmitError] = useState('')
   const [docError, setDocError] = useState('')
   const [hasSigned, setHasSigned] = useState(false)
+  const [prefillSub, setPrefillSub] = useState(null)
   const memberIdsRef = useRef([])
 
   // RFI state
@@ -880,7 +881,8 @@ export default function Submit() {
       `)
     )
     setSuccess(true)
-    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '' })
+    setPrefillSub(null)
+    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' })
     setSovForm([])
     setJobSovContracts([])
     setSovRetainageMap({})
@@ -888,6 +890,26 @@ export default function Submit() {
     setBillingFile(null)
     await loadSubmissions()
     setLoading(false)
+  }
+
+  function startResubmit(sub) {
+    setPrefillSub(sub)
+    setSuccess(false)
+    setSubmitError('')
+    setSovError('')
+    setForm({
+      job_id:           sub.job_id || '',
+      amount_billed:    sub.amount_billed?.toString() || '',
+      pct_complete:     sub.pct_complete?.toString() || '',
+      work_description: sub.work_description || '',
+      billing_period:   sub.billing_period
+        ? sub.billing_period.slice(0, 7)
+        : new Date().toISOString().slice(0, 7),
+      draw_request_id:  sub.draw_request_id || '',
+      invoice_number:   sub.invoice_number || '',
+    })
+    if (sub.job_id) loadJobSov(sub.job_id)
+    setActiveTab('billing')
   }
 
   async function sendTeamInvite(e) {
@@ -1132,12 +1154,28 @@ export default function Submit() {
                 </div>
               </div>
 
-              {/* Upcoming summary */}
+              {/* Needs attention — rejected submissions */}
+              {submissions.filter(s => s.status === 'rejected').length > 0 && (
+                <div style={{ marginTop: '1.5rem', background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#ff6b6b', letterSpacing: '2px', textTransform: 'uppercase' }}>⚠ Needs attention</p>
+                  {submissions.filter(s => s.status === 'rejected').map(sub => (
+                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid #2a0a0a', gap: '12px', flexWrap: 'wrap' }}>
+                      <div>
+                        <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#f1f1f1', fontWeight: '600' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}</p>
+                        {sub.rejection_reason && <p style={{ margin: 0, fontSize: '12px', color: '#dc2626', lineHeight: '1.4' }}>{sub.rejection_reason}</p>}
+                      </div>
+                      <button onClick={() => startResubmit(sub)} style={{ padding: '6px 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>Fix &amp; Resubmit</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent submissions */}
               {submissions.length > 0 && (
                 <div style={{ marginTop: '1.5rem', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1rem 1.25rem' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Recent submissions</p>
                   {submissions.slice(0, 3).map(sub => (
-                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6', gap: '10px', flexWrap: 'wrap' }}>
                       <div>
                         <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#374151', fontWeight: '600' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}</p>
                         <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>{new Date(sub.submitted_at).toLocaleDateString()}</p>
@@ -1145,6 +1183,7 @@ export default function Submit() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${Number(sub.amount_billed).toLocaleString()}</span>
                         <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', background: sub.status === 'approved' ? '#0a2a0a' : sub.status === 'rejected' ? '#2a0a0a' : '#2a1200', color: sub.status === 'approved' ? '#4ade80' : sub.status === 'rejected' ? '#ff6b6b' : '#e8590c', border: `1px solid ${sub.status === 'approved' ? '#1a4a1a' : sub.status === 'rejected' ? '#5a1a1a' : '#4a2200'}` }}>{sub.status}</span>
+                        {sub.status === 'rejected' && <button onClick={() => startResubmit(sub)} style={{ padding: '3px 10px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>Resubmit</button>}
                       </div>
                     </div>
                   ))}
@@ -1162,6 +1201,18 @@ export default function Submit() {
           ) : (
             <div style={s.card}>
               <h2 style={s.cardTitle}>Submit billing</h2>
+              {prefillSub && (
+                <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                  <div>
+                    <p style={{ margin: '0 0 4px', fontSize: '12px', fontWeight: '700', color: '#ff6b6b', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Correcting rejected submission</p>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+                      #{prefillSub.jobs?.job_number} · Pre-filled from your previous submission. Correct the issues below and resubmit with a new invoice.
+                    </p>
+                    {prefillSub.rejection_reason && <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#dc2626', lineHeight: '1.4' }}>Reason: {prefillSub.rejection_reason}</p>}
+                  </div>
+                  <button type="button" onClick={() => setPrefillSub(null)} style={{ background: 'none', border: '1px solid #3a1a1a', color: '#6b7280', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
+                </div>
+              )}
               <form onSubmit={handleSubmit}>
                 <div style={{ marginBottom: '1rem' }}>
                   <label style={s.label}>Project</label>
@@ -1754,10 +1805,13 @@ export default function Submit() {
                       )}
                     </div>
                   </div>
-                  {s2.status === 'rejected' && s2.rejection_reason && (
-                    <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px' }}>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '4px' }}>Rejection reason</p>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{s2.rejection_reason}</p>
+                  {s2.status === 'rejected' && (
+                    <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '4px' }}>Rejection reason</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{s2.rejection_reason || 'No reason provided.'}</p>
+                      </div>
+                      <button onClick={() => startResubmit(s2)} style={{ padding: '7px 16px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>Fix &amp; Resubmit →</button>
                     </div>
                   )}
                   {s2.paid_at && (

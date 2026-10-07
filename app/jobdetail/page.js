@@ -3441,7 +3441,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const amount = Number(co.amount)
     const amtStr = `${amount >= 0 ? '+' : ''}$${Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     const sovRows = co.sov?.length > 0
-      ? co.sov.map(item => `<tr style="border-bottom:1px solid #222"><td style="padding:8px 0;color:#ccc;font-size:13px">${item.description || '—'}</td><td style="text-align:right;padding:8px 0;font-weight:700;font-size:13px;color:${Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b'}">${Number(item.amount) >= 0 ? '+' : ''}$${Math.abs(Number(item.amount)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`).join('')
+      ? co.sov.map(item => `<tr style="border-bottom:1px solid #222"><td style="padding:8px 0;color:#ccc;font-size:13px">${item.description || '—'}</td><td style="text-align:right;padding:8px 0;font-weight:700;font-size:13px;color:${Number(item.amount) >= 0 ? '#16a34a' : '#dc2626'}">${Number(item.amount) >= 0 ? '+' : ''}$${Math.abs(Number(item.amount)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`).join('')
       : ''
     let attachmentHtml = ''
     if (co.attachment_url) {
@@ -4328,7 +4328,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; }
 @media print { .print-btn { display: none; } }</style></head><body>
 <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
 <h1>#${job.job_number} — ${job.project_name}</h1>
-<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date).toLocaleDateString() : ''].filter(Boolean).join(' · ')}</p>
+<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date + 'T12:00:00').toLocaleDateString() : ''].filter(Boolean).join(' · ')}</p>
 <div class="section-title">Subcontract Summary</div>
 <table><thead><tr><th>Subcontractor</th><th>Scope</th><th class="right">Contract</th><th class="right">COs</th><th class="right">Revised</th><th class="right">Remaining</th></tr></thead>
 <tbody>${rows.map(({ c, subName }) => `<tr><td>${subName}</td><td style="color:#666">${c.description || '—'}</td><td class="right">$${Number(c.contract_value).toLocaleString()}</td><td class="right">${Number(c.approved_change_orders) >= 0 ? '+' : ''}$${Number(c.approved_change_orders).toLocaleString()}</td><td class="right">$${Number(c.adjusted_contract_value).toLocaleString()}</td><td class="right ${Number(c.remaining_balance) < 0 ? 'over' : ''}">$${Number(c.remaining_balance).toLocaleString()}</td></tr>`).join('')}
@@ -4360,7 +4360,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 @media print { .print-btn { display: none; } }</style></head><body>
 <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
 <h1>#${job.job_number} — ${job.project_name}</h1>
-<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date).toLocaleDateString() : ''].filter(Boolean).join(' · ')}</p>
+<p class="meta">${[job.location, job.start_date ? 'Started ' + new Date(job.start_date + 'T12:00:00').toLocaleDateString() : ''].filter(Boolean).join(' · ')}</p>
 <div class="summary">
   <div class="stat"><div class="stat-label">Total budget</div><div class="stat-value">$${totalBudget.toLocaleString()}</div></div>
   <div class="stat"><div class="stat-label">Committed</div><div class="stat-value">$${totalCommitted.toLocaleString()}</div></div>
@@ -4672,7 +4672,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <h1 style={{ ...s.jobTitle, margin: 0 }}>#{job.job_number} — {job.project_name}</h1>
               {job.nv_role === 'sub' && <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>Subcontractor</span>}
             </div>
-            <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
+            <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {job.status !== 'complete' && !job.archived && (
@@ -4795,25 +4795,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         width: '100%', padding: '7px 10px', marginBottom: '1px',
-                        background: active ? '#f0f0f0' : 'transparent',
+                        background: active ? 'rgba(232,89,12,0.09)' : 'transparent',
                         border: 'none',
                         borderLeft: active ? '2px solid #e8590c' : '2px solid transparent',
                         borderRadius: '6px',
-                        color: active ? '#f1f1f1' : '#666',
-                        fontSize: '13px', fontWeight: active ? '700' : '500',
+                        color: active ? '#c2410c' : '#374151',
+                        fontSize: '13px', fontWeight: active ? '600' : '400',
                         cursor: 'pointer', textAlign: 'left',
                         transition: 'color 0.1s',
                       }}
-                      onMouseEnter={e => { if (!active) e.currentTarget.style.color = '#aaa' }}
-                      onMouseLeave={e => { if (!active) e.currentTarget.style.color = '#666' }}
+                      onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#111827' } }}
+                      onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#374151' } }}
                     >
                       <span>{label}</span>
                       {badge ? (
                         <span style={{
                           fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px',
-                          background: alert ? '#3a1200' : '#f0f0f0',
-                          color: alert ? '#e8590c' : '#555',
-                          border: `1px solid ${alert ? '#5a2200' : '#d1d5db'}`,
+                          background: alert ? '#fff7ed' : '#f3f4f6',
+                          color: alert ? '#c2410c' : '#6b7280',
+                          border: `1px solid ${alert ? '#fed7aa' : '#e5e7eb'}`,
                           letterSpacing: '0.3px', whiteSpace: 'nowrap',
                         }}>{badge}</span>
                       ) : null}
@@ -5118,7 +5118,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         const isNext = !isPast && i === 0
                         return (
                           <div key={i} style={{ background: isNext ? '#fff7ed' : isPast ? '#f9fafb' : '#ffffff', border: `1px solid ${isNext ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', padding: '10px 12px' }}>
-                            <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: isNext ? '#e8590c' : isPast ? '#444' : '#f1f1f1' }}>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                            <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: isNext ? '#e8590c' : isPast ? '#444' : '#111827' }}>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                             <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#6b7280' }}>Reminder: {reminder.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
                           </div>
                         )
@@ -5181,7 +5181,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {nvSubcontracts.length === 0 && !showNvSubForm && <p style={s.emptyMsg}>No subcontracts added yet.</p>}
 
                 {nvSubcontracts.map(sc => {
-                  const statusColor = sc.status === 'active' ? '#4ade80' : sc.status === 'complete' ? '#60a5fa' : '#f59e0b'
+                  const statusColor = sc.status === 'active' ? '#16a34a' : sc.status === 'complete' ? '#2563eb' : '#d97706'
                   return (
                     <div key={sc.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px', marginBottom: '10px' }}>
                       {editingNvSubId === sc.id ? (
@@ -5227,7 +5227,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const approvedAmt = cos.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
                                   const pendingCount = cos.filter(co => co.status === 'pending').length
                                   return <>
-                                    {approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: approvedAmt >= 0 ? '#4ade80' : '#ff6b6b' }}>{approvedAmt >= 0 ? '+' : ''}${approvedAmt.toLocaleString()} COs</span>}
+                                    {approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: approvedAmt >= 0 ? '#16a34a' : '#dc2626' }}>{approvedAmt >= 0 ? '+' : ''}${approvedAmt.toLocaleString()} COs</span>}
                                     {sc.contract_value != null && approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${(Number(sc.contract_value) + approvedAmt).toLocaleString()} revised</span>}
                                     {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#d97706', fontWeight: '700' }}>⏳ {pendingCount} pending CO{pendingCount !== 1 ? 's' : ''}</span>}
                                   </>
@@ -5281,8 +5281,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
                                       <span style={{ fontSize: '13px', color: '#374151' }}>{co.description}</span>
-                                      <span style={{ fontSize: '13px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}</span>
-                                      <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#f0f0f0', color: co.status === 'approved' ? '#4ade80' : co.status === 'rejected' ? '#ff6b6b' : '#f59e0b', border: '1px solid #d1d5db', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{co.status}</span>
+                                      <span style={{ fontSize: '13px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#16a34a' : '#dc2626' }}>{Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#f0f0f0', color: co.status === 'approved' ? '#16a34a' : co.status === 'rejected' ? '#dc2626' : '#d97706', border: '1px solid #d1d5db', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{co.status}</span>
                                     </div>
                                     <div style={{ fontSize: '11px', color: '#6b7280' }}>
                                       {co.date && new Date(co.date + 'T12:00:00').toLocaleDateString()}
@@ -5333,7 +5333,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
             <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}><div style={s.statLabel}>Assigned</div><div style={s.statValue()}>{uniqueCompanyCount}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#4ade80')}>{registeredCompanyCount}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Portal access</div><div style={s.statValue('#16a34a')}>{registeredCompanyCount}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Not registered</div><div style={s.statValue(uniqueCompanyCount - registeredCompanyCount > 0 ? '#e8590c' : undefined)}>{uniqueCompanyCount - registeredCompanyCount}</div></div>
             </div>
               )
@@ -5421,7 +5421,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       }}
                     >
                       <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', flex: 1 }}>{group.name}</span>
-                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#dcfce7' : '#f0f0f0', color: registeredCount > 0 ? '#4ade80' : '#555', border: `1px solid ${registeredCount > 0 ? '#bbf7d0' : '#d1d5db'}` }}>
+                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#dcfce7' : '#f0f0f0', color: registeredCount > 0 ? '#16a34a' : '#555', border: `1px solid ${registeredCount > 0 ? '#bbf7d0' : '#d1d5db'}` }}>
                         {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
                       </span>
                       {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{group.members.length} users</span>}
@@ -5458,13 +5458,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div key={a.id} style={{ background: '#ffffff', border: '1px solid #f0f0f0', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 14px' }}>
                             {/* Avatar */}
-                            <div style={{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', background: isRegistered ? '#152515' : '#181818', border: `2px solid ${isRegistered ? '#2a4a2a' : '#252525'}`, color: isRegistered ? '#4ade80' : '#444' }}>
+                            <div style={{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', background: isRegistered ? '#152515' : '#181818', border: `2px solid ${isRegistered ? '#2a4a2a' : '#252525'}`, color: isRegistered ? '#16a34a' : '#444' }}>
                               {initials}
                             </div>
                             {/* Name + contact */}
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666' }}>
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#111827' : '#666' }}>
                                   {contactName || a.sub_email || 'Unknown'}
                                 </span>
                                 {existingRating && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}</span>}
@@ -5477,7 +5477,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
                             {/* Status + actions */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                              <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', background: isRegistered ? '#dcfce7' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#bbf7d0' : '#3a2800'}` }}>
+                              <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', background: isRegistered ? '#dcfce7' : '#fff7ed', color: isRegistered ? '#16a34a' : '#e8590c', border: `1px solid ${isRegistered ? '#bbf7d0' : '#3a2800'}` }}>
                                 {isRegistered ? '● Active' : 'Not registered'}
                               </span>
                               {isRegistered && (
@@ -5592,12 +5592,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
               <div style={s.statCard}>
                 <div style={s.statLabel}>Owner SOV total</div>
-                <div style={s.statValue('#60a5fa')}>${totalOwnerSOV.toLocaleString()}</div>
+                <div style={s.statValue('#2563eb')}>${totalOwnerSOV.toLocaleString()}</div>
                 <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>What owner sees on AIA</div>
               </div>
               <div style={s.statCard}>
                 <div style={s.statLabel}>Gross profit</div>
-                <div style={s.statValue(totalMarkup > 0 ? '#4ade80' : '#555')}>{totalMarkup > 0 ? '+' : ''}${totalMarkup.toLocaleString()}</div>
+                <div style={s.statValue(totalMarkup > 0 ? '#16a34a' : '#555')}>{totalMarkup > 0 ? '+' : ''}${totalMarkup.toLocaleString()}</div>
                 {totalBudget > 0 && totalMarkup > 0 && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>{((totalMarkup / totalBudget) * 100).toFixed(1)}% margin</div>}
               </div>
             </div>
@@ -5609,7 +5609,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 { key: 'eac',     label: 'EAC Forecast' },
                 { key: 'billing', label: 'Total Billed' },
               ].map(({ key, label }) => (
-                <button key={key} onClick={() => setBudgetView(key)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: `2px solid ${budgetView === key ? '#e8590c' : 'transparent'}`, color: budgetView === key ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: budgetView === key ? '700' : '500', cursor: 'pointer', marginBottom: '-1px' }}>
+                <button key={key} onClick={() => setBudgetView(key)} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: `2px solid ${budgetView === key ? '#e8590c' : 'transparent'}`, color: budgetView === key ? '#111827' : '#555', fontSize: '13px', fontWeight: budgetView === key ? '700' : '500', cursor: 'pointer', marginBottom: '-1px' }}>
                   {label}
                 </button>
               ))}
@@ -5716,7 +5716,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const over = uncommitted < 0
                     const ownerAmt = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                     const markup = ownerAmt - Number(item.budget_amount)
-                    const rowAccent = over ? '#ff4444' : pct >= 80 ? '#e8590c' : pct >= 50 ? '#facc15' : committed > 0 ? '#4ade80' : 'transparent'
+                    const rowAccent = over ? '#ff4444' : pct >= 80 ? '#e8590c' : pct >= 50 ? '#d97706' : committed > 0 ? '#16a34a' : 'transparent'
                     const itemCOs = cosByBudgetItem[item.id] || []
                     const drillOpen = committedDrilldownItem === item.id
                     return (
@@ -5736,13 +5736,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             )}
                           </div>
                           <div style={{ height: '4px', background: '#f0f0f0', borderRadius: '2px', marginTop: '8px' }}>
-                            <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px' }} />
+                            <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#16a34a', borderRadius: '2px' }} />
                           </div>
                         </div>
                         <div style={{ textAlign: 'right', fontSize: '14px', color: '#111827', fontWeight: '600' }}>${Number(item.budget_amount).toLocaleString()}</div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '14px', color: '#2563eb', fontWeight: '600' }}>${ownerAmt.toLocaleString()}</div>
-                          {markup !== 0 && <div style={{ fontSize: '11px', color: markup > 0 ? '#4ade80' : '#ff6b6b', marginTop: '2px' }}>{markup > 0 ? '+' : ''}{((markup / Number(item.budget_amount)) * 100).toFixed(1)}%</div>}
+                          {markup !== 0 && <div style={{ fontSize: '11px', color: markup > 0 ? '#16a34a' : '#dc2626', marginTop: '2px' }}>{markup > 0 ? '+' : ''}{((markup / Number(item.budget_amount)) * 100).toFixed(1)}%</div>}
                         </div>
                         <div
                           title="Click to see what's committed to this line"
@@ -5752,8 +5752,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           ${committed.toLocaleString()}
                           {committed > 0 && <span style={{ fontSize: '10px', opacity: 0.6 }}>{drillOpen ? '▲' : '▼'}</span>}
                         </div>
-                        <div style={{ textAlign: 'right', fontSize: '14px', color: over ? '#ff6b6b' : '#4ade80', fontWeight: '600' }}>{over ? '-' : ''}${Math.abs(uncommitted).toLocaleString()}</div>
-                        <div style={{ textAlign: 'right', fontSize: '13px', color: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', color: over ? '#dc2626' : '#16a34a', fontWeight: '600' }}>{over ? '-' : ''}${Math.abs(uncommitted).toLocaleString()}</div>
+                        <div style={{ textAlign: 'right', fontSize: '13px', color: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</div>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                           <button style={s.btnSmall} onClick={() => { setEditingBudgetItem(item.id); setEditBudgetForm({ cost_code: item.cost_code || '', description: item.description, budget_amount: item.budget_amount, owner_amount: item.owner_amount || '' }); setShowAddBudgetItem(false) }}>Edit</button>
                           <button style={s.btnSmallRed} onClick={() => deleteBudgetItem(item.id)}>Del</button>
@@ -5831,8 +5831,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <p style={{ ...s.cardTitle, marginBottom: '0.5rem' }}>Cost to Complete Forecast</p>
                   <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates from committed (contracts + approved direct costs + labor). Enter a value to override.</p>
                   <div style={{ ...s.statRow, marginBottom: '1.25rem' }} className="rx-stats">
-                    <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#4ade80' : '#ff6b6b')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
-                    <div style={s.statCard}><div style={s.statLabel}>Cost variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#16a34a' : '#dc2626')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
+                    <div style={s.statCard}><div style={s.statLabel}>Cost variance</div><div style={s.statValue(T.variance >= 0 ? '#16a34a' : '#dc2626')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Direct costs spent</div><div style={s.statValue()}>${T.spent.toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Cost EAC</div><div style={s.statValue()}>${(T.eac - forecastRows.filter(r => r.profit).reduce((a, r) => a + r.eac, 0)).toLocaleString()}</div></div>
                   </div>
@@ -5868,10 +5868,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </>
                         )}
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance == null ? '#333' : variance >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: variance == null ? '#333' : variance >= 0 ? '#16a34a' : '#dc2626' }}>
                         {variance == null ? '—' : `${variance >= 0 ? '+' : '-'}$${Math.abs(variance).toLocaleString()}`}
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{projProfit >= 0 ? '+' : '-'}${Math.abs(projProfit).toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: '600', color: projProfit >= 0 ? '#16a34a' : '#dc2626' }}>{projProfit >= 0 ? '+' : '-'}${Math.abs(projProfit).toLocaleString()}</div>
                     </div>
                   ))}
                   <div style={{ ...col, borderTop: '2px solid #222', marginTop: '4px' }}>
@@ -5881,8 +5881,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>${T.spent.toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>${T.contracted.toLocaleString()}</span>
                     <span />
-                    <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.variance >= 0 ? '#16a34a' : '#dc2626' }}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.projProfit >= 0 ? '#16a34a' : '#dc2626' }}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</span>
                   </div>
                   {forecastRows.some(r => r.profit) && (
                     <p style={{ fontSize: '11px', color: '#6b7280', margin: '0.5rem 0 0', textAlign: 'right' }}>
@@ -5914,7 +5914,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {[
                         { label: 'Scheduled Value', val: `$${totalSOV.toLocaleString()}`, color: undefined },
                         { label: 'Billed to GC', val: `$${gcBillingTotal.toLocaleString()}`, color: '#2563eb' },
-                        { label: '% Complete', val: `${pctDone.toFixed(1)}%`, color: pctDone >= 100 ? '#4ade80' : '#f1f1f1' },
+                        { label: '% Complete', val: `${pctDone.toFixed(1)}%`, color: pctDone >= 100 ? '#16a34a' : '#111827' },
                       ].map(stat => (
                         <div key={stat.label} style={s.statCard}>
                           <div style={s.statLabel}>{stat.label}</div>
@@ -5936,7 +5936,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <span style={{ fontSize: '13px', color: '#111827' }}>{l.description}</span>
                             <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563' }}>${l.scheduled.toLocaleString()}</span>
                             <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '600' }}>${l.billed.toLocaleString()}</span>
-                            <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#4ade80' : '#f1f1f1' }}>{pct.toFixed(1)}%</span>
+                            <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#16a34a' : '#111827' }}>{pct.toFixed(1)}%</span>
                           </div>
                         )
                       })}
@@ -5944,7 +5944,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '700' }}>TOTAL</span>
                         <span style={{ textAlign: 'right', fontSize: '13px', color: '#111827', fontWeight: '700' }}>${totalSOV.toLocaleString()}</span>
                         <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>${gcBillingTotal.toLocaleString()}</span>
-                        <span style={{ textAlign: 'right', fontSize: '13px', color: pctDone >= 100 ? '#4ade80' : '#f1f1f1', fontWeight: '700' }}>{pctDone.toFixed(1)}%</span>
+                        <span style={{ textAlign: 'right', fontSize: '13px', color: pctDone >= 100 ? '#16a34a' : '#111827', fontWeight: '700' }}>{pctDone.toFixed(1)}%</span>
                       </div>
                     </>)}
                   </div>
@@ -5980,8 +5980,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {[
                       { label: 'Owner SOV Total', val: `$${totalOwner.toLocaleString()}`, color: undefined },
                       { label: 'Billed to Date', val: `$${totalBilledOwner.toLocaleString()}`, color: '#2563eb' },
-                      { label: 'Remaining to Bill', val: `$${totalRemaining.toLocaleString()}`, color: totalRemaining > 0 ? '#e8590c' : '#4ade80' },
-                      { label: '% Complete', val: `${totalPct.toFixed(1)}%`, color: totalPct >= 100 ? '#4ade80' : '#f1f1f1' },
+                      { label: 'Remaining to Bill', val: `$${totalRemaining.toLocaleString()}`, color: totalRemaining > 0 ? '#e8590c' : '#16a34a' },
+                      { label: '% Complete', val: `${totalPct.toFixed(1)}%`, color: totalPct >= 100 ? '#16a34a' : '#111827' },
                     ].map(stat => (
                       <div key={stat.label} style={s.statCard}>
                         <div style={s.statLabel}>{stat.label}</div>
@@ -6006,13 +6006,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '13px', color: '#111827' }}>{item.description}</span>
                         </div>
                         <div style={{ height: '3px', background: '#f0f0f0', borderRadius: '2px', marginTop: '6px', maxWidth: '200px' }}>
-                          <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: pct >= 100 ? '#4ade80' : pct > 75 ? '#e8590c' : '#60a5fa', borderRadius: '2px', transition: 'width 0.3s' }} />
+                          <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: pct >= 100 ? '#16a34a' : pct > 75 ? '#e8590c' : '#2563eb', borderRadius: '2px', transition: 'width 0.3s' }} />
                         </div>
                       </div>
                       <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563' }}>${ownerSOV.toLocaleString()}</span>
                       <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '600' }}>${billed.toLocaleString()}</span>
-                      <span style={{ textAlign: 'right', fontSize: '13px', color: remaining > 0 ? '#e8590c' : '#4ade80', fontWeight: '600' }}>${remaining.toLocaleString()}</span>
-                      <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#4ade80' : '#f1f1f1' }}>{pct.toFixed(1)}%</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: remaining > 0 ? '#e8590c' : '#16a34a', fontWeight: '600' }}>${remaining.toLocaleString()}</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#16a34a' : '#111827' }}>{pct.toFixed(1)}%</span>
                     </div>
                   ))}
                   {/* Total row */}
@@ -6020,8 +6020,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '700' }}>TOTAL</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', color: '#111827', fontWeight: '700' }}>${totalOwner.toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>${totalBilledOwner.toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: totalRemaining > 0 ? '#e8590c' : '#4ade80', fontWeight: '700' }}>${totalRemaining.toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: totalPct >= 100 ? '#4ade80' : '#f1f1f1', fontWeight: '700' }}>{totalPct.toFixed(1)}%</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: totalRemaining > 0 ? '#e8590c' : '#16a34a', fontWeight: '700' }}>${totalRemaining.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: totalPct >= 100 ? '#16a34a' : '#111827', fontWeight: '700' }}>{totalPct.toFixed(1)}%</span>
                   </div>
                 </div>
               )
@@ -6106,7 +6106,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.statCard}><div style={s.statLabel}>Subcontract value</div><div style={s.statValue()}>${totalContractValue.toLocaleString()}</div></div>
               <div style={s.statCard}>
                 <div style={s.statLabel}>Approved COs</div>
-                <div style={s.statValue(totalCOs >= 0 ? '#4ade80' : '#ff6b6b')}>{totalCOs >= 0 ? '+' : ''}${totalCOs.toLocaleString()}</div>
+                <div style={s.statValue(totalCOs >= 0 ? '#16a34a' : '#dc2626')}>{totalCOs >= 0 ? '+' : ''}${totalCOs.toLocaleString()}</div>
               </div>
               <div style={s.statCard}><div style={s.statLabel}>Revised total</div><div style={s.statValue('#e8590c')}>${totalRevised.toLocaleString()}</div></div>
             </div>
@@ -6208,7 +6208,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </button>
                     </div>
                     {signMsg && (
-                      <p style={{ fontSize: '12px', color: signMsg.startsWith('Error') ? '#ff6b6b' : '#4ade80', marginTop: '8px' }}>{signMsg}</p>
+                      <p style={{ fontSize: '12px', color: signMsg.startsWith('Error') ? '#dc2626' : '#16a34a', marginTop: '8px' }}>{signMsg}</p>
                     )}
                   </div>
                 )}
@@ -6219,7 +6219,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {signingRequests.filter(r => r.subcontract_id === contractGenForm.contract_id).map(r => (
                       <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0', fontSize: '12px' }}>
                         <span style={{ color: '#4b5563' }}>{r.signer_email}</span>
-                        <span style={{ color: r.status === 'signed' ? '#4ade80' : '#f59e0b', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
+                        <span style={{ color: r.status === 'signed' ? '#16a34a' : '#d97706', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
                           {r.status === 'signed' ? `✓ Signed ${new Date(r.signed_at).toLocaleDateString()}` : '⏳ Awaiting signature'}
                         </span>
                       </div>
@@ -6315,7 +6315,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {allocs.length > 0 && contractVal > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
                             <span style={{ color: '#6b7280' }}>Allocated: <strong style={{ color: '#111827' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#111827' }}>${contractVal.toLocaleString()}</strong></span>
-                            <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
+                            <span style={{ fontWeight: '700', color: remaining < 0 ? '#dc2626' : remaining === 0 ? '#16a34a' : '#e8590c' }}>
                               {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
                             </span>
                           </div>
@@ -6374,7 +6374,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>COs</div>
-                          <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.approved_change_orders) !== 0 ? '#4ade80' : '#333' }}>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.approved_change_orders) !== 0 ? '#16a34a' : '#333' }}>
                             {Number(c.approved_change_orders) >= 0 ? '+' : ''}${Number(c.approved_change_orders).toLocaleString()}
                           </div>
                         </div>
@@ -6384,7 +6384,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Remaining</div>
-                          <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#ff6b6b' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#dc2626' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
                         </div>
                         {(c.retainage_pct > 0) && (
                           <div style={{ textAlign: 'right' }}>
@@ -6406,7 +6406,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             const req = signingRequests.find(r => r.subcontract_id === c.id)
                             if (!req) return null
                             return (
-                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#dcfce7' : '#1a1400', color: req.status === 'signed' ? '#4ade80' : '#f59e0b', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#4a3800'}`, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#dcfce7' : '#fff7ed', color: req.status === 'signed' ? '#16a34a' : '#d97706', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#fed7aa'}`, whiteSpace: 'nowrap' }}>
                                 {req.status === 'signed' ? '✓ Signed' : '⏳ Awaiting sign'}
                               </span>
                             )
@@ -6465,7 +6465,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               {allocs.length > 0 && contractVal > 0 && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
                                   <span style={{ color: '#6b7280' }}>Allocated: <strong style={{ color: '#111827' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#111827' }}>${contractVal.toLocaleString()}</strong></span>
-                                  <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
+                                  <span style={{ fontWeight: '700', color: remaining < 0 ? '#dc2626' : remaining === 0 ? '#16a34a' : '#e8590c' }}>
                                     {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
                                   </span>
                                 </div>
@@ -6519,20 +6519,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {/* Summary stats */}
                           <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(5, 1fr)' }} className="rx-stats">
                             <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue('#e8590c')}>{fmtC(c.adjusted_contract_value)}</div></div>
-                            <div style={s.statCard}><div style={s.statLabel}>Billed (Approved)</div><div style={s.statValue('#60a5fa')}>{fmtC(totalApproved)}</div></div>
-                            <div style={s.statCard}><div style={s.statLabel}>Retainage Held</div><div style={s.statValue('#facc15')}>{fmtC(totalRetHeld)}</div></div>
-                            <div style={s.statCard}><div style={s.statLabel}>Net Paid</div><div style={s.statValue('#4ade80')}>{fmtC(totalApproved - totalRetHeld)}</div></div>
-                            <div style={s.statCard}><div style={s.statLabel}>Remaining to Bill</div><div style={s.statValue(remainingToBill < 0 ? '#ff6b6b' : undefined)}>{fmtC(remainingToBill)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Billed (Approved)</div><div style={s.statValue('#2563eb')}>{fmtC(totalApproved)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Retainage Held</div><div style={s.statValue('#d97706')}>{fmtC(totalRetHeld)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Net Paid</div><div style={s.statValue('#16a34a')}>{fmtC(totalApproved - totalRetHeld)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Remaining to Bill</div><div style={s.statValue(remainingToBill < 0 ? '#dc2626' : undefined)}>{fmtC(remainingToBill)}</div></div>
                           </div>
 
                           {/* Progress bar */}
                           <div style={{ marginBottom: '1.5rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
                               <span style={{ color: '#6b7280' }}>Billed to date</span>
-                              <span style={{ fontWeight: '700', color: pctBilled > 100 ? '#ff6b6b' : pctBilled >= 95 ? '#4ade80' : '#e8590c' }}>{pctBilled.toFixed(1)}%</span>
+                              <span style={{ fontWeight: '700', color: pctBilled > 100 ? '#dc2626' : pctBilled >= 95 ? '#16a34a' : '#e8590c' }}>{pctBilled.toFixed(1)}%</span>
                             </div>
                             <div style={{ height: '6px', background: '#f0f0f0', borderRadius: '3px' }}>
-                              <div style={{ height: '100%', width: Math.min(100, pctBilled) + '%', background: pctBilled > 100 ? '#ff6b6b' : pctBilled >= 95 ? '#4ade80' : '#e8590c', borderRadius: '3px', transition: 'width 0.3s' }} />
+                              <div style={{ height: '100%', width: Math.min(100, pctBilled) + '%', background: pctBilled > 100 ? '#dc2626' : pctBilled >= 95 ? '#16a34a' : '#e8590c', borderRadius: '3px', transition: 'width 0.3s' }} />
                             </div>
                           </div>
 
@@ -6561,7 +6561,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       ? { bg: '#dcfce7', color: '#16a34a', border: '#bbf7d0' }
                                       : b.status === 'rejected'
                                       ? { bg: '#fef2f2', color: '#dc2626', border: '#4a1a1a' }
-                                      : { bg: '#1a1400', color: '#d97706', border: '#4a3800' }
+                                      : { bg: '#fff7ed', color: '#d97706', border: '#fed7aa' }
                                     return (
                                       <tr key={b.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                         <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap' }}>{new Date(b.submitted_at).toLocaleDateString()}</td>
@@ -6692,13 +6692,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               )}
                                             </td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: '#111827', fontFamily: 'monospace' }}>${Number(line.scheduled_value).toLocaleString()}</td>
-                                            <td style={{ padding: '8px', textAlign: 'right', color: Number(line.billed_to_date) > 0 ? '#4ade80' : '#444', fontFamily: 'monospace' }}>${Number(line.billed_to_date || 0).toLocaleString()}</td>
-                                            <td style={{ padding: '8px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', color: Number(line.billed_to_date) > 0 ? '#16a34a' : '#444', fontFamily: 'monospace' }}>${Number(line.billed_to_date || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', color: balance < 0 ? '#dc2626' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString()}</td>
                                             <td style={{ padding: '8px', textAlign: 'center' }}>
                                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                                                <span style={{ fontSize: '11px', fontWeight: '700', color: pct >= 100 ? '#4ade80' : pct > 50 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</span>
+                                                <span style={{ fontSize: '11px', fontWeight: '700', color: pct >= 100 ? '#16a34a' : pct > 50 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</span>
                                                 <div style={{ width: '56px', height: '3px', background: '#f0f0f0', borderRadius: '2px' }}>
-                                                  <div style={{ width: Math.min(100, pct) + '%', height: '100%', background: pct >= 100 ? '#4ade80' : '#e8590c', borderRadius: '2px' }} />
+                                                  <div style={{ width: Math.min(100, pct) + '%', height: '100%', background: pct >= 100 ? '#16a34a' : '#e8590c', borderRadius: '2px' }} />
                                                 </div>
                                               </div>
                                             </td>
@@ -6717,7 +6717,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Total</td>
                                     <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#111827' }}>${totalScheduled.toLocaleString()}</td>
                                     <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#16a34a' }}>${totalBilled.toLocaleString()}</td>
-                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: (totalScheduled - totalBilled) < 0 ? '#ff6b6b' : '#555' }}>${(totalScheduled - totalBilled).toLocaleString()}</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: (totalScheduled - totalBilled) < 0 ? '#dc2626' : '#555' }}>${(totalScheduled - totalBilled).toLocaleString()}</td>
                                     <td style={{ padding: '8px', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#6b7280' }}>{totalScheduled > 0 ? ((totalBilled / totalScheduled) * 100).toFixed(0) : 0}%</td>
                                     <td></td>
                                   </tr>
@@ -6744,9 +6744,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
                 <div style={s.statRow} className="rx-stats">
                   <div style={s.statCard}><div style={s.statLabel}>Sub COs pending</div><div style={s.statValue(pendingCOs > 0 ? '#e8590c' : undefined)}>{pendingCOs}</div></div>
-                  <div style={s.statCard}><div style={s.statLabel}>Sub CO approved value</div><div style={s.statValue('#4ade80')}>{approvedCOValue >= 0 ? '+' : ''}${approvedCOValue.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Sub CO approved value</div><div style={s.statValue('#16a34a')}>{approvedCOValue >= 0 ? '+' : ''}${approvedCOValue.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Modifications pending</div><div style={s.statValue(pendingPrimeCOs > 0 ? '#e8590c' : undefined)}>{pendingPrimeCOs}</div></div>
-                  <div style={s.statCard}><div style={s.statLabel}>Approved modifications</div><div style={s.statValue('#4ade80')}>{approvedPrimeCOVal >= 0 ? '+' : ''}${approvedPrimeCOVal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Approved modifications</div><div style={s.statValue('#16a34a')}>{approvedPrimeCOVal >= 0 ? '+' : ''}${approvedPrimeCOVal.toLocaleString()}</div></div>
                 </div>
               )
             })()}
@@ -6844,7 +6844,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #dcfce7' }}>
-                      <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
+                      <span style={{ fontSize: '12px', color: allLinesAssigned ? '#16a34a' : '#e8590c' }}>
                         {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
                       </span>
                       <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827', fontFamily: 'monospace' }}>
@@ -6881,7 +6881,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                         <p style={{ ...s.cardTitle, margin: 0 }}>Edit prime CO</p>
                         {co.status === 'approved' && (
-                          <span style={{ fontSize: '11px', color: '#d97706', background: '#1a1200', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
+                          <span style={{ fontSize: '11px', color: '#d97706', background: '#fff7ed', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
                             Approved — amount change will adjust contract value
                           </span>
                         )}
@@ -6939,7 +6939,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         ))}
                         {editPrimeCOForm.sov.length > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #dcfce7' }}>
-                            <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
+                            <span style={{ fontSize: '12px', color: allLinesAssigned ? '#16a34a' : '#e8590c' }}>
                               {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
                             </span>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827', fontFamily: 'monospace' }}>
@@ -6973,7 +6973,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#16a34a' : '#dc2626' }}>
                         {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
                       </span>
                       <span style={s.coBadge(co.status)}>{co.status}</span>
@@ -7018,7 +7018,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '5px 0', borderTop: '1px solid #f0f0f0' }}>
                             <span>{item.description || '—'}</span>
                             <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' · ' : ''}${bi.description}` : '—'}</span>
-                            <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#16a34a' : '#dc2626' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           </div>
                         )
                       })}
@@ -7091,7 +7091,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '12px', color: '#6b7280' }}>Assigned:</span>
                           <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{fmt(assigned)}</span>
                           <span style={{ fontSize: '12px', color: '#6b7280' }}>Remaining:</span>
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#16a34a' : remaining < 0 ? '#dc2626' : '#d97706' }}>
                             {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
                           </span>
                           {!isBalanced && remaining > 0 && (
@@ -7110,7 +7110,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={approvePrimeCOWithSOV}
-                            style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
+                            style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#16a34a' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
                             disabled={!isBalanced}>
                             Assign &amp; Approve
                           </button>
@@ -7239,7 +7239,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                        <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>
+                        <span style={{ fontSize: '15px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#16a34a' : '#dc2626' }}>
                           {Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}
                         </span>
                         <span style={s.coBadge(co.status)}>{co.status}</span>
@@ -7351,7 +7351,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '5px 0', borderTop: '1px solid #f0f0f0' }}>
                               <span>{item.description || '—'}</span>
                               <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' · ' : ''}${bi.description}` : '—'}</span>
-                              <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#16a34a' : '#dc2626' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </div>
                           )
                         })}
@@ -7422,7 +7422,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <span style={{ fontSize: '12px', color: '#6b7280' }}>Assigned:</span>
                             <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{fmt(assigned)}</span>
                             <span style={{ fontSize: '12px', color: '#6b7280' }}>Remaining:</span>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#16a34a' : remaining < 0 ? '#dc2626' : '#d97706' }}>
                               {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
                             </span>
                             {!isBalanced && remaining > 0 && (
@@ -7441,7 +7441,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
                               onClick={approveCOWithSOV}
-                              style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
+                              style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#16a34a' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
                               disabled={!isBalanced}>
                               Assign &amp; Approve
                             </button>
@@ -7472,7 +7472,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}><div style={s.statLabel}>Total submissions</div><div style={s.statValue()}>{billingSubmissions.length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingBillingCount > 0 ? '#e8590c' : undefined)}>{pendingBillingCount}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#4ade80')}>${approvedBillingTotal.toLocaleString()}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#16a34a')}>${approvedBillingTotal.toLocaleString()}</div></div>
             </div>
 
             {/* ── DRAW REQUESTS ── */}
@@ -8094,7 +8094,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               title={b.ready_to_pay ? 'Mark as not ready' : 'Mark as ready to pay'}
                               disabled={togglingReadyToPay === b.id}
                               onClick={() => toggleReadyToPay(b.id, b.ready_to_pay)}
-                              style={{ fontSize: '11px', padding: '4px 10px', background: b.ready_to_pay ? '#dcfce7' : '#f0f0f0', border: `1px solid ${b.ready_to_pay ? '#bbf7d0' : '#d1d5db'}`, color: b.ready_to_pay ? '#4ade80' : '#888', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: togglingReadyToPay === b.id ? 0.5 : 1 }}
+                              style={{ fontSize: '11px', padding: '4px 10px', background: b.ready_to_pay ? '#dcfce7' : '#f0f0f0', border: `1px solid ${b.ready_to_pay ? '#bbf7d0' : '#d1d5db'}`, color: b.ready_to_pay ? '#16a34a' : '#888', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: togglingReadyToPay === b.id ? 0.5 : 1 }}
                             >
                               {b.ready_to_pay ? '✓ Ready to pay' : 'Mark ready to pay'}
                             </button>
@@ -8268,7 +8268,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid #f0f0f0', paddingBottom: '0' }}>
               {['reports', 'rfis', 'deliveries', 'milestones'].map(t => (
-                <button key={t} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: fieldSubTab === t ? '#f1f1f1' : '#555', borderBottom: fieldSubTab === t ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '-1px' }}
+                <button key={t} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: fieldSubTab === t ? '#111827' : '#555', borderBottom: fieldSubTab === t ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '-1px' }}
                   onClick={() => setFieldSubTab(t)}>
                   {t === 'reports' ? `Daily Reports (${fieldDailyReports.length})` : t === 'rfis' ? `RFIs (${fieldRfis.length})` : t === 'deliveries' ? `Deliveries (${fieldDeliveries.length})` : `Milestones (${fieldMilestones.length})`}
                 </button>
@@ -8414,7 +8414,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   type="button"
                                   onClick={() => deleteFieldPhoto({ path: ph.path, fromReport: true, reportId: r.id })}
                                   disabled={deletingFieldPhoto === ph.path}
-                                  style={{ background: 'none', border: 'none', color: deletingFieldPhoto === ph.path ? '#555' : '#ff6b6b', cursor: 'pointer', fontSize: '13px', padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>
+                                  style={{ background: 'none', border: 'none', color: deletingFieldPhoto === ph.path ? '#555' : '#dc2626', cursor: 'pointer', fontSize: '13px', padding: '0 2px', lineHeight: 1, flexShrink: 0 }}>
                                   {deletingFieldPhoto === ph.path ? '…' : '✕'}
                                 </button>
                               </div>
@@ -8571,7 +8571,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: m.status === 'complete' ? '#4ade80' : '#f1f1f1' }}>{m.title}</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: m.status === 'complete' ? '#16a34a' : '#111827' }}>{m.title}</span>
                             <span style={s.coBadge(m.status === 'complete' ? 'approved' : m.status === 'delayed' ? 'rejected' : 'pending')}>{m.status}</span>
                           </div>
                           <span style={{ fontSize: '12px', color: '#6b7280' }}>
@@ -8602,7 +8602,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const pendingCount = directCosts.filter(c => c.status === 'pending').length
               return (
                 <div style={s.statRow} className="rx-stats">
-                  <div style={s.statCard}><div style={s.statLabel}>Total approved</div><div style={s.statValue('#4ade80')}>${approvedTotal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Total approved</div><div style={s.statValue('#16a34a')}>${approvedTotal.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Pending approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>${pendingTotal.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Pending count</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
                 </div>
@@ -8691,7 +8691,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button
                           key={f.key}
                           onClick={() => setDcStatusFilter(f.key)}
-                          style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#d1d5db'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#fff7ed' : f.key === 'rejected' ? '#fef2f2' : '#dcfce7') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#555' }}
+                          style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#dc2626' : '#16a34a') : '#d1d5db'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#fff7ed' : f.key === 'rejected' ? '#fef2f2' : '#dcfce7') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#dc2626' : '#16a34a') : '#555' }}
                         >{f.label} ({f.count})</button>
                       ))}
                     </div>
@@ -8854,7 +8854,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const pairCount = Math.floor(activeDupIds.size / 2)
                 return <>
                   {activeDupIds.size > 0 && !q && (
-                    <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#d97706' }}>
+                    <div style={{ background: '#fff7ed', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#d97706' }}>
                       {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) — entries marked below.
                     </div>
                   )}
@@ -8884,7 +8884,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             const tipText = matches.map(m => `${new Date(m.cost_date + 'T12:00:00').toLocaleDateString()} — ${m.description} — $${Number(m.amount).toLocaleString()}`).join('\n')
                             return (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <span title={tipText} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#d97706', border: '1px solid #4a3800', cursor: 'help' }}>
+                                <span title={tipText} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#fff7ed', color: '#d97706', border: '1px solid #4a3800', cursor: 'help' }}>
                                   Possible duplicate
                                 </span>
                                 <button
@@ -9165,9 +9165,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const shortLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : `App #${app.app_number}`
                               return (
                                 <button key={app.id} onClick={() => openAiaApp(app)} title={shortLabel} style={{
-                                  padding: '5px 12px', background: isActivePill ? '#fff7ed' : isCert ? '#f0fdf4' : isSubStatus ? '#1a1400' : '#f3f4f6',
-                                  color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSubStatus ? '#facc15' : '#666',
-                                  border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#bbf7d0' : isSubStatus ? '#4a3800' : '#d1d5db'}`,
+                                  padding: '5px 12px', background: isActivePill ? '#fff7ed' : isCert ? '#f0fdf4' : isSubStatus ? '#fff7ed' : '#f3f4f6',
+                                  color: isActivePill ? '#e8590c' : isCert ? '#16a34a' : isSubStatus ? '#d97706' : '#666',
+                                  border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#bbf7d0' : isSubStatus ? '#fed7aa' : '#d1d5db'}`,
                                   borderRadius: '6px', fontSize: '12px', fontWeight: isActivePill ? '700' : '500',
                                   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
                                 }}>
@@ -9309,9 +9309,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             title={shortLabel}
                             style={{
                               padding: '5px 12px',
-                              background: isActivePill ? '#fff7ed' : isCert ? '#f0fdf4' : isSub ? '#1a1400' : '#f3f4f6',
-                              color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSub ? '#facc15' : '#666',
-                              border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#bbf7d0' : isSub ? '#4a3800' : '#d1d5db'}`,
+                              background: isActivePill ? '#fff7ed' : isCert ? '#f0fdf4' : isSub ? '#fff7ed' : '#f3f4f6',
+                              color: isActivePill ? '#e8590c' : isCert ? '#16a34a' : isSub ? '#d97706' : '#666',
+                              border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#bbf7d0' : isSub ? '#fed7aa' : '#d1d5db'}`,
                               borderRadius: '6px',
                               fontSize: '12px',
                               fontWeight: isActivePill ? '700' : '500',
@@ -9434,7 +9434,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             )}
                                           </div>
                                           <button
-                                            style={{ padding: '4px 10px', background: applied ? '#dcfce7' : '#f0fdf4', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#bbf7d0' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                            style={{ padding: '4px 10px', background: applied ? '#dcfce7' : '#f0fdf4', color: applied ? '#16a34a' : '#a3e635', border: `1px solid ${applied ? '#bbf7d0' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
                                             disabled={applied}
                                             onClick={() => applyBillingToAia(b)}
                                           >
@@ -9482,7 +9482,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             )}
 
                             {periodPOs.length > 0 && (
-                              <div style={{ background: '#1a1200', border: '1px solid #4a3000', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                              <div style={{ background: '#fff7ed', border: '1px solid #4a3000', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#d97706', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                   Purchase orders on this draw — ${periodPOs.reduce((a, p) => a + Number(p.amount || 0), 0).toLocaleString()} across {periodPOs.length} PO{periodPOs.length !== 1 ? 's' : ''}
                                 </p>
@@ -9502,7 +9502,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                           <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#111827' }}>${Number(po.amount || 0).toLocaleString()}</span>
                                           <button
-                                            style={{ padding: '4px 10px', background: applied ? '#1a1200' : '#fff7ed', color: applied ? '#f59e0b' : '#fbbf24', border: `1px solid ${applied ? '#4a3000' : '#92400e'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+                                            style={{ padding: '4px 10px', background: applied ? '#fff7ed' : '#fff7ed', color: applied ? '#d97706' : '#fbbf24', border: `1px solid ${applied ? '#4a3000' : '#92400e'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
                                             disabled={applied}
                                             onClick={() => applyPOToAia(po)}
                                           >
@@ -9588,9 +9588,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       )}
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: drawnElsewhere ? '#666' : '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: drawnElsewhere ? '#666' : '#111827' }}>${Number(c.amount).toLocaleString()}</span>
                                       {drawnElsewhere ? (
-                                        <span style={{ padding: '4px 10px', background: '#1a1200', color: '#d97706', border: '1px solid #4a3000', borderRadius: '5px', fontSize: '11px', fontWeight: '700' }}>
+                                        <span style={{ padding: '4px 10px', background: '#fff7ed', color: '#d97706', border: '1px solid #4a3000', borderRadius: '5px', fontSize: '11px', fontWeight: '700' }}>
                                           In App #{drawnApp?.app_number || '?'}
                                         </span>
                                       ) : drawnToThisApp ? (
@@ -9667,7 +9667,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               )}
                                             </div>
                                             <button
-                                              style={{ padding: '4px 10px', background: applied ? '#dcfce7' : '#f0fdf4', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#bbf7d0' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                              style={{ padding: '4px 10px', background: applied ? '#dcfce7' : '#f0fdf4', color: applied ? '#16a34a' : '#a3e635', border: `1px solid ${applied ? '#bbf7d0' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
                                               disabled={applied}
                                               onClick={() => applyGCToAia(e)}
                                             >
@@ -9809,8 +9809,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                 )
                                               })()}
                                             </td>
-                                            <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#4ade80' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                            <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#16a34a' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#dc2626' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                           </tr>
                                         )
                                       })}
@@ -9892,7 +9892,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary</p>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
                                           <span style={{ color: '#6b7280' }}>Contract sum to date</span><span style={{ color: '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
-                                          <span style={{ color: '#6b7280' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#ff6b6b' : '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
+                                          <span style={{ color: '#6b7280' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#dc2626' : '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
                                           <span style={{ color: '#6b7280' }}>Total completed</span><span style={{ color: '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                           <span style={{ color: '#6b7280' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
                                           <span style={{ color: '#6b7280' }}>Less previous certificates</span><span style={{ color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
@@ -10119,12 +10119,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       return (
                         <div key={t.uid} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '10px 0', borderBottom: '1px solid #f3f4f6', alignItems: 'center' }}>
                           <div>
-                            <span style={{ fontSize: '13px', color: isOverdue ? '#ff6b6b' : '#f1f1f1' }}>{t.milestone ? '◆ ' : ''}{t.name}</span>
+                            <span style={{ fontSize: '13px', color: isOverdue ? '#dc2626' : '#111827' }}>{t.milestone ? '◆ ' : ''}{t.name}</span>
                           </div>
                           <span style={{ fontSize: '12px', color: '#6b7280' }}>{t.start}</span>
-                          <span style={{ fontSize: '12px', color: isOverdue ? '#ff6b6b' : '#555' }}>{t.finish}</span>
+                          <span style={{ fontSize: '12px', color: isOverdue ? '#dc2626' : '#555' }}>{t.finish}</span>
                           <div style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '700', color: t.pct === 100 ? '#4ade80' : isOverdue ? '#ff6b6b' : isInProg ? '#e8590c' : '#555' }}>{t.pct}%</span>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: t.pct === 100 ? '#16a34a' : isOverdue ? '#dc2626' : isInProg ? '#e8590c' : '#555' }}>{t.pct}%</span>
                           </div>
                         </div>
                       )
@@ -10192,7 +10192,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <span style={{ fontSize: '14px', color: '#111827' }}>📄 {d.file_name}</span>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
-                        <span style={{ padding: '2px 8px', background: '#1a1200', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
+                        <span style={{ padding: '2px 8px', background: '#fff7ed', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
                           {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
                         </span>
                         <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
@@ -10362,7 +10362,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )}
               </div>
 
-              {laborMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: laborMsg.ok ? '#dcfce7' : '#fef2f2', color: laborMsg.ok ? '#4ade80' : '#ff6b6b', border: `1px solid ${laborMsg.ok ? '#bbf7d0' : '#fecaca'}` }}>{laborMsg.text}</div>}
+              {laborMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: laborMsg.ok ? '#dcfce7' : '#fef2f2', color: laborMsg.ok ? '#16a34a' : '#dc2626', border: `1px solid ${laborMsg.ok ? '#bbf7d0' : '#fecaca'}` }}>{laborMsg.text}</div>}
 
               {activeEmployees.length === 0 && (
                 <div style={{ ...s.card, textAlign: 'center', padding: '3rem', marginBottom: '1rem' }}>
@@ -10448,7 +10448,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <tr key={al.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                               <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>{e.name}{e.title ? <span style={{ fontWeight: '400', color: '#4b5563', marginLeft: '6px' }}>{e.title}</span> : null}</td>
                               <td style={{ padding: '10px 12px' }}>
-                                <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#eff6ff' : '#fefce8', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#bfdbfe' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
+                                <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#eff6ff' : '#fefce8', color: e.type === 'w2' ? '#2563eb' : '#d97706', border: `1px solid ${e.type === 'w2' ? '#bfdbfe' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
                               </td>
                               <td style={{ padding: '10px 12px', color: '#6b7280', fontSize: '12px' }}>
                                 {new Date(al.start_date + 'T12:00:00').toLocaleDateString()} – {new Date(al.end_date + 'T12:00:00').toLocaleDateString()}
@@ -10492,7 +10492,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         {/* ── SUBMITTALS TAB ── */}
         {activeTab === 'submittals' && (() => {
-          const statusColor = { submitted: '#60a5fa', under_review: '#facc15', approved: '#4ade80', rejected: '#ff6b6b', resubmit: '#e8590c' }
+          const statusColor = { submitted: '#2563eb', under_review: '#d97706', approved: '#16a34a', rejected: '#dc2626', resubmit: '#e8590c' }
           return (
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
@@ -10675,7 +10675,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                     <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{notice.from_company}</span>
                     <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase',
-                      color: notice.status === 'active' ? '#ff6b6b' : '#4ade80',
+                      color: notice.status === 'active' ? '#dc2626' : '#16a34a',
                       background: notice.status === 'active' ? '#fef2f2' : '#dcfce7',
                       border: `1px solid ${notice.status === 'active' ? '#fecaca' : '#bbf7d0'}` }}>{notice.status}</span>
                   </div>
@@ -10732,14 +10732,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           return (
             <>
               <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(5, 1fr)' }} className="rx-stats">
-                <div style={s.statCard}><div style={s.statLabel}>Cash in (received)</div><div style={s.statValue('#4ade80')}>{fmt(totalIn)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Cash in (received)</div><div style={s.statValue('#16a34a')}>{fmt(totalIn)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Sub billings out</div><div style={s.statValue('#e8590c')}>{fmt(totalSubPay)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Direct costs out</div><div style={s.statValue()}>{fmt(totalDC)}</div></div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Net cash flow</div>
-                  <div style={s.statValue(netCashFlow >= 0 ? '#4ade80' : '#ff6b6b')}>{fmtSigned(netCashFlow)}</div>
+                  <div style={s.statValue(netCashFlow >= 0 ? '#16a34a' : '#dc2626')}>{fmtSigned(netCashFlow)}</div>
                 </div>
-                <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#facc15')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#d97706')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
               </div>
 
               {receivedNoAmount.length > 0 && (
@@ -10752,7 +10752,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )}
               {totalIn === 0 && receivedNoAmount.length === 0 && (
-                <div style={{ background: '#1a1200', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#6b7280' }}>
+                <div style={{ background: '#fff7ed', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#6b7280' }}>
                   No payments recorded from the owner yet. Use the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab to record payments received on each {job.billing_type === 'draw_request' ? 'draw request' : 'AIA application'}.
                 </div>
               )}
@@ -10781,11 +10781,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           return (
                             <tr key={m} style={{ borderBottom: '1px solid #f3f4f6' }}>
                               <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#4ade80' : '#444' }}>{fmt(inflow)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#16a34a' : '#444' }}>{fmt(inflow)}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: out > 0 ? '#ff6b6b' : '#444' }}>{fmt(out)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: net >= 0 ? '#4ade80' : '#ff6b6b' }}>{fmtSigned(net)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: out > 0 ? '#dc2626' : '#444' }}>{fmt(out)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: net >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(net)}</td>
                             </tr>
                           )
                         })
@@ -10796,7 +10796,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#dc2626', fontWeight: '700' }}>{fmt(totalOut)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#4ade80' : '#ff6b6b' }}>{fmtSigned(netCashFlow)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(netCashFlow)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -10819,7 +10819,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={{ fontSize: '15px', fontWeight: '700', color: '#16a34a' }}>{fmt(a.amount_received)}</span>
                         )}
                         <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', textTransform: 'uppercase',
-                          color: a.payment_received ? '#4ade80' : '#e8590c',
+                          color: a.payment_received ? '#16a34a' : '#e8590c',
                           background: a.payment_received ? '#dcfce7' : '#fff7ed',
                           border: `1px solid ${a.payment_received ? '#bbf7d0' : '#fed7aa'}` }}>
                           {a.payment_received ? 'Received' : 'Pending'}
@@ -10848,7 +10848,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           const dayLabel = dt => new Date(dt + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' })
           const activitiesForDay = dt => lookaheadActivities.filter(a => a.planned_date === dt)
           const isLocked = lookahead?.status === 'submitted'
-          const mColor = { needed: '#ef4444', ordered: '#f59e0b', on_site: '#4ade80' }
+          const mColor = { needed: '#ef4444', ordered: '#d97706', on_site: '#16a34a' }
 
           const renderWeekGrid = (weekDays, weekLabel) => {
             const wkActs = weekDays.flatMap(dt => activitiesForDay(dt))
@@ -10890,7 +10890,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563' }}>👷{act.manpower}</span>}
                             {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7c3aed' }} title={(act.additional_companies || []).map(c => c.name).join(', ')}>+{(act.additional_companies || []).length}</span>}
                             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block', flexShrink: 0 }} title={`Materials: ${act.materials_status || 'none'}`} />
-                            {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍</span>}
+                            {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#16a34a' : '#d97706' }}>🔍</span>}
                             {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
                             {act.committed && <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓</span>}
                             {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#d97706' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
@@ -10915,7 +10915,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div>
                     <p style={s.cardTitle}>2-Week Lookahead</p>
                     {lookahead && (
-                      <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', marginTop: '-8px', fontWeight: 600 }}>
+                      <div style={{ fontSize: '12px', color: lookahead.status === 'submitted' ? '#16a34a' : '#d97706', marginTop: '-8px', fontWeight: 600 }}>
                         {lookahead.status === 'submitted' ? '✓ Submitted by superintendent' : lookahead.status === 'approved' ? '✓ Approved' : '● Draft'}
                       </div>
                     )}
@@ -10950,7 +10950,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #f0f0f0' }}>
                       {totalWorkers > 0 && <div style={{ background: '#f0fdf4', border: '1px solid #dcfce7', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{totalWorkers}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Workers</div></div>}
                       {lookaheadActivities.length > 0 && <div style={{ background: '#f3f4f6', border: '1px solid #222', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#111827', fontVariantNumeric: 'tabular-nums' }}>{lookaheadActivities.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Activities</div></div>}
-                      {inspections.length > 0 && <div style={{ background: '#1a1400', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#d97706', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections ✓'}</div></div>}
+                      {inspections.length > 0 && <div style={{ background: '#fff7ed', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#d97706', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections ✓'}</div></div>}
                       {constraints.length > 0 && <div style={{ background: '#fef2f2', border: '1px solid #3a1a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ef4444', fontVariantNumeric: 'tabular-nums' }}>{constraints.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Constraints</div></div>}
                       {materialsNeeded.length > 0 && <div style={{ background: '#1a0f0a', border: '1px solid #3a2a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ea580c', fontVariantNumeric: 'tabular-nums' }}>{materialsNeeded.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Need Materials</div></div>}
                     </div>
@@ -10962,14 +10962,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '8px' }}>Attention Items</div>
                     {lookaheadActivities.filter(a => a.inspection_required || a.constraints_notes).map(act => (
                       <div key={act.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #f3f4f6', fontSize: '12px' }}>
-                        <span style={{ color: act.constraints_notes ? '#ef4444' : act.inspection_scheduled ? '#4ade80' : '#f59e0b', flexShrink: 0, fontSize: '13px' }}>
+                        <span style={{ color: act.constraints_notes ? '#ef4444' : act.inspection_scheduled ? '#16a34a' : '#d97706', flexShrink: 0, fontSize: '13px' }}>
                           {act.constraints_notes ? '⚠' : act.inspection_scheduled ? '🔍✓' : '🔍'}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600, color: '#e8e8e8', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.description}</div>
                           <div style={{ color: '#6b7280' }}>
                             {new Date(act.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
-                            {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#4ade80' : '#f59e0b', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
+                            {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#16a34a' : '#d97706', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
                             {act.constraints_notes && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints_notes}</span>}
                           </div>
                         </div>
@@ -11212,23 +11212,23 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(4, 1fr)' }} className="rx-stats">
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Open punch items</div>
-                  <div style={s.statValue(openItems.length ? '#e8590c' : '#4ade80')}>{openItems.length}</div>
+                  <div style={s.statValue(openItems.length ? '#e8590c' : '#16a34a')}>{openItems.length}</div>
                   {subComplete.length > 0 && <div style={{ fontSize: '12px', color: '#a16207', marginTop: '4px' }}>{subComplete.length} awaiting approval</div>}
                   {openItems.length === 0 && subComplete.length === 0 && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>All clear</div>}
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Retainage balance</div>
-                  <div style={s.statValue(retainageBalance > 0 ? '#facc15' : '#4ade80')}>{fmt(retainageBalance)}</div>
+                  <div style={s.statValue(retainageBalance > 0 ? '#d97706' : '#16a34a')}>{fmt(retainageBalance)}</div>
                   <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{fmt(totalReleased)} released</div>
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Active lien notices</div>
-                  <div style={s.statValue(activeNotices.length ? '#ff6b6b' : '#4ade80')}>{activeNotices.length}</div>
+                  <div style={s.statValue(activeNotices.length ? '#dc2626' : '#16a34a')}>{activeNotices.length}</div>
                   {activeNotices.length === 0 && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>Clear</div>}
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Punch approved</div>
-                  <div style={s.statValue('#4ade80')}>{approved.length} / {punchItems.length}</div>
+                  <div style={s.statValue('#16a34a')}>{approved.length} / {punchItems.length}</div>
                 </div>
               </div>
 
@@ -11243,7 +11243,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <span style={{ fontSize: '16px' }}>{item.done ? '✓' : '○'}</span>
-                      <span style={{ fontSize: '14px', color: item.done ? '#4ade80' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}</span>
+                      <span style={{ fontSize: '14px', color: item.done ? '#16a34a' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}</span>
                     </div>
                     {!item.done && (
                       <button style={s.btnSmall} onClick={() => setActiveTab(item.action)}>{item.actionLabel}</button>
@@ -11286,7 +11286,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
 
             {punchItems.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No punch list items yet.</p> : punchItems.map(item => {
-              const statusColor = { open: '#e8590c', sub_complete: '#facc15', approved: '#4ade80', rejected: '#ff6b6b' }
+              const statusColor = { open: '#e8590c', sub_complete: '#d97706', approved: '#16a34a', rejected: '#dc2626' }
               const color = statusColor[item.status] || '#888'
               return (
                 <div key={item.id} style={{ padding: '14px 0', borderBottom: '1px solid #f0f0f0' }}>
@@ -11296,7 +11296,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title}</span>
                         <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', color, background: color + '22', border: `1px solid ${color}44` }}>{item.status.replace('_', ' ')}</span>
                         {item.assigned_company && <span style={{ fontSize: '12px', color: '#6b7280' }}>{item.assigned_company}</span>}
-                        {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#ff6b6b' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
+                        {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#dc2626' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
                       </div>
                       {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#4b5563' }}>{item.description}</p>}
                       {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
@@ -11332,9 +11332,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           return (
             <>
               <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(3, 1fr)' }} className="rx-stats">
-                <div style={s.statCard}><div style={s.statLabel}>Total held</div><div style={s.statValue('#facc15')}>{fmt(totalRetainageHeld)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Released</div><div style={s.statValue('#4ade80')}>{fmt(totalReleased)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Balance remaining</div><div style={s.statValue(retainageBalance > 0 ? '#facc15' : '#4ade80')}>{fmt(retainageBalance)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total held</div><div style={s.statValue('#d97706')}>{fmt(totalRetainageHeld)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Released</div><div style={s.statValue('#16a34a')}>{fmt(totalReleased)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Balance remaining</div><div style={s.statValue(retainageBalance > 0 ? '#d97706' : '#16a34a')}>{fmt(retainageBalance)}</div></div>
               </div>
 
               <div style={s.card}>
@@ -11433,8 +11433,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       return (
                         <div>
                           <p style={{ ...s.label, margin: '0 0 4px' }}>Expires</p>
-                          <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: daysLeft < 0 ? '#ff6b6b' : daysLeft < 30 ? '#facc15' : '#4ade80' }}>{new Date(warrantySetting.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                          <p style={{ margin: '2px 0 0', fontSize: '12px', color: daysLeft < 0 ? '#ff6b6b' : '#555' }}>{daysLeft < 0 ? 'Expired' : `${daysLeft} days remaining`}</p>
+                          <p style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: daysLeft < 0 ? '#dc2626' : daysLeft < 30 ? '#d97706' : '#16a34a' }}>{new Date(warrantySetting.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '12px', color: daysLeft < 0 ? '#dc2626' : '#555' }}>{daysLeft < 0 ? 'Expired' : `${daysLeft} days remaining`}</p>
                         </div>
                       )
                     })()}
@@ -11511,7 +11511,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{order.title}</span>
-                              <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: order.status === 'in_progress' ? '#1a1200' : '#f0f0f0', color: order.status === 'in_progress' ? '#facc15' : '#888', border: `1px solid ${order.status === 'in_progress' ? '#4a4400' : '#d1d5db'}` }}>
+                              <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: order.status === 'in_progress' ? '#fff7ed' : '#f0f0f0', color: order.status === 'in_progress' ? '#d97706' : '#888', border: `1px solid ${order.status === 'in_progress' ? '#fde68a' : '#d1d5db'}` }}>
                                 {order.status === 'in_progress' ? 'In Progress' : 'Open'}
                               </span>
                             </div>
@@ -11522,7 +11522,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {order.assigned_company && `Sub: ${order.assigned_company}`}
                               </div>
                             )}
-                            {order.due_date && <div style={{ fontSize: '12px', color: new Date(order.due_date + 'T12:00:00') < new Date() ? '#ff6b6b' : '#555' }}>Due {new Date(order.due_date + 'T12:00:00').toLocaleDateString()}</div>}
+                            {order.due_date && <div style={{ fontSize: '12px', color: new Date(order.due_date + 'T12:00:00') < new Date() ? '#dc2626' : '#555' }}>Due {new Date(order.due_date + 'T12:00:00').toLocaleDateString()}</div>}
                             {order.description && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{order.description}</div>}
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -11554,7 +11554,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   ))}
                                 </div>
                               )}
-                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: uploadingWarrantyPhoto ? '#f3f4f6' : '#f0fdf4', color: uploadingWarrantyPhoto ? '#555' : '#4ade80', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: uploadingWarrantyPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: uploadingWarrantyPhoto ? '#f3f4f6' : '#f0fdf4', color: uploadingWarrantyPhoto ? '#555' : '#16a34a', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: uploadingWarrantyPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
                                 {uploadingWarrantyPhoto ? 'Uploading...' : '+ Add Photo'}
                                 <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingWarrantyPhoto} onChange={async e => {
                                   const file = e.target.files?.[0]; if (!file) return
@@ -11619,7 +11619,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#4b5563', textDecoration: 'line-through' }}>{order.title}</span>
                           <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>Resolved</span>
-                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#1a1200', color: '#a16207', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` · $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
+                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#fff7ed', color: '#a16207', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` · $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
                         </div>
                         <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>
                           {order.resolved_at && `Resolved ${new Date(order.resolved_at).toLocaleDateString()}`}
@@ -11666,7 +11666,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); deleteFieldPhoto(p) }}
-                              style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingFieldPhoto === p.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
+                              style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingFieldPhoto === p.path ? '#888' : '#dc2626', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
                               {deletingFieldPhoto === p.path ? '…' : '✕'}
                             </button>
                           </div>
@@ -11722,8 +11722,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {/* Stats */}
                     <div style={s.statRow} className="rx-stats">
                       <div style={s.statCard}><div style={s.statLabel}>Total POs</div><div style={s.statValue()}>{purchaseOrders.length}</div></div>
-                      <div style={s.statCard}><div style={s.statLabel}>Issued (open)</div><div style={s.statValue(issuedPOs.length > 0 ? '#facc15' : undefined)}>{issuedPOs.length}</div></div>
-                      <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#4ade80')}>{receivedPOs.length}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Issued (open)</div><div style={s.statValue(issuedPOs.length > 0 ? '#d97706' : undefined)}>{issuedPOs.length}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#16a34a')}>{receivedPOs.length}</div></div>
                       <div style={s.statCard}><div style={s.statLabel}>Total committed</div><div style={s.statValue('#e8590c')}>{fmt(totalCommitted)}</div></div>
                     </div>
 
@@ -11785,7 +11785,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div style={{ display: 'flex', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
                                       {po.payment_type && (
                                         <span style={{ fontSize: '12px', color: '#6b7280' }}>
-                                          Payment: <span style={{ color: po.payment_type === 'reimbursement' ? '#60a5fa' : '#f1f1f1', fontWeight: '600' }}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
+                                          Payment: <span style={{ color: po.payment_type === 'reimbursement' ? '#2563eb' : '#111827', fontWeight: '600' }}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
                                         </span>
                                       )}
                                       {po.attachment_url && (
@@ -11833,7 +11833,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <>
                     <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '1.5rem' }} className="rx-stats">
                       <div style={s.statCard}><div style={s.statLabel}>Total entries</div><div style={s.statValue()}>{generalConditions.length}</div></div>
-                      <div style={s.statCard}><div style={s.statLabel}>Drawn to date</div><div style={s.statValue('#4ade80')}>{fmtAmt(totalDrawn)}</div></div>
+                      <div style={s.statCard}><div style={s.statLabel}>Drawn to date</div><div style={s.statValue('#16a34a')}>{fmtAmt(totalDrawn)}</div></div>
                       <div style={s.statCard}><div style={s.statLabel}>Undrawn</div><div style={s.statValue(totalUndrawn > 0 ? '#e8590c' : undefined)}>{fmtAmt(totalUndrawn)}</div></div>
                     </div>
 
@@ -12044,7 +12044,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const inputStyle = { width: '100%', padding: '9px 12px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '7px', fontSize: '13px', color: '#111827', boxSizing: 'border-box', outline: 'none' }
                 const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '5px', letterSpacing: '1.5px', textTransform: 'uppercase' }
                 const btnStyle = { padding: '8px 18px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '7px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px' }
-                const btnSmStyle = (color) => ({ padding: '5px 12px', background: color === 'green' ? '#dcfce7' : color === 'blue' ? '#eff6ff' : '#fff7ed', border: `1px solid ${color === 'green' ? '#bbf7d0' : color === 'blue' ? '#bfdbfe' : '#4a2a00'}`, borderRadius: '6px', color: color === 'green' ? '#4ade80' : color === 'blue' ? '#60a5fa' : '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' })
+                const btnSmStyle = (color) => ({ padding: '5px 12px', background: color === 'green' ? '#dcfce7' : color === 'blue' ? '#eff6ff' : '#fff7ed', border: `1px solid ${color === 'green' ? '#bbf7d0' : color === 'blue' ? '#bfdbfe' : '#4a2a00'}`, borderRadius: '6px', color: color === 'green' ? '#16a34a' : color === 'blue' ? '#2563eb' : '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' })
                 return (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '12px' }}>
@@ -12142,7 +12142,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     return (
                                       <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: '#f9fafb', marginBottom: '4px', flexWrap: 'wrap' }}>
                                         <span style={{ fontSize: '20px' }}>{existingOrder ? '✅' : '⬜'}</span>
-                                        <span style={{ flex: 1, fontSize: '13px', color: existingOrder ? '#555' : '#f1f1f1', textDecoration: existingOrder ? 'line-through' : 'none' }}>{item.item_name}</span>
+                                        <span style={{ flex: 1, fontSize: '13px', color: existingOrder ? '#555' : '#111827', textDecoration: existingOrder ? 'line-through' : 'none' }}>{item.item_name}</span>
                                         <span style={{ fontSize: '12px', color: '#6b7280' }}>{item.default_qty} {item.unit}</span>
                                         {existingOrder ? (
                                           <span style={statusBadge(existingOrder.status)}>{existingOrder.status}</span>
@@ -12331,7 +12331,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <button
                 onClick={() => deleteFieldPhoto(fieldLightbox.photos[fieldLightbox.index])}
                 disabled={deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path}
-                style={{ padding: '6px 14px', background: 'rgba(90,10,10,0.8)', border: '1px solid #fecaca', borderRadius: '6px', color: deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
+                style={{ padding: '6px 14px', background: 'rgba(90,10,10,0.8)', border: '1px solid #fecaca', borderRadius: '6px', color: deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? '#888' : '#dc2626', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
                 {deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? 'Deleting...' : 'Delete'}
               </button>
               <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>

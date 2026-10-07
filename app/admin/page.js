@@ -732,8 +732,8 @@ export default function AdminPortal() {
               {/* Stats row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
                 {[
-                  { label: 'Submitted this month', value: `$${monthBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()}`, count: monthBilling.length, accent: '#60a5fa' },
-                  { label: 'Paid this month', value: `$${monthPaid.reduce((a, b) => a + Number(b.payment_amount || b.amount_billed || 0), 0).toLocaleString()}`, count: monthPaid.length, accent: '#4ade80' },
+                  { label: 'Submitted this month', value: `$${monthBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()}`, count: monthBilling.length, accent: '#2563eb' },
+                  { label: 'Paid this month', value: `$${monthPaid.reduce((a, b) => a + Number(b.payment_amount || b.amount_billed || 0), 0).toLocaleString()}`, count: monthPaid.length, accent: '#16a34a' },
                   { label: 'Unpaid approved', value: `${billing.filter(b => !b.paid_at).length}`, count: null, accent: billing.filter(b => !b.paid_at).length > 0 ? '#e8590c' : '#555' },
                 ].map(stat => (
                   <div key={stat.label} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1rem 1.25rem' }}>
@@ -965,7 +965,7 @@ export default function AdminPortal() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '18px', fontWeight: '800', color: sub.ready_to_pay ? '#4ade80' : '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
+                          <div style={{ fontSize: '18px', fontWeight: '800', color: sub.ready_to_pay ? '#16a34a' : '#111827', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
                           {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#6b7280' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
                         </div>
                         <span style={{ color: '#6b7280', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
@@ -1163,7 +1163,7 @@ export default function AdminPortal() {
               })
               return (
                 <>
-                  {dirMsg && <div style={{ background: dirMsg.startsWith('✓') ? '#dcfce7' : '#fef2f2', border: `1px solid ${dirMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca'}`, color: dirMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
+                  {dirMsg && <div style={{ background: dirMsg.startsWith('✓') ? '#dcfce7' : '#fef2f2', border: `1px solid ${dirMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca'}`, color: dirMsg.startsWith('✓') ? '#16a34a' : '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={s.filterRow} style={{ margin: 0, flexWrap: 'wrap', gap: '8px', display: 'flex', alignItems: 'center' }}>
@@ -1256,7 +1256,7 @@ export default function AdminPortal() {
                                       <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Phone</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.phone || '—'}</div></div>
                                       <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>License</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.license_number || '—'}</div></div>
                                       <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Address</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.address || '—'}</div></div>
-                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>COI Expiration</div><div style={{ fontSize: '13px', color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : '#ccc' }}>{d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>COI Expiration</div><div style={{ fontSize: '13px', color: st === 'expired' ? '#dc2626' : st === 'warning' ? '#e8590c' : '#374151' }}>{d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : '—'}</div></div>
                                       {d.scope_description && <div style={{ gridColumn: 'span 3' }}><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Scope</div><div style={{ fontSize: '13px', color: '#374151', lineHeight: '1.6' }}>{d.scope_description}</div></div>}
                                     </div>
                                     <button style={s.btnSm('orange')} onClick={() => {
@@ -1298,7 +1298,7 @@ export default function AdminPortal() {
                                   {/* W-9 */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasW9 ? '#dcfce7' : '#1a0a0a', border: `1px solid ${hasW9 ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
-                                      <span style={{ fontSize: '12px', fontWeight: '700', color: hasW9 ? '#4ade80' : '#ff6b6b' }}>{hasW9 ? '✓' : '✗'} W-9</span>
+                                      <span style={{ fontSize: '12px', fontWeight: '700', color: hasW9 ? '#16a34a' : '#dc2626' }}>{hasW9 ? '✓' : '✗'} W-9</span>
                                     </div>
                                     {hasW9 && (
                                       <>
@@ -1316,7 +1316,7 @@ export default function AdminPortal() {
                                   {/* COI */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasCOI && st === 'active' ? '#dcfce7' : '#1a0a0a', border: `1px solid ${hasCOI && st === 'active' ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
-                                      <span style={{ fontSize: '12px', fontWeight: '700', color: hasCOI && st === 'active' ? '#4ade80' : st === 'warning' ? '#e8590c' : '#ff6b6b' }}>
+                                      <span style={{ fontSize: '12px', fontWeight: '700', color: hasCOI && st === 'active' ? '#16a34a' : st === 'warning' ? '#e8590c' : '#dc2626' }}>
                                         {hasCOI ? '✓' : '✗'} COI{d.coi_expiration ? ` · ${new Date(d.coi_expiration).toLocaleDateString()}` : ''}
                                       </span>
                                     </div>
@@ -1391,7 +1391,7 @@ export default function AdminPortal() {
                                         return (
                                           <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: '13px', color: isRegistered ? '#f1f1f1' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
+                                              <div style={{ fontSize: '13px', color: isRegistered ? '#111827' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
                                               {isRegistered && m.phone && <div style={{ fontSize: '11px', color: '#6b7280' }}>{m.phone}</div>}
                                               {!isRegistered && m.invite_email && <div style={{ fontSize: '11px', color: '#6b7280' }}>{m.invite_email}</div>}
                                             </div>
@@ -1433,7 +1433,7 @@ export default function AdminPortal() {
             {activeTab === 'liens' && (
               <>
                 {lienMsg && (
-                  <div style={{ background: lienMsg.startsWith('✓') ? '#f0fdf4' : '#fef2f2', border: `1px solid ${lienMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca'}`, color: lienMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
+                  <div style={{ background: lienMsg.startsWith('✓') ? '#f0fdf4' : '#fef2f2', border: `1px solid ${lienMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca'}`, color: lienMsg.startsWith('✓') ? '#16a34a' : '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
                     {lienMsg}
                   </div>
                 )}

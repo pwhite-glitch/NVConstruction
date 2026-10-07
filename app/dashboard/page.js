@@ -178,10 +178,12 @@ export default function Dashboard() {
     return true
   }
   function setActiveTab(tab) { if (tab === activeTab || leaveScope()) setActiveTabValue(tab) }
-  const [filterStatus, setFilterStatus] = useState('')
+  const [filterStatus, setFilterStatus] = useState('pending')
   const [filterJob, setFilterJob] = useState('')
   const [filterTrade, setFilterTrade] = useState('')
   const [filterDirStatus, setFilterDirStatus] = useState('')
+  const [coiFilter, setCoiFilter] = useState('')
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const [searchDir, setSearchDir] = useState('')
   const [newJob, setNewJob] = useState({ job_number: '', project_name: '', start_date: '', pm_email: '', billing_type: 'aia', nv_role: 'gc', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' })
   const [rejectingSubId, setRejectingSubId] = useState(null)
@@ -614,7 +616,7 @@ export default function Dashboard() {
     }
     if (sub.sub_email) {
       const approved = status === 'approved'
-      const color = approved ? '#4ade80' : '#ff6b6b'
+      const color = approved ? '#16a34a' : '#dc2626'
       sendEmail(sub.sub_email, `Billing ${status} — ${sub.jobs?.project_name}`,
         emailWrap(`
           <h2 style="color:${color};margin:0 0 1rem">Billing ${status}</h2>
@@ -2961,11 +2963,15 @@ ${estimate.notes ? `
   const expiringSoonCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration + 'T00:00:00') >= now && new Date(s.coi_expiration + 'T00:00:00') < thirtyDaysFromNow)
   const missingCOIs = directory.filter(s => s.status === 'approved' && !s.coi_url)
   const expiringCOIs = [...expiredCOIs, ...expiringSoonCOIs]
-  const filteredDir = directory.filter(s =>
-    (!filterDirStatus || s.status === filterDirStatus) &&
-    (!filterTrade || s.trade === filterTrade) &&
-    (!searchDir || s.company_name?.toLowerCase().includes(searchDir.toLowerCase()) || s.contact_name?.toLowerCase().includes(searchDir.toLowerCase()))
-  )
+  const filteredDir = directory.filter(s => {
+    if (filterDirStatus && s.status !== filterDirStatus) return false
+    if (filterTrade && s.trade !== filterTrade) return false
+    if (searchDir && !s.company_name?.toLowerCase().includes(searchDir.toLowerCase()) && !s.contact_name?.toLowerCase().includes(searchDir.toLowerCase())) return false
+    if (coiFilter === 'expired') return expiredCOIs.some(e => e.id === s.id)
+    if (coiFilter === 'expiring') return expiringSoonCOIs.some(e => e.id === s.id)
+    if (coiFilter === 'missing') return missingCOIs.some(e => e.id === s.id)
+    return true
+  })
   const duplicateNames = new Set(
     Object.entries(directory.reduce((acc, s) => {
       const k = s.company_name?.toLowerCase().trim() || ''
@@ -2991,21 +2997,51 @@ ${estimate.notes ? `
   const billingBadge = pending.length || null
   const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
 
-  const navItems = [
-    { tab: 'overview',      label: 'Overview',      icon: <IconHome /> },
-    { tab: 'jobs',          label: 'Commercial',     icon: <IconBriefcase /> },
-    { tab: 'residential',   label: 'Residential',    icon: <IconResidential /> },
-    { tab: 'billing',       label: 'Billing',        icon: <IconDollar />,   badge: billingBadge },
-    { tab: 'orders', label: 'Orders', icon: <IconBox /> },
-    { tab: 'directory',     label: 'Companies',      icon: <IconUsers />,    badge: dirBadge },
-    ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team', icon: <IconBuilding /> }] : []),
-    ...(profile?.role === 'pm' ? [{ tab: 'employees', label: 'Employees', icon: <IconUsers /> }] : []),
-    ...(['pm', 'apm'].includes(profile?.role) ? [{ tab: 'vehicles', label: profile?.role === 'apm' ? 'My Vehicle' : 'Fleet', icon: <IconTruck /> }] : []),
-    ...(['pm', 'apm'].includes(profile?.role) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
-    { tab: 'estimator',     label: 'Estimator',      icon: <IconCalc /> },
-    ...(profile?.role === 'pm' ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
-    { tab: 'calendar',      label: 'Calendar',       icon: <IconCal /> },
+  const navGroups = [
+    {
+      items: [
+        { tab: 'overview', label: 'Overview', icon: <IconHome /> },
+      ]
+    },
+    {
+      label: 'Projects',
+      items: [
+        { tab: 'jobs',        label: 'Commercial',  icon: <IconBriefcase /> },
+        { tab: 'residential', label: 'Residential', icon: <IconResidential /> },
+      ]
+    },
+    {
+      label: 'Financials',
+      items: [
+        { tab: 'billing', label: 'Billing', icon: <IconDollar />, badge: billingBadge },
+        { tab: 'orders',  label: 'Orders',  icon: <IconBox /> },
+      ]
+    },
+    {
+      label: 'People',
+      items: [
+        { tab: 'directory',   label: 'Companies', icon: <IconUsers />,    badge: dirBadge },
+        ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team',    icon: <IconBuilding /> }] : []),
+        ...(profile?.role === 'pm' ? [{ tab: 'employees',    label: 'Employees',  icon: <IconUsers /> }]    : []),
+      ]
+    },
+    ...(['pm', 'apm'].includes(profile?.role) ? [{
+      label: 'Equipment',
+      items: [
+        { tab: 'vehicles', label: profile?.role === 'apm' ? 'My Vehicle' : 'Fleet', icon: <IconTruck /> },
+        { tab: 'tools',    label: 'Tools', icon: <IconWrench /> },
+      ]
+    }] : []),
+    {
+      label: 'Business',
+      items: [
+        { tab: 'estimator', label: 'Estimator', icon: <IconCalc /> },
+        ...(profile?.role === 'pm' ? [{ tab: 'bd',       label: 'Business Dev', icon: <IconTrend /> }] : []),
+        { tab: 'calendar', label: 'Calendar', icon: <IconCal /> },
+      ]
+    },
   ]
+  const navItems = navGroups.flatMap(g => g.items)
 
   return (
     <div style={s.page}>
@@ -3036,6 +3072,8 @@ ${estimate.notes ? `
 
         /* Sidebar orange accent line */
         .nv-sidebar-shimmer { height: 2px; background: rgba(232,89,12,0.5); margin: 0.5rem 0 0.25rem; border-radius: 2px; }
+        /* Mobile more drawer */
+        @media (max-width: 768px) { .rx-more-drawer { display: block !important; } }
 
         /* Buttons */
         .nv-btn { transition: opacity 0.12s ease !important; }
@@ -3134,19 +3172,28 @@ ${estimate.notes ? `
           <div className="nv-sidebar-shimmer" />
         </div>
         <div style={s.sidebarNav}>
-          {navItems.map(({ tab, label, icon, badge }) => (
-            <button key={tab} className="nv-nav-btn" style={s.navItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
-              <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
-              {label}
-              {badge ? <span className="nv-badge-pulse" style={s.navBadge}>{badge}</span> : null}
-            </button>
+          {navGroups.map((group, gi) => (
+            <div key={gi}>
+              {group.label && (
+                <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.22)', letterSpacing: '1px', textTransform: 'uppercase', padding: gi === 0 ? '10px 1rem 4px' : '14px 1rem 4px' }}>
+                  {group.label}
+                </div>
+              )}
+              {group.items.map(({ tab, label, icon, badge }) => (
+                <button key={tab} className="nv-nav-btn" style={s.navItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
+                  <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
+                  {label}
+                  {badge ? <span className="nv-badge-pulse" style={s.navBadge}>{badge}</span> : null}
+                </button>
+              ))}
+            </div>
           ))}
-          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.18)', letterSpacing: '2px', textTransform: 'uppercase', padding: '16px 1.25rem 6px', fontWeight: '700' }}>Divisions</div>
-          <a href="/roofing" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
+          <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.22)', letterSpacing: '1px', textTransform: 'uppercase', padding: '14px 1rem 4px' }}>Divisions</div>
+          <a href="/roofing" style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 1rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
             Commercial Roofing
           </a>
-          <a href="/metal-buildings" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
+          <a href="/metal-buildings" style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 1rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
             Metal Buildings
           </a>
@@ -3163,17 +3210,37 @@ ${estimate.notes ? `
           { tab: 'jobs',      icon: <IconBriefcase />,  label: 'Jobs' },
           { tab: 'billing',   icon: <IconDollar />,     label: 'Billing' },
           { tab: 'directory', icon: <IconUsers />,      label: 'Subs' },
-          { tab: 'estimator', icon: <IconCalc />,       label: 'Est.' },
-          { tab: 'signout',   icon: <IconLogout />,     label: 'Sign Out' },
         ].map(({ tab, icon, label }) => (
           <button key={tab}
-            onClick={() => tab === 'signout' ? supabase.auth.signOut().then(() => router.push('/login')) : setActiveTab(tab)}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: tab === 'signout' ? '#9ca3af' : activeTab === tab ? '#e8590c' : '#9ca3af', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: activeTab === tab ? '700' : '400', padding: '8px 0' }}>
+            onClick={() => { setActiveTab(tab); setMobileMoreOpen(false) }}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: activeTab === tab ? '#e8590c' : '#9ca3af', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: activeTab === tab ? '700' : '400', padding: '8px 0' }}>
             {icon}
             {label}
           </button>
         ))}
+        <button onClick={() => setMobileMoreOpen(v => !v)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: mobileMoreOpen ? '#e8590c' : '#9ca3af', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: mobileMoreOpen ? '700' : '400', padding: '8px 0' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          More
+        </button>
       </div>
+      {/* ── MORE DRAWER (mobile) ── */}
+      {mobileMoreOpen && (
+        <div style={{ position: 'fixed', bottom: '60px', left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', zIndex: 200, display: 'none' }} className="rx-more-drawer">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
+            {navItems.filter(n => !['overview','jobs','billing','directory'].includes(n.tab)).map(({ tab, icon, label, badge }) => (
+              <button key={tab} onClick={() => { setActiveTab(tab); setMobileMoreOpen(false) }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', background: 'none', border: 'none', cursor: 'pointer', color: activeTab === tab ? '#e8590c' : '#374151', fontSize: '11px', fontWeight: activeTab === tab ? '700' : '400', position: 'relative' }}>
+                {icon}
+                {label}
+                {badge ? <span style={{ position: 'absolute', top: '10px', right: '16px', background: '#e8590c', color: '#fff', fontSize: '9px', fontWeight: '700', borderRadius: '99px', padding: '0 4px', minWidth: '14px', textAlign: 'center' }}>{badge}</span> : null}
+              </button>
+            ))}
+            <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '11px' }}>
+              <IconLogout />
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── MAIN CONTENT ── */}
       <main style={s.content} className={`rx-content ${activeTab === 'estimator' ? 'nv-estimator' : ''}`}>
@@ -3186,7 +3253,7 @@ ${estimate.notes ? `
             <div style={s.ovGrid} className="rx-stats">
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Active jobs</p>
-                <div style={s.ovValue('#60a5fa')}>{activeJobs.length}</div>
+                <div style={s.ovValue('#2563eb')}>{activeJobs.length}</div>
               </div>
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending billing</p>
@@ -3195,7 +3262,7 @@ ${estimate.notes ? `
               </div>
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>COI alerts</p>
-                <div style={s.ovValue((expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) ? '#ff6b6b' : null)}>{expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length}</div>
+                <div style={s.ovValue((expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) ? '#dc2626' : null)}>{expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length}</div>
                 {(expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) > 0 && (
                   <p style={s.ovSub}>
                     {expiredCOIs.length > 0 && `${expiredCOIs.length} expired`}
@@ -3208,7 +3275,7 @@ ${estimate.notes ? `
               </div>
               <div className="nv-stat-card" style={{ ...s.ovCard, cursor: unsignedWaivers.length ? 'pointer' : 'default' }} onClick={() => unsignedWaivers.length && setActiveTab('billing')}>
                 <p style={s.ovLabel}>Unsigned waivers</p>
-                <div style={s.ovValue(unsignedWaivers.length ? '#facc15' : null)}>{unsignedWaivers.length}</div>
+                <div style={s.ovValue(unsignedWaivers.length ? '#d97706' : null)}>{unsignedWaivers.length}</div>
                 {unsignedWaivers.length > 0 && (() => {
                   const over30 = unsignedWaivers.filter(w => (Date.now() - new Date(w.submitted_at)) > 30*24*60*60*1000).length
                   const over60 = unsignedWaivers.filter(w => (Date.now() - new Date(w.submitted_at)) > 60*24*60*60*1000).length
@@ -3227,10 +3294,14 @@ ${estimate.notes ? `
             {/* ── BILLING ── */}
             {activeTab === 'billing' && (
               <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>Billing Submissions</h2>
+                  {filterStatus === 'pending' && pending.length > 0 && <span style={{ fontSize: '12px', color: '#6b7280' }}>{pending.length} pending · ${pendingTotal.toLocaleString()} waiting</span>}
+                </div>
                 <div style={s.filterRow}>
                   <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setBillingPage(1) }} style={s.filterSelect}>
-                    <option value="">All statuses</option>
-                    <option value="pending">Pending</option>
+                    <option value="pending">Pending review</option>
+                    <option value="">All submissions</option>
                     <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
                     <option value="unsigned_waiver">⚠ Unsigned waivers (oldest first)</option>
@@ -3240,7 +3311,11 @@ ${estimate.notes ? `
                     {jobs.map(j => <option key={j.id} value={j.job_number}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
                 </div>
-                {filtered.length === 0 ? <div style={s.emptyMsg}>No submissions found.</div> : pagedFiltered.map(sub => {
+                {filtered.length === 0 ? (
+                  <div style={{ ...s.emptyMsg, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem' }}>
+                    {filterStatus === 'pending' ? 'No pending submissions — all caught up.' : 'No submissions found.'}
+                  </div>
+                ) : pagedFiltered.map(sub => {
                   const daysSince = Math.floor((Date.now() - new Date(sub.submitted_at)) / (24*60*60*1000))
                   const isUnsignedView = filterStatus === 'unsigned_waiver'
                   return (
@@ -3249,15 +3324,18 @@ ${estimate.notes ? `
                       <div>
                         <p style={s.company}>{sub.company_name}</p>
                         <p style={s.meta}>
+                          {sub.jobs?.project_name && <><strong style={{ color: '#374151' }}>#{sub.jobs.job_number}</strong> {sub.jobs.project_name} · </>}
                           {new Date(sub.submitted_at).toLocaleDateString()} · {sub.contact_name}
-                          {isUnsignedView && sub.jobs?.project_name && <> · <span style={{ color: '#888' }}>{sub.jobs.project_name}</span></>}
+                          {isUnsignedView && <> · <span style={{ color: '#6b7280' }}>{daysSince}d</span></>}
                         </p>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', color: '#888', fontSize: '14px' }}>#{sub.jobs?.job_number}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', color: '#6b7280', fontSize: '13px' }}>
+                        {!sub.jobs?.project_name && <span>#{sub.jobs?.job_number}</span>}
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', fontWeight: '700', fontSize: '15px', color: '#111827' }}>${sub.amount_billed?.toLocaleString()}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={s.badge(sub.status)}>{sub.status}</span>
-                        {isUnsignedView && <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: daysSince > 60 ? '#2a0a0a' : daysSince > 30 ? '#2a1200' : '#1a1a0a', color: daysSince > 60 ? '#ff6b6b' : daysSince > 30 ? '#e8590c' : '#facc15' }}>{daysSince}d</span>}
+                        {isUnsignedView && <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: daysSince > 60 ? '#fef2f2' : daysSince > 30 ? '#fff7ed' : '#fefce8', color: daysSince > 60 ? '#dc2626' : daysSince > 30 ? '#e8590c' : '#d97706' }}>{daysSince}d</span>}
                       </div>
                     </div>
                     {expanded === sub.id && (
@@ -3445,22 +3523,24 @@ ${estimate.notes ? `
                 )}
 
                 {(expiredCOIs.length > 0 || expiringSoonCOIs.length > 0 || missingCOIs.length > 0) && (
-                  <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ marginBottom: '1rem', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '2px' }}>Insurance:</span>
                     {expiredCOIs.length > 0 && (
-                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#dc2626' }}>
-                        🚨 <strong>{expiredCOIs.length} expired COI{expiredCOIs.length > 1 ? 's' : ''}:</strong> {expiredCOIs.map(s => s.company_name).join(', ')}
-                      </div>
+                      <button onClick={() => setCoiFilter(coiFilter === 'expired' ? '' : 'expired')} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: '1px solid #fecaca', background: coiFilter === 'expired' ? '#dc2626' : '#fef2f2', color: coiFilter === 'expired' ? '#fff' : '#dc2626' }}>
+                        {expiredCOIs.length} Expired
+                      </button>
                     )}
                     {expiringSoonCOIs.length > 0 && (
-                      <div style={s.coiWarning}>
-                        ⚠ <strong>{expiringSoonCOIs.length} expiring within 30 days:</strong> {expiringSoonCOIs.map(s => s.company_name).join(', ')}
-                      </div>
+                      <button onClick={() => setCoiFilter(coiFilter === 'expiring' ? '' : 'expiring')} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: '1px solid #fed7aa', background: coiFilter === 'expiring' ? '#c2410c' : '#fff7ed', color: coiFilter === 'expiring' ? '#fff' : '#c2410c' }}>
+                        {expiringSoonCOIs.length} Expiring soon
+                      </button>
                     )}
                     {missingCOIs.length > 0 && (
-                      <div style={{ background: '#fefce8', border: '1px solid #3a3a0a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#a16207' }}>
-                        📋 <strong>{missingCOIs.length} missing COI{missingCOIs.length > 1 ? 's' : ''}:</strong> {missingCOIs.map(s => s.company_name).join(', ')}
-                      </div>
+                      <button onClick={() => setCoiFilter(coiFilter === 'missing' ? '' : 'missing')} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: '1px solid #fde68a', background: coiFilter === 'missing' ? '#a16207' : '#fefce8', color: coiFilter === 'missing' ? '#fff' : '#a16207' }}>
+                        {missingCOIs.length} Missing COI
+                      </button>
                     )}
+                    {coiFilter && <button onClick={() => setCoiFilter('')} style={{ padding: '4px 10px', borderRadius: '99px', fontSize: '12px', cursor: 'pointer', border: '1px solid #e5e7eb', background: 'transparent', color: '#6b7280' }}>Clear</button>}
                   </div>
                 )}
 
@@ -3512,7 +3592,7 @@ ${estimate.notes ? `
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
-                              <span style={{ fontSize: '11px', color: new Date(sub.coi_expiration) < new Date() ? '#ff6b6b' : '#e8590c', fontWeight: '700', background: new Date(sub.coi_expiration) < new Date() ? '#2a0a0a' : '#2a1200', border: `1px solid ${new Date(sub.coi_expiration) < new Date() ? '#5a1a1a' : '#4a2200'}`, borderRadius: '4px', padding: '2px 8px' }}>
+                              <span style={{ fontSize: '11px', color: new Date(sub.coi_expiration) < new Date() ? '#dc2626' : '#e8590c', fontWeight: '700', background: new Date(sub.coi_expiration) < new Date() ? '#fef2f2' : '#fff7ed', border: `1px solid ${new Date(sub.coi_expiration) < new Date() ? '#fecaca' : '#fed7aa'}`, borderRadius: '4px', padding: '2px 8px' }}>
                                 {new Date(sub.coi_expiration) < new Date() ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
                               </span>
                             )}
@@ -3574,7 +3654,7 @@ ${estimate.notes ? `
                                 </div>
                               </div>
                               {repairMsg[sub.id] && (
-                                <div style={{ padding: '10px 16px', fontSize: '12px', background: repairMsg[sub.id].type === 'err' ? '#2a0a0a' : '#0a1a0a', color: repairMsg[sub.id].type === 'err' ? '#ff6b6b' : '#4ade80', borderBottom: '1px solid #131313' }}>
+                                <div style={{ padding: '10px 16px', fontSize: '12px', background: repairMsg[sub.id].type === 'err' ? '#fef2f2' : '#f0fdf4', color: repairMsg[sub.id].type === 'err' ? '#dc2626' : '#16a34a', borderBottom: '1px solid #131313' }}>
                                   {repairMsg[sub.id].text}
                                 </div>
                               )}
@@ -3598,7 +3678,7 @@ ${estimate.notes ? `
                                       style={{ padding: '5px 12px', background: '#eff6ff', border: '1px solid #1a3050', borderRadius: '6px', color: '#2563eb', fontSize: '12px', fontWeight: '600', cursor: isSyncing ? 'not-allowed' : 'pointer', opacity: isSyncing || !(syncEmail[sub.id] || '').trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
                                       {isSyncing ? 'Syncing…' : 'Sync Profile'}
                                     </button>
-                                    {sMsg && <span style={{ fontSize: '12px', color: sMsg.type === 'err' ? '#ff6b6b' : '#4ade80' }}>{sMsg.text}</span>}
+                                    {sMsg && <span style={{ fontSize: '12px', color: sMsg.type === 'err' ? '#dc2626' : '#16a34a' }}>{sMsg.text}</span>}
                                   </div>
                                 )
                               })()}
@@ -3682,13 +3762,13 @@ ${estimate.notes ? `
                                 return (
                                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 16px', borderBottom: isLast && !isAddOpen ? 'none' : '1px solid #0f0f0f', opacity: isActioning ? 0.5 : 1 }}>
                                     {/* Avatar */}
-                                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', background: isRegistered ? '#0d2010' : '#141414', border: `2px solid ${isRegistered ? '#1e4a22' : '#222'}`, color: isRegistered ? '#4ade80' : '#444' }}>
+                                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', background: isRegistered ? '#0d2010' : '#141414', border: `2px solid ${isRegistered ? '#1e4a22' : '#222'}`, color: isRegistered ? '#16a34a' : '#444' }}>
                                       {initials}
                                     </div>
 
                                     {/* Info */}
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#f1f1f1' : '#666', marginBottom: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      <div style={{ fontSize: '14px', fontWeight: '600', color: isRegistered ? '#111827' : '#666', marginBottom: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         {m.full_name || m.invite_email}
                                       </div>
                                       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -3709,7 +3789,7 @@ ${estimate.notes ? `
                                           {{ sub_estimator: 'ESTIMATOR', sub_pm: 'PM', sub_admin: 'ADMIN' }[m.role] || m.role.toUpperCase()}
                                         </span>
                                       )}
-                                      <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#0a2a0a' : '#181800', color: isRegistered ? '#4ade80' : '#d4a017', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a3000'}` }}>
+                                      <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#dcfce7' : '#181800', color: isRegistered ? '#16a34a' : '#d4a017', border: `1px solid ${isRegistered ? '#bbf7d0' : '#3a3000'}` }}>
                                         {isRegistered ? '● Active' : '○ Pending'}
                                       </span>
                                       {!isRegistered && (
@@ -3784,8 +3864,8 @@ ${estimate.notes ? `
                         <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                           <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Documents</p>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.w9_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.w9_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#4ade80' : '#ff6b6b' }}>{sub.w9_url ? '✓' : '✗'} W-9</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.w9_url ? '#dcfce7' : '#1a0a0a', border: `1px solid ${sub.w9_url ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.w9_url ? '#16a34a' : '#dc2626' }}>{sub.w9_url ? '✓' : '✗'} W-9</span>
                             </div>
                             {sub.w9_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(sub.w9_url)}>View</button>}
                             {sub.w9_url && <button style={s.btnSm('gray')} onClick={() => downloadDoc(sub.w9_url, `W9-${sub.company_name}.pdf`)}>Download</button>}
@@ -3801,8 +3881,8 @@ ${estimate.notes ? `
                             )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.coi_url ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#4ade80' : '#ff6b6b' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.coi_url ? '#dcfce7' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#16a34a' : '#dc2626' }}>
                                 {sub.coi_url ? '✓' : '✗'} COI{sub.coi_expiration ? ` · ${new Date(sub.coi_expiration).toLocaleDateString()}` : ''}
                               </span>
                             </div>
@@ -3880,7 +3960,7 @@ ${estimate.notes ? `
                                 {savingSubEdit ? 'Saving...' : 'Save changes'}
                               </button>
                               <button style={s.btnSm('gray')} onClick={() => { setEditingSubId(null); setSubEditMsg(null) }}>Cancel</button>
-                              {subEditMsg && <span style={{ fontSize: '12px', color: subEditMsg.ok ? '#4ade80' : '#ff6b6b' }}>{subEditMsg.text}</span>}
+                              {subEditMsg && <span style={{ fontSize: '12px', color: subEditMsg.ok ? '#16a34a' : '#dc2626' }}>{subEditMsg.text}</span>}
                             </div>
                           </div>
                         )}
@@ -3950,7 +4030,7 @@ ${estimate.notes ? `
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                   <button style={{ ...s.btnSm('blue'), opacity: sendingNotify || !notifySubject || !notifyMessage ? 0.5 : 1 }} disabled={sendingNotify || !notifySubject || !notifyMessage} onClick={() => sendNotification(sub)}>{sendingNotify ? 'Sending...' : 'Send'}</button>
                                   <button style={s.btnSm('gray')} onClick={() => setNotifySubId(null)}>Cancel</button>
-                                  {notifyResult[sub.id] && <span style={{ fontSize: '12px', color: notifyResult[sub.id].ok ? '#4ade80' : '#ff6b6b' }}>{notifyResult[sub.id].text}</span>}
+                                  {notifyResult[sub.id] && <span style={{ fontSize: '12px', color: notifyResult[sub.id].ok ? '#16a34a' : '#dc2626' }}>{notifyResult[sub.id].text}</span>}
                                 </div>
                               </div>
                             )}
@@ -4055,7 +4135,7 @@ ${estimate.notes ? `
                         { val: 'a', name: mergePersonA.company_name, sub: `Keep this — move ${mergePersonB.company_name} into it` },
                         { val: 'b', name: mergePersonB.company_name, sub: `Keep this — move ${mergePersonA.company_name} into it` },
                       ].map(opt => (
-                        <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '7px', background: mergeKeep === opt.val ? '#1a1a1a' : 'transparent', cursor: 'pointer', marginBottom: '4px' }}>
+                        <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '7px', background: mergeKeep === opt.val ? '#f0f0f0' : 'transparent', cursor: 'pointer', marginBottom: '4px' }}>
                           <input type="radio" name="mergeKeep" value={opt.val} checked={mergeKeep === opt.val} onChange={() => setMergeKeep(opt.val)} style={{ accentColor: '#e8590c' }} />
                           <div>
                             <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{opt.name}</div>
@@ -4074,7 +4154,7 @@ ${estimate.notes ? `
                   )}
 
                   {mergeResult && (
-                    <p style={{ marginTop: '1rem', fontSize: '13px', color: mergeResult.error ? '#ff6b6b' : '#4ade80', fontWeight: '600' }}>
+                    <p style={{ marginTop: '1rem', fontSize: '13px', color: mergeResult.error ? '#dc2626' : '#16a34a', fontWeight: '600' }}>
                       {mergeResult.error || mergeResult.msg}
                     </p>
                   )}
@@ -4167,20 +4247,20 @@ ${estimate.notes ? `
                       const bidsDue = day ? (bidByDay[day] || []) : []
                       const isToday = day && new Date().getFullYear() === year && new Date().getMonth() === month && new Date().getDate() === day
                       return (
-                        <div key={i} style={{ minHeight: '80px', background: day ? '#0f0f0f' : 'transparent', border: day ? `1px solid ${isToday ? '#e8590c' : '#1e1e1e'}` : 'none', borderRadius: '8px', padding: '6px' }}>
-                          {day && <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>}
+                        <div key={i} style={{ minHeight: '80px', background: day ? '#ffffff' : 'transparent', border: day ? `1px solid ${isToday ? '#e8590c' : '#e5e7eb'}` : 'none', borderRadius: '8px', padding: '6px', boxShadow: day && isToday ? '0 0 0 2px rgba(232,89,12,0.15)' : 'none' }}>
+                          {day && <div style={{ fontSize: '12px', fontWeight: isToday ? '700' : '400', color: isToday ? '#e8590c' : '#374151', marginBottom: '4px' }}>{day}</div>}
                           {subJobs.map(j => (
-                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#eff6ff', border: '1px solid #2a5a8a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#2563eb', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
                               #{j.job_number} Sub
                             </div>
                           ))}
                           {ownerJobs.map(j => (
-                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#f0fdf4', border: '1px solid #2a6a2a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#86efac', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#16a34a', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
                               #{j.job_number} Owner
                             </div>
                           ))}
                           {bidsDue.map(p => (
-                            <div key={p.id} onClick={() => { setActiveTab('estimator'); setEstimatorInnerTab('bids') }} style={{ background: '#2a1a4a', border: '1px solid #4a2a7a', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#7c3aed', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                            <div key={p.id} onClick={() => { setActiveTab('estimator'); setEstimatorInnerTab('bids') }} style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#7c3aed', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
                               {p.title}
                             </div>
                           ))}
@@ -4198,9 +4278,9 @@ ${estimate.notes ? `
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedJobs && !showStarredJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredJobs ? '#1a1500' : '#0a0a0a', color: showStarredJobs ? '#facc15' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedJobs && !showStarredJobs ? '#fff7ed' : '#ffffff', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
+                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
+                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
@@ -4215,7 +4295,7 @@ ${estimate.notes ? `
                         <label style={s.label}>NV role on this job</label>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           {[{ v: 'gc', label: 'General Contractor' }, { v: 'sub', label: 'Subcontractor' }].map(({ v, label }) => (
-                            <button key={v} type="button" onClick={() => setNewJob(j => ({ ...j, nv_role: v }))} style={{ padding: '8px 18px', borderRadius: '6px', border: `1px solid ${(newJob.nv_role || 'gc') === v ? '#e8590c' : '#2a2a2a'}`, background: (newJob.nv_role || 'gc') === v ? '#2a1200' : '#0a0a0a', color: (newJob.nv_role || 'gc') === v ? '#e8590c' : '#666', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            <button key={v} type="button" onClick={() => setNewJob(j => ({ ...j, nv_role: v }))} style={{ padding: '8px 18px', borderRadius: '6px', border: `1px solid ${(newJob.nv_role || 'gc') === v ? '#e8590c' : '#d1d5db'}`, background: (newJob.nv_role || 'gc') === v ? '#fff7ed' : '#ffffff', color: (newJob.nv_role || 'gc') === v ? '#e8590c' : '#666', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                               {label}
                             </button>
                           ))}
@@ -4347,7 +4427,7 @@ ${estimate.notes ? `
                     const isStarred = starredJobIds.has(j.id)
                     return (
                       <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #f0f0f0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this job'}>{isStarred ? '★' : '☆'}</button>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#d97706' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this job'}>{isStarred ? '★' : '☆'}</button>
                         <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
@@ -4365,8 +4445,8 @@ ${estimate.notes ? `
                               ) : (
                                 contract > 0 && (
                                   <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#ff6b6b' : '#f1f1f1' }}>${billed.toLocaleString()}</div>
-                                    <div style={{ fontSize: '11px', color: over ? '#ff6b6b' : '#444' }}>{pct.toFixed(0)}% billed</div>
+                                    <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#dc2626' : '#111827', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}</div>
+                                    <div style={{ fontSize: '11px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% billed</div>
                                   </div>
                                 )
                               )}
@@ -4377,7 +4457,7 @@ ${estimate.notes ? `
                           </div>
                           {j.nv_role !== 'sub' && contract > 0 && (
                             <div style={{ height: '3px', background: '#f3f4f6', borderRadius: '2px', marginTop: '10px' }}>
-                              <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px', transition: 'width 0.3s' }} />
+                              <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#16a34a', borderRadius: '2px', transition: 'width 0.3s' }} />
                             </div>
                           )}
                         </div>
@@ -4393,9 +4473,9 @@ ${estimate.notes ? `
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#2a2a2a'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#2a1200' : '#0a0a0a', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#facc15' : '#2a2a2a'}`, background: showStarredResJobs ? '#1a1500' : '#0a0a0a', color: showStarredResJobs ? '#facc15' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#4ade80' : '#2a2a2a'}`, background: showCompletedResJobs ? '#0a2a0a' : '#0a0a0a', color: showCompletedResJobs ? '#4ade80' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#fff7ed' : '#ffffff', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#d97706' : '#d1d5db'}`, background: showStarredResJobs ? '#fefce8' : '#ffffff', color: showStarredResJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
                     {showNewResJobForm ? 'Cancel' : '+ New residential job'}
@@ -4476,7 +4556,7 @@ ${estimate.notes ? `
                     const isStarred = starredJobIds.has(j.id)
                     return (
                       <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #f0f0f0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#facc15' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this project'}>{isStarred ? '★' : '☆'}</button>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#d97706' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this project'}>{isStarred ? '★' : '☆'}</button>
                         <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
@@ -4697,7 +4777,7 @@ ${estimate.notes ? `
                                       <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                                         <th style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', minWidth: '200px' }}>Scope item</th>
                                         {subs.map(sub => (
-                                          <th key={sub.id} style={{ padding: '8px 12px', textAlign: 'center', color: sub.status === 'awarded' ? '#4ade80' : '#666', fontSize: '11px', letterSpacing: '0.5px', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                                          <th key={sub.id} style={{ padding: '8px 12px', textAlign: 'center', color: sub.status === 'awarded' ? '#16a34a' : '#666', fontSize: '11px', letterSpacing: '0.5px', fontWeight: '700', whiteSpace: 'nowrap' }}>
                                             {sub.company_name}
                                             {sub.status === 'awarded' && <span style={{ display: 'block', fontSize: '10px', color: '#16a34a', letterSpacing: '1px' }}>AWARDED</span>}
                                           </th>
@@ -4717,7 +4797,7 @@ ${estimate.notes ? `
                                               const isGap = awardedSub && awardedEntry?.included === false
                                               return (
                                                 <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,107,107,0.06)' : 'transparent' }}>
-                                                  <td style={{ padding: '9px 12px', color: isGap ? '#ff6b6b' : '#ccc' }}>
+                                                  <td style={{ padding: '9px 12px', color: isGap ? '#dc2626' : '#ccc' }}>
                                                     {isGap && <span style={{ color: '#dc2626', fontWeight: '700', marginRight: '4px' }}>⚠</span>}
                                                     {item.description}
                                                   </td>
@@ -4747,7 +4827,7 @@ ${estimate.notes ? `
                                       <tr style={{ borderTop: '1px solid #e5e7eb', background: '#f9fafb' }}>
                                         <td style={{ padding: '10px 12px', fontSize: '12px', fontWeight: '700', color: '#6b7280' }}>Total bid</td>
                                         {subs.map(sub => (
-                                          <td key={sub.id} style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '800', fontSize: '14px', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>
+                                          <td key={sub.id} style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '800', fontSize: '14px', color: sub.status === 'awarded' ? '#16a34a' : '#111827' }}>
                                             ${Number(sub.amount).toLocaleString()}
                                           </td>
                                         ))}
@@ -4774,7 +4854,7 @@ ${estimate.notes ? `
                                   {apms.map(apm => {
                                     const hasAccess = (pkg.allowed_users || []).includes(apm.id)
                                     return (
-                                      <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#4ade80' : '#333'}`, background: hasAccess ? '#0a2a0a' : '#111', color: hasAccess ? '#4ade80' : '#555', transition: 'all 0.15s' }} onClick={() => toggleBidAccess(pkg.id, apm.id)}>
+                                      <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#16a34a' : '#333'}`, background: hasAccess ? '#dcfce7' : '#111', color: hasAccess ? '#16a34a' : '#555', transition: 'all 0.15s' }} onClick={() => toggleBidAccess(pkg.id, apm.id)}>
                                         {hasAccess ? '✓ ' : ''}{apm.full_name || apm.email}
                                       </button>
                                     )
@@ -4952,7 +5032,7 @@ ${estimate.notes ? `
                                         const isAwarded = sub.status === 'awarded'
                                         return (
                                           <tr key={sub.id} style={{ borderBottom: '1px solid #111', background: isLow ? 'rgba(74,222,128,0.04)' : isAwarded ? 'rgba(74,222,128,0.07)' : 'transparent' }}>
-                                            <td style={{ padding: '10px 12px', color: isLow ? '#4ade80' : '#666', fontWeight: '700', fontSize: '12px' }}>#{rank + 1}{isLow && ' ★'}</td>
+                                            <td style={{ padding: '10px 12px', color: isLow ? '#16a34a' : '#666', fontWeight: '700', fontSize: '12px' }}>#{rank + 1}{isLow && ' ★'}</td>
                                             <td style={{ padding: '10px 12px' }}>
                                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <span style={{ color: '#111827', fontWeight: '600' }}>{sub.company_name}</span>
@@ -4960,7 +5040,7 @@ ${estimate.notes ? `
                                                 {!sub.sub_id && <span style={{ fontSize: '10px', color: '#666', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '4px', padding: '2px 6px' }}>manual</span>}
                                               </div>
                                             </td>
-                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: isLow ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</td>
+                                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: isLow ? '#16a34a' : '#111827' }}>${Number(sub.amount).toLocaleString()}</td>
                                             <td style={{ padding: '10px 12px', textAlign: 'right', color: isLow ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600' }}>
                                               {isLow ? '—' : `+$${diff.toLocaleString()}`}
                                             </td>
@@ -4996,7 +5076,7 @@ ${estimate.notes ? `
                                   <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(sub.submitted_at).toLocaleDateString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                  <span style={{ fontSize: '20px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1' }}>${Number(sub.amount).toLocaleString()}</span>
+                                  <span style={{ fontSize: '20px', fontWeight: '800', color: sub.status === 'awarded' ? '#16a34a' : '#111827' }}>${Number(sub.amount).toLocaleString()}</span>
                                   {sub.doc_url && (
                                     <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎 Estimate</button>
                                   )}
@@ -5199,7 +5279,7 @@ ${estimate.notes ? `
                                           <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '10px', fontWeight: '800', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', width: '90px' }}>Budget</th>
                                           {subs.map(sub => (
                                             <th key={sub.id} style={{ padding: '8px 10px', textAlign: 'center', width: `${colW}px` }}>
-                                              <div style={{ fontSize: '11px', fontWeight: '700', color: sub.status === 'awarded' ? '#4ade80' : '#aaa' }}>{sub.company_name}</div>
+                                              <div style={{ fontSize: '11px', fontWeight: '700', color: sub.status === 'awarded' ? '#16a34a' : '#aaa' }}>{sub.company_name}</div>
                                               <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500', marginTop: '2px' }}>${Number(sub.amount).toLocaleString()} bid</div>
                                             </th>
                                           ))}
@@ -5215,7 +5295,7 @@ ${estimate.notes ? `
                                               const isGap = subs.length > 0 && subs.every(sub => { const e = getEntry(sub.id, item.id); return e && e.included === false })
                                               return (
                                                 <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,50,0,0.05)' : 'transparent' }}>
-                                                  <td style={{ padding: '8px 10px', color: isGap ? '#ff6b6b' : '#ccc', fontSize: '12px' }}>
+                                                  <td style={{ padding: '8px 10px', color: isGap ? '#dc2626' : '#ccc', fontSize: '12px' }}>
                                                     {isGap && <span style={{ marginRight: '5px', fontSize: '11px' }}>⚠</span>}
                                                     {item.description}
                                                   </td>
@@ -5232,7 +5312,7 @@ ${estimate.notes ? `
                                                           <button
                                                             onClick={() => upsertLevelingEntry(pkg.id, sub.id, item.id, entry?.amount ?? '', excluded)}
                                                             title={excluded ? 'Click to mark included' : hasEntry ? 'Click to mark excluded' : 'Click to mark included'}
-                                                            style={{ width: '30px', height: '24px', border: `1px solid ${excluded ? '#5a1a1a' : hasEntry ? '#1a4a1a' : '#222'}`, borderRadius: '4px', background: excluded ? '#2a0808' : hasEntry ? '#081a08' : '#111', color: excluded ? '#ff6b6b' : hasEntry ? '#4ade80' : '#444', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.12s ease' }}
+                                                            style={{ width: '30px', height: '24px', border: `1px solid ${excluded ? '#fecaca' : hasEntry ? '#bbf7d0' : '#222'}`, borderRadius: '4px', background: excluded ? '#2a0808' : hasEntry ? '#081a08' : '#111', color: excluded ? '#dc2626' : hasEntry ? '#16a34a' : '#444', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.12s ease' }}
                                                           >
                                                             {excluded ? '✗' : hasEntry ? '✓' : '·'}
                                                           </button>
@@ -5243,7 +5323,7 @@ ${estimate.notes ? `
                                                             placeholder="—"
                                                             disabled={excluded}
                                                             onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, e.target.value, !excluded)}
-                                                            style={{ width: `${colW - 24}px`, background: excluded ? '#080808' : '#111', border: '1px solid #f0f0f0', borderRadius: '4px', color: excluded ? '#2a2a2a' : '#ccc', padding: '3px 6px', fontSize: '11px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
+                                                            style={{ width: `${colW - 24}px`, background: excluded ? '#f9fafb' : '#111', border: '1px solid #f0f0f0', borderRadius: '4px', color: excluded ? '#d1d5db' : '#ccc', padding: '3px 6px', fontSize: '11px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
                                                           />
                                                         </div>
                                                       </td>
@@ -5263,8 +5343,8 @@ ${estimate.notes ? `
                                             const diff = levTotal - rawBid
                                             return (
                                               <td key={sub.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '15px', fontWeight: '800', color: sub.status === 'awarded' ? '#4ade80' : '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
-                                                {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#facc15' : '#4ade80', marginTop: '2px' }}>{diff > 0 ? '+' : '-'}${Math.round(Math.abs(diff)).toLocaleString()} vs bid</div>}
+                                                <div style={{ fontSize: '15px', fontWeight: '800', color: sub.status === 'awarded' ? '#16a34a' : '#111827', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
+                                                {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#d97706' : '#16a34a', marginTop: '2px' }}>{diff > 0 ? '+' : '-'}${Math.round(Math.abs(diff)).toLocaleString()} vs bid</div>}
                                               </td>
                                             )
                                           })}
@@ -5302,7 +5382,7 @@ ${estimate.notes ? `
                   <div style={s.formBox}>
                     <p style={s.formTitle}>Invite team member</p>
                     {teamInviteMsg && (
-                      <p style={{ fontSize: '13px', color: teamInviteMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem', marginTop: 0 }}>{teamInviteMsg.text}</p>
+                      <p style={{ fontSize: '13px', color: teamInviteMsg.ok ? '#16a34a' : '#dc2626', marginBottom: '1rem', marginTop: 0 }}>{teamInviteMsg.text}</p>
                     )}
                     <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                       <div><label style={s.label}>Email *</label><input style={s.input} type="email" value={teamInviteForm.email} onChange={e => setTeamInviteForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@email.com" /></div>
@@ -5329,7 +5409,7 @@ ${estimate.notes ? `
                 <div style={{ marginBottom: '1.25rem', padding: '12px 14px', background: '#f9fafb', border: '1px solid #2a1a00', borderRadius: '8px' }}>
                   <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#888', letterSpacing: '1px', textTransform: 'uppercase' }}>Fix existing user access</p>
                   <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#6b7280' }}>If a team member can log in but doesn't appear in the list above, use this to repair their profile.</p>
-                  {fixProfileMsg && <p style={{ fontSize: '13px', color: fixProfileMsg.ok ? '#4ade80' : '#ff6b6b', margin: '0 0 10px' }}>{fixProfileMsg.text}</p>}
+                  {fixProfileMsg && <p style={{ fontSize: '13px', color: fixProfileMsg.ok ? '#16a34a' : '#dc2626', margin: '0 0 10px' }}>{fixProfileMsg.text}</p>}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                     <div style={{ flex: '1', minWidth: '180px' }}>
                       <label style={s.label}>Email</label>
@@ -5389,7 +5469,7 @@ ${estimate.notes ? `
                                 <label style={s.label}>Company / title</label>
                                 <input style={s.input} value={editTeamForm.company_name} onChange={e => setEditTeamForm(f => ({ ...f, company_name: e.target.value }))} placeholder="Project Manager" />
                               </div>
-                              {teamEditMsg && <p style={{ fontSize: '12px', color: teamEditMsg.ok ? '#4ade80' : '#ff6b6b', margin: '0 0 10px', wordBreak: 'break-all' }}>{teamEditMsg.text}</p>}
+                              {teamEditMsg && <p style={{ fontSize: '12px', color: teamEditMsg.ok ? '#16a34a' : '#dc2626', margin: '0 0 10px', wordBreak: 'break-all' }}>{teamEditMsg.text}</p>}
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <button onClick={saveTeamEdit} disabled={savingTeamEdit} style={{ ...s.btnSm('orange'), opacity: savingTeamEdit ? 0.6 : 1 }}>{savingTeamEdit ? 'Saving...' : 'Save'}</button>
                                 <button onClick={() => { setEditingTeamId(null); setTeamEditMsg(null) }} style={s.btnSm('gray')}>Cancel</button>
@@ -5505,7 +5585,7 @@ ${estimate.notes ? `
                 return 'estimating'
               }
               const STAGES = [
-                { key: 'lead',        label: 'LEAD',        color: '#9ca3af', bg: '#111',    border: '#2a2a2a', hdr: '#161616' },
+                { key: 'lead',        label: 'LEAD',        color: '#9ca3af', bg: '#111',    border: '#d1d5db', hdr: '#161616' },
                 { key: 'estimating',  label: 'ESTIMATING',  color: '#2563eb', bg: '#0a111e', border: '#1a2a3e', hdr: '#0d1828' },
                 { key: 'bid_out',     label: 'BID OUT',     color: '#e8590c', bg: '#1a0e00', border: '#3a1e00', hdr: '#1e1200' },
                 { key: 'negotiating', label: 'NEGOTIATING', color: '#a16207', bg: '#1a1400', border: '#3a2a00', hdr: '#1e1800' },
@@ -5559,11 +5639,11 @@ ${estimate.notes ? `
                   {/* Metrics bar */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
                     {[
-                      { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active estimate${pipeline.length !== 1 ? 's' : ''}`, color: '#111827', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active estimate${pipeline.length !== 1 ? 's' : ''}`, color: '#111827', bg: '#f9fafb', border: '#e5e7eb' },
                       { label: 'Under Construction', value: fmtK(activeVal), sub: `${activeJobs.length} active job${activeJobs.length !== 1 ? 's' : ''}`, color: '#38bdf8', bg: '#0a1520', border: '#1a3040' },
                       { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} est. won · ${completedJobs.length} jobs complete`, color: '#16a34a', bg: '#0a1a0e', border: '#1a3a1e' },
-                      { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#4ade80' : winRate >= 25 ? '#facc15' : '#ff6b6b', bg: '#0f0f0f', border: '#1e1e1e' },
-                      { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#0f0f0f', border: '#1e1e1e' },
+                      { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#16a34a' : winRate >= 25 ? '#d97706' : '#dc2626', bg: '#f9fafb', border: '#e5e7eb' },
+                      { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#f9fafb', border: '#e5e7eb' },
                     ].map(m => (
                       <div key={m.label} className="nv-metric-card" style={{ background: m.bg, border: `1px solid ${m.border}`, borderRadius: '10px', padding: '1rem 1.25rem' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>{m.label}</div>
@@ -5590,7 +5670,7 @@ ${estimate.notes ? `
                             {colTotal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(colTotal)}</div>}
                           </div>
                           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
-                            {cards.length === 0 && <div style={{ textAlign: 'center', color: '#2a2a2a', fontSize: '12px', paddingTop: '1.5rem' }}>Empty</div>}
+                            {cards.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>Empty</div>}
                             {cards.map(est => {
                               const tot = calcTotal(est)
                               const psf = est.square_footage > 0 ? tot / est.square_footage : null
@@ -5637,7 +5717,7 @@ ${estimate.notes ? `
                             {activeVal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(activeVal)}</div>}
                           </div>
                           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
-                            {activeJobs.length === 0 && <div style={{ textAlign: 'center', color: '#2a2a2a', fontSize: '12px', paddingTop: '1.5rem' }}>No active jobs</div>}
+                            {activeJobs.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>No active jobs</div>}
                             {activeJobs.map(job => (
                               <div key={job.id} style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
                                 onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
@@ -5654,7 +5734,7 @@ ${estimate.notes ? `
 
                     {/* Completed jobs column */}
                     {(() => {
-                      const stage = { color: '#a78bfa', bg: '#0f0a1a', border: '#2a1a4a', hdr: '#130d1e' }
+                      const stage = { color: '#7c3aed', bg: '#faf5ff', border: '#2a1a4a', hdr: '#130d1e' }
                       return (
                         <div style={{ minWidth: '230px', flex: '0 0 230px', background: stage.bg, border: `1px solid ${stage.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
                           <div style={{ background: stage.hdr, padding: '10px 14px', borderBottom: `1px solid ${stage.border}`, borderRadius: '10px 10px 0 0' }}>
@@ -5665,7 +5745,7 @@ ${estimate.notes ? `
                             {completedVal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(completedVal)}</div>}
                           </div>
                           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
-                            {completedJobs.length === 0 && <div style={{ textAlign: 'center', color: '#2a2a2a', fontSize: '12px', paddingTop: '1.5rem' }}>No completed jobs</div>}
+                            {completedJobs.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>No completed jobs</div>}
                             {completedJobs.map(job => (
                               <div key={job.id} style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
                                 onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
@@ -5814,7 +5894,7 @@ ${estimate.notes ? `
                           placeholder="0.00" />
                         <span style={{ fontSize: '11px', color: '#6b7280' }}>flat</span>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: estimateForm.taxable ? '#f1f1f1' : '#555' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: estimateForm.taxable ? '#111827' : '#555' }}>
                         <input type="checkbox" checked={!!estimateForm.taxable} onChange={e => setEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
                         Taxable (8.25% sales tax — applied before markup)
                       </label>
@@ -5842,8 +5922,8 @@ ${estimate.notes ? `
                   const estTaxAmt = est.taxable ? rawTotal * 0.0825 : 0
                   const total = Math.round((billedTotal + estMarkupFlat + estTaxAmt) * 100) / 100
                   const psf = est.square_footage > 0 ? Math.round(total / est.square_footage) : null
-                  const stageLabels = { lead: { label: 'Lead', color: '#9ca3af', bg: '#111', border: '#2a2a2a' }, estimating: { label: 'Estimating', color: '#2563eb', bg: '#0a1a2a', border: '#1a3a5a' }, bid_out: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, negotiating: { label: 'Negotiating', color: '#a16207', bg: '#1a1400', border: '#3a2a00' }, sent: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, draft: { label: 'Estimating', color: '#2563eb', bg: '#0a1a2a', border: '#1a3a5a' } }
-                  const stageCfg = stageLabels[est.status] || { label: est.status, color: '#888', bg: '#1a1a1a', border: '#2a2a2a' }
+                  const stageLabels = { lead: { label: 'Lead', color: '#9ca3af', bg: '#111', border: '#d1d5db' }, estimating: { label: 'Estimating', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' }, bid_out: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, negotiating: { label: 'Negotiating', color: '#a16207', bg: '#1a1400', border: '#3a2a00' }, sent: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, draft: { label: 'Estimating', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' } }
+                  const stageCfg = stageLabels[est.status] || { label: est.status, color: '#888', bg: '#f0f0f0', border: '#d1d5db' }
                   const isEditingEst = editingEstimate === est.id
                   return (
                     <div key={est.id} style={s.rowBorder}>
@@ -5995,7 +6075,7 @@ ${estimate.notes ? `
                                     placeholder="0.00" />
                                   <span style={{ fontSize: '11px', color: '#6b7280' }}>flat</span>
                                 </div>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: editEstimateForm.taxable ? '#f1f1f1' : '#555' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: editEstimateForm.taxable ? '#111827' : '#555' }}>
                                   <input type="checkbox" checked={!!editEstimateForm.taxable} onChange={e => setEditEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
                                   Taxable (8.25% sales tax — applied before markup)
                                 </label>
@@ -6087,7 +6167,7 @@ ${estimate.notes ? `
                                       {apms.map(apm => {
                                         const hasAccess = (est.allowed_users || []).includes(apm.id)
                                         return (
-                                          <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#4ade80' : '#333'}`, background: hasAccess ? '#0a2a0a' : '#111', color: hasAccess ? '#4ade80' : '#555', transition: 'all 0.15s' }} onClick={() => toggleEstimateAccess(est.id, apm.id)}>
+                                          <button key={apm.id} style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${hasAccess ? '#16a34a' : '#333'}`, background: hasAccess ? '#dcfce7' : '#111', color: hasAccess ? '#16a34a' : '#555', transition: 'all 0.15s' }} onClick={() => toggleEstimateAccess(est.id, apm.id)}>
                                             {hasAccess ? '✓ ' : ''}{apm.full_name || apm.email}
                                           </button>
                                         )
@@ -6166,10 +6246,10 @@ ${estimate.notes ? `
                         <div style={{ background: '#f0fdf4', border: '1px solid #1a3a1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
                           <div style={{ fontSize: '10px', fontWeight: '700', color: '#1a5a1a', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Won</div>
                           <div style={{ fontSize: '22px', fontWeight: '800', color: '#16a34a' }}>${Math.round(wonVal / 1000)}K</div>
-                          <div style={{ fontSize: '11px', color: '#1a4a1a', marginTop: '4px' }}>{won.length} project{won.length !== 1 ? 's' : ''}</div>
+                          <div style={{ fontSize: '11px', color: '#bbf7d0', marginTop: '4px' }}>{won.length} project{won.length !== 1 ? 's' : ''}</div>
                         </div>
                         <div style={{ background: '#fef2f2', border: '1px solid #3a1a1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
-                          <div style={{ fontSize: '10px', fontWeight: '700', color: '#5a1a1a', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Lost</div>
+                          <div style={{ fontSize: '10px', fontWeight: '700', color: '#fecaca', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Lost</div>
                           <div style={{ fontSize: '22px', fontWeight: '800', color: '#dc2626' }}>{lost.length}</div>
                           <div style={{ fontSize: '11px', color: '#3a1a1a', marginTop: '4px' }}>{lost.reduce((a, e) => a + calcTotal(e), 0) > 0 ? `$${Math.round(lost.reduce((a,e)=>a+calcTotal(e),0)/1000)}K walked away` : 'estimated value'}</div>
                         </div>
@@ -6217,12 +6297,12 @@ ${estimate.notes ? `
                           <div key={est.id} style={{ ...s.rowBorder, opacity: 0.85 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 8px' }}>
                               <div>
-                                <p style={{ ...s.company, color: isWon ? '#4ade80' : '#888' }}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
+                                <p style={{ ...s.company, color: isWon ? '#16a34a' : '#888' }}>{est.project_name}{est.project_type ? <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: '400', marginLeft: '8px' }}>{est.project_type}</span> : null}</p>
                                 <p style={s.meta}>{est.estimate_number} · {fmtDate(est.created_at)}{est.owner_name ? ' · ' + est.owner_name : ''}{psf ? ` · $${psf}/sqft` : ''}{est.square_footage ? ` · ${Number(est.square_footage).toLocaleString()} sqft` : ''}</p>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span style={{ fontSize: '16px', fontWeight: '800', color: isWon ? '#4ade80' : '#555' }}>{fmtC(tot)}</span>
-                                <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isWon ? '#0a2a0a' : '#2a0a0a', color: isWon ? '#4ade80' : '#ff6b6b', border: `1px solid ${isWon ? '#1a4a1a' : '#5a1a1a'}` }}>{isWon ? 'Won' : 'Lost'}</span>
+                                <span style={{ fontSize: '16px', fontWeight: '800', color: isWon ? '#16a34a' : '#555' }}>{fmtC(tot)}</span>
+                                <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isWon ? '#dcfce7' : '#fef2f2', color: isWon ? '#16a34a' : '#dc2626', border: `1px solid ${isWon ? '#bbf7d0' : '#fecaca'}` }}>{isWon ? 'Won' : 'Lost'}</span>
                                 <button style={{ ...s.btnSm('orange'), fontSize: '11px' }} onClick={() => moveEstimateStage(est.id, 'lead')}>Restore →</button>
                               </div>
                             </div>
@@ -6239,12 +6319,12 @@ ${estimate.notes ? `
             {activeTab === 'bd' && (() => {
               const fmt = (n) => n != null && n !== '' ? '$' + Number(n).toLocaleString() : '—'
               const stageCfg = {
-                prospect: { label: 'Prospect', color: '#a78bfa', bg: '#1a0a2a', border: '#3a1a5a' },
+                prospect: { label: 'Prospect', color: '#7c3aed', bg: '#1a0a2a', border: '#3a1a5a' },
                 bidding:  { label: 'Bidding',  color: '#a16207', bg: '#2a2200', border: '#4a3a00' },
-                active:   { label: 'Active',   color: '#2563eb', bg: '#0a1a2a', border: '#1a3a5a' },
-                complete: { label: 'Complete', color: '#16a34a', bg: '#0a2a0a', border: '#1a4a1a' },
+                active:   { label: 'Active',   color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+                complete: { label: 'Complete', color: '#16a34a', bg: '#dcfce7', border: '#bbf7d0' },
                 won:      { label: 'Won (BD)',  color: '#34d399', bg: '#0a1e14', border: '#1a3a28' },
-                lost:     { label: 'Lost',     color: '#dc2626', bg: '#2a0a0a', border: '#5a1a1a' },
+                lost:     { label: 'Lost',     color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
               }
               const stageBadge = (stage) => {
                 const c = stageCfg[stage] || stageCfg.prospect
@@ -6326,17 +6406,17 @@ ${estimate.notes ? `
                     </div>
                   </div>
 
-                  {bdMsg && <p style={{ fontSize: '13px', color: bdMsg.ok ? '#4ade80' : '#ff6b6b', marginBottom: '1rem' }}>{bdMsg.text}</p>}
+                  {bdMsg && <p style={{ fontSize: '13px', color: bdMsg.ok ? '#16a34a' : '#dc2626', marginBottom: '1rem' }}>{bdMsg.text}</p>}
 
                   {/* Stats */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '1.25rem' }}>
                     {[
-                      { label: 'Bidding',       value: biddingTotal,          accent: '#facc15' },
-                      { label: 'Active Jobs',   value: activeJobs.length,     accent: '#60a5fa' },
-                      { label: 'Complete',      value: completeJobs.length,   accent: '#4ade80' },
-                      { label: 'Revenue',       value: fmt(totalRev || null), accent: '#f1f1f1' },
-                      { label: 'Proj. Profit',  value: jobsWithBudget.length > 0 ? fmt(totalProjProfit) : '—', accent: totalProjProfit >= 0 ? '#4ade80' : '#ff6b6b' },
-                      { label: 'Avg Margin',    value: avgMargin != null ? avgMargin + '%' : '—', accent: avgMargin != null && avgMargin >= 15 ? '#4ade80' : avgMargin != null ? '#e8590c' : '#555' },
+                      { label: 'Bidding',       value: biddingTotal,          accent: '#d97706' },
+                      { label: 'Active Jobs',   value: activeJobs.length,     accent: '#2563eb' },
+                      { label: 'Complete',      value: completeJobs.length,   accent: '#16a34a' },
+                      { label: 'Revenue',       value: fmt(totalRev || null), accent: '#111827' },
+                      { label: 'Proj. Profit',  value: jobsWithBudget.length > 0 ? fmt(totalProjProfit) : '—', accent: totalProjProfit >= 0 ? '#16a34a' : '#dc2626' },
+                      { label: 'Avg Margin',    value: avgMargin != null ? avgMargin + '%' : '—', accent: avgMargin != null && avgMargin >= 15 ? '#16a34a' : avgMargin != null ? '#e8590c' : '#555' },
                     ].map(({ label, value, accent }) => (
                       <div key={label} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px 16px' }}>
                         <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
@@ -6350,10 +6430,10 @@ ${estimate.notes ? `
                     <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '14px 16px', marginBottom: '1.25rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                         <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>{bdYear} Revenue Goal</span>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: goalPct >= 100 ? '#4ade80' : '#f1f1f1' }}>{fmt(goalVal)} / {fmt(goalAmt)} &mdash; {goalPct}%</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: goalPct >= 100 ? '#16a34a' : '#111827' }}>{fmt(goalVal)} / {fmt(goalAmt)} &mdash; {goalPct}%</span>
                       </div>
                       <div style={{ background: '#f3f4f6', borderRadius: '99px', height: '8px', overflow: 'hidden' }}>
-                        <div style={{ width: goalPct + '%', height: '100%', background: goalPct >= 100 ? '#4ade80' : '#e8590c', borderRadius: '99px', transition: 'width 0.4s' }} />
+                        <div style={{ width: goalPct + '%', height: '100%', background: goalPct >= 100 ? '#16a34a' : '#e8590c', borderRadius: '99px', transition: 'width 0.4s' }} />
                       </div>
                     </div>
                   )}
@@ -6395,10 +6475,10 @@ ${estimate.notes ? `
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     {['all', 'bidding', 'active', 'complete', 'prospect', 'won', 'lost'].map(st => {
                       const isActive = bdFilterStage === st
-                      const c = stageCfg[st] || { color: '#888', bg: '#1a1a1a', border: '#2a2a2a' }
+                      const c = stageCfg[st] || { color: '#888', bg: '#f0f0f0', border: '#d1d5db' }
                       const label = st === 'all' ? `All (${stageCounts.all})` : `${stageCfg[st]?.label || st} (${stageCounts[st] ?? 0})`
                       return (
-                        <button key={st} onClick={() => setBdFilterStage(st)} style={{ padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${isActive ? c.border : '#2a2a2a'}`, background: isActive ? c.bg : '#111', color: isActive ? c.color : '#555', letterSpacing: '0.5px' }}>
+                        <button key={st} onClick={() => setBdFilterStage(st)} style={{ padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${isActive ? c.border : '#d1d5db'}`, background: isActive ? c.bg : '#111', color: isActive ? c.color : '#555', letterSpacing: '0.5px' }}>
                           {label}
                         </button>
                       )
@@ -6438,7 +6518,7 @@ ${estimate.notes ? `
                             {/* Job row — read only, link to detail */}
                             {item._type === 'job' && (() => {
                               const p = bdProfits[item.id]
-                              const profitColor = p && p.projected_profit >= 0 ? '#4ade80' : '#ff6b6b'
+                              const profitColor = p && p.projected_profit >= 0 ? '#16a34a' : '#dc2626'
                               return (
                                 <>
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -6550,7 +6630,7 @@ ${estimate.notes ? `
                     <button style={s.btnSm('orange')} onClick={() => setShowAddEmp(v => !v)}>{showAddEmp ? 'Cancel' : '+ Add Employee'}</button>
                   </div>
 
-                  {empMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: empMsg.ok ? '#0a2a0a' : '#2a0a0a', color: empMsg.ok ? '#4ade80' : '#ff6b6b', border: `1px solid ${empMsg.ok ? '#1a4a1a' : '#5a1a1a'}` }}>{empMsg.text}</div>}
+                  {empMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: empMsg.ok ? '#dcfce7' : '#fef2f2', color: empMsg.ok ? '#16a34a' : '#dc2626', border: `1px solid ${empMsg.ok ? '#bbf7d0' : '#fecaca'}` }}>{empMsg.text}</div>}
 
                   {showAddEmp && (
                     <div style={{ ...s.card, marginBottom: '1.5rem', border: '1px solid #2a1a00' }}>
@@ -6645,12 +6725,12 @@ ${estimate.notes ? `
                                   </td>
                                   <td style={{ padding: '10px 12px', color: '#888' }}>{e.title || '—'}</td>
                                   <td style={{ padding: '10px 12px' }}>
-                                    <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#0a1e2a' : '#1a1a0a', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#1a3a5a' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
+                                    <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#eff6ff' : '#fefce8', color: e.type === 'w2' ? '#2563eb' : '#d97706', border: `1px solid ${e.type === 'w2' ? '#bfdbfe' : '#fde68a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111827' }}>{fmtW(e.weekly_salary)}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_truck ? '#f1f1f1' : '#333' }}>{e.weekly_truck ? fmtW(e.weekly_truck) : '—'}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_healthcare ? '#f1f1f1' : '#333' }}>{e.weekly_healthcare ? fmtW(e.weekly_healthcare) : '—'}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_taxes ? '#f1f1f1' : '#333' }}>{e.weekly_taxes ? fmtW(e.weekly_taxes) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_truck ? '#111827' : '#333' }}>{e.weekly_truck ? fmtW(e.weekly_truck) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_healthcare ? '#111827' : '#333' }}>{e.weekly_healthcare ? fmtW(e.weekly_healthcare) : '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_taxes ? '#111827' : '#333' }}>{e.weekly_taxes ? fmtW(e.weekly_taxes) : '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111827', fontWeight: '700' }}>{fmtW(wk)}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtW(daily)}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtW(wk * 52)}</td>
@@ -6843,13 +6923,13 @@ ${estimate.notes ? `
                                                             )}
                                                           </td>
                                                           <td style={{ padding: '8px 8px 8px 0' }}>
-                                                            <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isPM ? '#0a1a2a' : '#1a0a00', color: isPM ? '#60a5fa' : '#f97316', border: `1px solid ${isPM ? '#1a3a5a' : '#4a2a00'}` }}>
+                                                            <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isPM ? '#eff6ff' : '#1a0a00', color: isPM ? '#2563eb' : '#f97316', border: `1px solid ${isPM ? '#bfdbfe' : '#4a2a00'}` }}>
                                                               {isPM ? 'PM / Super' : 'Profit'}
                                                             </span>
                                                           </td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: pct < 100 ? '#facc15' : '#aaa', fontWeight: pct < 100 ? '700' : '400' }}>{pct}%</td>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: pct < 100 ? '#d97706' : '#aaa', fontWeight: pct < 100 ? '700' : '400' }}>{pct}%</td>
                                                           <td style={{ padding: '8px 8px 8px 0', color: '#4b5563' }}>{a.start_date || '—'}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: isOngoing ? '#4ade80' : '#aaa' }}>
+                                                          <td style={{ padding: '8px 8px 8px 0', color: isOngoing ? '#16a34a' : '#aaa' }}>
                                                             {days != null ? days : '—'}
                                                             {isOngoing && <span style={{ fontSize: '10px', marginLeft: '4px', color: '#16a34a' }}>▲</span>}
                                                           </td>
@@ -6886,7 +6966,7 @@ ${estimate.notes ? `
                                                             {profitAllocs.length} against profit · {pmAllocs.length} PM/Super · {totalPct}% allocated
                                                           </td>
                                                           <td style={{ padding: '8px 0' }}></td>
-                                                          <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: totalPct > 100 ? '#f87171' : '#f1f1f1' }}>${totalEffectiveWeekly.toLocaleString()}/wk</td>
+                                                          <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: totalPct > 100 ? '#f87171' : '#111827' }}>${totalEffectiveWeekly.toLocaleString()}/wk</td>
                                                           <td colSpan={2} style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#16a34a' }}>
                                                             ${totalAccrued.toLocaleString()} total
                                                           </td>
@@ -6942,7 +7022,7 @@ ${estimate.notes ? `
               if (profile?.role === 'apm') {
                 const myVehicle = vehicles.find(v => v.assigned_to === profile?.id)
                 const LOG_TYPES_APM = ['Weekly Miles', 'Mileage Update', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Other']
-                const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#555'
+                const logTypeBadgeColor = t => t === 'Oil Change' ? '#d97706' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#7c3aed' : '#555'
                 return (
                   <>
                     <div style={{ marginBottom: '1.5rem' }}>
@@ -6967,7 +7047,7 @@ ${estimate.notes ? `
 
                         <div style={s.formBox}>
                           <p style={s.formTitle}>Log Entry</p>
-                          {apmVehicleLogMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '12px', fontSize: '13px', background: apmVehicleLogMsg.type === 'err' ? '#2a0a0a' : '#0a2a0a', color: apmVehicleLogMsg.type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${apmVehicleLogMsg.type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>{apmVehicleLogMsg.text}</div>}
+                          {apmVehicleLogMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '12px', fontSize: '13px', background: apmVehicleLogMsg.type === 'err' ? '#fef2f2' : '#dcfce7', color: apmVehicleLogMsg.type === 'err' ? '#dc2626' : '#16a34a', border: `1px solid ${apmVehicleLogMsg.type === 'err' ? '#fecaca' : '#bbf7d0'}` }}>{apmVehicleLogMsg.text}</div>}
                           <form onSubmit={e => submitApmVehicleLog(e, myVehicle.id)}>
                             <div style={{ ...s.grid3, marginBottom: '12px' }}>
                               <div>
@@ -7025,10 +7105,10 @@ ${estimate.notes ? `
 
               const supers = teamMembers
               const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
-              const logTypeBadgeColor = t => t === 'Oil Change' ? '#f59e0b' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#a78bfa' : '#555'
+              const logTypeBadgeColor = t => t === 'Oil Change' ? '#d97706' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#7c3aed' : '#555'
               return (
                 <>
-                  {vehicleMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: vehicleMsg.type === 'err' ? '#2a0a0a' : '#0a2a0a', color: vehicleMsg.type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${vehicleMsg.type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>{vehicleMsg.text}</div>}
+                  {vehicleMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: vehicleMsg.type === 'err' ? '#fef2f2' : '#dcfce7', color: vehicleMsg.type === 'err' ? '#dc2626' : '#16a34a', border: `1px solid ${vehicleMsg.type === 'err' ? '#fecaca' : '#bbf7d0'}` }}>{vehicleMsg.text}</div>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                     <div>
                       <h2 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: '700', color: '#111827' }}>Fleet</h2>
@@ -7169,8 +7249,8 @@ ${estimate.notes ? `
 
             {activeTab === 'tools' && ['pm', 'apm'].includes(profile?.role) && (() => {
               const CATEGORIES = ['Power Tools', 'Hand Tools', 'Measuring', 'Safety', 'Equipment', 'Other']
-              const STATUS_COLORS = { available: '#4ade80', checked_out: '#f59e0b', repair: '#3b82f6', lost: '#ef4444' }
-              const COND_COLORS = { good: '#4ade80', fair: '#f59e0b', poor: '#ef4444' }
+              const STATUS_COLORS = { available: '#16a34a', checked_out: '#d97706', repair: '#3b82f6', lost: '#ef4444' }
+              const COND_COLORS = { good: '#16a34a', fair: '#d97706', poor: '#ef4444' }
               const supers = teamMembers
               const LOG_TYPE_LABELS = { checkout: 'Checked Out', checkin: 'Checked In', repair: 'Sent for Repair', damage: 'Damage Reported', lost: 'Reported Lost', found: 'Found / Recovered', maintenance: 'Maintenance' }
 
@@ -7186,7 +7266,7 @@ ${estimate.notes ? `
 
               return (
                 <>
-                  {toolMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: toolMsg.type === 'err' ? '#2a0a0a' : '#0a2a0a', color: toolMsg.type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${toolMsg.type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>{toolMsg.text}</div>}
+                  {toolMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: toolMsg.type === 'err' ? '#fef2f2' : '#dcfce7', color: toolMsg.type === 'err' ? '#dc2626' : '#16a34a', border: `1px solid ${toolMsg.type === 'err' ? '#fecaca' : '#bbf7d0'}` }}>{toolMsg.text}</div>}
 
                   {/* Stats row */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '1.5rem' }}>
@@ -7325,7 +7405,7 @@ ${estimate.notes ? `
                                 {logs.length === 0 ? <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No history yet.</p> : logs.map(l => (
                                   <div key={l.id} style={{ padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #d1d5db' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: l.log_type === 'checkout' ? '#d97706' : l.log_type === 'checkin' ? '#16a34a' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #d1d5db' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
                                       <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
                                       {l.assigned_profile?.full_name && <span style={{ fontSize: '12px', color: '#e8590c' }}>{l.assigned_profile.full_name}</span>}
                                       {l.notes && <span style={{ fontSize: '12px', color: '#6b7280' }}>· {l.notes}</span>}
@@ -7347,10 +7427,10 @@ ${estimate.notes ? `
             {activeTab === 'orders' && (() => {
               const STATUS_COLORS = {
                 ordered:   { color: '#a16207', bg: '#2a2200', border: '#4a3a00' },
-                shipped:   { color: '#2563eb', bg: '#0a1a2a', border: '#1a3a5a' },
-                delivered: { color: '#16a34a', bg: '#0a2a0a', border: '#1a4a1a' },
-                installed: { color: '#a78bfa', bg: '#1a0a2a', border: '#3a1a5a' },
-                canceled:  { color: '#dc2626', bg: '#2a0a0a', border: '#5a1a1a' },
+                shipped:   { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+                delivered: { color: '#16a34a', bg: '#dcfce7', border: '#bbf7d0' },
+                installed: { color: '#7c3aed', bg: '#1a0a2a', border: '#3a1a5a' },
+                canceled:  { color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
               }
               const STATUSES = ['ordered', 'shipped', 'delivered', 'installed', 'canceled']
               const CARRIERS = ['UPS', 'FedEx', 'USPS', 'Amazon', 'Other']

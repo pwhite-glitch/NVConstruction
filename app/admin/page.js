@@ -398,13 +398,16 @@ export default function AdminPortal() {
     })
     const { signedUrl, error: urlErr } = await urlRes.json()
     if (urlErr) { alert('Upload error: ' + urlErr); setUploadingW9For(null); setUploadingCoiFor(null); return }
-    await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    const putRes = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    if (!putRes.ok) { alert('Upload failed — could not store file.'); setUploadingW9For(null); setUploadingCoiFor(null); return }
     const field = type === 'w9' ? 'w9_url' : 'coi_url'
-    await fetch('/api/sub-docs', {
+    const { data: { session } } = await supabase.auth.getSession()
+    const saveRes = await fetch('/api/sub-docs', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
       body: JSON.stringify({ directory_id: dirId, [field]: path }),
     })
+    if (!saveRes.ok) { alert('Upload error — file stored but record not saved. Please try again.'); }
     if (type === 'w9') setUploadingW9For(null)
     else setUploadingCoiFor(null)
     await reloadDirectory()

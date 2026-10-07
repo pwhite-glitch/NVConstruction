@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { userId, full_name, phone, role, company_name, company_id } = await request.json()
     if (!userId) return Response.json({ error: 'userId required' }, { status: 400 })
@@ -27,6 +30,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { userId } = await request.json()
     if (!userId) return Response.json({ error: 'userId required' }, { status: 400 })

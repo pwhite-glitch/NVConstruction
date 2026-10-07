@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -7,7 +8,9 @@ const adminSupabase = createClient(
 
 const BUCKETS = ['job-documents', 'documents', 'billing-docs', 'bid-docs', 'receipts', 'schedule-files']
 
-export async function GET() {
+export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const results = []
   for (const bucket of BUCKETS) {
     const { data: info, error: infoErr } = await adminSupabase.storage.getBucket(bucket)

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { keep_company_id, remove_company_id } = await request.json()
   if (!keep_company_id || !remove_company_id) return Response.json({ error: 'keep_company_id and remove_company_id required' }, { status: 400 })
   if (keep_company_id === remove_company_id) return Response.json({ error: 'Cannot merge a company with itself' }, { status: 400 })

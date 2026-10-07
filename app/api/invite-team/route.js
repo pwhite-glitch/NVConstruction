@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -17,6 +18,8 @@ const ROLE_LABELS = {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { email, full_name, role, phone } = await request.json()
   if (!email || !role) {
     return Response.json({ error: 'Email and role are required.' }, { status: 400 })
@@ -139,6 +142,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
   const { user_id, email, full_name, role } = await request.json()
   if (!user_id || !email) return Response.json({ error: 'user_id and email required' }, { status: 400 })
@@ -216,6 +221,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { user_id } = await request.json()
     if (!user_id) return Response.json({ error: 'user_id required' }, { status: 400 })

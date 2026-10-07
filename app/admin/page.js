@@ -82,12 +82,81 @@ const IconBilling  = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconPayment  = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
 const IconUsers    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 const IconLien     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 12 18 15 15"/><line x1="12" y1="12" x2="12" y2="18"/></svg>
+const IconKey      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>
+
+const PERM_ROLES = [
+  { key: 'pm', label: 'PM' },
+  { key: 'apm', label: 'APM' },
+  { key: 'super', label: 'Super' },
+  { key: 'admin', label: 'Admin' },
+  { key: 'subcontractor', label: 'Sub' },
+  { key: 'sub_pm', label: 'Sub PM' },
+  { key: 'sub_admin', label: 'Sub Admin' },
+  { key: 'sub_estimator', label: 'Sub Est' },
+]
+
+const PERM_GROUPS = [
+  { label: 'Dashboard Tabs', features: [
+    { key: 'tab.overview', label: 'Overview', desc: 'Overview / home tab' },
+    { key: 'tab.jobs', label: 'Commercial', desc: 'Commercial jobs list' },
+    { key: 'tab.residential', label: 'Residential', desc: 'Residential jobs list' },
+    { key: 'tab.billing', label: 'Billing', desc: 'Billing submissions tab' },
+    { key: 'tab.orders', label: 'Orders', desc: 'Purchase orders tab' },
+    { key: 'tab.directory', label: 'Companies', desc: 'Sub-vendor directory' },
+    { key: 'tab.nv_team', label: 'NV Team', desc: 'Internal team member list' },
+    { key: 'tab.employees', label: 'Employees', desc: 'Employee management' },
+    { key: 'tab.vehicles', label: 'Fleet', desc: 'Vehicle / fleet management' },
+    { key: 'tab.tools', label: 'Tools', desc: 'Tool inventory' },
+    { key: 'tab.estimator', label: 'Estimator', desc: 'Estimating workspace' },
+    { key: 'tab.bd', label: 'Business Dev', desc: 'Business development pipeline' },
+    { key: 'tab.calendar', label: 'Calendar', desc: 'Project calendar' },
+  ]},
+  { label: 'Job Detail', features: [
+    { key: 'jobdetail.labor', label: 'Labor Tab', desc: 'Labor allocation in job detail' },
+  ]},
+  { label: 'Billing', features: [
+    { key: 'billing.approve', label: 'Approve / Reject', desc: 'Approve or reject billing submissions' },
+    { key: 'billing.mark_paid', label: 'Mark Ready to Pay', desc: 'Mark billing ready for payment processing' },
+    { key: 'billing.delete_submission', label: 'Delete Submissions', desc: 'Permanently delete a billing submission' },
+  ]},
+  { label: 'Direct Costs', features: [
+    { key: 'costs.approve', label: 'Approve Costs', desc: 'Approve submitted direct costs' },
+    { key: 'costs.apm_auto_approve', label: 'Auto-Approve Own Costs', desc: "When on, this role's costs are auto-approved; when off they go to pending" },
+  ]},
+  { label: 'Drawings', features: [
+    { key: 'drawings.upload', label: 'Upload Drawings', desc: 'Upload drawings to a job' },
+    { key: 'drawings.delete', label: 'Delete Drawings', desc: 'Delete uploaded drawings' },
+  ]},
+  { label: 'User Management', features: [
+    { key: 'users.manage_roles', label: 'Manage Roles', desc: 'Change team member roles' },
+    { key: 'users.invite_internal', label: 'Invite Internal Team', desc: 'Invite PMs, APMs, supers, admins' },
+    { key: 'users.invite_subs', label: 'Invite Subcontractors', desc: 'Invite and manage subcontractors' },
+  ]},
+  { label: 'Admin', features: [
+    { key: 'admin.merge_companies', label: 'Merge Companies', desc: 'Merge duplicate company records' },
+    { key: 'admin.apm_bid_access', label: 'APM Bid Access', desc: 'Control APM access to bid packages' },
+    { key: 'admin.permissions', label: 'Edit Permissions', desc: 'View and edit this permissions matrix' },
+  ]},
+  { label: 'Sub Portal Tabs', features: [
+    { key: 'submit.billing_tab', label: 'Submit Billing', desc: 'Billing submission form' },
+    { key: 'submit.contracts_tab', label: 'My Contracts', desc: 'Contract and SOV view' },
+    { key: 'submit.bids_tab', label: 'Bid Invites', desc: 'Bid invitation and submission' },
+    { key: 'submit.docs_tab', label: 'My Documents', desc: 'W-9 and COI upload' },
+    { key: 'submit.rfis_tab', label: 'RFIs', desc: 'Request for information' },
+    { key: 'submit.punch_tab', label: 'Punch List', desc: 'Assigned punch list items' },
+    { key: 'submit.messages_tab', label: 'Messages', desc: 'Direct messages' },
+    { key: 'submit.team_tab', label: 'My Team', desc: 'Company team member management' },
+  ]},
+]
 
 export default function AdminPortal() {
   const router = useRouter()
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('calendar')
+  const [rolePerms, setRolePerms] = useState(null)
+  const [permsLoading, setPermsLoading] = useState(false)
+  const [permsError, setPermsError] = useState(null)
   const [calMonth, setCalMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() })
 
   // Data
@@ -193,7 +262,42 @@ export default function AdminPortal() {
   useEffect(() => {
     if (activeTab === 'costs') loadCosts()
     if (activeTab === 'calendar' || activeTab === 'billing' || activeTab === 'payments') loadBilling()
+    if (activeTab === 'permissions') loadPermissions()
   }, [activeTab])
+
+  async function loadPermissions() {
+    setPermsLoading(true)
+    setPermsError(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/role-permissions', {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      const data = await res.json()
+      if (data.error) { setPermsError(data.error); return }
+      setRolePerms(data.matrix)
+    } catch (e) {
+      setPermsError(e.message)
+    } finally {
+      setPermsLoading(false)
+    }
+  }
+
+  async function togglePermission(role, featureKey, currentEnabled) {
+    const newVal = !currentEnabled
+    setRolePerms(prev => ({ ...prev, [role]: { ...(prev[role] || {}), [featureKey]: newVal } }))
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/role-permissions', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, feature_key: featureKey, enabled: newVal }),
+    })
+    if (!res.ok) {
+      setRolePerms(prev => ({ ...prev, [role]: { ...(prev[role] || {}), [featureKey]: currentEnabled } }))
+      const json = await res.json().catch(() => ({}))
+      setPermsError(json.error || 'Failed to save')
+    }
+  }
 
   async function loadCosts() {
     const { data } = await supabase
@@ -625,12 +729,13 @@ export default function AdminPortal() {
 
   const pendingBillingCount = billing.filter(b => !b.paid_at).length
   const navItems = [
-    { tab: 'calendar',  label: 'Calendar',      icon: <IconCal /> },
-    { tab: 'costs',     label: 'Direct Costs',  icon: <IconCost /> },
-    { tab: 'billing',   label: 'Billing',       icon: <IconBilling />, badge: pendingBillingCount || null },
-    { tab: 'payments',  label: 'Payments',      icon: <IconPayment /> },
-    { tab: 'coi',       label: 'Companies',     icon: <IconUsers /> },
-    { tab: 'liens',     label: 'Lien Waivers',  icon: <IconLien /> },
+    { tab: 'calendar',     label: 'Calendar',      icon: <IconCal /> },
+    { tab: 'costs',        label: 'Direct Costs',  icon: <IconCost /> },
+    { tab: 'billing',      label: 'Billing',       icon: <IconBilling />, badge: pendingBillingCount || null },
+    { tab: 'payments',     label: 'Payments',      icon: <IconPayment /> },
+    { tab: 'coi',          label: 'Companies',     icon: <IconUsers /> },
+    { tab: 'liens',        label: 'Lien Waivers',  icon: <IconLien /> },
+    { tab: 'permissions',  label: 'Permissions',   icon: <IconKey /> },
   ]
 
   return (
@@ -1490,6 +1595,89 @@ export default function AdminPortal() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* ── PERMISSIONS ── */}
+            {activeTab === 'permissions' && (
+              <div>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>Role Permissions</h2>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    Toggle what each role can see and do in the portal. API-level and database security enforce access independently — these settings control interface visibility on top of that layer.
+                  </p>
+                </div>
+                {permsError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
+                    {permsError}
+                  </div>
+                )}
+                {permsLoading ? (
+                  <div style={{ color: '#6b7280', padding: '2rem', textAlign: 'center', fontSize: '14px' }}>Loading permissions…</div>
+                ) : !rolePerms ? (
+                  <div style={{ color: '#6b7280', padding: '2rem', textAlign: 'center', fontSize: '14px' }}>Could not load permissions.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '820px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                          <th style={{ textAlign: 'left', padding: '10px 12px', color: '#374151', fontWeight: '600', width: '220px', position: 'sticky', left: 0, background: '#f9fafb' }}>Feature</th>
+                          {PERM_ROLES.map(r => (
+                            <th key={r.key} style={{ textAlign: 'center', padding: '10px 6px', color: '#374151', fontWeight: '600', width: '78px' }}>
+                              <div style={{ fontSize: '11px' }}>{r.label}</div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {PERM_GROUPS.map(group => (
+                          <>
+                            <tr key={group.label}>
+                              <td colSpan={9} style={{ padding: '10px 12px 4px', fontSize: '10px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
+                                {group.label}
+                              </td>
+                            </tr>
+                            {group.features.map((f, fi) => (
+                              <tr key={f.key} style={{ borderBottom: '1px solid #f3f4f6', background: fi % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                                <td style={{ padding: '8px 12px', position: 'sticky', left: 0, background: fi % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                                  <div style={{ fontWeight: '500', color: '#111827', fontSize: '12px' }}>{f.label}</div>
+                                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '1px' }}>{f.desc}</div>
+                                </td>
+                                {PERM_ROLES.map(r => {
+                                  const enabled = !!(rolePerms[r.key]?.[f.key])
+                                  return (
+                                    <td key={r.key} style={{ textAlign: 'center', padding: '8px 6px' }}>
+                                      <button
+                                        onClick={() => togglePermission(r.key, f.key, enabled)}
+                                        title={`${enabled ? 'Disable' : 'Enable'} ${f.label} for ${r.label}`}
+                                        style={{
+                                          width: '34px', height: '19px',
+                                          background: enabled ? '#16a34a' : '#d1d5db',
+                                          borderRadius: '10px', border: 'none', cursor: 'pointer',
+                                          position: 'relative', transition: 'background 0.15s',
+                                          flexShrink: 0, display: 'inline-block',
+                                        }}
+                                      >
+                                        <span style={{
+                                          position: 'absolute', top: '2px',
+                                          left: enabled ? '17px' : '2px',
+                                          width: '15px', height: '15px',
+                                          background: '#fff', borderRadius: '50%',
+                                          transition: 'left 0.15s', display: 'block',
+                                          boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                        }} />
+                                      </button>
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             )}
 
       </div>

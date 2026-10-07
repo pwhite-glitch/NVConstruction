@@ -163,6 +163,7 @@ const IconResidential = () => <svg width="15" height="15" fill="none" stroke="cu
 export default function Dashboard() {
   const router = useRouter()
   const [profile, setProfile] = useState(null)
+  const [userPerms, setUserPerms] = useState(null)
   const [submissions, setSubmissions] = useState([])
   const [jobs, setJobs] = useState([])
   const [assignments, setAssignments] = useState([])
@@ -442,6 +443,12 @@ export default function Dashboard() {
       const devRole = localStorage.getItem('nvc_dev_role')
       const effectiveProf = (devRole && prof.role === 'pm') ? { ...prof, role: devRole } : prof
       setProfile(effectiveProf)
+      // Load permission flags for this role so navGroups and feature gates use the DB values
+      fetch(`/api/role-permissions?role=${effectiveProf.role}`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      }).then(r => r.json()).then(d => {
+        if (d.features) setUserPerms(new Set(d.features))
+      }).catch(() => {})
       try {
         const stored = localStorage.getItem(`nvc_starred_jobs_${prof.id}`)
         if (stored) setStarredJobIds(new Set(JSON.parse(stored)))
@@ -1219,7 +1226,7 @@ export default function Dashboard() {
     if (!editingSubUser) return
     setSubUserActionLoading(editingSubUser.id)
     const { id, full_name, phone, role, company_name, company_id } = editingSubUser
-    const res = await fetch('/api/manage-sub-user', {
+    const res = await authFetch('/api/manage-sub-user', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: id, full_name, phone, role, company_name, company_id }),
@@ -1234,7 +1241,7 @@ export default function Dashboard() {
   async function revokeSubUser(userId, email, companyName) {
     if (!confirm(`Remove ${email} from ${companyName}?\n\nThey will immediately lose portal access and any pending invite links will be invalidated.`)) return
     setSubUserActionLoading(userId)
-    const res = await fetch('/api/manage-sub-user', {
+    const res = await authFetch('/api/manage-sub-user', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }),
@@ -1262,7 +1269,7 @@ export default function Dashboard() {
       })).sort((a, b) => b._score - a._score)
       const [primary, ...dups] = scored
       for (const dup of dups) {
-        await fetch('/api/merge-sub-directory', {
+        await authFetch('/api/merge-sub-directory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ primaryId: primary.id, duplicateId: dup.id }),
@@ -1417,7 +1424,7 @@ export default function Dashboard() {
     if (!teamInviteForm.email) return
     setTeamInviting(true)
     setTeamInviteMsg(null)
-    const res = await fetch('/api/invite-team', {
+    const res = await authFetch('/api/invite-team', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(teamInviteForm),
@@ -1458,7 +1465,7 @@ export default function Dashboard() {
 
   async function deleteTeamMember(member) {
     if (!window.confirm(`Remove ${member.full_name || member.email} from the team? This cannot be undone.`)) return
-    const res = await fetch('/api/invite-team', {
+    const res = await authFetch('/api/invite-team', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id: member.id }),
@@ -1482,7 +1489,7 @@ export default function Dashboard() {
 
       const originalMember = teamMembers.find(m => m.id === editingTeamId)
       if (editTeamForm.email && editTeamForm.email !== originalMember?.email) {
-        const res = await fetch('/api/invite-team', {
+        const res = await authFetch('/api/invite-team', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2997,6 +3004,10 @@ ${estimate.notes ? `
   const billingBadge = pending.length || null
   const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
 
+  // p() checks the permissions table when loaded, falls back to role-based defaults while loading
+  const p = userPerms
+  const can = (key, fallback) => p ? p.has(key) : fallback
+
   const navGroups = [
     {
       items: [
@@ -3020,27 +3031,27 @@ ${estimate.notes ? `
     {
       label: 'People',
       items: [
-        { tab: 'directory',   label: 'Companies', icon: <IconUsers />,    badge: dirBadge },
-        ...(profile?.role === 'pm' ? [{ tab: 'nv-directory', label: 'NV Team',    icon: <IconBuilding /> }] : []),
-        ...(profile?.role === 'pm' ? [{ tab: 'employees',    label: 'Employees',  icon: <IconUsers /> }]    : []),
+        { tab: 'directory', label: 'Companies', icon: <IconUsers />, badge: dirBadge },
+        ...(can('tab.nv_team',   profile?.role === 'pm')  ? [{ tab: 'nv-directory', label: 'NV Team',   icon: <IconBuilding /> }] : []),
+        ...(can('tab.employees', profile?.role === 'pm')  ? [{ tab: 'employees',    label: 'Employees', icon: <IconUsers /> }]    : []),
       ]
     },
-    ...(['pm', 'apm'].includes(profile?.role) ? [{
+    ...(can('tab.vehicles', ['pm', 'apm'].includes(profile?.role)) ? [{
       label: 'Equipment',
       items: [
         { tab: 'vehicles', label: profile?.role === 'apm' ? 'My Vehicle' : 'Fleet', icon: <IconTruck /> },
-        { tab: 'tools',    label: 'Tools', icon: <IconWrench /> },
+        ...(can('tab.tools', ['pm', 'apm'].includes(profile?.role)) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
       ]
     }] : []),
     {
       label: 'Business',
       items: [
-        { tab: 'estimator', label: 'Estimator', icon: <IconCalc /> },
-        ...(profile?.role === 'pm' ? [{ tab: 'bd',       label: 'Business Dev', icon: <IconTrend /> }] : []),
-        { tab: 'calendar', label: 'Calendar', icon: <IconCal /> },
+        ...(can('tab.estimator', true) ? [{ tab: 'estimator', label: 'Estimator', icon: <IconCalc /> }] : []),
+        ...(can('tab.bd',        profile?.role === 'pm') ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
+        ...(can('tab.calendar',  true) ? [{ tab: 'calendar', label: 'Calendar', icon: <IconCal /> }] : []),
       ]
     },
-  ]
+  ].filter(g => !g.items || g.items.length > 0)
   const navItems = navGroups.flatMap(g => g.items)
 
   return (
@@ -4072,7 +4083,7 @@ ${estimate.notes ? `
                 setMergeResult(null)
                 const keepId = mergeKeep === 'a' ? mergePersonA.company_id : mergePersonB.company_id
                 const removeId = mergeKeep === 'a' ? mergePersonB.company_id : mergePersonA.company_id
-                const res = await fetch('/api/merge-companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keep_company_id: keepId, remove_company_id: removeId }) })
+                const res = await authFetch('/api/merge-companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keep_company_id: keepId, remove_company_id: removeId }) })
                 const data = await res.json()
                 setMergingCompanies(false)
                 if (data.error) { setMergeResult({ error: data.error }); return }

@@ -1747,8 +1747,8 @@ export default function Dashboard() {
     })
     const activeJobs = (jobs || []).filter(j => j.status === 'active')
     const showConstruction = !!enabledStages['under_construction']
-    const constructionGCTotal = showConstruction ? activeJobs.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0) : 0
-    const constructionSubTotal = showConstruction ? activeJobs.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0) : 0
+    const constructionGCTotal = showConstruction ? activeJobs.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0) : 0
+    const constructionSubTotal = showConstruction ? activeJobs.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0) : 0
     const constructionTotal = constructionGCTotal + constructionSubTotal
     const grandTotal = rows.reduce((a, r) => a + r._total, 0) + constructionTotal
 
@@ -1882,7 +1882,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
           <td style="font-size:12px;color:#555">${j.owner_name || '—'}</td>
           <td>${roleLabel}</td>
           <td style="font-size:12px;color:#888">${j.location || '—'}</td>
-          <td class="right" style="font-weight:700;font-size:13px;color:${isSub ? '#1d4ed8' : '#111'}">${j.contract_value ? fmtFull(parseFloat(j.contract_value)) : '<span style="color:#ccc;font-weight:400">— not set</span>'}</td>
+          <td class="right" style="font-weight:700;font-size:13px;color:${isSub ? '#1d4ed8' : '#111'}">${(j.adjusted_contract_value || j.contract_value) ? fmtFull(parseFloat(j.adjusted_contract_value || j.contract_value)) : '<span style="color:#ccc;font-weight:400">— not set</span>'}</td>
         </tr>`}).join('')}
         <tr class="total-row">
           <td colspan="5">Stage Total — Under Construction${constructionSubTotal > 0 ? ` (GC: ${fmtFull(constructionGCTotal)} · Sub: ${fmtFull(constructionSubTotal)})` : ''}</td>
@@ -4486,8 +4486,8 @@ ${estimate.notes ? `
 
                 {!showCompletedJobs && !showStarredJobs && (() => {
                   const activeCommercial = jobs.filter(j => j.job_type !== 'residential' && j.status !== 'complete')
-                  const gcTotal = activeCommercial.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0)
-                  const subTotal = activeCommercial.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.contract_value) || 0), 0)
+                  const gcTotal = activeCommercial.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
+                  const subTotal = activeCommercial.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const activeContractTotal = gcTotal + subTotal
                   if (activeContractTotal === 0) return null
                   return (
@@ -4505,7 +4505,7 @@ ${estimate.notes ? `
                         <div style={{ fontSize: '14px', fontWeight: '700', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(subTotal)}</div>
                       </div>}
                       <div style={{ marginLeft: 'auto' }}>
-                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Active Jobs</div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>In Progress</div>
                         <div style={{ fontSize: '14px', fontWeight: '700', color: '#6b7280' }}>{activeCommercial.length}</div>
                       </div>
                     </div>
@@ -4521,7 +4521,7 @@ ${estimate.notes ? `
                   if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
                   return visibleJobs.map(j => {
                     const billed = billedByJob[j.id] || 0
-                    const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                    const contract = parseFloat(j.adjusted_contract_value || j.contract_value || 0)
                     const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
                     const over = pct > 100
                     const isStarred = starredJobIds.has(j.id)
@@ -5701,8 +5701,8 @@ ${estimate.notes ? `
               const activeJobs = (jobs || []).filter(j => j.status === 'active')
               const pipelineVal = pipeline.reduce((a, e) => a + calcTotal(e), 0)
               const wonVal = won.reduce((a, e) => a + calcTotal(e), 0)
-              const completedVal = completedJobs.reduce((a, j) => a + Number(j.contract_value || 0), 0)
-              const activeVal = activeJobs.reduce((a, j) => a + Number(j.contract_value || 0), 0)
+              const completedVal = completedJobs.reduce((a, j) => a + Number(j.adjusted_contract_value || j.contract_value || 0), 0)
+              const activeVal = activeJobs.reduce((a, j) => a + Number(j.adjusted_contract_value || j.contract_value || 0), 0)
               const closed = won.length + lost.length
               const winRate = closed > 0 ? Math.round(won.length / closed * 100) : 0
               const withSqft = estimates.filter(e => e.square_footage > 0)
@@ -6444,8 +6444,8 @@ ${estimate.notes ? `
               // Unified items
               const oppItems   = yearOpps.map(o => ({ ...o, _type: 'opp',  _stage: o.stage }))
               const bidItems   = yearBids.map(b => ({ ...b, _type: 'bid',  _stage: b.status === 'won' ? 'won' : b.status === 'lost' ? 'lost' : 'bidding',  project_name: b.jobs?.project_name || b.title, _sub: b.jobs ? `Job #${b.jobs.job_number}` : 'No job linked', _val: null }))
-              const activeItems= activeJobs.map(j => ({ ...j, _type: 'job', _stage: 'active',   project_name: j.project_name, _sub: `Job #${j.job_number}`, _val: j.contract_value }))
-              const completeItems=completeJobs.map(j => ({ ...j, _type: 'job', _stage: 'complete', project_name: j.project_name, _sub: `Job #${j.job_number}`, _val: j.contract_value }))
+              const activeItems= activeJobs.map(j => ({ ...j, _type: 'job', _stage: 'active',   project_name: j.project_name, _sub: `Job #${j.job_number}`, _val: j.adjusted_contract_value || j.contract_value }))
+              const completeItems=completeJobs.map(j => ({ ...j, _type: 'job', _stage: 'complete', project_name: j.project_name, _sub: `Job #${j.job_number}`, _val: j.adjusted_contract_value || j.contract_value }))
               const allItems = [...oppItems, ...bidItems, ...activeItems, ...completeItems]
 
               const filtered = bdFilterStage === 'all' ? allItems
@@ -6463,8 +6463,8 @@ ${estimate.notes ? `
               const totalWon  = wonOpps.length  + wonBids.length
               const totalLost = lostOpps.length + lostBids.length
               const winRate  = (totalWon + totalLost) > 0 ? Math.round((totalWon / (totalWon + totalLost)) * 100) : 0
-              const activeRev  = activeJobs.reduce((s, j) => s + (parseFloat(j.contract_value) || 0), 0)
-              const completeRev= completeJobs.reduce((s, j) => s + (parseFloat(j.contract_value) || 0), 0)
+              const activeRev  = activeJobs.reduce((s, j) => s + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
+              const completeRev= completeJobs.reduce((s, j) => s + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
               const totalRev   = activeRev + completeRev
               const wonBdVal   = wonOpps.reduce((s, o) => s + (parseFloat(o.contract_value) || parseFloat(o.bid_amount) || 0), 0)
 

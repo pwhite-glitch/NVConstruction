@@ -2235,7 +2235,7 @@ export default function Submit() {
               )}
               {sortedDates.map(date => {
                 const acts = grouped[date]
-                const dateLabel = new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
+                const dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
                 return (
                   <div key={date} style={s.card}>
                     <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '12px', borderBottom: '1px solid #f3f4f6', paddingBottom: '8px' }}>{dateLabel}</div>

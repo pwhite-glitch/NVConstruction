@@ -52,11 +52,12 @@ export async function GET(request) {
   return Response.json({ matrix })
 }
 
-// PATCH /api/role-permissions — update a single cell
+// PATCH /api/role-permissions — update a single cell (pm role only, not apm/super/admin)
 // Body: { role, feature_key, enabled }
 export async function PATCH(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  if (auth.role !== 'pm') return Response.json({ error: 'Only Project Managers can edit permissions.' }, { status: 403 })
 
   const { role, feature_key, enabled } = await request.json()
   if (!role || !feature_key || typeof enabled !== 'boolean') {

@@ -1603,7 +1603,7 @@ export default function AdminPortal() {
                 <div style={{ marginBottom: '1.5rem' }}>
                   <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>Role Permissions</h2>
                   <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#6b7280' }}>
-                    Toggle what each role can see and do in the portal. API-level and database security enforce access independently — these settings control interface visibility on top of that layer.
+                    Current permission settings — read only. Project Managers can edit these from their dashboard.
                   </p>
                 </div>
                 {permsError && (
@@ -1646,26 +1646,21 @@ export default function AdminPortal() {
                                   const enabled = !!(rolePerms[r.key]?.[f.key])
                                   return (
                                     <td key={r.key} style={{ textAlign: 'center', padding: '8px 6px' }}>
-                                      <button
-                                        onClick={() => togglePermission(r.key, f.key, enabled)}
-                                        title={`${enabled ? 'Disable' : 'Enable'} ${f.label} for ${r.label}`}
-                                        style={{
-                                          width: '34px', height: '19px',
-                                          background: enabled ? '#16a34a' : '#d1d5db',
-                                          borderRadius: '10px', border: 'none', cursor: 'pointer',
-                                          position: 'relative', transition: 'background 0.15s',
-                                          flexShrink: 0, display: 'inline-block',
-                                        }}
-                                      >
+                                      <div style={{
+                                        width: '34px', height: '19px', margin: '0 auto',
+                                        background: enabled ? '#bbf7d0' : '#f3f4f6',
+                                        borderRadius: '10px', border: `1px solid ${enabled ? '#86efac' : '#e5e7eb'}`,
+                                        position: 'relative', display: 'inline-block',
+                                        cursor: 'default',
+                                      }}>
                                         <span style={{
                                           position: 'absolute', top: '2px',
-                                          left: enabled ? '17px' : '2px',
-                                          width: '15px', height: '15px',
-                                          background: '#fff', borderRadius: '50%',
-                                          transition: 'left 0.15s', display: 'block',
-                                          boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                          left: enabled ? '15px' : '2px',
+                                          width: '13px', height: '13px',
+                                          background: enabled ? '#16a34a' : '#d1d5db',
+                                          borderRadius: '50%', display: 'block',
                                         }} />
-                                      </button>
+                                      </div>
                                     </td>
                                   )
                                 })}

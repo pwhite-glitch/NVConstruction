@@ -157,6 +157,66 @@ const IconCal      = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconTruck    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
 const IconWrench   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
 const IconLogout   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+const IconKey      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>
+
+const PERM_ROLES = [
+  { key: 'pm', label: 'PM' }, { key: 'apm', label: 'APM' }, { key: 'super', label: 'Super' },
+  { key: 'admin', label: 'Admin' }, { key: 'subcontractor', label: 'Sub' },
+  { key: 'sub_pm', label: 'Sub PM' }, { key: 'sub_admin', label: 'Sub Admin' }, { key: 'sub_estimator', label: 'Sub Est' },
+]
+const PERM_GROUPS = [
+  { label: 'Dashboard Tabs', features: [
+    { key: 'tab.overview', label: 'Overview', desc: 'Home / overview tab' },
+    { key: 'tab.jobs', label: 'Commercial', desc: 'Commercial jobs list' },
+    { key: 'tab.residential', label: 'Residential', desc: 'Residential jobs list' },
+    { key: 'tab.billing', label: 'Billing', desc: 'Billing submissions tab' },
+    { key: 'tab.orders', label: 'Orders', desc: 'Purchase orders tab' },
+    { key: 'tab.directory', label: 'Companies', desc: 'Sub-vendor directory' },
+    { key: 'tab.nv_team', label: 'NV Team', desc: 'Internal team member list' },
+    { key: 'tab.employees', label: 'Employees', desc: 'Employee management' },
+    { key: 'tab.vehicles', label: 'Fleet', desc: 'Vehicle / fleet management' },
+    { key: 'tab.tools', label: 'Tools', desc: 'Tool inventory' },
+    { key: 'tab.estimator', label: 'Estimator', desc: 'Estimating workspace' },
+    { key: 'tab.bd', label: 'Business Dev', desc: 'Business development pipeline' },
+    { key: 'tab.calendar', label: 'Calendar', desc: 'Project calendar' },
+  ]},
+  { label: 'Job Detail', features: [
+    { key: 'jobdetail.labor', label: 'Labor Tab', desc: 'Labor allocation in job detail' },
+  ]},
+  { label: 'Billing', features: [
+    { key: 'billing.approve', label: 'Approve / Reject', desc: 'Approve or reject billing submissions' },
+    { key: 'billing.mark_paid', label: 'Mark Ready to Pay', desc: 'Mark billing ready for payment processing' },
+    { key: 'billing.delete_submission', label: 'Delete Submissions', desc: 'Permanently delete a billing submission' },
+  ]},
+  { label: 'Direct Costs', features: [
+    { key: 'costs.approve', label: 'Approve Costs', desc: 'Approve submitted direct costs' },
+    { key: 'costs.apm_auto_approve', label: 'Auto-Approve Own Costs', desc: "When on, this role's costs are auto-approved; when off they go to pending" },
+  ]},
+  { label: 'Drawings', features: [
+    { key: 'drawings.upload', label: 'Upload Drawings', desc: 'Upload drawings to a job' },
+    { key: 'drawings.delete', label: 'Delete Drawings', desc: 'Delete uploaded drawings' },
+  ]},
+  { label: 'User Management', features: [
+    { key: 'users.manage_roles', label: 'Manage Roles', desc: 'Change team member roles' },
+    { key: 'users.invite_internal', label: 'Invite Internal Team', desc: 'Invite PMs, APMs, supers, admins' },
+    { key: 'users.invite_subs', label: 'Invite Subcontractors', desc: 'Invite and manage subcontractors' },
+  ]},
+  { label: 'Admin', features: [
+    { key: 'admin.merge_companies', label: 'Merge Companies', desc: 'Merge duplicate company records' },
+    { key: 'admin.apm_bid_access', label: 'APM Bid Access', desc: 'Control APM access to bid packages' },
+    { key: 'admin.permissions', label: 'Edit Permissions', desc: 'Access this permissions editor' },
+  ]},
+  { label: 'Sub Portal Tabs', features: [
+    { key: 'submit.billing_tab', label: 'Submit Billing', desc: 'Billing submission form' },
+    { key: 'submit.contracts_tab', label: 'My Contracts', desc: 'Contract and SOV view' },
+    { key: 'submit.bids_tab', label: 'Bid Invites', desc: 'Bid invitation and submission' },
+    { key: 'submit.docs_tab', label: 'My Documents', desc: 'W-9 and COI upload' },
+    { key: 'submit.rfis_tab', label: 'RFIs', desc: 'Request for information' },
+    { key: 'submit.punch_tab', label: 'Punch List', desc: 'Assigned punch list items' },
+    { key: 'submit.messages_tab', label: 'Messages', desc: 'Direct messages' },
+    { key: 'submit.team_tab', label: 'My Team', desc: 'Company team member management' },
+  ]},
+]
 const IconBox      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
 const IconResidential = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10.5z"/><path d="M9 22V14h6v8"/><path d="M15 3v3"/></svg>
 
@@ -164,6 +224,8 @@ export default function Dashboard() {
   const router = useRouter()
   const [profile, setProfile] = useState(null)
   const [userPerms, setUserPerms] = useState(null)
+  const [rolePerms, setRolePerms] = useState(null)
+  const [permsLoading, setPermsLoading] = useState(false)
   const [submissions, setSubmissions] = useState([])
   const [jobs, setJobs] = useState([])
   const [assignments, setAssignments] = useState([])
@@ -490,7 +552,31 @@ export default function Dashboard() {
     if (activeTab === 'tools' && !toolsLoaded) loadTools()
     if (activeTab === 'directory') loadDirRatings()
     if (activeTab === 'orders' && !ordersLoaded) loadOrders()
+    if (activeTab === 'permissions') loadAllPermissions()
   }, [activeTab])
+
+  async function loadAllPermissions() {
+    setPermsLoading(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/role-permissions', { headers: { Authorization: `Bearer ${session?.access_token}` } })
+    const data = await res.json()
+    if (data.matrix) setRolePerms(data.matrix)
+    setPermsLoading(false)
+  }
+
+  async function togglePermission(role, featureKey, currentEnabled) {
+    const newVal = !currentEnabled
+    setRolePerms(prev => ({ ...prev, [role]: { ...(prev?.[role] || {}), [featureKey]: newVal } }))
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/role-permissions', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, feature_key: featureKey, enabled: newVal }),
+    })
+    if (!res.ok) {
+      setRolePerms(prev => ({ ...prev, [role]: { ...(prev?.[role] || {}), [featureKey]: currentEnabled } }))
+    }
+  }
 
   async function loadDirRatings() {
     const { data } = await supabase.from('sub_ratings').select('sub_id, quality, timeliness, communication, profiles!sub_ratings_sub_id_fkey(email, company_name), jobs(job_number, project_name)')
@@ -3051,6 +3137,9 @@ ${estimate.notes ? `
         ...(can('tab.calendar',  true) ? [{ tab: 'calendar', label: 'Calendar', icon: <IconCal /> }] : []),
       ]
     },
+    ...(profile?.role === 'pm' ? [{
+      items: [{ tab: 'permissions', label: 'Permissions', icon: <IconKey /> }]
+    }] : []),
   ].filter(g => !g.items || g.items.length > 0)
   const navItems = navGroups.flatMap(g => g.items)
 
@@ -7685,6 +7774,81 @@ ${estimate.notes ? `
                 </>
               )
             })()}
+
+            {activeTab === 'permissions' && profile?.role === 'pm' && (
+              <div>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h2 style={s.sectionTitle}>Role Permissions</h2>
+                  <p style={{ fontSize: '13px', color: '#6b7280', margin: '4px 0 0' }}>
+                    Toggle what each role can see and do. Database security enforces access independently — these control what people see in the interface.
+                  </p>
+                </div>
+                {permsLoading ? (
+                  <div style={{ color: '#6b7280', padding: '2rem', textAlign: 'center', fontSize: '14px' }}>Loading permissions…</div>
+                ) : !rolePerms ? (
+                  <div style={{ color: '#6b7280', padding: '2rem', textAlign: 'center', fontSize: '14px' }}>Click the tab to load permissions.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: '820px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                          <th style={{ textAlign: 'left', padding: '10px 12px', color: '#374151', fontWeight: '600', width: '220px', position: 'sticky', left: 0, background: '#f9fafb' }}>Feature</th>
+                          {PERM_ROLES.map(r => (
+                            <th key={r.key} style={{ textAlign: 'center', padding: '10px 6px', color: '#374151', fontWeight: '600', width: '78px', fontSize: '11px' }}>{r.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {PERM_GROUPS.map(group => (
+                          <>
+                            <tr key={group.label}>
+                              <td colSpan={9} style={{ padding: '10px 12px 4px', fontSize: '10px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
+                                {group.label}
+                              </td>
+                            </tr>
+                            {group.features.map((f, fi) => (
+                              <tr key={f.key} style={{ borderBottom: '1px solid #f3f4f6', background: fi % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                                <td style={{ padding: '8px 12px', position: 'sticky', left: 0, background: fi % 2 === 0 ? '#ffffff' : '#fafafa' }}>
+                                  <div style={{ fontWeight: '500', color: '#111827', fontSize: '12px' }}>{f.label}</div>
+                                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '1px' }}>{f.desc}</div>
+                                </td>
+                                {PERM_ROLES.map(r => {
+                                  const enabled = !!(rolePerms[r.key]?.[f.key])
+                                  return (
+                                    <td key={r.key} style={{ textAlign: 'center', padding: '8px 6px' }}>
+                                      <button
+                                        onClick={() => togglePermission(r.key, f.key, enabled)}
+                                        title={`${enabled ? 'Disable' : 'Enable'} ${f.label} for ${r.label}`}
+                                        style={{
+                                          width: '34px', height: '19px',
+                                          background: enabled ? '#16a34a' : '#d1d5db',
+                                          borderRadius: '10px', border: 'none', cursor: 'pointer',
+                                          position: 'relative', transition: 'background 0.15s',
+                                          display: 'inline-block',
+                                        }}
+                                      >
+                                        <span style={{
+                                          position: 'absolute', top: '2px',
+                                          left: enabled ? '17px' : '2px',
+                                          width: '15px', height: '15px',
+                                          background: '#fff', borderRadius: '50%',
+                                          transition: 'left 0.15s', display: 'block',
+                                          boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
+                                        }} />
+                                      </button>
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
       </main>
     </div>

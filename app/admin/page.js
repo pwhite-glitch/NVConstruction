@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
@@ -9,33 +9,71 @@ const DOW_LABELS = { 0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 
 const TRADES = ['Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing', 'Roofing', 'Drywall', 'Painting', 'Flooring', 'Doors & Windows', 'Mechanical / HVAC', 'Electrical', 'Plumbing', 'Fire Protection', 'Site Work / Grading', 'Landscaping', 'Insulation', 'Waterproofing', 'Signage', 'Cleaning', 'Other']
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex' },
-  sidebar: { width: '220px', flexShrink: 0, background: '#0d0d0d', borderRight: '1px solid #1a1a1a', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid #1a1a1a' },
-  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px' },
-  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#f1f1f1', letterSpacing: '0.5px', margin: '0 0 2px' },
-  sidebarRole: { fontSize: '10px', color: '#333', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
-  sidebarUser: { fontSize: '12px', color: '#3a3a3a', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', margin: '12px 0 0' },
+  // ── Layout ──
+  page: { minHeight: '100vh', background: '#f4f6f8', display: 'flex' },
+
+  // ── Sidebar — dark charcoal ──
+  sidebar: { width: '220px', flexShrink: 0, background: '#1a2332', borderRight: '1px solid rgba(0,0,0,0.2)', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  sidebarTop: { padding: '1.25rem 1rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' },
+  sidebarLogo: { width: '28px', height: '28px', objectFit: 'contain', display: 'block', marginBottom: '8px', filter: 'brightness(0) invert(1)' },
+  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#fff', letterSpacing: '0.5px', margin: '0 0 1px' },
+  sidebarRole: { fontSize: '10px', color: '#64748b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 },
+  sidebarUser: { fontSize: '12px', color: '#94a3b8', margin: '8px 0 0' },
   sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
-  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(232,89,12,0.08)' : 'transparent', color: active ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: active ? '600' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 #e8590c' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
-  navBadge: { background: '#e8590c', color: 'white', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
-  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' },
-  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'transparent', border: '1px solid #222', borderRadius: '8px', color: '#444', cursor: 'pointer', fontSize: '12px' },
+  navItem: (active) => ({
+    display: 'flex', alignItems: 'center', gap: '9px',
+    padding: active ? '9px 1rem 9px calc(1rem - 3px)' : '9px 1rem',
+    cursor: 'pointer',
+    background: active ? 'rgba(232,89,12,0.14)' : 'transparent',
+    color: active ? '#e8590c' : 'rgba(255,255,255,0.58)',
+    fontSize: '13px', fontWeight: active ? '600' : '400',
+    border: 'none',
+    borderLeft: active ? '3px solid #e8590c' : '3px solid transparent',
+    width: '100%', textAlign: 'left', outline: 'none',
+  }),
+  navBadge: { background: '#e8590c', color: '#fff', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 6px', marginLeft: 'auto', flexShrink: 0 },
+  sidebarBottom: { padding: '0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.06)' },
+  sidebarSignOut: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#64748b', cursor: 'pointer', fontSize: '12px', textAlign: 'left' },
+
+  // ── Content ──
   content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
-  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
-  input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
+
+  // ── Forms ──
+  label: { display: 'block', fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '5px' },
+  input: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
-  btn: { padding: '11px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnGray: { padding: '11px 24px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSm: (c) => ({ padding: '6px 14px', background: c === 'red' ? '#2a0a0a' : c === 'green' ? '#0a1a0a' : c === 'orange' ? '#2a1200' : c === 'blue' ? '#0a1a2a' : '#1a1a1a', color: c === 'red' ? '#ff6b6b' : c === 'green' ? '#4ade80' : c === 'orange' ? '#e8590c' : c === 'blue' ? '#60a5fa' : '#888', border: `1px solid ${c === 'red' ? '#5a1a1a' : c === 'green' ? '#1a4a1a' : c === 'orange' ? '#4a2200' : c === 'blue' ? '#1a3a5a' : '#2a2a2a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
+
+  // ── Buttons ──
+  btn: { padding: '9px 20px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  btnGray: { padding: '9px 20px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' },
+  btnSm: (c) => ({
+    padding: '5px 12px',
+    background: c === 'red' ? '#fef2f2' : c === 'green' ? '#f0fdf4' : c === 'orange' ? '#fff7ed' : c === 'blue' ? '#eff6ff' : '#f9fafb',
+    color: c === 'red' ? '#dc2626' : c === 'green' ? '#16a34a' : c === 'orange' ? '#c2410c' : c === 'blue' ? '#1d4ed8' : '#374151',
+    border: `1px solid ${c === 'red' ? '#fecaca' : c === 'green' ? '#bbf7d0' : c === 'orange' ? '#fdba74' : c === 'blue' ? '#bfdbfe' : '#e5e7eb'}`,
+    borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+  }),
+
+  // ── Filters ──
   filterRow: { display: 'flex', gap: '10px', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center' },
-  filterSelect: { padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#888' },
-  th: { textAlign: 'left', padding: '10px 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e' },
-  td: { padding: '12px', fontSize: '13px', color: '#ccc', borderBottom: '1px solid #1a1a1a', verticalAlign: 'middle' },
-  badge: (s) => ({ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', background: s === 'approved' || s === 'paid' ? '#0a2a0a' : s === 'rejected' ? '#2a0a0a' : s === 'expired' ? '#2a0a0a' : s === 'warning' ? '#2a1a00' : '#1a1a1a', color: s === 'approved' || s === 'paid' ? '#4ade80' : s === 'rejected' ? '#ff6b6b' : s === 'expired' ? '#ff6b6b' : s === 'warning' ? '#e8590c' : '#888', border: `1px solid ${s === 'approved' || s === 'paid' ? '#1a4a1a' : s === 'rejected' ? '#5a1a1a' : s === 'expired' ? '#5a1a1a' : s === 'warning' ? '#4a2a00' : '#2a2a2a'}` }),
-  formBox: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' },
-  emptyMsg: { textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' },
+  filterSelect: { padding: '8px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', color: '#374151', outline: 'none' },
+
+  // ── Tables ──
+  th: { textAlign: 'left', padding: '9px 12px', fontSize: '11px', fontWeight: '600', color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' },
+  td: { padding: '11px 12px', fontSize: '13px', color: '#111827', borderBottom: '1px solid #f3f4f6', verticalAlign: 'middle' },
+
+  // ── Status badges ──
+  badge: (st) => ({
+    padding: '2px 9px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase',
+    background: (st === 'approved' || st === 'paid') ? '#dcfce7' : (st === 'rejected' || st === 'expired') ? '#fee2e2' : st === 'warning' ? '#fff7ed' : '#f9fafb',
+    color: (st === 'approved' || st === 'paid') ? '#15803d' : (st === 'rejected' || st === 'expired') ? '#dc2626' : st === 'warning' ? '#c2410c' : '#6b7280',
+    border: `1px solid ${(st === 'approved' || st === 'paid') ? '#bbf7d0' : (st === 'rejected' || st === 'expired') ? '#fecaca' : st === 'warning' ? '#fed7aa' : '#e5e7eb'}`
+  }),
+
+  // ── Form containers ──
+  formBox: { background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' },
+  emptyMsg: { textAlign: 'center', color: '#9ca3af', fontSize: '14px', padding: '3rem 0' },
 }
 
 const IconCal      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -583,7 +621,7 @@ export default function AdminPortal() {
 
   const lienList = billing.filter(b => b.status === 'approved' && (!filterLienJob || b.job_id === filterLienJob))
 
-  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#f1f1f1' }}>Loading...</div>
+  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', color: '#111827' }}>Loading...</div>
 
   const pendingBillingCount = billing.filter(b => !b.paid_at).length
   const navItems = [
@@ -687,8 +725,8 @@ export default function AdminPortal() {
           return (
             <div>
               <div style={{ marginBottom: '1.5rem' }}>
-                <p style={{ margin: '0 0 2px', fontSize: '20px', fontWeight: '700', color: '#f1f1f1' }}>{monthNames[month]} {year}</p>
-                <p style={{ margin: 0, fontSize: '12px', color: '#444' }}>{jobs.length} jobs tracked</p>
+                <p style={{ margin: '0 0 2px', fontSize: '20px', fontWeight: '700', color: '#111827' }}>{monthNames[month]} {year}</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{jobs.length} jobs tracked</p>
               </div>
 
               {/* Stats row */}
@@ -698,10 +736,10 @@ export default function AdminPortal() {
                   { label: 'Paid this month', value: `$${monthPaid.reduce((a, b) => a + Number(b.payment_amount || b.amount_billed || 0), 0).toLocaleString()}`, count: monthPaid.length, accent: '#4ade80' },
                   { label: 'Unpaid approved', value: `${billing.filter(b => !b.paid_at).length}`, count: null, accent: billing.filter(b => !b.paid_at).length > 0 ? '#e8590c' : '#555' },
                 ].map(stat => (
-                  <div key={stat.label} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
-                    <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase' }}>{stat.label}</p>
+                  <div key={stat.label} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                    <p style={{ margin: '0 0 6px', fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>{stat.label}</p>
                     <p style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: stat.accent }}>{stat.value}</p>
-                    {stat.count !== null && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#555' }}>{stat.count} submission{stat.count !== 1 ? 's' : ''}</p>}
+                    {stat.count !== null && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>{stat.count} submission{stat.count !== 1 ? 's' : ''}</p>}
                   </div>
                 ))}
               </div>
@@ -709,21 +747,21 @@ export default function AdminPortal() {
               {/* Nav + legend */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#1a3a5a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Billing submitted</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0a2a0a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Payment made</span></div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#3a1a00' }} /><span style={{ fontSize: '11px', color: '#666' }}>COI expiration</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#bfdbfe' }} /><span style={{ fontSize: '11px', color: '#4b5563' }}>Billing submitted</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#dcfce7' }} /><span style={{ fontSize: '11px', color: '#4b5563' }}>Payment made</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#3a1a00' }} /><span style={{ fontSize: '11px', color: '#4b5563' }}>COI expiration</span></div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
+                  <button style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #222', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
+                  <button style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #222', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
+                  <button style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #222', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
                 </div>
               </div>
 
-              <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #1e1e1e' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #e5e7eb' }}>
                   {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                    <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', padding: '10px 0', textTransform: 'uppercase' }}>{d}</div>
+                    <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', padding: '10px 0', textTransform: 'uppercase' }}>{d}</div>
                   ))}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
@@ -736,22 +774,22 @@ export default function AdminPortal() {
                     const row = Math.floor(i / 7)
                     const totalRows = cells.length / 7
                     return (
-                      <div key={i} style={{ minHeight: '88px', padding: '6px', borderRight: col < 6 ? '1px solid #1a1a1a' : 'none', borderBottom: row < totalRows - 1 ? '1px solid #1a1a1a' : 'none', background: isToday ? 'rgba(232,89,12,0.04)' : 'transparent' }}>
+                      <div key={i} style={{ minHeight: '88px', padding: '6px', borderRight: col < 6 ? '1px solid #f0f0f0' : 'none', borderBottom: row < totalRows - 1 ? '1px solid #f0f0f0' : 'none', background: isToday ? 'rgba(232,89,12,0.04)' : 'transparent' }}>
                         {day && (
                           <>
                             <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>
                             {bills.map((b, idx) => (
-                              <div key={`bill-${idx}`} onClick={() => setActiveTab('billing')} style={{ background: '#0a1a3a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                              <div key={`bill-${idx}`} onClick={() => setActiveTab('billing')} style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
                                 #{b.jobs?.job_number}
                               </div>
                             ))}
                             {paids.map((b, idx) => (
-                              <div key={`paid-${idx}`} onClick={() => setActiveTab('payments')} style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#86efac', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                              <div key={`paid-${idx}`} onClick={() => setActiveTab('payments')} style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#86efac', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
                                 paid #{b.jobs?.job_number}
                               </div>
                             ))}
                             {cois.map((c, idx) => (
-                              <div key={`coi-${idx}`} onClick={() => setActiveTab('coi')} style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#e8590c', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                              <div key={`coi-${idx}`} onClick={() => setActiveTab('coi')} style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#e8590c', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
                                 COI {c.company_name?.split(' ')[0]}
                               </div>
                             ))}
@@ -796,7 +834,7 @@ export default function AdminPortal() {
 
                 {showAddCost && (
                   <div style={s.formBox}>
-                    <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>New direct cost</p>
+                    <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>New direct cost</p>
                     <form onSubmit={addCost}>
                       <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                         <div>
@@ -875,18 +913,18 @@ export default function AdminPortal() {
                               </button>
                             </td>
                             <td style={s.td}>{c.cost_date ? new Date(c.cost_date).toLocaleDateString() : '—'}</td>
-                            <td style={s.td}><span style={{ color: '#f1f1f1', fontWeight: '600' }}>#{c.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#555' }}>{c.jobs?.project_name}</span></td>
-                            <td style={s.td}>{c.description}{c.notes ? <><br /><span style={{ fontSize: '11px', color: '#555' }}>{c.notes}</span></> : ''}</td>
-                            <td style={s.td}><span style={{ fontSize: '12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '2px 8px' }}>{c.category}</span></td>
-                            <td style={s.td}>{c.budget_items ? <>{c.budget_items.cost_code ? <span style={{ color: '#555', fontSize: '11px' }}>{c.budget_items.cost_code} · </span> : ''}{c.budget_items.description}</> : <span style={{ color: '#333' }}>—</span>}</td>
-                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#f1f1f1' }}>${parseFloat(c.amount || 0).toLocaleString()}</td>
+                            <td style={s.td}><span style={{ color: '#111827', fontWeight: '600' }}>#{c.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{c.jobs?.project_name}</span></td>
+                            <td style={s.td}>{c.description}{c.notes ? <><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{c.notes}</span></> : ''}</td>
+                            <td style={s.td}><span style={{ fontSize: '12px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '2px 8px' }}>{c.category}</span></td>
+                            <td style={s.td}>{c.budget_items ? <>{c.budget_items.cost_code ? <span style={{ color: '#6b7280', fontSize: '11px' }}>{c.budget_items.cost_code} · </span> : ''}{c.budget_items.description}</> : <span style={{ color: '#374151' }}>—</span>}</td>
+                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#111827' }}>${parseFloat(c.amount || 0).toLocaleString()}</td>
                             <td style={s.td}><span style={s.badge(c.status)}>{c.status}</span></td>
-                            <td style={s.td}>{teamMap[c.submitted_by] || '—'}<br /><span style={{ fontSize: '11px', color: '#555' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span></td>
+                            <td style={s.td}>{teamMap[c.submitted_by] || '—'}<br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}</span></td>
                           </tr>
                         ))}
                         <tr>
                           <td style={s.td} />
-                          <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#888', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</td>
+                          <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</td>
                           <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: '16px' }}>${filteredCosts.reduce((a, c) => a + parseFloat(c.amount || 0), 0).toLocaleString()}</td>
                           <td style={s.td} />
                           <td style={s.td} />
@@ -914,38 +952,38 @@ export default function AdminPortal() {
                 const netAmt = grossAmt - retainageAmt
                 const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
                 return (
-                  <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#1a4a1a' : sub.nv_cuts_check ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.ready_to_pay ? '#071207' : sub.nv_cuts_check ? '#140a00' : '#0f0f0f', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
+                  <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#bbf7d0' : sub.nv_cuts_check ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: sub.ready_to_pay ? '#f0fdf4' : sub.nv_cuts_check ? '#fff7ed' : '#f9fafb', cursor: 'pointer', flexWrap: 'wrap', gap: '10px' }} onClick={() => { setExpandedBill(isExpanded ? null : sub.id); setPayingId(null) }}>
                       <div style={{ flex: 1, minWidth: '200px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</span>
-                          {sub.ready_to_pay && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 8px', fontWeight: '800', letterSpacing: '0.5px' }}>✓ Ready to Pay</span>}
-                          {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
-                          {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Invoice</span>}
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{sub.company_name}</span>
+                          {sub.ready_to_pay && <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 8px', fontWeight: '800', letterSpacing: '0.5px' }}>✓ Ready to Pay</span>}
+                          {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
+                          {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Invoice</span>}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}{sub.submitted_at ? ' · ' + new Date(sub.submitted_at).toLocaleDateString() : ''}{sub.invoice_number ? <span style={{ color: '#888', marginLeft: '6px' }}>· INV# {sub.invoice_number}</span> : null}</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}{sub.submitted_at ? ' · ' + new Date(sub.submitted_at).toLocaleDateString() : ''}{sub.invoice_number ? <span style={{ color: '#6b7280', marginLeft: '6px' }}>· INV# {sub.invoice_number}</span> : null}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '18px', fontWeight: '800', color: sub.ready_to_pay ? '#4ade80' : '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
-                          {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#555' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
+                          {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#6b7280' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
                         </div>
-                        <span style={{ color: '#555', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
+                        <span style={{ color: '#6b7280', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
                       </div>
                     </div>
                     {isExpanded && (
-                      <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' }}>
+                      <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #f0f0f0' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px', marginBottom: '1rem' }}>
-                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
-                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>% Complete</div><div style={{ fontSize: '13px', color: '#ccc' }}>{sub.pct_complete ?? '—'}%</div></div>
-                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#ccc' }}>{fmtAmt(grossAmt)}</div></div>
-                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>−{fmtAmt(retainageAmt)}</div></div>
-                          <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period</div><div style={{ fontSize: '13px', color: '#374151' }}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>% Complete</div><div style={{ fontSize: '13px', color: '#374151' }}>{sub.pct_complete ?? '—'}%</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#374151' }}>{fmtAmt(grossAmt)}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>−{fmtAmt(retainageAmt)}</div></div>
+                          <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div></div>
                         </div>
-                        {sub.work_description && <div style={{ fontSize: '13px', color: '#888', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
+                        {sub.work_description && <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
                         {editingBillId === sub.id ? (
                           <div style={{ ...s.formBox, marginTop: 0 }}>
-                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit billing</p>
+                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit billing</p>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                               <div><label style={s.label}>Invoice #</label><input style={s.input} value={editBillForm.invoice_number} onChange={e => setEditBillForm(f => ({ ...f, invoice_number: e.target.value }))} placeholder={sub.invoice_number || 'Invoice number'} /></div>
                               <div><label style={s.label}>Amount billed ($)</label><input type="number" step="0.01" min="0" style={s.input} value={editBillForm.amount_billed} onChange={e => setEditBillForm(f => ({ ...f, amount_billed: e.target.value }))} placeholder={grossAmt.toFixed(2)} /></div>
@@ -959,7 +997,7 @@ export default function AdminPortal() {
                           </div>
                         ) : payingId === sub.id ? (
                           <div style={{ ...s.formBox, marginTop: 0 }}>
-                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
+                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
                             <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
                               <div><label style={s.label}>Payment date</label><input type="date" style={{ ...s.input, colorScheme: 'dark' }} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} /></div>
                               <div><label style={s.label}>Amount paid</label><input type="number" style={s.input} placeholder={netAmt} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} /></div>
@@ -989,7 +1027,7 @@ export default function AdminPortal() {
 
               return (
                 <>
-                  {payMsg && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>}
+                  {payMsg && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{payMsg}</div>}
 
                   <div style={s.filterRow}>
                     <select style={s.filterSelect} value={filterBillJob} onChange={e => setFilterBillJob(e.target.value)}>
@@ -1003,8 +1041,8 @@ export default function AdminPortal() {
 
                   {readyBills.length > 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#4ade80', letterSpacing: '2px', textTransform: 'uppercase' }}>✓ Ready to Pay — {readyBills.length}</span>
-                      <div style={{ flex: 1, height: '1px', background: '#1a4a1a' }} />
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#16a34a', letterSpacing: '2px', textTransform: 'uppercase' }}>✓ Ready to Pay — {readyBills.length}</span>
+                      <div style={{ flex: 1, height: '1px', background: '#bbf7d0' }} />
                       <span style={{ fontSize: '11px', color: '#3a6a3a', fontFamily: 'monospace' }}>{fmtAmt(readyBills.reduce((s, b) => s + parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0), 0))} net</span>
                     </div>
                   )}
@@ -1013,15 +1051,15 @@ export default function AdminPortal() {
 
                   {readyBills.length > 0 && pendingBills.length > 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '16px 0 10px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Pending — {pendingBills.length}</span>
-                      <div style={{ flex: 1, height: '1px', background: '#1e1e1e' }} />
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Pending — {pendingBills.length}</span>
+                      <div style={{ flex: 1, height: '1px', background: '#e5e7eb' }} />
                     </div>
                   )}
 
                   {pendingBills.length > 0 && !readyBills.length && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Pending — {pendingBills.length}</span>
-                      <div style={{ flex: 1, height: '1px', background: '#1e1e1e' }} />
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Pending — {pendingBills.length}</span>
+                      <div style={{ flex: 1, height: '1px', background: '#e5e7eb' }} />
                     </div>
                   )}
 
@@ -1041,7 +1079,7 @@ export default function AdminPortal() {
                       <option value="">All jobs</option>
                       {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                     </select>
-                    <span style={{ fontSize: '12px', color: '#555', alignSelf: 'center' }}>{paidList.length} payment{paidList.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280', alignSelf: 'center' }}>{paidList.length} payment{paidList.length !== 1 ? 's' : ''}</span>
                   </div>
 
                   {paidList.length === 0 ? <div style={s.emptyMsg}>No payments recorded yet.</div> : (
@@ -1066,12 +1104,12 @@ export default function AdminPortal() {
                             const paidAmt = parseFloat(sub.payment_amount || grossAmt - retainageAmt)
                             return (
                               <tr key={sub.id}>
-                                <td style={s.td}><span style={{ fontWeight: '600', color: '#f1f1f1' }}>{sub.company_name}</span></td>
-                                <td style={s.td}><span style={{ color: '#f1f1f1' }}>#{sub.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#555' }}>{sub.jobs?.project_name}</span></td>
+                                <td style={s.td}><span style={{ fontWeight: '600', color: '#111827' }}>{sub.company_name}</span></td>
+                                <td style={s.td}><span style={{ color: '#111827' }}>#{sub.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{sub.jobs?.project_name}</span></td>
                                 <td style={s.td}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
-                                <td style={{ ...s.td, textAlign: 'right', color: '#888' }}>${grossAmt.toLocaleString()}</td>
+                                <td style={{ ...s.td, textAlign: 'right', color: '#6b7280' }}>${grossAmt.toLocaleString()}</td>
                                 <td style={{ ...s.td, textAlign: 'right', color: '#e8590c' }}>{retainageAmt > 0 ? `-$${retainageAmt.toLocaleString()}` : '—'}</td>
-                                <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#4ade80' }}>${paidAmt.toLocaleString()}</td>
+                                <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#16a34a' }}>${paidAmt.toLocaleString()}</td>
                                 <td style={s.td}>{new Date(sub.paid_at).toLocaleDateString()}</td>
                                 <td style={s.td}>
                                   {sub.payment_method || '—'}
@@ -1089,7 +1127,7 @@ export default function AdminPortal() {
                                     </div>
                                   ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: sub.check_number ? '4px' : '0' }}>
-                                      {sub.check_number && <span style={{ fontSize: '11px', color: '#555' }}>Check #{sub.check_number}</span>}
+                                      {sub.check_number && <span style={{ fontSize: '11px', color: '#6b7280' }}>Check #{sub.check_number}</span>}
                                       <button style={{ ...s.btnSm('gray'), padding: '2px 8px', fontSize: '10px' }} onClick={() => { setEditingCheckFor(sub.id); setEditCheckNum(sub.check_number || '') }}>
                                         {sub.check_number ? 'Edit #' : '+ Check #'}
                                       </button>
@@ -1100,8 +1138,8 @@ export default function AdminPortal() {
                             )
                           })}
                           <tr>
-                            <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#888', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total paid</td>
-                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#4ade80', fontSize: '16px' }}>${totalPaid.toLocaleString()}</td>
+                            <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total paid</td>
+                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}>${totalPaid.toLocaleString()}</td>
                             <td colSpan={2} style={s.td} />
                           </tr>
                         </tbody>
@@ -1125,11 +1163,11 @@ export default function AdminPortal() {
               })
               return (
                 <>
-                  {dirMsg && <div style={{ background: dirMsg.startsWith('✓') ? '#0a2a0a' : '#2a0a0a', border: `1px solid ${dirMsg.startsWith('✓') ? '#1a4a1a' : '#5a1a1a'}`, color: dirMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
+                  {dirMsg && <div style={{ background: dirMsg.startsWith('✓') ? '#dcfce7' : '#fef2f2', border: `1px solid ${dirMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca'}`, color: dirMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{dirMsg}</div>}
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={s.filterRow} style={{ margin: 0, flexWrap: 'wrap', gap: '8px', display: 'flex', alignItems: 'center' }}>
-                      <input style={{ ...s.filterSelect, minWidth: '220px', color: '#f1f1f1' }} placeholder="Search company, contact, email..." value={dirSearch} onChange={e => setDirSearch(e.target.value)} />
+                      <input style={{ ...s.filterSelect, minWidth: '220px', color: '#111827' }} placeholder="Search company, contact, email..." value={dirSearch} onChange={e => setDirSearch(e.target.value)} />
                       <select style={s.filterSelect} value={filterDirTrade} onChange={e => setFilterDirTrade(e.target.value)}>
                         <option value="">All trades</option>
                         {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -1140,7 +1178,7 @@ export default function AdminPortal() {
                         <option value="missing-w9">Missing W-9</option>
                         <option value="missing-coi">COI missing/expired</option>
                       </select>
-                      <span style={{ fontSize: '12px', color: '#555' }}>{dirFiltered.length} sub{dirFiltered.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{dirFiltered.length} sub{dirFiltered.length !== 1 ? 's' : ''}</span>
                     </div>
                     <button style={s.btnSm('orange')} onClick={() => { setShowAddDir(v => !v); setDirMsg('') }}>
                       {showAddDir ? 'Cancel' : '+ Add subcontractor'}
@@ -1187,39 +1225,39 @@ export default function AdminPortal() {
                         const bothKey = `${d.id}-both`
                         const isExpanded = expandedDirId === d.id
                         return (
-                          <div key={d.id} style={{ border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '8px', overflow: 'hidden' }}>
+                          <div key={d.id} style={{ border: '1px solid #e5e7eb', borderRadius: '10px', marginBottom: '8px', overflow: 'hidden' }}>
                             {/* Row header */}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', background: '#0f0f0f' }}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', background: '#f9fafb' }}
                               onClick={() => { setExpandedDirId(isExpanded ? null : d.id); setEditingDirId(null) }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ fontWeight: '700', color: '#f1f1f1', fontSize: '14px' }}>{d.company_name}</span>
-                                {d.trade && <span style={{ fontSize: '12px', color: '#555', marginLeft: '10px' }}>{d.trade}</span>}
-                                {d.contact_name && <span style={{ fontSize: '12px', color: '#888', marginLeft: '10px' }}>{d.contact_name}</span>}
-                                {d.email && <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>{d.email}</span>}
+                                <span style={{ fontWeight: '700', color: '#111827', fontSize: '14px' }}>{d.company_name}</span>
+                                {d.trade && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '10px' }}>{d.trade}</span>}
+                                {d.contact_name && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '10px' }}>{d.contact_name}</span>}
+                                {d.email && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '10px' }}>{d.email}</span>}
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                                 <span style={{ ...s.badge(hasW9 ? 'approved' : 'rejected'), fontSize: '10px' }}>{hasW9 ? 'W-9 ✓' : 'W-9 ✗'}</span>
                                 <span style={{ ...s.badge(st === 'active' ? 'approved' : st === 'expired' ? 'rejected' : st === 'warning' ? 'warning' : 'none'), fontSize: '10px' }}>
                                   COI {st === 'active' ? '✓' : st === 'expired' ? 'Exp' : st === 'warning' ? '~30d' : '✗'}
                                 </span>
-                                <span style={{ color: '#555', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
+                                <span style={{ color: '#6b7280', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
                               </div>
                             </div>
 
                             {/* Expanded detail */}
                             {isExpanded && (
-                              <div style={{ padding: '1.25rem', borderTop: '1px solid #1e1e1e', background: '#080808' }}>
+                              <div style={{ padding: '1.25rem', borderTop: '1px solid #e5e7eb', background: '#f9fafb' }}>
 
                                 {/* Info / Edit */}
                                 {editingDirId !== d.id ? (
                                   <div style={{ marginBottom: '1.25rem' }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '10px' }} className="rx-grid-3">
-                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Email</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.email || '—'}</div></div>
-                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Phone</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.phone || '—'}</div></div>
-                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>License</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.license_number || '—'}</div></div>
-                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Address</div><div style={{ fontSize: '13px', color: '#ccc' }}>{d.address || '—'}</div></div>
-                                      <div><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>COI Expiration</div><div style={{ fontSize: '13px', color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : '#ccc' }}>{d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : '—'}</div></div>
-                                      {d.scope_description && <div style={{ gridColumn: 'span 3' }}><div style={{ fontSize: '11px', color: '#555', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Scope</div><div style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.6' }}>{d.scope_description}</div></div>}
+                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Email</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.email || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Phone</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.phone || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>License</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.license_number || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Address</div><div style={{ fontSize: '13px', color: '#374151' }}>{d.address || '—'}</div></div>
+                                      <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>COI Expiration</div><div style={{ fontSize: '13px', color: st === 'expired' ? '#ff6b6b' : st === 'warning' ? '#e8590c' : '#ccc' }}>{d.coi_expiration ? new Date(d.coi_expiration).toLocaleDateString() : '—'}</div></div>
+                                      {d.scope_description && <div style={{ gridColumn: 'span 3' }}><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '1px', textTransform: 'uppercase' }}>Scope</div><div style={{ fontSize: '13px', color: '#374151', lineHeight: '1.6' }}>{d.scope_description}</div></div>}
                                     </div>
                                     <button style={s.btnSm('orange')} onClick={() => {
                                       setEditingDirId(d.id)
@@ -1233,7 +1271,7 @@ export default function AdminPortal() {
                                     }}>Edit info</button>
                                   </div>
                                 ) : (
-                                  <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                  <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ margin: '0 0 1rem', fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase' }}>Editing {d.company_name}</p>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }} className="rx-grid-2">
                                       <div><label style={s.label}>Company name</label><input style={s.input} value={editDirForm.company_name} onChange={e => setEditDirForm(f => ({ ...f, company_name: e.target.value }))} /></div>
@@ -1254,12 +1292,12 @@ export default function AdminPortal() {
                                 )}
 
                                 {/* Documents */}
-                                <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-                                  <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Documents</p>
+                                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                                  <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Documents</p>
 
                                   {/* W-9 */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasW9 ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${hasW9 ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasW9 ? '#dcfce7' : '#1a0a0a', border: `1px solid ${hasW9 ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
                                       <span style={{ fontSize: '12px', fontWeight: '700', color: hasW9 ? '#4ade80' : '#ff6b6b' }}>{hasW9 ? '✓' : '✗'} W-9</span>
                                     </div>
                                     {hasW9 && (
@@ -1277,7 +1315,7 @@ export default function AdminPortal() {
 
                                   {/* COI */}
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasCOI && st === 'active' ? '#0a2a0a' : '#1a0a0a', border: `1px solid ${hasCOI && st === 'active' ? '#1a4a1a' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasCOI && st === 'active' ? '#dcfce7' : '#1a0a0a', border: `1px solid ${hasCOI && st === 'active' ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
                                       <span style={{ fontSize: '12px', fontWeight: '700', color: hasCOI && st === 'active' ? '#4ade80' : st === 'warning' ? '#e8590c' : '#ff6b6b' }}>
                                         {hasCOI ? '✓' : '✗'} COI{d.coi_expiration ? ` · ${new Date(d.coi_expiration).toLocaleDateString()}` : ''}
                                       </span>
@@ -1299,7 +1337,7 @@ export default function AdminPortal() {
                                 {/* Request buttons */}
                                 {d.email && (needsW9 || needsCOI) && (
                                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                                    <span style={{ fontSize: '11px', color: '#555', alignSelf: 'center', letterSpacing: '1px', textTransform: 'uppercase' }}>Request via email:</span>
+                                    <span style={{ fontSize: '11px', color: '#6b7280', alignSelf: 'center', letterSpacing: '1px', textTransform: 'uppercase' }}>Request via email:</span>
                                     {needsW9 && !docRequestSent[w9Key] && (
                                       <button style={{ ...s.btnSm('blue'), opacity: requestingDoc === w9Key ? 0.6 : 1 }} disabled={requestingDoc === w9Key} onClick={() => sendDocRequest(d.id, 'w9')}>
                                         {requestingDoc === w9Key ? '...' : 'Request W-9'}
@@ -1316,7 +1354,7 @@ export default function AdminPortal() {
                                       </button>
                                     )}
                                     {(docRequestSent[w9Key] || docRequestSent[coiKey] || docRequestSent[bothKey]) && (
-                                      <span style={{ fontSize: '12px', color: '#4ade80', alignSelf: 'center' }}>✓ Request sent</span>
+                                      <span style={{ fontSize: '12px', color: '#16a34a', alignSelf: 'center' }}>✓ Request sent</span>
                                     )}
                                   </div>
                                 )}
@@ -1324,9 +1362,9 @@ export default function AdminPortal() {
                                 {/* Portal access */}
                                 {d.email && (
                                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Portal access:</span>
+                                    <span style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Portal access:</span>
                                     {inviteSentFor[d.id] ? (
-                                      <span style={{ fontSize: '12px', color: '#4ade80' }}>
+                                      <span style={{ fontSize: '12px', color: '#16a34a' }}>
                                         ✓ {inviteSentFor[d.id] === 'reset' ? 'Password reset sent' : 'Invite sent'} to {d.email}
                                       </span>
                                     ) : (
@@ -1345,21 +1383,21 @@ export default function AdminPortal() {
                                   const isInviting = teamInviteLoading === d.id
                                   const invResult = teamInviteResult[d.id]
                                   return (
-                                    <div style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-                                      <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
-                                      {members.length === 0 && <p style={{ fontSize: '12px', color: '#444', margin: '0 0 10px' }}>No users yet — invite someone below.</p>}
+                                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                                      <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Team members ({members.length})</p>
+                                      {members.length === 0 && <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 10px' }}>No users yet — invite someone below.</p>}
                                       {members.map(m => {
                                         const isRegistered = !!m.full_name
                                         return (
-                                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                               <div style={{ fontSize: '13px', color: isRegistered ? '#f1f1f1' : '#888' }}>{m.full_name || m.invite_email || 'Unknown'}</div>
-                                              {isRegistered && m.phone && <div style={{ fontSize: '11px', color: '#555' }}>{m.phone}</div>}
-                                              {!isRegistered && m.invite_email && <div style={{ fontSize: '11px', color: '#555' }}>{m.invite_email}</div>}
+                                              {isRegistered && m.phone && <div style={{ fontSize: '11px', color: '#6b7280' }}>{m.phone}</div>}
+                                              {!isRegistered && m.invite_email && <div style={{ fontSize: '11px', color: '#6b7280' }}>{m.invite_email}</div>}
                                             </div>
                                             {isRegistered
-                                              ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', flexShrink: 0 }}>Registered</span>
-                                              : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', flexShrink: 0 }}>Invite sent</span>
+                                              ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', flexShrink: 0 }}>Registered</span>
+                                              : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: '#fff7ed', color: '#e8590c', border: '1px solid #fed7aa', flexShrink: 0 }}>Invite sent</span>
                                             }
                                           </div>
                                         )
@@ -1374,8 +1412,8 @@ export default function AdminPortal() {
                                           onClick={() => inviteTeamMember(d.id, d.company_name)}>
                                           {isInviting ? '…' : 'Invite'}
                                         </button>
-                                        {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#4ade80' }}>✓ Sent</span>}
-                                        {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{invResult}</span>}
+                                        {invResult === 'sent' && <span style={{ fontSize: '12px', color: '#16a34a' }}>✓ Sent</span>}
+                                        {invResult && invResult !== 'sent' && <span style={{ fontSize: '12px', color: '#dc2626' }}>{invResult}</span>}
                                       </div>
                                     </div>
                                   )
@@ -1395,7 +1433,7 @@ export default function AdminPortal() {
             {activeTab === 'liens' && (
               <>
                 {lienMsg && (
-                  <div style={{ background: lienMsg.startsWith('✓') ? '#0a1a0a' : '#2a0a0a', border: `1px solid ${lienMsg.startsWith('✓') ? '#1a4a1a' : '#5a1a1a'}`, color: lienMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
+                  <div style={{ background: lienMsg.startsWith('✓') ? '#f0fdf4' : '#fef2f2', border: `1px solid ${lienMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca'}`, color: lienMsg.startsWith('✓') ? '#4ade80' : '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
                     {lienMsg}
                   </div>
                 )}
@@ -1404,7 +1442,7 @@ export default function AdminPortal() {
                     <option value="">All jobs</option>
                     {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
                   </select>
-                  <span style={{ fontSize: '12px', color: '#555' }}>Showing approved billing submissions</span>
+                  <span style={{ fontSize: '12px', color: '#6b7280' }}>Showing approved billing submissions</span>
                 </div>
 
                 {lienList.length === 0 ? <div style={s.emptyMsg}>No approved billing submissions found.</div> : (
@@ -1424,19 +1462,19 @@ export default function AdminPortal() {
                       <tbody>
                         {lienList.map(sub => (
                           <tr key={sub.id}>
-                            <td style={s.td}><span style={{ fontWeight: '600', color: '#f1f1f1' }}>{sub.company_name}</span><br /><span style={{ fontSize: '11px', color: '#555' }}>{sub.sub_email}</span></td>
-                            <td style={s.td}>#{sub.jobs?.job_number}<br /><span style={{ fontSize: '11px', color: '#555' }}>{sub.jobs?.project_name}</span></td>
-                            <td style={{ ...s.td, fontWeight: '700', color: '#f1f1f1' }}>${parseFloat(sub.amount_billed || 0).toLocaleString()}</td>
+                            <td style={s.td}><span style={{ fontWeight: '600', color: '#111827' }}>{sub.company_name}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{sub.sub_email}</span></td>
+                            <td style={s.td}>#{sub.jobs?.job_number}<br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{sub.jobs?.project_name}</span></td>
+                            <td style={{ ...s.td, fontWeight: '700', color: '#111827' }}>${parseFloat(sub.amount_billed || 0).toLocaleString()}</td>
                             <td style={s.td}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
                             <td style={s.td}>
                               {sub.lien_waiver_sent_at
-                                ? <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ {new Date(sub.lien_waiver_sent_at).toLocaleDateString()}</span>
-                                : <span style={{ color: '#555', fontSize: '12px' }}>Not sent</span>}
+                                ? <span style={{ color: '#16a34a', fontSize: '12px' }}>✓ {new Date(sub.lien_waiver_sent_at).toLocaleDateString()}</span>
+                                : <span style={{ color: '#6b7280', fontSize: '12px' }}>Not sent</span>}
                             </td>
                             <td style={s.td}>
                               {sub.lien_waiver_received
-                                ? <span style={{ color: '#4ade80', fontSize: '12px' }}>✓ Received{sub.lien_waiver_received_at ? ` ${new Date(sub.lien_waiver_received_at).toLocaleDateString()}` : ''}</span>
-                                : <span style={{ color: '#555', fontSize: '12px' }}>Pending</span>}
+                                ? <span style={{ color: '#16a34a', fontSize: '12px' }}>✓ Received{sub.lien_waiver_received_at ? ` ${new Date(sub.lien_waiver_received_at).toLocaleDateString()}` : ''}</span>
+                                : <span style={{ color: '#6b7280', fontSize: '12px' }}>Pending</span>}
                             </td>
                             <td style={s.td}>
                               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
@@ -11,25 +11,25 @@ const TRADES = [
 ]
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a', padding: '2rem 1rem' },
+  page: { minHeight: '100vh', background: '#f4f6f8', padding: '2rem 1rem' },
   container: { maxWidth: '600px', margin: '0 auto' },
   logo: { display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' },
-  logoImg: { width: '72px', height: '72px', objectFit: 'contain', marginBottom: '10px' },
-  logoText: { fontSize: '11px', fontWeight: '600', letterSpacing: '4px', color: '#555', textTransform: 'uppercase' },
-  card: { background: '#141414', border: '1px solid #222', borderRadius: '16px', padding: '2rem' },
-  stepTitle: { fontSize: '20px', fontWeight: '800', color: '#f1f1f1', margin: '0 0 4px' },
-  stepSub: { fontSize: '13px', color: '#555', margin: '0 0 1.75rem', lineHeight: 1.5 },
-  sectionLabel: { fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', margin: '1.5rem 0 0.75rem', paddingBottom: '6px', borderBottom: '1px solid #1a1a1a' },
-  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
-  input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
-  textarea: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none', resize: 'vertical', minHeight: '80px' },
+  logoImg: { width: '64px', height: '64px', objectFit: 'contain', marginBottom: '10px' },
+  logoText: { fontSize: '11px', fontWeight: '600', letterSpacing: '3px', color: '#9ca3af', textTransform: 'uppercase' },
+  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '2rem', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' },
+  stepTitle: { fontSize: '18px', fontWeight: '700', color: '#111827', margin: '0 0 4px' },
+  stepSub: { fontSize: '13px', color: '#6b7280', margin: '0 0 1.5rem', lineHeight: 1.5 },
+  sectionLabel: { fontSize: '11px', fontWeight: '600', color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase', margin: '1.5rem 0 0.75rem', paddingBottom: '6px', borderBottom: '1px solid #e5e7eb' },
+  label: { display: 'block', fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '5px' },
+  input: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' },
+  textarea: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none', resize: 'vertical', minHeight: '80px' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  btn: { width: '100%', padding: '13px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase', marginTop: '1.5rem' },
-  btnGray: { width: '100%', padding: '13px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', marginTop: '8px' },
-  err: { background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' },
+  btn: { width: '100%', padding: '11px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', marginTop: '1.5rem' },
+  btnGray: { width: '100%', padding: '11px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', marginTop: '8px' },
+  err: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '1rem' },
   required: { color: '#e8590c', marginLeft: '2px' },
-  uploadBox: { border: '1px dashed #2a2a2a', borderRadius: '8px', padding: '18px', textAlign: 'center', cursor: 'pointer', background: '#0a0a0a' },
-  successPage: { textAlign: 'center', background: '#0d1a0d', border: '1px solid #1a3a1a', borderRadius: '16px', padding: '3rem 2rem' },
+  uploadBox: { border: '1px dashed #d1d5db', borderRadius: '6px', padding: '18px', textAlign: 'center', cursor: 'pointer', background: '#f9fafb' },
+  successPage: { textAlign: 'center', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '3rem 2rem' },
 }
 
 function StepIndicator({ step }) {
@@ -46,14 +46,14 @@ function StepIndicator({ step }) {
               <div style={{
                 width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '12px', fontWeight: '800',
-                background: done ? '#1a3a1a' : active ? '#e8590c' : '#1a1a1a',
+                background: done ? '#bbf7d0' : active ? '#e8590c' : '#f0f0f0',
                 color: done ? '#4ade80' : active ? '#fff' : '#333',
-                border: `2px solid ${done ? '#2a5a2a' : active ? '#e8590c' : '#2a2a2a'}`,
+                border: `2px solid ${done ? '#2a5a2a' : active ? '#e8590c' : '#d1d5db'}`,
               }}>{done ? '✓' : num}</div>
               <span style={{ fontSize: '10px', fontWeight: '600', letterSpacing: '1px', textTransform: 'uppercase', color: active ? '#f1f1f1' : done ? '#4ade80' : '#333' }}>{label}</span>
             </div>
             {i < steps.length - 1 && (
-              <div style={{ width: '60px', height: '2px', background: done ? '#2a5a2a' : '#1a1a1a', margin: '0 4px', marginBottom: '18px' }} />
+              <div style={{ width: '60px', height: '2px', background: done ? '#2a5a2a' : '#f0f0f0', margin: '0 4px', marginBottom: '18px' }} />
             )}
           </div>
         )
@@ -155,8 +155,8 @@ export default function Apply() {
           <div style={s.logo}><img src="/logo.png" alt="NV Construction" style={s.logoImg} /></div>
           <div style={s.successPage}>
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>✓</div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: '#4ade80', marginBottom: '8px' }}>Application submitted!</div>
-            <div style={{ fontSize: '14px', color: '#555', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+            <div style={{ fontSize: '22px', fontWeight: '800', color: '#16a34a', marginBottom: '8px' }}>Application submitted!</div>
+            <div style={{ fontSize: '14px', color: '#6b7280', lineHeight: 1.6, marginBottom: '1.5rem' }}>
               Thank you, {account.full_name.split(' ')[0]}. We'll review your application and notify you once you're approved.<br />
               You can log in at any time to check your status or upload documents.
             </div>
@@ -219,7 +219,7 @@ export default function Apply() {
           {step === 2 && (
             <>
               <h2 style={s.stepTitle}>Create your account</h2>
-              <p style={s.stepSub}>You'll use this to log in, view plans, submit bids, and manage billing. <strong style={{ color: '#f1f1f1' }}>Required — we need at least one person with a login for every company.</strong></p>
+              <p style={s.stepSub}>You'll use this to log in, view plans, submit bids, and manage billing. <strong style={{ color: '#111827' }}>Required — we need at least one person with a login for every company.</strong></p>
 
               <div style={{ marginBottom: '12px' }}>
                 <label style={s.label}>Your full name<span style={s.required}>*</span></label>
@@ -288,7 +288,7 @@ export default function Apply() {
         </div>
 
         {step === 1 && (
-          <p style={{ textAlign: 'center', fontSize: '13px', color: '#333', marginTop: '1rem' }}>
+          <p style={{ textAlign: 'center', fontSize: '13px', color: '#374151', marginTop: '1rem' }}>
             Already have an account? <a href="/login" style={{ color: '#e8590c', fontWeight: '600', textDecoration: 'none' }}>Sign in</a>
           </p>
         )}

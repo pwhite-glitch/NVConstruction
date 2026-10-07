@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
@@ -37,36 +37,46 @@ const IC = {
 }
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a' },
-  header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem' },
-  headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
-  logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
-  logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
-  logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
-  logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
-  signOut: { padding: '7px 16px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' },
+  page: { minHeight: '100vh', background: '#f4f6f8' },
+  header: { background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem' },
+  headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px' },
+  logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
+  logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
+  logoSub: { fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' },
+  signOut: { padding: '6px 14px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' },
   main: { maxWidth: '760px', margin: '0 auto', padding: '2rem 1.5rem' },
-  card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.75rem', marginBottom: '1.5rem' },
-  cardTitle: { fontSize: '16px', fontWeight: '700', color: '#f1f1f1', marginTop: 0, marginBottom: '1.5rem' },
-  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
-  input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
+  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  cardTitle: { fontSize: '15px', fontWeight: '700', color: '#111827', marginTop: 0, marginBottom: '1.25rem' },
+  label: { display: 'block', fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '5px' },
+  input: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
-  btn: { padding: '11px 28px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSm: (c) => ({ padding: '7px 16px', background: c === 'red' ? '#2a0a0a' : c === 'green' ? '#0a1a0a' : c === 'orange' ? '#2a1200' : '#1a1a1a', color: c === 'red' ? '#ff6b6b' : c === 'green' ? '#4ade80' : c === 'orange' ? '#e8590c' : '#888', border: `1px solid ${c === 'red' ? '#5a1a1a' : c === 'green' ? '#1a4a1a' : c === 'orange' ? '#4a2200' : '#2a2a2a'}`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }),
-  success: { background: '#0a1a0a', border: '1px solid #1a4a1a', color: '#4ade80', padding: '14px 16px', borderRadius: '8px', fontSize: '14px', marginBottom: '1.5rem' },
-  empty: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' },
-  badge: (st) => ({
-    padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: st === 'received' || st === 'complete' || st === 'answered' || st === 'approved' ? '#0a2a0a' : st === 'delayed' || st === 'rejected' ? '#2a0a0a' : st === 'partial' ? '#2a1a00' : '#1a1200',
-    color: st === 'received' || st === 'complete' || st === 'answered' || st === 'approved' ? '#4ade80' : st === 'delayed' || st === 'rejected' ? '#ff6b6b' : st === 'partial' ? '#facc15' : '#e8590c',
-    border: `1px solid ${st === 'received' || st === 'complete' || st === 'answered' || st === 'approved' ? '#1a4a1a' : st === 'delayed' || st === 'rejected' ? '#5a1a1a' : st === 'partial' ? '#4a4a00' : '#4a2200'}`
+  btn: { padding: '9px 22px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  btnSm: (c) => ({
+    padding: '5px 12px',
+    background: c === 'red' ? '#fef2f2' : c === 'green' ? '#f0fdf4' : c === 'orange' ? '#fff7ed' : '#f9fafb',
+    color: c === 'red' ? '#dc2626' : c === 'green' ? '#16a34a' : c === 'orange' ? '#c2410c' : '#374151',
+    border: `1px solid ${c === 'red' ? '#fecaca' : c === 'green' ? '#bbf7d0' : c === 'orange' ? '#fdba74' : '#e5e7eb'}`,
+    borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
   }),
-  tabRow: { display: 'flex', marginBottom: '1.5rem', borderBottom: '1px solid #222', overflowX: 'auto' },
-  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: active ? '#f1f1f1' : '#555', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap' }),
-  row: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
-  rowHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', cursor: 'pointer' },
-  rowBody: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
+  success: { background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '12px 16px', borderRadius: '6px', fontSize: '14px', marginBottom: '1.25rem' },
+  empty: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center', color: '#9ca3af', fontSize: '14px' },
+  badge: (st) => ({
+    padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase',
+    background: (st === 'received' || st === 'complete' || st === 'answered' || st === 'approved') ? '#dcfce7'
+      : (st === 'delayed' || st === 'rejected') ? '#fee2e2'
+      : st === 'partial' ? '#fefce8' : '#fff7ed',
+    color: (st === 'received' || st === 'complete' || st === 'answered' || st === 'approved') ? '#15803d'
+      : (st === 'delayed' || st === 'rejected') ? '#dc2626'
+      : st === 'partial' ? '#a16207' : '#c2410c',
+    border: `1px solid ${(st === 'received' || st === 'complete' || st === 'answered' || st === 'approved') ? '#bbf7d0' : (st === 'delayed' || st === 'rejected') ? '#fecaca' : st === 'partial' ? '#fef08a' : '#fdba74'}`
+  }),
+  tabRow: { display: 'flex', marginBottom: '1.5rem', borderBottom: '1px solid #e5e7eb', overflowX: 'auto' },
+  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: active ? '600' : '400', cursor: 'pointer', background: 'none', border: 'none', color: active ? '#111827' : '#6b7280', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', marginBottom: '-1px', whiteSpace: 'nowrap', flexShrink: 0 }),
+  row: { border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden', background: '#fff' },
+  rowHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 16px', background: '#fff', cursor: 'pointer' },
+  rowBody: { borderTop: '1px solid #f3f4f6', padding: '1rem 1.25rem', background: '#f9fafb' },
 }
 
 export default function Field() {
@@ -486,7 +496,7 @@ export default function Field() {
       }
       img.onerror = () => {
         URL.revokeObjectURL(url)
-        // canvas failed — pass file through; server will force-label it image/jpeg
+        // canvas failed â€” pass file through; server will force-label it image/jpeg
         resolve(file)
       }
       img.src = url
@@ -688,12 +698,12 @@ export default function Field() {
     const jobName = selectedJob?.name || selectedJob?.address || 'Project'
     const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
     const weekEnd = new Date(wkBase.getTime() + 11 * 86400000)
-    const dateRange = wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    const dateRange = wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' â€“ ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
     const weekDays = []
     for (let w = 0; w < 2; w++) for (let d = 0; d < 5; d++) { const day = new Date(wkBase); day.setDate(day.getDate() + w * 7 + d); weekDays.push(day.toISOString().split('T')[0]) }
     const todayStr = new Date().toISOString().split('T')[0]
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead — ${jobName}</title><style>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead â€” ${jobName}</title><style>
       body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:32px;font-size:13px}
       h1{font-size:20px;font-weight:800;margin:0 0 4px}
       .sub{color:#666;font-size:13px;margin:0 0 28px}
@@ -723,20 +733,20 @@ export default function Field() {
       @media print{body{padding:16px}@page{margin:1.5cm}}
     </style></head><body>
     <h1>2-Week Lookahead</h1>
-    <p class="sub">${jobName} · ${dateRange}${lookahead.status === 'submitted' ? ' · Submitted' : ' · Draft'}</p>
+    <p class="sub">${jobName} Â· ${dateRange}${lookahead.status === 'submitted' ? ' Â· Submitted' : ' Â· Draft'}</p>
     ${[0, 1].map(w => {
       const wkStart = new Date(wkBase.getTime() + w * 7 * 86400000)
       const wkDays = weekDays.slice(w * 5, w * 5 + 5)
       const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
       const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
       const inspections = wkActs.filter(a => a.inspection_required).length
-      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + (w + 1) + ' — ' + wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' + (totalManpower > 0 ? '<span>' + totalManpower + ' workers</span>' : '') + (inspections > 0 ? '<span>⚠️ ' + inspections + ' inspection' + (inspections > 1 ? 's' : '') + '</span>' : '') + (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
+      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + (w + 1) + ' â€” ' + wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' + (totalManpower > 0 ? '<span>' + totalManpower + ' workers</span>' : '') + (inspections > 0 ? '<span>âš ï¸ ' + inspections + ' inspection' + (inspections > 1 ? 's' : '') + '</span>' : '') + (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
         dayNames.map((dayName, di) => {
           const dateStr = wkDays[di]
           const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
           const dateLabel = new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
           const isToday = dateStr === todayStr
-          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + '</span><span class="day-date">' + dateLabel + (isToday ? ' · TODAY' : '') + '</span></div>' +
+          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + '</span><span class="day-date">' + dateLabel + (isToday ? ' Â· TODAY' : '') + '</span></div>' +
             (dayActs.length === 0 ? '<div class="empty">No activities scheduled</div>' :
               dayActs.map(act => {
                 const type = act.responsible_type === 'sub' ? 'sub' : act.responsible_type === 'other' ? 'other' : 'own'
@@ -745,14 +755,14 @@ export default function Field() {
                 const addlCos = (act.additional_companies || [])
                 return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + '</div><div class="act-meta"><span class="tag tag-' + type + '">' + responsible + '</span>' +
                   (mp > 0 ? '<span>' + mp + ' workers</span>' : '') +
-                  (act.location ? '<span>📍 ' + act.location + '</span>' : '') +
-                  (act.equipment ? '<span>⚙️ ' + act.equipment + '</span>' : '') +
+                  (act.location ? '<span>ðŸ“ ' + act.location + '</span>' : '') +
+                  (act.equipment ? '<span>âš™ï¸ ' + act.equipment + '</span>' : '') +
                   (act.inspection_required ? '<span class="tag tag-inspect">Inspection Required</span>' : '') +
                   (act.inspection_scheduled ? '<span class="tag tag-inspect">Scheduled</span>' : '') +
                   (act.committed ? '<span class="tag tag-commit">Committed</span>' : '') +
-                  (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding ✓</span>' : '') +
+                  (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding âœ“</span>' : '') +
                   addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
-                  '</div>' + (act.constraints_notes ? '<div class="act-notes">⚠ ' + act.constraints_notes + '</div>' : '') + '</div>'
+                  '</div>' + (act.constraints_notes ? '<div class="act-notes">âš  ' + act.constraints_notes + '</div>' : '') + '</div>'
               }).join('')
             ) + '</div>'
         }).join('') + '</div>'
@@ -987,7 +997,7 @@ export default function Field() {
   const answeredRfis = rfis.filter(r => r.status === 'answered').length
   const totalGalleryPhotos = standalonePhotos.length + dailyReports.reduce((a, r) => a + (r.photos?.length || 0), 0)
 
-  if (!profile) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
+  if (!profile) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', color: '#6b7280' }}>Loading...</div>
 
   return (
     <div style={s.page}>
@@ -1010,19 +1020,19 @@ export default function Field() {
         ) : (
           <>
             {assignedJobs.length > 1 && (
-              <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap' }}>Active job</label>
                 <select value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)} style={s.input}>
                   <option value="">Select a job...</option>
-                  {assignedJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                  {assignedJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
                 </select>
               </div>
             )}
 
             {selectedJob && assignedJobs.length === 1 && (
               <div style={{ marginBottom: '1.5rem' }}>
-                <h2 style={{ color: '#f1f1f1', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>#{selectedJob.job_number} — {selectedJob.project_name}</h2>
-                {selectedJob.location && <p style={{ margin: 0, color: '#555', fontSize: '13px' }}>{selectedJob.location}</p>}
+                <h2 style={{ color: '#111827', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>#{selectedJob.job_number} â€” {selectedJob.project_name}</h2>
+                {selectedJob.location && <p style={{ margin: 0, color: '#6b7280', fontSize: '13px' }}>{selectedJob.location}</p>}
               </div>
             )}
 
@@ -1033,7 +1043,7 @@ export default function Field() {
                 {!activeTab && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
                     {[
-                      { key: 'daily', icon: IC.daily, label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? '✓ Filed today' : null },
+                      { key: 'daily', icon: IC.daily, label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? 'âœ“ Filed today' : null },
                       { key: 'rfi', icon: IC.rfi, label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
                       { key: 'deliveries', icon: IC.deliveries, label: 'Deliveries', count: deliveries.length || null },
                       { key: 'schedule', icon: IC.schedule, label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
@@ -1046,52 +1056,52 @@ export default function Field() {
                       { key: 'tools', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>, label: 'My Tools', count: myTools.length || null },
                       { key: 'lookahead', icon: IC.lookahead, label: '2-Week Lookahead', count: lookaheadActivities.length || null },
                     ].map(item => (
-                      <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#141414', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#ffffff', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: item.alert ? '#e8590c' : '#555', display: 'flex', lineHeight: 1 }}>{item.icon}</span>
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', lineHeight: '1.3' }}>{item.label}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3' }}>{item.label}</span>
                         {item.successLabel ? (
-                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{item.successLabel}</span>
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>{item.successLabel}</span>
                         ) : (item.count || item.alert) ? (
                           <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#555', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
                             {item.alert && item.alertLabel ? item.alertLabel : item.count}
                           </span>
-                        ) : <span style={{ fontSize: '11px', color: '#333' }}>Tap to open</span>}
+                        ) : <span style={{ fontSize: '11px', color: '#374151' }}>Tap to open</span>}
                       </button>
                     ))}
                   </div>
                 )}
 
                 {!activeTab && selectedJob && (
-                  <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.75rem 1rem', background: '#111', border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.75rem 1rem', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', marginBottom: '1rem' }}>
                     {selectedJob.location && (
                       <div>
-                        <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Location</div>
-                        <div style={{ fontSize: '12px', color: '#888' }}>{selectedJob.location}</div>
+                        <div style={{ fontSize: '9px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Location</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>{selectedJob.location}</div>
                       </div>
                     )}
                     {selectedJob.start_date && (
                       <div>
-                        <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Day on Project</div>
-                        <div style={{ fontSize: '12px', color: '#888' }}>Day {Math.max(1, Math.floor((Date.now() - new Date(selectedJob.start_date)) / 86400000) + 1)}</div>
+                        <div style={{ fontSize: '9px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Day on Project</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>Day {Math.max(1, Math.floor((Date.now() - new Date(selectedJob.start_date)) / 86400000) + 1)}</div>
                       </div>
                     )}
                     <div>
-                      <div style={{ fontSize: '9px', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Status</div>
+                      <div style={{ fontSize: '9px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Status</div>
                       <div style={{ fontSize: '12px', color: selectedJob.status === 'active' ? '#4ade80' : '#888', textTransform: 'capitalize' }}>{selectedJob.status || 'Active'}</div>
                     </div>
                   </div>
                 )}
 
                 {activeTab && (
-                  <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
-                    <button style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>← Back</button>
-                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#f9fafb', borderBottom: '1px solid #f3f4f6', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
+                    <button style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>â† Back</button>
+                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead' }[activeTab]}
                     </span>
                   </div>
                 )}
 
-                {/* ── DAILY REPORTS ── */}
+                {/* â”€â”€ DAILY REPORTS â”€â”€ */}
                 {activeTab === 'daily' && (
                   <>
                     {dailySuccess && <div style={s.success}>Daily report submitted successfully.</div>}
@@ -1116,21 +1126,21 @@ export default function Field() {
                             <div>
                               <label style={s.label}>Weather</label>
                               <select style={s.input} value={dailyForm.weather} onChange={e => setDailyForm(f => ({ ...f, weather: e.target.value }))}>
-                                <option value="">—</option>
+                                <option value="">â€”</option>
                                 {WEATHER.map(w => <option key={w} value={w}>{w}</option>)}
                               </select>
                             </div>
                           </div>
                           <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
-                            <div><label style={s.label}>Temp (°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75" /></div>
+                            <div><label style={s.label}>Temp (Â°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75" /></div>
                             <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
                               <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                                 <input type="checkbox" checked={dailyForm.weather_delay} onChange={e => setDailyForm(f => ({ ...f, weather_delay: e.target.checked }))} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#e8590c' }} />
-                                <span style={{ fontSize: '13px', color: '#aaa' }}>Weather delay today</span>
+                                <span style={{ fontSize: '13px', color: '#4b5563' }}>Weather delay today</span>
                               </label>
                             </div>
                           </div>
-                          <button onClick={() => setWizardStep(2)} style={{ ...s.btn, width: '100%' }}>Continue →</button>
+                          <button onClick={() => setWizardStep(2)} style={{ ...s.btn, width: '100%' }}>Continue â†’</button>
                         </div>
                       )}
 
@@ -1154,8 +1164,8 @@ export default function Field() {
                             <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.safety_observations} onChange={e => setDailyForm(f => ({ ...f, safety_observations: e.target.value }))} placeholder="Near misses, hazards, corrective actions..." />
                           </div>
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => setWizardStep(1)} style={{ ...s.btnSm(), padding: '11px 20px' }}>← Back</button>
-                            <button onClick={() => { if (!dailyForm.work_performed.trim()) { alert('Please describe the work performed.'); return }; setWizardStep(3) }} style={{ ...s.btn, flex: 1 }}>Continue →</button>
+                            <button onClick={() => setWizardStep(1)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
+                            <button onClick={() => { if (!dailyForm.work_performed.trim()) { alert('Please describe the work performed.'); return }; setWizardStep(3) }} style={{ ...s.btn, flex: 1 }}>Continue â†’</button>
                           </div>
                         </div>
                       )}
@@ -1186,7 +1196,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                                <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
                               </div>
                             ))}
                             {/* Save preset */}
@@ -1204,7 +1214,7 @@ export default function Field() {
                                   try { localStorage.setItem('nv_crew_presets', JSON.stringify(updated)) } catch {}
                                   setPresetNameDraft(''); setShowSavePreset(false)
                                 }} style={s.btnSm('green')}>Save</button>
-                                <button type="button" onClick={() => { setShowSavePreset(false); setPresetNameDraft('') }} style={s.btnSm('red')}>✕</button>
+                                <button type="button" onClick={() => { setShowSavePreset(false); setPresetNameDraft('') }} style={s.btnSm('red')}>âœ•</button>
                               </div>
                             )}
                           </div>
@@ -1216,7 +1226,7 @@ export default function Field() {
                               <button type="button" onClick={() => setSubActivityLog(l => [...l, { subId: '', company: '', trade: '', crew_count: '', work_performed: '' }])} style={s.btnSm('orange')}>+ Add</button>
                             </div>
                             {subActivityLog.map((row, i) => (
-                              <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>
+                              <div key={i} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }} className="rx-form-row">
                                   {subContacts.length > 0 ? (
                                     row.subId === 'other' ? (
@@ -1236,7 +1246,7 @@ export default function Field() {
                                   )}
                                   <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                   <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
-                                  <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                  <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
                                 </div>
                                 <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} placeholder="Work performed..." value={row.work_performed} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, work_performed: e.target.value } : r))} />
                               </div>
@@ -1254,7 +1264,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                                <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
                               </div>
                             ))}
                           </div>
@@ -1270,7 +1280,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Material" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
-                                <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
                               </div>
                             ))}
                           </div>
@@ -1286,14 +1296,14 @@ export default function Field() {
                                 <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Purpose" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
-                                <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
+                                <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
                               </div>
                             ))}
                           </div>
 
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => setWizardStep(2)} style={{ ...s.btnSm(), padding: '11px 20px' }}>← Back</button>
-                            <button onClick={() => setWizardStep(4)} style={{ ...s.btn, flex: 1 }}>Continue →</button>
+                            <button onClick={() => setWizardStep(2)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
+                            <button onClick={() => setWizardStep(4)} style={{ ...s.btn, flex: 1 }}>Continue â†’</button>
                           </div>
                         </div>
                       )}
@@ -1302,28 +1312,28 @@ export default function Field() {
                       {wizardStep === 4 && (
                         <div className="wizard-step">
                           {/* Quick summary */}
-                          <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem', fontSize: '13px', color: '#888', lineHeight: '1.8' }}>
-                            <span style={{ color: '#f1f1f1', fontWeight: '700' }}>{new Date(dailyForm.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
-                            {dailyForm.weather && <span> · {dailyForm.weather}{dailyForm.weather_temp ? ` ${dailyForm.weather_temp}°` : ''}</span>}
-                            {dailyForm.weather_delay && <span style={{ color: '#ff6b6b' }}> · Weather delay</span>}
+                          <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem', fontSize: '13px', color: '#6b7280', lineHeight: '1.8' }}>
+                            <span style={{ color: '#111827', fontWeight: '700' }}>{new Date(dailyForm.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+                            {dailyForm.weather && <span> Â· {dailyForm.weather}{dailyForm.weather_temp ? ` ${dailyForm.weather_temp}Â°` : ''}</span>}
+                            {dailyForm.weather_delay && <span style={{ color: '#dc2626' }}> Â· Weather delay</span>}
                             <br />
-                            {crewLog.filter(r => r.name || r.company).length > 0 && <span>{crewLog.filter(r => r.name || r.company).length} crew · </span>}
-                            {subActivityLog.filter(r => r.company).length > 0 && <span>{subActivityLog.filter(r => r.company).length} sub co. · </span>}
-                            {dailyForm.work_performed && <span style={{ color: '#aaa' }}>{dailyForm.work_performed.substring(0, 80)}{dailyForm.work_performed.length > 80 ? '...' : ''}</span>}
+                            {crewLog.filter(r => r.name || r.company).length > 0 && <span>{crewLog.filter(r => r.name || r.company).length} crew Â· </span>}
+                            {subActivityLog.filter(r => r.company).length > 0 && <span>{subActivityLog.filter(r => r.company).length} sub co. Â· </span>}
+                            {dailyForm.work_performed && <span style={{ color: '#4b5563' }}>{dailyForm.work_performed.substring(0, 80)}{dailyForm.work_performed.length > 80 ? '...' : ''}</span>}
                           </div>
 
                           <div style={{ marginBottom: '1.5rem' }}>
                             <label style={s.label}>Attach photos</label>
-                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
                               {uploadingPhoto ? 'Uploading...' : 'Add Photos'}
                               <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadReportPhoto(f)); e.target.value = '' }} />
                             </label>
                             {reportPhotos.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
                                 {reportPhotos.map((p, i) => (
-                                  <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#aaa', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div key={i} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {p.name}
-                                    <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
+                                    <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0 }}>Ã—</button>
                                   </div>
                                 ))}
                               </div>
@@ -1331,9 +1341,9 @@ export default function Field() {
                           </div>
 
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px' }}>← Back</button>
+                            <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
                             <button onClick={submitDailyReport} disabled={submittingDaily} style={{ ...s.btn, flex: 1, opacity: submittingDaily ? 0.6 : 1 }}>
-                              {submittingDaily ? 'Submitting...' : 'Submit Report ✓'}
+                              {submittingDaily ? 'Submitting...' : 'Submit Report âœ“'}
                             </button>
                           </div>
                         </div>
@@ -1342,7 +1352,7 @@ export default function Field() {
 
                     {dailyReports.length > 0 && (
                       <>
-                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>Past reports ({dailyReports.length})</p>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>Past reports ({dailyReports.length})</p>
                         {dailyReports.map(r => {
                           const accent = r.weather_delay ? '#ff6b6b' : r.issues ? '#e8590c' : '#4ade80'
                           const crewCount = r.crew_count ?? r.crew_log?.filter(c => c.name || c.company).length ?? 0
@@ -1352,57 +1362,57 @@ export default function Field() {
                             <div style={s.rowHead} onClick={() => { const opening = expandedReport !== r.id; setExpandedReport(opening ? r.id : null); if (opening && r.photos?.length) fetchPhotoUrls(r.photos.map(p => p.path)) }}>
                               <div>
                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
-                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                                  {r.weather_delay && <span style={{ fontSize: '10px', color: '#ff6b6b', fontWeight: '700', letterSpacing: '0.5px' }}>DELAY</span>}
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                                  {r.weather_delay && <span style={{ fontSize: '10px', color: '#dc2626', fontWeight: '700', letterSpacing: '0.5px' }}>DELAY</span>}
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                  {r.weather && <span style={{ fontSize: '11px', color: '#555' }}>{r.weather}{r.weather_temp ? ` ${r.weather_temp}°` : ''}</span>}
-                                  {crewCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{crewCount} crew</span>}
-                                  {photoCount > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{photoCount} photos</span>}
+                                  {r.weather && <span style={{ fontSize: '11px', color: '#6b7280' }}>{r.weather}{r.weather_temp ? ` ${r.weather_temp}Â°` : ''}</span>}
+                                  {crewCount > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{crewCount} crew</span>}
+                                  {photoCount > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{photoCount} photos</span>}
                                 </div>
                               </div>
-                              <span style={{ color: '#333', fontSize: '14px', flexShrink: 0 }}>{expandedReport === r.id ? '▲' : '▼'}</span>
+                              <span style={{ color: '#374151', fontSize: '14px', flexShrink: 0 }}>{expandedReport === r.id ? 'â–²' : 'â–¼'}</span>
                             </div>
                             {expandedReport === r.id && (
                               <div style={s.rowBody}>
-                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work performed</p>
-                                <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work performed</p>
+                                <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
                                 {r.crew_log?.length > 0 && (<>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Crew</p>
-                                  {r.crew_log.map((c, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{c.name}{c.company ? ` — ${c.company}` : ''}{c.trade ? ` (${c.trade})` : ''}{c.hours ? ` · ${c.hours}hrs` : ''}</p>)}
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Crew</p>
+                                  {r.crew_log.map((c, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{c.name}{c.company ? ` â€” ${c.company}` : ''}{c.trade ? ` (${c.trade})` : ''}{c.hours ? ` Â· ${c.hours}hrs` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.subcontractor_activity?.length > 0 && (<>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Subcontractor Activity</p>
-                                  {r.subcontractor_activity.map((c, i) => <div key={i} style={{ marginBottom: '6px' }}><p style={{ fontSize: '12px', color: '#aaa', margin: '0 0 2px', fontWeight: '600' }}>{c.company}{c.trade ? ` — ${c.trade}` : ''}{c.crew_count ? ` (${c.crew_count} crew)` : ''}</p>{c.work_performed && <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{c.work_performed}</p>}</div>)}
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Subcontractor Activity</p>
+                                  {r.subcontractor_activity.map((c, i) => <div key={i} style={{ marginBottom: '6px' }}><p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 2px', fontWeight: '600' }}>{c.company}{c.trade ? ` â€” ${c.trade}` : ''}{c.crew_count ? ` (${c.crew_count} crew)` : ''}</p>{c.work_performed && <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{c.work_performed}</p>}</div>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.equipment_log?.length > 0 && (<>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Equipment</p>
-                                  {r.equipment_log.map((e, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{e.name}{e.quantity ? ` × ${e.quantity}` : ''}{e.hours ? ` · ${e.hours}hrs` : ''}</p>)}
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Equipment</p>
+                                  {r.equipment_log.map((e, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{e.name}{e.quantity ? ` Ã— ${e.quantity}` : ''}{e.hours ? ` Â· ${e.hours}hrs` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.materials_delivered?.length > 0 && (<>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Materials Delivered</p>
-                                  {r.materials_delivered.map((m, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{m.description}{m.quantity ? ` · ${m.quantity}` : ''}{m.supplier ? ` — ${m.supplier}` : ''}</p>)}
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Materials Delivered</p>
+                                  {r.materials_delivered.map((m, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{m.description}{m.quantity ? ` Â· ${m.quantity}` : ''}{m.supplier ? ` â€” ${m.supplier}` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.visitors?.length > 0 && (<>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Visitors</p>
-                                  {r.visitors.map((v, i) => <p key={i} style={{ fontSize: '12px', color: '#aaa', margin: '0 0 3px' }}>{v.name}{v.company ? ` — ${v.company}` : ''}{v.purpose ? ` · ${v.purpose}` : ''}</p>)}
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Visitors</p>
+                                  {r.visitors.map((v, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{v.name}{v.company ? ` â€” ${v.company}` : ''}{v.purpose ? ` Â· ${v.purpose}` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
-                                {r.toolbox_talk && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p><p style={{ fontSize: '13px', color: '#ccc', margin: '0 0 1rem' }}>{r.toolbox_talk}</p></>)}
-                                {r.safety_observations && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#facc15', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Safety</p><p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.safety_observations}</p></>)}
-                                {r.issues && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / Delays</p><p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.issues}</p></>)}
+                                {r.toolbox_talk && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p><p style={{ fontSize: '13px', color: '#374151', margin: '0 0 1rem' }}>{r.toolbox_talk}</p></>)}
+                                {r.safety_observations && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#a16207', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Safety</p><p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.safety_observations}</p></>)}
+                                {r.issues && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / Delays</p><p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.issues}</p></>)}
                                 {r.photos?.length > 0 && (<>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '1rem' }}>
                                     {r.photos.map((p, i) => (
-                                      <button key={i} type="button" onClick={() => openLightbox(r.photos, i)} style={{ aspectRatio: '1', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', padding: 0 }}>
+                                      <button key={i} type="button" onClick={() => openLightbox(r.photos, i)} style={{ aspectRatio: '1', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', padding: 0 }}>
                                         {(photoUrls[tp(p.path)] || photoUrls[p.path])
                                           ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
-                                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px', padding: '4px', textAlign: 'center' }}>{p.name || `#${i+1}`}</div>
+                                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151', fontSize: '10px', padding: '4px', textAlign: 'center' }}>{p.name || `#${i+1}`}</div>
                                         }
                                       </button>
                                     ))}
@@ -1417,7 +1427,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* ── RFIs ── */}
+                {/* â”€â”€ RFIs â”€â”€ */}
                 {activeTab === 'rfi' && (
                   <>
                     {rfiSuccess && <div style={s.success}>RFI submitted. The PM will respond shortly.</div>}
@@ -1439,33 +1449,33 @@ export default function Field() {
                     </div>
                     {rfis.length > 0 && (
                       <>
-                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>My RFIs ({rfis.length})</p>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 0.75rem' }}>My RFIs ({rfis.length})</p>
                         {rfis.map(rfi => (
                           <div key={rfi.id} style={s.row}>
                             <div style={s.rowHead} onClick={() => setExpandedRfi(expandedRfi === rfi.id ? null : rfi.id)}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{rfi.title}</span>
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title}</span>
                                   <span style={s.badge(rfi.status)}>{rfi.status}</span>
                                 </div>
-                                <span style={{ fontSize: '12px', color: '#555' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
+                                <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
                               </div>
-                              <span style={{ color: '#555' }}>{expandedRfi === rfi.id ? '▲' : '▼'}</span>
+                              <span style={{ color: '#6b7280' }}>{expandedRfi === rfi.id ? 'â–²' : 'â–¼'}</span>
                             </div>
                             {expandedRfi === rfi.id && (
                               <div style={s.rowBody}>
                                 {rfi.description && <>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Details</p>
-                                  <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{rfi.description}</p>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Details</p>
+                                  <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{rfi.description}</p>
                                 </>}
                                 {rfi.response ? (
-                                  <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem' }}>
-                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>PM Response</p>
-                                    <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
+                                  <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem' }}>
+                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>PM Response</p>
+                                    <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
                                     {rfi.responded_at && <p style={{ fontSize: '11px', color: '#1a4a1a', margin: '6px 0 0' }}>{new Date(rfi.responded_at).toLocaleDateString()}</p>}
                                   </div>
                                 ) : (
-                                  <p style={{ fontSize: '13px', color: '#555', fontStyle: 'italic' }}>Awaiting response from PM.</p>
+                                  <p style={{ fontSize: '13px', color: '#6b7280', fontStyle: 'italic' }}>Awaiting response from PM.</p>
                                 )}
                               </div>
                             )}
@@ -1476,13 +1486,13 @@ export default function Field() {
                   </>
                 )}
 
-                {/* ── DELIVERIES ── */}
+                {/* â”€â”€ DELIVERIES â”€â”€ */}
                 {activeTab === 'deliveries' && (
                   <>
                     {deliverySuccess && <div style={s.success}>Delivery logged.</div>}
 
                     {/* Sub-tabs */}
-                    <div style={{ display: 'flex', borderBottom: '1px solid #222', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '1rem' }}>
                       {[{ key: 'mine', label: 'My Log' }, { key: 'expected', label: 'Expected (PM)' }].map(t => (
                         <button key={t.key} onClick={() => setDeliverySubTab(t.key)} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: deliverySubTab === t.key ? '#f1f1f1' : '#555', borderBottom: deliverySubTab === t.key ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap' }}>{t.label}</button>
                       ))}
@@ -1492,7 +1502,7 @@ export default function Field() {
                     {deliverySubTab === 'mine' && (
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{deliveries.filter(d => d.source !== 'pm').length} entr{deliveries.filter(d => d.source !== 'pm').length !== 1 ? 'ies' : 'y'}</p>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{deliveries.filter(d => d.source !== 'pm').length} entr{deliveries.filter(d => d.source !== 'pm').length !== 1 ? 'ies' : 'y'}</p>
                           <button style={s.btnSm('orange')} onClick={() => setShowDeliveryForm(v => !v)}>{showDeliveryForm ? 'Cancel' : '+ Log delivery'}</button>
                         </div>
                         {showDeliveryForm && (
@@ -1518,19 +1528,19 @@ export default function Field() {
                         {deliveries.filter(d => d.source !== 'pm').length === 0 && !showDeliveryForm && <div style={s.empty}>No deliveries logged yet.</div>}
                         {deliveries.filter(d => d.source !== 'pm').map(d => (
                           <div key={d.id} style={{ ...s.row, border: `1px solid ${d.status === 'received' ? '#1a4a1a' : '#1e1e1e'}` }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f9fafb' }}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{d.material}</span>
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{d.material}</span>
                                   <span style={s.badge(d.status)}>{d.status}</span>
-                                  {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#666', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700' }}>DAILY RPT</span>}
+                                  {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#666', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px', fontWeight: '700' }}>DAILY RPT</span>}
                                 </div>
-                                <div style={{ fontSize: '12px', color: '#555' }}>
-                                  {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                                <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                  {d.vendor && `${d.vendor} Â· `}{d.quantity && `${d.quantity} Â· `}
                                   {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
-                                  {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
+                                  {d.received_date && ` Â· Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
                                 </div>
-                                {d.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{d.notes}</div>}
+                                {d.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{d.notes}</div>}
                               </div>
                               {d.status === 'pending' && (
                                 <button style={{ ...s.btnSm('green'), opacity: updatingDelivery === d.id ? 0.6 : 1 }} disabled={updatingDelivery === d.id} onClick={() => markDeliveryReceived(d.id)}>
@@ -1550,18 +1560,18 @@ export default function Field() {
                           ? <div style={s.empty}>No deliveries have been scheduled by the PM yet.</div>
                           : deliveries.filter(d => d.source === 'pm').map(d => (
                             <div key={d.id} style={{ ...s.row, border: `1px solid ${d.status === 'received' ? '#1a4a1a' : '#4a2200'}` }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f9fafb' }}>
                                 <div style={{ flex: 1 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{d.material}</span>
+                                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{d.material}</span>
                                     <span style={s.badge(d.status)}>{d.status}</span>
                                   </div>
-                                  <div style={{ fontSize: '12px', color: '#555' }}>
-                                    {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
+                                  <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                    {d.vendor && `${d.vendor} Â· `}{d.quantity && `${d.quantity} Â· `}
                                     {d.expected_date && <span style={{ color: '#e8590c', fontWeight: '600' }}>Expected {new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}</span>}
-                                    {d.received_date && <span> · Received {new Date(d.received_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                    {d.received_date && <span> Â· Received {new Date(d.received_date + 'T12:00:00').toLocaleDateString()}</span>}
                                   </div>
-                                  {d.notes && <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>{d.notes}</div>}
+                                  {d.notes && <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '4px' }}>{d.notes}</div>}
                                 </div>
                                 {d.status === 'pending' && (
                                   <button style={{ ...s.btnSm('green'), opacity: updatingDelivery === d.id ? 0.6 : 1 }} disabled={updatingDelivery === d.id} onClick={() => markDeliveryReceived(d.id)}>
@@ -1577,23 +1587,23 @@ export default function Field() {
                   </>
                 )}
 
-                {/* ── SCHEDULE ── */}
+                {/* â”€â”€ SCHEDULE â”€â”€ */}
                 {activeTab === 'schedule' && (
                   milestones.length === 0 ? (
                     <div style={s.empty}>No milestones set yet.<br />The PM will add schedule milestones here.</div>
                   ) : milestones.map(m => (
                     <div key={m.id} style={{ ...s.row, border: `1px solid ${m.status === 'complete' ? '#1a4a1a' : m.status === 'delayed' ? '#5a1a1a' : '#1e1e1e'}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f9fafb' }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: m.status === 'complete' ? '#4ade80' : '#f1f1f1' }}>{m.title}</span>
                             <span style={s.badge(m.status)}>{m.status}</span>
                           </div>
-                          <div style={{ fontSize: '12px', color: '#555' }}>
+                          <div style={{ fontSize: '12px', color: '#6b7280' }}>
                             {m.due_date && `Due ${new Date(m.due_date + 'T12:00:00').toLocaleDateString()}`}
-                            {m.completed_date && ` · Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
+                            {m.completed_date && ` Â· Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
                           </div>
-                          {m.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{m.notes}</div>}
+                          {m.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{m.notes}</div>}
                         </div>
                         {m.status !== 'complete' && (
                           <button style={{ ...s.btnSm('green'), opacity: completingMilestone === m.id ? 0.6 : 1 }} disabled={completingMilestone === m.id} onClick={() => completeMilestone(m.id)}>
@@ -1605,13 +1615,13 @@ export default function Field() {
                   ))
                 )}
 
-                {/* ── DIRECT COSTS ── */}
+                {/* â”€â”€ DIRECT COSTS â”€â”€ */}
                 {activeTab === 'costs' && (
                   <>
                     {dcSuccess && <div style={s.success}>Cost logged successfully.</div>}
-                    {dcError && <div style={{ background: '#1a0000', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{dcError}</div>}
+                    {dcError && <div style={{ background: '#1a0000', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{dcError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} · Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} Â· Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
                       <button style={s.btnSm('orange')} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                     </div>
                     {showDcForm && (
@@ -1661,21 +1671,21 @@ export default function Field() {
                     {directCosts.length === 0 && !showDcForm && <div style={s.empty}>No direct costs logged yet.</div>}
                     {directCosts.map(c => (
                       <div key={c.id} style={{ ...s.row, border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f9fafb', flexWrap: 'wrap', gap: '8px' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{c.description}</span>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{c.description}</span>
                               <span style={s.badge((c.category || 'uncategorized').toLowerCase())}>{c.category}</span>
                               <span style={s.badge(c.status)}>{c.status}</span>
                             </div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
                               {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
-                              {c.reason && ` · ${c.reason}`}
-                              {c.status !== 'rejected' && c.notes && ` · ${c.notes}`}
+                              {c.reason && ` Â· ${c.reason}`}
+                              {c.status !== 'rejected' && c.notes && ` Â· ${c.notes}`}
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '15px', fontWeight: '800', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                            <span style={{ fontSize: '15px', fontWeight: '800', color: '#111827' }}>${Number(c.amount).toLocaleString()}</span>
                             {c.receipt_url && (
                               <button style={s.btnSm('orange')} onClick={() => openReceiptUrl(c.receipt_url)}>View receipt</button>
                             )}
@@ -1683,8 +1693,8 @@ export default function Field() {
                         </div>
                         {c.status === 'rejected' && c.notes && (
                           <div style={{ background: '#1a0a0a', borderTop: '1px solid #3a1a1a', padding: '10px 16px' }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason</p>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{c.notes}</p>
+                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason</p>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{c.notes}</p>
                           </div>
                         )}
                       </div>
@@ -1692,7 +1702,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* ── CONTACTS ── */}
+                {/* â”€â”€ CONTACTS â”€â”€ */}
                 {activeTab === 'subs' && (
                   <>
                     {contactSuccess && <div style={s.success}>Contact added successfully.</div>}
@@ -1700,7 +1710,7 @@ export default function Field() {
                     {/* Add contact button / form */}
                     <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
                       <button onClick={() => setShowContactForm(f => !f)} style={s.btnSm('orange')}>
-                        {showContactForm ? '✕ Cancel' : '+ Add Contact'}
+                        {showContactForm ? 'âœ• Cancel' : '+ Add Contact'}
                       </button>
                     </div>
 
@@ -1735,16 +1745,16 @@ export default function Field() {
 
                     {jobContacts.length > 0 && (
                       <>
-                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', paddingLeft: '2px' }}>Project Contacts</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px', paddingLeft: '2px' }}>Project Contacts</div>
                         {jobContacts.map(c => (
                           <div key={c.id} style={s.card}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                               <div>
-                                <p style={{ margin: '0 0 2px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{c.name}</p>
-                                {c.company && <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>{c.company}</p>}
+                                <p style={{ margin: '0 0 2px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{c.name}</p>
+                                {c.company && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{c.company}</p>}
                               </div>
                               {c.role && (
-                                <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', whiteSpace: 'nowrap' }}>
+                                <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#eff6ff', color: '#2563eb', border: '1px solid #1a3a5a', whiteSpace: 'nowrap' }}>
                                   {c.role}
                                 </span>
                               )}
@@ -1752,14 +1762,14 @@ export default function Field() {
                             <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                               {c.phone && (
                                 <div>
-                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
-                                  <a href={`tel:${c.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.phone}</a>
+                                  <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
+                                  <a href={`tel:${c.phone}`} style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none' }}>{c.phone}</a>
                                 </div>
                               )}
                               {c.email && (
                                 <div>
-                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
-                                  <a href={`mailto:${c.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.email}</a>
+                                  <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
+                                  <a href={`mailto:${c.email}`} style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none' }}>{c.email}</a>
                                 </div>
                               )}
                             </div>
@@ -1771,23 +1781,23 @@ export default function Field() {
 
                     {subContacts.length > 0 && (
                       <>
-                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: `${jobContacts.length > 0 ? '20px' : '0'} 0 10px`, paddingLeft: '2px' }}>Subcontractors</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: `${jobContacts.length > 0 ? '20px' : '0'} 0 10px`, paddingLeft: '2px' }}>Subcontractors</div>
                         {subContacts.map(sub => (
                           <div key={sub.id} style={s.card}>
-                            <p style={{ margin: '0 0 3px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{sub.company_name}</p>
-                            {sub.contact_name && <p style={{ margin: '0 0 3px', fontSize: '13px', color: '#888' }}>{sub.contact_name}</p>}
-                            {sub.trade && <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{sub.trade}</p>}
+                            <p style={{ margin: '0 0 3px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{sub.company_name}</p>
+                            {sub.contact_name && <p style={{ margin: '0 0 3px', fontSize: '13px', color: '#6b7280' }}>{sub.contact_name}</p>}
+                            {sub.trade && <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>{sub.trade}</p>}
                             <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                               {sub.phone && (
                                 <div>
-                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
-                                  <a href={`tel:${sub.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{sub.phone}</a>
+                                  <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Phone</div>
+                                  <a href={`tel:${sub.phone}`} style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none' }}>{sub.phone}</a>
                                 </div>
                               )}
                               {sub.email && (
                                 <div>
-                                  <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
-                                  <a href={`mailto:${sub.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{sub.email}</a>
+                                  <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '3px' }}>Email</div>
+                                  <a href={`mailto:${sub.email}`} style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none' }}>{sub.email}</a>
                                 </div>
                               )}
                             </div>
@@ -1804,7 +1814,7 @@ export default function Field() {
               </>
             )}
 
-                {/* ── DOCUMENTS ── */}
+                {/* â”€â”€ DOCUMENTS â”€â”€ */}
                 {activeTab === 'docs' && (
                   <>
                     <div style={s.card}>
@@ -1816,7 +1826,7 @@ export default function Field() {
                         <select
                           value={docCategory}
                           onChange={e => setDocCategory(e.target.value)}
-                          style={{ padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', outline: 'none' }}
+                          style={{ padding: '9px 14px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#111827', outline: 'none' }}
                         >
                           <option value="plans">Plans</option>
                           <option value="geotech">Geotech / Soil Reports</option>
@@ -1824,7 +1834,7 @@ export default function Field() {
                           <option value="specs">Specifications</option>
                           <option value="other">Other</option>
                         </select>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingDoc ? '#111' : '#2a1200', color: uploadingDoc ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingDoc ? 'not-allowed' : 'pointer' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingDoc ? '#111' : '#2a1200', color: uploadingDoc ? '#555' : '#e8590c', border: '1px solid #fdba74', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingDoc ? 'not-allowed' : 'pointer' }}>
                           {uploadingDoc ? 'Uploading...' : '+ Upload Document'}
                           <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.dwg,.zip" style={{ display: 'none' }} disabled={uploadingDoc}
                             onChange={e => { if (e.target.files?.[0]) uploadJobDoc(e.target.files[0]); e.target.value = '' }} />
@@ -1839,7 +1849,7 @@ export default function Field() {
                           <select
                             value={filterDocCategory}
                             onChange={e => setFilterDocCategory(e.target.value)}
-                            style={{ padding: '7px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', color: '#aaa', outline: 'none' }}
+                            style={{ padding: '7px 12px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', color: '#4b5563', outline: 'none' }}
                           >
                             <option value="all">All categories</option>
                             <option value="plans">Plans</option>
@@ -1850,39 +1860,39 @@ export default function Field() {
                           </select>
                         </div>
                         {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).map(d => (
-                          <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                          <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
                             <div>
-                              <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{d.file_name}</span>
+                              <span style={{ fontSize: '14px', color: '#111827' }}>{d.file_name}</span>
                               <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
-                                <span style={{ padding: '2px 8px', background: '#1a1200', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
+                                <span style={{ padding: '2px 8px', background: '#fefce8', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
                                   {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
                                 </span>
-                                <span style={{ fontSize: '12px', color: '#555' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
+                                <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
                               </div>
                             </div>
                             <button style={s.btnSm('orange')} onClick={() => openJobDoc(d.storage_path)}>Open</button>
                           </div>
                         ))}
                         {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).length === 0 && (
-                          <p style={{ color: '#555', fontSize: '13px', margin: 0 }}>No documents in this category.</p>
+                          <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No documents in this category.</p>
                         )}
                       </div>
                     )}
 
                     {jobDocs.length === 0 && (
                       <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
-                        <p style={{ color: '#555', margin: 0 }}>No documents uploaded yet for this job.</p>
+                        <p style={{ color: '#6b7280', margin: 0 }}>No documents uploaded yet for this job.</p>
                       </div>
                     )}
                   </>
                 )}
 
-                {/* ── PUNCH LIST ── */}
+                {/* â”€â”€ PUNCH LIST â”€â”€ */}
                 {activeTab === 'punch' && (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>
-                        {punchItems.length} item{punchItems.length !== 1 ? 's' : ''}{punchItems.filter(p => p.status === 'open').length > 0 ? ` · ${punchItems.filter(p => p.status === 'open').length} open` : ''}
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+                        {punchItems.length} item{punchItems.length !== 1 ? 's' : ''}{punchItems.filter(p => p.status === 'open').length > 0 ? ` Â· ${punchItems.filter(p => p.status === 'open').length} open` : ''}
                       </p>
                       <button style={s.btnSm('orange')} onClick={() => setShowPunchForm(v => !v)}>
                         {showPunchForm ? 'Cancel' : '+ Add item'}
@@ -1935,7 +1945,7 @@ export default function Field() {
 
                     {punchItems.map(item => (
                       <div key={item.id} style={{ ...s.row, border: `1px solid ${item.status === 'approved' ? '#1a4a1a' : item.status === 'sub_complete' ? '#1a2a3a' : item.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f9fafb', flexWrap: 'wrap', gap: '8px' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: '700', color: item.status === 'approved' ? '#4ade80' : '#f1f1f1' }}>{item.title}</span>
@@ -1943,10 +1953,10 @@ export default function Field() {
                                 {item.status === 'sub_complete' ? 'ready to inspect' : item.status}
                               </span>
                             </div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>
-                              {item.assigned_company && `${item.assigned_company} · `}
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                              {item.assigned_company && `${item.assigned_company} Â· `}
                               {item.due_date && `Due ${new Date(item.due_date + 'T12:00:00').toLocaleDateString()}`}
-                              {item.completed_at && ` · Completed ${new Date(item.completed_at).toLocaleDateString()}`}
+                              {item.completed_at && ` Â· Completed ${new Date(item.completed_at).toLocaleDateString()}`}
                             </div>
                             {item.description && <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>{item.description}</div>}
                           </div>
@@ -1984,9 +1994,9 @@ export default function Field() {
                           </div>
                         </div>
                         {item.pm_notes && (
-                          <div style={{ background: '#0a1a2a', borderTop: '1px solid #1a3a5a', padding: '10px 16px' }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>PM Notes</p>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#aaa', lineHeight: '1.5' }}>{item.pm_notes}</p>
+                          <div style={{ background: '#eff6ff', borderTop: '1px solid #1a3a5a', padding: '10px 16px' }}>
+                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>PM Notes</p>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#4b5563', lineHeight: '1.5' }}>{item.pm_notes}</p>
                           </div>
                         )}
                       </div>
@@ -1994,7 +2004,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* ── SITE PHOTOS ── */}
+                {/* â”€â”€ SITE PHOTOS â”€â”€ */}
                 {activeTab === 'photos' && (() => {
                   const allPhotos = [
                     ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: p.taken_at?.split('T')[0] })),
@@ -2035,12 +2045,12 @@ export default function Field() {
                         <div style={{ background: migration.done ? '#0a1a0a' : '#141414', border: `1px solid ${migration.done ? '#1a4a1a' : '#2a2a2a'}`, borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                           {migration.done ? (
                             <>
-                              <span style={{ color: '#4ade80', fontSize: '13px', fontWeight: '700', flex: 1 }}>All photos optimized — load times are now faster.</span>
+                              <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: '700', flex: 1 }}>All photos optimized â€” load times are now faster.</span>
                               <button onClick={() => setMigration(null)} style={s.btnSm()}>Dismiss</button>
                             </>
                           ) : (
                             <>
-                              <span style={{ color: '#aaa', fontSize: '13px', flex: 1 }}>Optimizing {migration.processed} / {migration.total} photos...</span>
+                              <span style={{ color: '#4b5563', fontSize: '13px', flex: 1 }}>Optimizing {migration.processed} / {migration.total} photos...</span>
                               <div style={{ width: '100px', height: '4px', background: '#222', borderRadius: '2px', overflow: 'hidden', flexShrink: 0 }}>
                                 <div style={{ height: '100%', background: '#e8590c', width: `${migration.total ? (migration.processed / migration.total) * 100 : 0}%`, transition: 'width 0.3s ease' }} />
                               </div>
@@ -2076,16 +2086,16 @@ export default function Field() {
 
                       {dates.map(date => (
                         <div key={date} style={{ marginBottom: '1.5rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
                             {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                            <span style={{ color: '#333', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
+                            <span style={{ color: '#374151', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
                           </p>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
                             {byDate[date].map((p, i) => (
-                              <div key={i} style={{ aspectRatio: '1', background: '#0f0f0f', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => openLightbox(filtered, filtered.indexOf(p))}>
+                              <div key={i} style={{ aspectRatio: '1', background: '#f9fafb', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => openLightbox(filtered, filtered.indexOf(p))}>
                                 {(photoUrls[tp(p.path)] || photoUrls[p.path])
                                   ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = photoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
-                                  : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
+                                  : <div style={{ width: '100%', height: '100%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151', fontSize: '10px' }}>...</div>
                                 }
                                 {/* Tag badge */}
                                 {p.tag && (
@@ -2103,7 +2113,7 @@ export default function Field() {
                                   onClick={e => { e.stopPropagation(); deletePhoto(p) }}
                                   style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingPhoto === p.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
                                 >
-                                  {deletingPhoto === p.path ? '…' : '✕'}
+                                  {deletingPhoto === p.path ? 'â€¦' : 'âœ•'}
                                 </button>
                               </div>
                             ))}
@@ -2114,15 +2124,15 @@ export default function Field() {
                   )
                 })()}
 
-                {/* ── VEHICLES ── */}
+                {/* â”€â”€ VEHICLES â”€â”€ */}
                 {activeTab === 'vehicles' && (() => {
                   const LOG_TYPES = ['Weekly Miles', 'Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
                   const needsPhoto = ['Monthly Photo', 'Damage Report'].includes(vehicleLogForm.log_type)
                   const needsFuel = vehicleLogForm.log_type === 'Fuel Fill-up'
                   return (
                     <>
-                      {vehicleLogMsg && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#4ade80' }}>{vehicleLogMsg}</div>}
-                      {vehicleLogError && <div style={{ background: '#1a0000', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b' }}>{vehicleLogError}</div>}
+                      {vehicleLogMsg && <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#16a34a' }}>{vehicleLogMsg}</div>}
+                      {vehicleLogError && <div style={{ background: '#1a0000', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626' }}>{vehicleLogError}</div>}
 
                       {assignedVehicles.length === 0 && (
                         <div style={s.empty}>No vehicles assigned to you yet. Contact your PM.</div>
@@ -2140,15 +2150,15 @@ export default function Field() {
                             {/* Vehicle header */}
                             <div style={{ marginBottom: '1rem' }}>
                               <h2 style={{ ...s.cardTitle, marginBottom: '4px' }}>{v.name}</h2>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                                 {[v.year, v.make, v.model].filter(Boolean).join(' ')}
-                                {v.color && ` · ${v.color}`}
-                                {v.license_plate && ` · ${v.license_plate}`}
+                                {v.color && ` Â· ${v.color}`}
+                                {v.license_plate && ` Â· ${v.license_plate}`}
                               </p>
                               {(lastMileage || lastOilChange) && (
-                                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#555' }}>
+                                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#6b7280' }}>
                                   {lastMileage && <span>{Number(lastMileage).toLocaleString()} mi last logged</span>}
-                                  {lastMileage && lastOilChange && ' · '}
+                                  {lastMileage && lastOilChange && ' Â· '}
                                   {lastOilChange && <span>Last oil change {new Date(lastOilChange.log_date + 'T12:00:00').toLocaleDateString()}</span>}
                                 </p>
                               )}
@@ -2156,7 +2166,7 @@ export default function Field() {
 
                             {/* Log form */}
                             {showForm ? (
-                              <form onSubmit={e => submitVehicleLog(e, v.id)} style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
+                              <form onSubmit={e => submitVehicleLog(e, v.id)} style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
                                 <div style={{ ...s.grid2, marginBottom: '12px' }}>
                                   <div>
                                     <label style={s.label}>Log Type *</label>
@@ -2211,14 +2221,14 @@ export default function Field() {
 
                             {isExpanded && (
                               <div>
-                                {logs.length === 0 && <p style={{ fontSize: '13px', color: '#444', margin: 0 }}>No logs yet.</p>}
+                                {logs.length === 0 && <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>No logs yet.</p>}
                                 {logs.map(l => (
                                   <div key={l.id} style={{ padding: '10px 0', borderTop: '1px solid #1a1a1a' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: logTypeBadgeColor(l.log_type), border: '1px solid #2a2a2a' }}>{l.log_type}</span>
-                                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
-                                      {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
-                                      {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#888' }}>{l.fuel_gallons} gal · ${Number(l.fuel_cost || 0).toFixed(2)}</span>}
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
+                                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
+                                      {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#6b7280' }}>{l.fuel_gallons} gal Â· ${Number(l.fuel_cost || 0).toFixed(2)}</span>}
                                     </div>
                                     {l.notes && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#777' }}>{l.notes}</p>}
                                     {l.photo_url && <button style={{ ...s.btnSm('gray'), marginTop: '6px' }} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>}
@@ -2233,18 +2243,18 @@ export default function Field() {
                   )
                 })()}
 
-                {/* ── TOOLS ── */}
+                {/* â”€â”€ TOOLS â”€â”€ */}
                 {activeTab === 'tools' && (() => {
                   const LOG_TYPE_LABELS = { checkin: 'Check In', checkout: 'Checked Out', damage: 'Damage Report', lost: 'Report Lost', maintenance: 'Needs Maintenance' }
                   return (
                     <>
-                      {toolLogMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{toolLogMsg}</div>}
-                      {toolLogError && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a' }}>{toolLogError}</div>}
-                      {purchaseToolMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>{purchaseToolMsg}</div>}
+                      {toolLogMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>{toolLogMsg}</div>}
+                      {toolLogError && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>{toolLogError}</div>}
+                      {purchaseToolMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>{purchaseToolMsg}</div>}
 
                       {/* Purchase tool */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#555' }}>{myTools.length} tool{myTools.length !== 1 ? 's' : ''} assigned to you</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{myTools.length} tool{myTools.length !== 1 ? 's' : ''} assigned to you</p>
                         <button style={s.btnSm('orange')} onClick={() => setShowPurchaseToolForm(v => !v)}>{showPurchaseToolForm ? 'Cancel' : '+ Log Tool Purchase'}</button>
                       </div>
 
@@ -2304,7 +2314,7 @@ export default function Field() {
                             </div>
                             <div style={{ ...s.grid2, marginBottom: '1rem' }}>
                               <div>
-                                <label style={s.label}>Cost ($){selectedJobId ? ' — will post to job' : ''}</label>
+                                <label style={s.label}>Cost ($){selectedJobId ? ' â€” will post to job' : ''}</label>
                                 <input type="number" step="0.01" min="0" style={s.input} value={purchaseToolForm.purchase_cost} onChange={e => setPurchaseToolForm(f => ({ ...f, purchase_cost: e.target.value }))} placeholder="0.00" />
                               </div>
                               <div>
@@ -2325,7 +2335,7 @@ export default function Field() {
                       )}
 
                       {myTools.length === 0 && !showPurchaseToolForm && (
-                        <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' }}>
+                        <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                           No tools checked out to you. Use the button above to log a tool you purchased.
                         </div>
                       )}
@@ -2335,16 +2345,16 @@ export default function Field() {
                         const logs = toolLogsField[tool.id] || []
                         const isLogging = showToolLogForm === tool.id
                         return (
-                          <div key={tool.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden' }}>
+                          <div key={tool.id} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden' }}>
                             <div style={{ padding: '14px 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <div>
-                                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{tool.name}</p>
-                                <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>
+                                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{tool.name}</p>
+                                <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                                   {[tool.brand, tool.model].filter(Boolean).join(' ')}
-                                  {tool.serial_number && ` · SN: ${tool.serial_number}`}
-                                  {tool.job_site && ` · ${tool.job_site}`}
+                                  {tool.serial_number && ` Â· SN: ${tool.serial_number}`}
+                                  {tool.job_site && ` Â· ${tool.job_site}`}
                                 </p>
-                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#888' }}>{tool.category} · Condition: <span style={{ color: tool.condition === 'good' ? '#4ade80' : tool.condition === 'fair' ? '#f59e0b' : '#ef4444' }}>{tool.condition}</span></p>
+                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>{tool.category} Â· Condition: <span style={{ color: tool.condition === 'good' ? '#4ade80' : tool.condition === 'fair' ? '#f59e0b' : '#ef4444' }}>{tool.condition}</span></p>
                               </div>
                               <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
                                 <button style={s.btnSm('orange')} onClick={() => { setShowToolLogForm(isLogging ? null : tool.id); setExpandedToolFieldId(null) }}>Log</button>
@@ -2353,7 +2363,7 @@ export default function Field() {
                             </div>
 
                             {isLogging && (
-                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#0f0f0f' }}>
+                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#f9fafb' }}>
                                 <form onSubmit={e => submitToolLog(e, tool)}>
                                   <div style={{ marginBottom: '12px' }}>
                                     <label style={s.label}>Action</label>
@@ -2381,13 +2391,13 @@ export default function Field() {
                             )}
 
                             {isExpanded && (
-                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#0f0f0f' }}>
-                                {logs.length === 0 ? <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No history yet.</p> : logs.map(l => (
-                                  <div key={l.id} style={{ padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                              <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#f9fafb' }}>
+                                {logs.length === 0 ? <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No history yet.</p> : logs.map(l => (
+                                  <div key={l.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#1a1a1a', color: l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #2a2a2a' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
-                                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
-                                      {l.notes && <span style={{ fontSize: '12px', color: '#777' }}>· {l.notes}</span>}
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #d1d5db' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
+                                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      {l.notes && <span style={{ fontSize: '12px', color: '#777' }}>Â· {l.notes}</span>}
                                     </div>
                                   </div>
                                 ))}
@@ -2400,7 +2410,7 @@ export default function Field() {
                   )
                 })()}
 
-                {/* ── 2-WEEK LOOKAHEAD ── */}
+                {/* â”€â”€ 2-WEEK LOOKAHEAD â”€â”€ */}
                 {activeTab === 'lookahead' && (() => {
                   const weekDays = []
                   const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
@@ -2418,13 +2428,13 @@ export default function Field() {
                     <div>
                       {/* Week navigation */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>← Prev</button>
+                        <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>â† Prev</button>
                         <span style={{ fontSize: '12px', fontWeight: '700', color: '#666', textAlign: 'center' }}>
                           {wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
-                          {' – '}
+                          {' â€“ '}
                           {new Date(wkBase.getTime() + 11 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                         </span>
-                        <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Next →</button>
+                        <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Next â†’</button>
                       </div>
 
                       {!lookahead ? (
@@ -2436,10 +2446,10 @@ export default function Field() {
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: '10px', flexWrap: 'wrap' }}>
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: lookahead.status === 'submitted' ? '#0a2a0a' : '#1a1a0a', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', border: `1px solid ${lookahead.status === 'submitted' ? '#1a4a1a' : '#3a3a0a'}` }}>
-                              {lookahead.status === 'submitted' ? '✓ Submitted to PM' : 'Draft'}
+                              {lookahead.status === 'submitted' ? 'âœ“ Submitted to PM' : 'Draft'}
                             </span>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>⬇ Download PDF</button>
+                              <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>â¬‡ Download PDF</button>
                               <button
                                 onClick={submitLookaheadFromField}
                                 disabled={submittingLA || lookaheadActivities.length === 0}
@@ -2457,11 +2467,11 @@ export default function Field() {
                             const wkInspections = wkActs.filter(a => a.inspection_required).length
                             return (
                             <div key={w} style={{ marginBottom: '1.25rem' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1a1a1a' }}>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} — {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #f3f4f6' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} â€” {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
                                 <span style={{ display: 'flex', gap: '10px' }}>
-                                  {wkManpower > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{wkManpower} workers</span>}
-                                  {wkInspections > 0 && <span style={{ fontSize: '11px', color: '#f59e0b' }}>⚠ {wkInspections} inspection{wkInspections > 1 ? 's' : ''}</span>}
+                                  {wkManpower > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{wkManpower} workers</span>}
+                                  {wkInspections > 0 && <span style={{ fontSize: '11px', color: '#f59e0b' }}>âš  {wkInspections} inspection{wkInspections > 1 ? 's' : ''}</span>}
                                 </span>
                               </div>
                               {DAY_LABELS.map((dayLabel, di) => {
@@ -2469,14 +2479,14 @@ export default function Field() {
                                 const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
                                 const isToday = dateStr === todayStr
                                 return (
-                                  <div key={dateStr} style={{ background: '#141414', border: `1px solid ${isToday ? '#3a2200' : '#222'}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '8px' }}>
+                                  <div key={dateStr} style={{ background: '#ffffff', border: `1px solid ${isToday ? '#3a2200' : '#222'}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '8px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dayActs.length ? '10px' : 0 }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ fontSize: '13px', fontWeight: '700', color: isToday ? '#e8590c' : '#aaa' }}>{dayLabel}</span>
-                                        <span style={{ fontSize: '12px', color: '#444' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
-                                        {isToday && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '1px 6px' }}>TODAY</span>}
+                                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                                        {isToday && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '99px', padding: '1px 6px' }}>TODAY</span>}
                                       </div>
-                                      <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
+                                      <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
                                     </div>
                                     {dayActs.map(act => {
                                       const tc = act.responsible_type === 'sub' ? { bg: '#0a1a2a', fg: '#38bdf8', bd: '#1a3a4a' } : act.responsible_type === 'other' ? { bg: '#2a1a0a', fg: '#fb923c', bd: '#4a2a1a' } : { bg: '#0a1a0a', fg: '#4ade80', bd: '#1a3a1a' }
@@ -2484,22 +2494,22 @@ export default function Field() {
                                         <div key={act.id} style={{ background: tc.bg, border: `1px solid ${tc.bd}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '6px' }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1', marginBottom: '4px' }}>{act.description}</div>
-                                              {act.location && <div style={{ fontSize: '11px', color: '#555', marginBottom: '6px' }}>{act.location}</div>}
+                                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>{act.description}</div>
+                                              {act.location && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px' }}>{act.location}</div>}
                                               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                                                 <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
                                                   {act.responsible_type === 'sub' ? (lookaheadContracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : act.responsible_type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'}
                                                 </span>
-                                                {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#555', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', border: '1px solid #2a2a2a' }}>{act.manpower} ppl</span>}
+                                                {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#6b7280', padding: '2px 7px', borderRadius: '99px', background: '#f3f4f6', border: '1px solid #d1d5db' }}>{act.manpower} ppl</span>}
                                                 {act.inspection_required && <span style={{ fontSize: '10px', color: '#f59e0b', padding: '2px 7px', borderRadius: '99px', background: '#1a1400', border: '1px solid #3a3000' }}>Inspection</span>}
-                                                {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', border: '1px solid #1a3a1a' }}>Committed</span>}
+                                                {act.committed && <span style={{ fontSize: '10px', color: '#16a34a', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', border: '1px solid #1a3a1a' }}>Committed</span>}
                                                 {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#a855f7', padding: '2px 7px', borderRadius: '99px', background: '#1a0a2a', border: '1px solid #3a1a4a' }}>+{act.additional_companies.length} co</span>}
                                               </div>
-                                              {act.constraints_notes && <div style={{ fontSize: '11px', color: '#555', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
+                                              {act.constraints_notes && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
                                             </div>
                                             <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                                              <button onClick={() => openEditLAActivity(act)} style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
-                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
+                                              <button onClick={() => openEditLAActivity(act)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
+                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>âœ•</button>
                                             </div>
                                           </div>
                                         </div>
@@ -2516,13 +2526,13 @@ export default function Field() {
                   )
                 })()}
 
-                {/* ── LOOKAHEAD ACTIVITY MODAL ── */}
+                {/* â”€â”€ LOOKAHEAD ACTIVITY MODAL â”€â”€ */}
                 {showLAModal && (
                   <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 9000, display: 'flex', alignItems: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) setShowLAModal(false) }}>
-                    <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '760px', margin: '0 auto', padding: '1.75rem', maxHeight: '85vh', overflowY: 'auto' }}>
+                    <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '760px', margin: '0 auto', padding: '1.75rem', maxHeight: '85vh', overflowY: 'auto' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{editingLAActivity ? 'Edit Activity' : 'Add Activity'}</h3>
-                        <button onClick={() => setShowLAModal(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '20px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+                        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{editingLAActivity ? 'Edit Activity' : 'Add Activity'}</h3>
+                        <button onClick={() => setShowLAModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '20px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>âœ•</button>
                       </div>
 
                       <div style={{ marginBottom: '1rem' }}>
@@ -2571,8 +2581,8 @@ export default function Field() {
                         <label style={s.label}>Additional Companies on Site</label>
                         {(laForm.additional_companies || []).map((co, idx) => (
                           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                            <span style={{ flex: 1, fontSize: '13px', color: '#ccc', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` — ${co.manpower} ppl` : ''}</span>
-                            <button onClick={() => setLaForm(f => ({ ...f, additional_companies: f.additional_companies.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '4px' }}>✕</button>
+                            <span style={{ flex: 1, fontSize: '13px', color: '#374151', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` â€” ${co.manpower} ppl` : ''}</span>
+                            <button onClick={() => setLaForm(f => ({ ...f, additional_companies: f.additional_companies.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '4px' }}>âœ•</button>
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -2580,7 +2590,7 @@ export default function Field() {
                           <input type="number" value={newLACoManpower} onChange={e => setNewLACoManpower(e.target.value)} style={{ ...s.input, flex: 1 }} placeholder="# ppl" min="0" />
                           <button
                             onClick={() => { if (!newLACoName.trim()) return; setLaForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newLACoName.trim(), manpower: newLACoManpower ? parseInt(newLACoManpower) : null }] })); setNewLACoName(''); setNewLACoManpower('') }}
-                            style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                            style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '12px', fontWeight: '700', cursor: 'pointer', padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
                           >+ Add</button>
                         </div>
                       </div>
@@ -2594,7 +2604,7 @@ export default function Field() {
                         ].map(({ key, label }) => (
                           <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                             <input type="checkbox" checked={!!laForm[key]} onChange={e => setLaForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
-                            <span style={{ fontSize: '13px', color: '#aaa' }}>{label}</span>
+                            <span style={{ fontSize: '13px', color: '#4b5563' }}>{label}</span>
                           </label>
                         ))}
                       </div>
@@ -2605,7 +2615,7 @@ export default function Field() {
                       </div>
 
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => setShowLAModal(false)} style={{ flex: 1, padding: '12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '10px', color: '#888', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
+                        <button onClick={() => setShowLAModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '10px', color: '#6b7280', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
                         <button
                           onClick={saveLAActivity}
                           disabled={savingLA || !laForm.description}
@@ -2622,14 +2632,14 @@ export default function Field() {
         )}
       </main>
 
-      {/* ── FLOATING CAMERA BUTTON ── */}
+      {/* â”€â”€ FLOATING CAMERA BUTTON â”€â”€ */}
       {selectedJobId && !lightbox && (
         <div style={{ position: 'fixed', bottom: '24px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
           {fabOpen && (
-            <div style={{ background: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '14px', padding: '14px', width: '280px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ background: '#1c1c1c', border: '1px solid #d1d5db', borderRadius: '14px', padding: '14px', width: '280px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Tag</label>
-                {fabCount > 0 && <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '2px 8px' }}>{fabCount} saved</span>}
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Tag</label>
+                {fabCount > 0 && <span style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '99px', padding: '2px 8px' }}>{fabCount} saved</span>}
               </div>
               {/* Tag pill picker */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '10px' }}>
@@ -2661,7 +2671,7 @@ export default function Field() {
                 />
               </label>
               {fabCount > 0 && (
-                <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#444', textAlign: 'center' }}>Tap ✕ when done</p>
+                <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#6b7280', textAlign: 'center' }}>Tap âœ• when done</p>
               )}
             </div>
           )}
@@ -2669,12 +2679,12 @@ export default function Field() {
             onClick={() => { setFabOpen(o => { if (o) { setFabCount(0); setFabTag('') } return !o }); setFabCaption('') }}
             style={{ width: '58px', height: '58px', borderRadius: '50%', background: fabOpen ? '#333' : '#e8590c', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 24px rgba(232,89,12,0.45)', transition: 'background 0.15s' }}
           >
-            {fabOpen ? '✕' : IC.camera}
+            {fabOpen ? 'âœ•' : IC.camera}
           </button>
         </div>
       )}
 
-      {/* ── LIGHTBOX ── */}
+      {/* â”€â”€ LIGHTBOX â”€â”€ */}
       {lightbox && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
           {/* Top bar */}
@@ -2685,12 +2695,12 @@ export default function Field() {
                   {lightbox.photos[lightbox.index].tag}
                 </span>
               )}
-              {lightbox.photos[lightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px' }}>{lightbox.photos[lightbox.index].caption}</span>}
-              {lightbox.photos[lightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(lightbox.photos[lightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+              {lightbox.photos[lightbox.index]?.caption && <span style={{ color: '#111827', fontWeight: '700', fontSize: '14px' }}>{lightbox.photos[lightbox.index].caption}</span>}
+              {lightbox.photos[lightbox.index]?.date && <span style={{ color: '#6b7280', fontSize: '12px' }}>{new Date(lightbox.photos[lightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <span style={{ color: '#555', fontSize: '12px' }}>{lightbox.index + 1} / {lightbox.photos.length}</span>
-              <button onClick={() => setLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+              <span style={{ color: '#6b7280', fontSize: '12px' }}>{lightbox.index + 1} / {lightbox.photos.length}</span>
+              <button onClick={() => setLightbox(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>âœ•</button>
             </div>
           </div>
 
@@ -2698,11 +2708,11 @@ export default function Field() {
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '0 60px' }}>
             {photoUrls[lightbox.photos[lightbox.index]?.path]
               ? <img src={photoUrls[lightbox.photos[lightbox.index].path]} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', userSelect: 'none' }} alt="" />
-              : <div style={{ color: '#444', fontSize: '13px' }}>Loading...</div>
+              : <div style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</div>
             }
             {lightbox.photos.length > 1 && <>
-              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>‹</button>
-              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>›</button>
+              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>â€¹</button>
+              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>â€º</button>
             </>}
           </div>
 
@@ -2710,10 +2720,10 @@ export default function Field() {
           {lightbox.photos.length > 1 && (
             <div style={{ display: 'flex', gap: '4px', padding: '10px 14px', background: 'rgba(0,0,0,0.8)', overflowX: 'auto', flexShrink: 0 }}>
               {lightbox.photos.map((p, i) => (
-                <button key={i} onClick={() => setLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === lightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#111' }}>
+                <button key={i} onClick={() => setLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === lightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#f9fafb' }}>
                   {(photoUrls[tp(p.path)] || photoUrls[p.path])
                     ? <img src={photoUrls[tp(p.path)] || photoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" />
-                    : <div style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
+                    : <div style={{ width: '100%', height: '100%', background: '#f3f4f6' }} />
                   }
                 </button>
               ))}
@@ -2724,3 +2734,4 @@ export default function Field() {
     </div>
   )
 }
+

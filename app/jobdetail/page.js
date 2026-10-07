@@ -10,75 +10,104 @@ import NewPOForm from './NewPOForm'
 import EditPOForm from './EditPOForm'
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a' },
-  header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
-  headerInner: { maxWidth: '1320px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
-  logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
-  logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
-  logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
-  logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
+  // ── Layout ──
+  page: { minHeight: '100vh', background: '#f4f6f8' },
+  header: { background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
+  headerInner: { maxWidth: '1320px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '56px' },
+  logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
+  logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
+  logoSub: { fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' },
   main: { maxWidth: '1320px', margin: '0 auto', padding: '2rem 1.5rem' },
-  backBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#888', fontSize: '13px', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.5rem' },
-  card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.75rem', marginBottom: '1.5rem' },
-  cardTitle: { fontSize: '13px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1.25rem' },
+  backBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#6b7280', fontSize: '13px', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.5rem' },
+
+  // ── Cards ──
+  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  cardTitle: { fontSize: '11px', fontWeight: '600', color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase', marginTop: 0, marginBottom: '1.25rem' },
+
+  // ── Forms ──
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' },
-  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
-  input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
-  textarea: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none', resize: 'vertical', minHeight: '100px' },
-  btn: { padding: '11px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnGray: { padding: '11px 24px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnRed: { padding: '11px 24px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSmall: { padding: '7px 16px', background: '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSmallOrange: { padding: '7px 16px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSmallGreen: { padding: '7px 16px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  btnSmallRed: { padding: '7px 16px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  jobTitle: { fontSize: '28px', fontWeight: '800', color: '#f1f1f1', margin: '0 0 4px' },
-  jobMeta: { fontSize: '14px', color: '#555', margin: 0 },
-  successMsg: { background: '#0a1a0a', border: '1px solid #1a4a1a', color: '#4ade80', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1.5rem' },
-  errorMsg: { background: '#1a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1.5rem' },
+  label: { display: 'block', fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '5px' },
+  input: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' },
+  textarea: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none', resize: 'vertical', minHeight: '100px' },
+
+  // ── Buttons ──
+  btn: { padding: '9px 20px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  btnGray: { padding: '9px 20px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' },
+  btnRed: { padding: '9px 20px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  btnSmall: { padding: '5px 12px', background: '#f9fafb', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  btnSmallOrange: { padding: '5px 12px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  btnSmallGreen: { padding: '5px 12px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  btnSmallRed: { padding: '5px 12px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+
+  // ── Job title ──
+  jobTitle: { fontSize: '24px', fontWeight: '700', color: '#111827', margin: '0 0 4px' },
+  jobMeta: { fontSize: '14px', color: '#6b7280', margin: 0 },
+
+  // ── Alerts ──
+  successMsg: { background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '6px', fontSize: '13px', marginBottom: '1.25rem' },
+  errorMsg: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: '6px', fontSize: '13px', marginBottom: '1.25rem' },
+
+  // ── Status badges ──
   badge: (status) => ({
-    padding: '4px 14px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: status === 'active' ? '#0a1a2a' : status === 'complete' ? '#0a2a0a' : status === 'archived' ? '#1a1a1a' : '#2a2a0a',
-    color: status === 'active' ? '#60a5fa' : status === 'complete' ? '#4ade80' : status === 'archived' ? '#555' : '#facc15',
-    border: `1px solid ${status === 'active' ? '#1a3a5a' : status === 'complete' ? '#1a4a1a' : status === 'archived' ? '#2a2a2a' : '#4a4a0a'}`
+    padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase',
+    background: status === 'active' ? '#eff6ff' : status === 'complete' ? '#dcfce7' : status === 'archived' ? '#f9fafb' : '#fefce8',
+    color: status === 'active' ? '#1d4ed8' : status === 'complete' ? '#15803d' : status === 'archived' ? '#6b7280' : '#a16207',
+    border: `1px solid ${status === 'active' ? '#bfdbfe' : status === 'complete' ? '#bbf7d0' : status === 'archived' ? '#e5e7eb' : '#fde68a'}`
   }),
   contractBadge: (status) => ({
-    padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: status === 'signed' ? '#0a2a0a' : status === 'active' ? '#0a1a2a' : '#1a1a1a',
-    color: status === 'signed' ? '#4ade80' : status === 'active' ? '#60a5fa' : '#888',
-    border: `1px solid ${status === 'signed' ? '#1a4a1a' : status === 'active' ? '#1a3a5a' : '#2a2a2a'}`
+    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase',
+    background: status === 'signed' ? '#dcfce7' : status === 'active' ? '#eff6ff' : '#f9fafb',
+    color: status === 'signed' ? '#15803d' : status === 'active' ? '#1d4ed8' : '#6b7280',
+    border: `1px solid ${status === 'signed' ? '#bbf7d0' : status === 'active' ? '#bfdbfe' : '#e5e7eb'}`
   }),
   coBadge: (status) => ({
-    padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: status === 'approved' ? '#0a2a0a' : status === 'rejected' ? '#2a0a0a' : '#2a1200',
-    color: status === 'approved' ? '#4ade80' : status === 'rejected' ? '#ff6b6b' : '#e8590c',
-    border: `1px solid ${status === 'approved' ? '#1a4a1a' : status === 'rejected' ? '#5a1a1a' : '#4a2200'}`
+    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase',
+    background: status === 'approved' ? '#dcfce7' : status === 'rejected' ? '#fee2e2' : '#fff7ed',
+    color: status === 'approved' ? '#15803d' : status === 'rejected' ? '#dc2626' : '#c2410c',
+    border: `1px solid ${status === 'approved' ? '#bbf7d0' : status === 'rejected' ? '#fecaca' : '#fed7aa'}`
   }),
-  billingRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
-  subRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
-  statRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' },
-  statCard: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem' },
-  statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' },
-  statValue: (accent) => ({ fontSize: '24px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
-  confirmBox: { background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '1.25rem', marginTop: '1rem' },
-  tabRow: { display: 'flex', gap: '4px', marginBottom: '1.5rem', borderBottom: '1px solid #222', paddingBottom: '0', overflowX: 'auto' },
+
+  // ── Rows ──
+  billingRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid #f3f4f6' },
+  subRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid #f3f4f6' },
+  coRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid #f3f4f6' },
+
+  // ── Stats ──
+  statRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.25rem' },
+  statCard: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },
+  statLabel: { fontSize: '11px', fontWeight: '600', color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '4px' },
+  statValue: (accent) => ({ fontSize: '22px', fontWeight: '700', color: accent || '#111827', margin: 0 }),
+
+  // ── Confirm destructive ──
+  confirmBox: { background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '1rem', marginTop: '1rem' },
+
+  // ── Tabs ──
+  tabRow: { display: 'flex', gap: '2px', marginBottom: '1.5rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0', overflowX: 'auto' },
   tab: (active) => ({
-    padding: '10px 20px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none',
-    color: active ? '#f1f1f1' : '#555', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent',
-    letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap'
+    padding: '9px 18px', fontSize: '13px', fontWeight: active ? '600' : '400', cursor: 'pointer', background: 'none', border: 'none',
+    color: active ? '#111827' : '#6b7280', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent',
+    marginBottom: '-1px', whiteSpace: 'nowrap'
   }),
-  inlineForm: { background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1.25rem', marginBottom: '1rem' },
-  contractRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
-  contractRowHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' },
-  contractRowExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
-  coRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' },
-  budgetTableHeader: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e', marginBottom: '4px', alignItems: 'center' },
-  budgetTableRow: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '14px 12px', borderBottom: '1px solid #111', alignItems: 'center' },
-  billingEntryRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
-  billingEntryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#0f0f0f' },
-  billingEntryExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
-  emptyMsg: { fontSize: '13px', color: '#555', textAlign: 'center', padding: '2rem 1rem', fontStyle: 'italic' },
+
+  // ── Inline forms ──
+  inlineForm: { background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '1.25rem', marginBottom: '1rem' },
+
+  // ── Contract/billing rows ──
+  contractRow: { border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '6px', overflow: 'hidden' },
+  contractRowHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#fff' },
+  contractRowExpanded: { borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' },
+  billingEntryRow: { border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '6px', overflow: 'hidden' },
+  billingEntryHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#fff' },
+  billingEntryExpanded: { borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' },
+
+  // ── Budget table ──
+  budgetTableHeader: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '8px 12px 10px', fontSize: '11px', fontWeight: '600', color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', marginBottom: '4px', alignItems: 'center', background: '#f9fafb' },
+  budgetTableRow: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '12px', borderBottom: '1px solid #f3f4f6', alignItems: 'center' },
+
+  // ── Misc ──
+  emptyMsg: { fontSize: '13px', color: '#9ca3af', textAlign: 'center', padding: '2rem 1rem' },
 }
 
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10', budget_allocations: [] }
@@ -911,7 +940,7 @@ function JobDetailInner() {
           emailWrap(`
             <h2 style="color:#ff6b6b;margin:0 0 1rem">Cost entry rejected</h2>
             <p style="color:#aaa">Your direct cost entry <strong style="color:#f1f1f1">${cost.description}</strong> ($${Number(cost.amount).toLocaleString()}) on <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong> has been rejected.</p>
-            ${notes ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${notes}</p></div>` : '<p style="color:#888;font-size:13px;margin:1rem 0 0">Contact NV Construction if you have questions.</p>'}
+            ${notes ? `<div style="background:#fef2f2;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${notes}</p></div>` : '<p style="color:#888;font-size:13px;margin:1rem 0 0">Contact NV Construction if you have questions.</p>'}
           `)
         )
       }
@@ -3022,7 +3051,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const html = buildSubcontractHtml(contractGenForm)
     const toolbar = [
       '<style id="nv-edit-style">',
-      '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a1a1a;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
+      '#nv-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:#f0f0f0;color:#fff;padding:10px 20px;display:flex;align-items:center;gap:14px;font-family:sans-serif;font-size:13px;border-bottom:2px solid #e8590c;box-shadow:0 2px 8px rgba(0,0,0,.4)}',
       '#nv-bar button{border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;background:#e8590c;color:#fff}',
       '#nv-bar button:hover{background:#d44d00}',
       '@media print{#nv-bar{display:none!important}body{margin-top:0!important}}',
@@ -3418,7 +3447,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     if (co.attachment_url) {
       const { data: signedData } = await supabase.storage.from('receipts').createSignedUrl(co.attachment_url, 604800)
       if (signedData?.signedUrl) {
-        attachmentHtml = `<div style="margin:16px 0 0;padding:12px 16px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px"><p style="margin:0 0 6px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Attachment</p><a href="${signedData.signedUrl}" style="color:#e8590c;font-size:13px;text-decoration:none">View attached document</a></div>`
+        attachmentHtml = `<div style="margin:16px 0 0;padding:12px 16px;background:#f0f0f0;border:1px solid #d1d5db;border-radius:8px"><p style="margin:0 0 6px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Attachment</p><a href="${signedData.signedUrl}" style="color:#e8590c;font-size:13px;text-decoration:none">View attached document</a></div>`
       }
     }
     await sendEmail(
@@ -3429,7 +3458,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
           NV Construction has prepared change order <strong style="color:#f1f1f1">${coNumber}</strong> on project <strong style="color:#f1f1f1">#${job.job_number} — ${job.project_name}</strong> for your review.
         </p>
-        <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px 20px;margin:0 0 16px">
+        <div style="background:#f0f0f0;border:1px solid #d1d5db;border-radius:8px;padding:16px 20px;margin:0 0 16px">
           <p style="margin:0 0 6px;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Description</p>
           <p style="margin:0;font-size:14px;color:#f1f1f1;line-height:1.6">${co.description}</p>
           ${co.notes ? `<p style="margin:8px 0 0;font-size:12px;color:#888;line-height:1.5">${co.notes}</p>` : ''}
@@ -4608,11 +4637,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     setSubmittingLookahead(false)
   }
 
-  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>
+  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', color: '#6b7280' }}>Loading...</div>
   if (errMsg && !job) return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: '1rem' }}>
-      <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{errMsg}</div>
-      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#ffffff', gap: '1rem' }}>
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{errMsg}</div>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
     </div>
   )
 
@@ -4627,7 +4656,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.logoSub}>Job Detail</div>
             </div>
           </div>
-          <button style={{ padding: '7px 16px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+          <button style={{ padding: '7px 16px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
         </div>
       </header>
 
@@ -4641,14 +4670,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <h1 style={{ ...s.jobTitle, margin: 0 }}>#{job.job_number} — {job.project_name}</h1>
-              {job.nv_role === 'sub' && <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '99px', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>Subcontractor</span>}
+              {job.nv_role === 'sub' && <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>Subcontractor</span>}
             </div>
             <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date).toLocaleDateString() : ''}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {job.status !== 'complete' && !job.archived && (
               <button
-                style={{ padding: '9px 18px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
+                style={{ padding: '9px 18px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
                 disabled={generatingReport}
                 onClick={async () => {
                   if (!window.confirm('Mark this job as complete and generate the financial performance report?')) return
@@ -4659,7 +4688,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
             {job.status === 'complete' && (
               <button
-                style={{ padding: '9px 18px', background: '#1a1a2a', color: '#a78bfa', border: '1px solid #3a1a5a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
+                style={{ padding: '9px 18px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
                 disabled={generatingReport}
                 onClick={() => generateCompletionReport(false)}>
                 {generatingReport ? 'Generating...' : 'Generate Report'}
@@ -4687,10 +4716,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <>
                   <div style={s.statValue()}>{hasValue ? '$' + total.toLocaleString() : '—'}</div>
                   {isSub && nvSubcontracts.length > 0 && (
-                    <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>{nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}</div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '3px' }}>{nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}</div>
                   )}
                   {!isSub && approvedCOs !== 0 && (
-                    <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '3px' }}>
                       ${baseVal.toLocaleString()} base + {primeCOs.filter(co => co.status === 'approved').length} CO{primeCOs.filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
                     </div>
                   )}
@@ -4705,7 +4734,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
 
           {/* Left sidebar nav */}
-          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
+          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
             {[
               {
                 group: 'Project',
@@ -4756,7 +4785,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               },
             ].map(({ group, items }) => (
               <div key={group} style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '4px' }}>{group}</div>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '4px' }}>{group}</div>
                 {items.map(({ key, label, badge, alert }) => {
                   const active = activeTab === key
                   return (
@@ -4766,7 +4795,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         width: '100%', padding: '7px 10px', marginBottom: '1px',
-                        background: active ? '#1a1a1a' : 'transparent',
+                        background: active ? '#f0f0f0' : 'transparent',
                         border: 'none',
                         borderLeft: active ? '2px solid #e8590c' : '2px solid transparent',
                         borderRadius: '6px',
@@ -4782,9 +4811,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {badge ? (
                         <span style={{
                           fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px',
-                          background: alert ? '#3a1200' : '#1a1a1a',
+                          background: alert ? '#3a1200' : '#f0f0f0',
                           color: alert ? '#e8590c' : '#555',
-                          border: `1px solid ${alert ? '#5a2200' : '#2a2a2a'}`,
+                          border: `1px solid ${alert ? '#5a2200' : '#d1d5db'}`,
                           letterSpacing: '0.3px', whiteSpace: 'nowrap',
                         }}>{badge}</span>
                       ) : null}
@@ -4799,7 +4828,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <div style={{ flex: 1, minWidth: 0 }}>
 
         {/* ── MOBILE SECTION NAV (hidden on desktop) ── */}
-        <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#f1f1f1', fontSize: '16px', marginBottom: '1.25rem' }}>
+        <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#111827', fontSize: '16px', marginBottom: '1.25rem' }}>
           <optgroup label="Project">
             <option value="details">Details</option>
             <option value="contacts">Contacts</option>
@@ -4844,7 +4873,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <label style={s.label}>NV role on this job</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     {[{ v: 'gc', label: 'General Contractor' }, { v: 'sub', label: 'Subcontractor' }].map(({ v, label }) => (
-                      <button key={v} type="button" onClick={() => update('nv_role', v)} style={{ padding: '8px 18px', borderRadius: '6px', border: `1px solid ${(form.nv_role || 'gc') === v ? '#e8590c' : '#2a2a2a'}`, background: (form.nv_role || 'gc') === v ? '#2a1200' : '#0a0a0a', color: (form.nv_role || 'gc') === v ? '#e8590c' : '#666', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                      <button key={v} type="button" onClick={() => update('nv_role', v)} style={{ padding: '8px 18px', borderRadius: '6px', border: `1px solid ${(form.nv_role || 'gc') === v ? '#e8590c' : '#d1d5db'}`, background: (form.nv_role || 'gc') === v ? '#fff7ed' : '#ffffff', color: (form.nv_role || 'gc') === v ? '#e8590c' : '#666', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                         {label}
                       </button>
                     ))}
@@ -4860,7 +4889,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <label style={s.label}>Contract value {job.contract_value && !contractValueUnlocked && <span style={{ color: '#e8590c', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', marginLeft: '6px' }}>LOCKED</span>}</label>
                     {job.contract_value && !contractValueUnlocked ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ ...s.input, color: '#888', cursor: 'default', flex: 1, display: 'flex', alignItems: 'center' }}>
+                        <div style={{ ...s.input, color: '#6b7280', cursor: 'default', flex: 1, display: 'flex', alignItems: 'center' }}>
                           ${Number(job.contract_value).toLocaleString()}
                         </div>
                         <button
@@ -4950,11 +4979,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showBillingDates ? '1.25rem' : 0, cursor: 'pointer' }} onClick={() => setShowBillingDates(v => !v)}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Billing schedule</p>
-                  <span style={{ fontSize: '12px', color: '#555', fontWeight: '700', userSelect: 'none' }}>{showBillingDates ? '▲ Hide' : '▼ Show'}</span>
+                  <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '700', userSelect: 'none' }}>{showBillingDates ? '▲ Hide' : '▼ Show'}</span>
                 </div>
                 {showBillingDates && <>
-                <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Subcontractor billing</p>
                   <div style={{ ...s.grid2, marginBottom: '8px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Frequency</label>
@@ -4981,11 +5010,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const due = Number(form.sub_billing_due)
                     const ord = n => { const s = n % 10, h = n % 100; return n + (h >= 11 && h <= 13 ? 'th' : s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th') }
                     const label = freq === 'monthly' ? `Bills on the ${ord(due)} of each month` : `Bills every ${days[due]}${freq === 'biweekly' ? ' (bi-weekly)' : ''}`
-                    return <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{label}</p>
+                    return <p style={{ fontSize: '12px', color: '#4b5563', margin: 0 }}>{label}</p>
                   })()}
                 </div>
-                <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px' }}>
-                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>{(form.nv_role || 'gc') === 'sub' ? 'Our billing to GC' : 'Prime contract (owner) billing'}</p>
+                <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>{(form.nv_role || 'gc') === 'sub' ? 'Our billing to GC' : 'Prime contract (owner) billing'}</p>
                   <div style={{ ...s.grid2, marginBottom: '8px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Frequency</label>
@@ -5012,7 +5041,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const due = Number(form.owner_billing_due)
                     const ord = n => { const s = n % 10, h = n % 100; return n + (h >= 11 && h <= 13 ? 'th' : s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th') }
                     const label = freq === 'monthly' ? `Bills on the ${ord(due)} of each month` : `Bills every ${days[due]}${freq === 'biweekly' ? ' (bi-weekly)' : ''}`
-                    return <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{label}</p>
+                    return <p style={{ fontSize: '12px', color: '#4b5563', margin: 0 }}>{label}</p>
                   })()}
                 </div>
                 </>}
@@ -5020,26 +5049,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               <div style={s.card}>
                 <p style={s.cardTitle}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor, design team & permits' : 'Owner, design team & permits'}</p>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor' : 'Owner'}</p>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>{(form.nv_role || 'gc') === 'sub' ? 'General Contractor' : 'Owner'}</p>
                 <div style={{ ...s.grid2, marginBottom: '16px' }} className="rx-grid-2">
                   <div><label style={s.label}>Company</label><input style={s.input} value={form.owner_company || ''} onChange={e => update('owner_company', e.target.value)} /></div>
                   <div><label style={s.label}>Name</label><input style={s.input} value={form.owner_name || ''} onChange={e => update('owner_name', e.target.value)} /></div>
                   <div><label style={s.label}>Email</label><input style={s.input} value={form.owner_email || ''} onChange={e => update('owner_email', e.target.value)} /></div>
                   <div><label style={s.label}>Phone</label><input style={s.input} value={form.owner_phone || ''} onChange={e => update('owner_phone', e.target.value)} /></div>
                 </div>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Architect</p>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Architect</p>
                 <div style={{ ...s.grid3, marginBottom: '16px' }} className="rx-grid-3">
                   <div><label style={s.label}>Name</label><input style={s.input} value={form.architect_name || ''} onChange={e => update('architect_name', e.target.value)} /></div>
                   <div><label style={s.label}>Company</label><input style={s.input} value={form.architect_company || ''} onChange={e => update('architect_company', e.target.value)} /></div>
                   <div><label style={s.label}>Email</label><input style={s.input} value={form.architect_email || ''} onChange={e => update('architect_email', e.target.value)} /></div>
                 </div>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Engineer</p>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Engineer</p>
                 <div style={{ ...s.grid3, marginBottom: '16px' }} className="rx-grid-3">
                   <div><label style={s.label}>Name</label><input style={s.input} value={form.engineer_name || ''} onChange={e => update('engineer_name', e.target.value)} /></div>
                   <div><label style={s.label}>Company</label><input style={s.input} value={form.engineer_company || ''} onChange={e => update('engineer_company', e.target.value)} /></div>
                   <div><label style={s.label}>Email</label><input style={s.input} value={form.engineer_email || ''} onChange={e => update('engineer_email', e.target.value)} /></div>
                 </div>
-                <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Permits</p>
+                <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 10px' }}>Permits</p>
                 <div style={{ ...s.grid2 }} className="rx-grid-2">
                   <div><label style={s.label}>Permit number</label><input style={s.input} value={form.permit_number || ''} onChange={e => update('permit_number', e.target.value)} /></div>
                   <div><label style={s.label}>Permit date</label><input type="date" style={s.input} value={form.permit_date || ''} onChange={e => update('permit_date', e.target.value)} /></div>
@@ -5081,16 +5110,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return (
                   <div style={{ ...s.card, marginBottom: '1rem' }}>
                     <p style={s.cardTitle}>Billing calendar — {title}</p>
-                    <p style={{ fontSize: '12px', color: '#555', margin: '0 0 1rem' }}>Vendors receive an automatic reminder email 3 days before each due date.</p>
+                    <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>Vendors receive an automatic reminder email 3 days before each due date.</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '8px' }}>
                       {dates.map((d, i) => {
                         const reminder = new Date(d); reminder.setDate(d.getDate() - 3)
                         const isPast = d < today
                         const isNext = !isPast && i === 0
                         return (
-                          <div key={i} style={{ background: isNext ? '#2a1200' : isPast ? '#0f0f0f' : '#141414', border: `1px solid ${isNext ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', padding: '10px 12px' }}>
+                          <div key={i} style={{ background: isNext ? '#fff7ed' : isPast ? '#f9fafb' : '#ffffff', border: `1px solid ${isNext ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', padding: '10px 12px' }}>
                             <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: isNext ? '#e8590c' : isPast ? '#444' : '#f1f1f1' }}>{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#555' }}>Reminder: {reminder.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#6b7280' }}>Reminder: {reminder.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
                           </div>
                         )
                       })}
@@ -5107,7 +5136,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {confirmDelete && (
                 <div style={s.confirmBox}>
-                  <p style={{ color: '#ff6b6b', fontSize: '14px', margin: '0 0 1rem' }}>This will permanently delete the job, all billing submissions, and all sub assignments. This cannot be undone.</p>
+                  <p style={{ color: '#dc2626', fontSize: '14px', margin: '0 0 1rem' }}>This will permanently delete the job, all billing submissions, and all sub assignments. This cannot be undone.</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="button" onClick={deleteJob} style={s.btnRed}>Yes, delete permanently</button>
                     <button type="button" onClick={() => setConfirmDelete(false)} style={s.btnGray}>Cancel</button>
@@ -5122,10 +5151,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <p style={{ ...s.cardTitle, margin: 0 }}>GC Awarded Subcontracts</p>
                   <button style={s.btnSmallOrange} type="button" onClick={() => setShowNvSubForm(v => !v)}>{showNvSubForm ? 'Cancel' : '+ Add scope'}</button>
                 </div>
-                <p style={{ fontSize: '12px', color: '#555', margin: '0 0 1rem' }}>Track each subcontract the GC has issued to NV for different scopes on this project.</p>
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>Track each subcontract the GC has issued to NV for different scopes on this project.</p>
 
                 {showNvSubForm && (
-                  <form onSubmit={addNvSubcontract} style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px', marginBottom: '1rem' }}>
+                  <form onSubmit={addNvSubcontract} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px', marginBottom: '1rem' }}>
                     <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                       <div><label style={s.label}>GC / General Contractor name</label><input style={s.input} value={nvSubForm.gc_name} onChange={e => setNvSubForm(f => ({ ...f, gc_name: e.target.value }))} placeholder="Hensel Phelps" /></div>
                       <div><label style={s.label}>Contract number</label><input style={s.input} value={nvSubForm.contract_number} onChange={e => setNvSubForm(f => ({ ...f, contract_number: e.target.value }))} placeholder="GC-2024-001" /></div>
@@ -5154,7 +5183,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 {nvSubcontracts.map(sc => {
                   const statusColor = sc.status === 'active' ? '#4ade80' : sc.status === 'complete' ? '#60a5fa' : '#f59e0b'
                   return (
-                    <div key={sc.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px', marginBottom: '10px' }}>
+                    <div key={sc.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px', marginBottom: '10px' }}>
                       {editingNvSubId === sc.id ? (
                         <form onSubmit={saveNvSubcontract}>
                           <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
@@ -5186,13 +5215,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{sc.scope_description}</span>
-                                <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', color: statusColor, border: `1px solid ${statusColor}33`, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{sc.status}</span>
+                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{sc.scope_description}</span>
+                                <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#f0f0f0', color: statusColor, border: `1px solid ${statusColor}33`, letterSpacing: '0.5px', textTransform: 'uppercase' }}>{sc.status}</span>
                               </div>
                               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                {sc.gc_name && <span style={{ fontSize: '12px', color: '#888' }}>{sc.gc_name}</span>}
-                                {sc.contract_number && <span style={{ fontSize: '12px', color: '#666' }}>#{sc.contract_number}</span>}
-                                {sc.contract_value != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>${Number(sc.contract_value).toLocaleString()} base</span>}
+                                {sc.gc_name && <span style={{ fontSize: '12px', color: '#6b7280' }}>{sc.gc_name}</span>}
+                                {sc.contract_number && <span style={{ fontSize: '12px', color: '#4b5563' }}>#{sc.contract_number}</span>}
+                                {sc.contract_value != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#16a34a' }}>${Number(sc.contract_value).toLocaleString()} base</span>}
                                 {(() => {
                                   const cos = sc.change_orders || []
                                   const approvedAmt = cos.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
@@ -5200,12 +5229,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   return <>
                                     {approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: approvedAmt >= 0 ? '#4ade80' : '#ff6b6b' }}>{approvedAmt >= 0 ? '+' : ''}${approvedAmt.toLocaleString()} COs</span>}
                                     {sc.contract_value != null && approvedAmt !== 0 && <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${(Number(sc.contract_value) + approvedAmt).toLocaleString()} revised</span>}
-                                    {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>⏳ {pendingCount} pending CO{pendingCount !== 1 ? 's' : ''}</span>}
+                                    {pendingCount > 0 && <span style={{ fontSize: '11px', color: '#d97706', fontWeight: '700' }}>⏳ {pendingCount} pending CO{pendingCount !== 1 ? 's' : ''}</span>}
                                   </>
                                 })()}
-                                {sc.signed_date && <span style={{ fontSize: '12px', color: '#555' }}>Signed {new Date(sc.signed_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                {sc.signed_date && <span style={{ fontSize: '12px', color: '#6b7280' }}>Signed {new Date(sc.signed_date + 'T12:00:00').toLocaleDateString()}</span>}
                               </div>
-                              {sc.notes && <p style={{ fontSize: '12px', color: '#555', margin: '6px 0 0' }}>{sc.notes}</p>}
+                              {sc.notes && <p style={{ fontSize: '12px', color: '#6b7280', margin: '6px 0 0' }}>{sc.notes}</p>}
                             </div>
                             <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                               <button style={s.btnSmall} type="button" onClick={() => setExpandedNvSubCOId(expandedNvSubCOId === sc.id ? null : sc.id)}>
@@ -5218,16 +5247,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                           {/* Change Orders panel */}
                           {expandedNvSubCOId === sc.id && (
-                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1e1e1e' }}>
+                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Change Orders</span>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Change Orders</span>
                                 <button style={s.btnSmallOrange} type="button" onClick={() => setShowNvSubCOFormFor(showNvSubCOFormFor === sc.id ? null : sc.id)}>
                                   {showNvSubCOFormFor === sc.id ? 'Cancel' : '+ Add CO'}
                                 </button>
                               </div>
 
                               {showNvSubCOFormFor === sc.id && (
-                                <form onSubmit={e => addNvSubCO(e, sc)} style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
+                                <form onSubmit={e => addNvSubCO(e, sc)} style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', padding: '12px', marginBottom: '10px' }}>
                                   <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
                                     <div><label style={s.label}>Description *</label><input style={s.input} required value={nvSubCOForm.description} onChange={e => setNvSubCOForm(f => ({ ...f, description: e.target.value }))} placeholder="GC issued CO for added scope..." /></div>
                                     <div><label style={s.label}>Amount ($) *</label><input type="number" step="0.01" style={s.input} required value={nvSubCOForm.amount} onChange={e => setNvSubCOForm(f => ({ ...f, amount: e.target.value }))} placeholder="Positive or negative" /></div>
@@ -5238,24 +5267,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   </div>
                                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                     <button type="submit" style={s.btn} disabled={savingNvSubCO}>{savingNvSubCO ? 'Saving...' : 'Add CO'}</button>
-                                    <span style={{ fontSize: '11px', color: '#555' }}>Status defaults to Pending — approve below once confirmed with GC</span>
+                                    <span style={{ fontSize: '11px', color: '#6b7280' }}>Status defaults to Pending — approve below once confirmed with GC</span>
                                   </div>
                                 </form>
                               )}
 
                               {(sc.change_orders || []).length === 0 && !showNvSubCOFormFor && (
-                                <p style={{ fontSize: '13px', color: '#444', margin: 0 }}>No change orders yet.</p>
+                                <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>No change orders yet.</p>
                               )}
 
                               {(sc.change_orders || []).map(co => (
-                                <div key={co.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid #1a1a1a', gap: '10px' }}>
+                                <div key={co.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid #f0f0f0', gap: '10px' }}>
                                   <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
-                                      <span style={{ fontSize: '13px', color: '#ccc' }}>{co.description}</span>
+                                      <span style={{ fontSize: '13px', color: '#374151' }}>{co.description}</span>
                                       <span style={{ fontSize: '13px', fontWeight: '700', color: Number(co.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(co.amount) >= 0 ? '+' : ''}${Number(co.amount).toLocaleString()}</span>
-                                      <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#1a1a1a', color: co.status === 'approved' ? '#4ade80' : co.status === 'rejected' ? '#ff6b6b' : '#f59e0b', border: '1px solid #2a2a2a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{co.status}</span>
+                                      <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#f0f0f0', color: co.status === 'approved' ? '#4ade80' : co.status === 'rejected' ? '#ff6b6b' : '#f59e0b', border: '1px solid #d1d5db', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{co.status}</span>
                                     </div>
-                                    <div style={{ fontSize: '11px', color: '#555' }}>
+                                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
                                       {co.date && new Date(co.date + 'T12:00:00').toLocaleDateString()}
                                       {co.notes && <span style={{ marginLeft: '8px' }}>· {co.notes}</span>}
                                     </div>
@@ -5278,9 +5307,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 })}
 
                 {nvSubcontracts.length > 0 && (
-                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: '#555' }}>{nvSubcontracts.length} scope{nvSubcontracts.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#4ade80' }}>
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{nvSubcontracts.length} scope{nvSubcontracts.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#16a34a' }}>
                       Total: ${nvSubcontracts.reduce((a, s) => {
                         const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
                         return a + Number(s.contract_value || 0) + coAdj
@@ -5322,7 +5351,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
 
               {showAssignSub && (
-                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                <div style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Assign subcontractor to job</p>
 
                   {subDirectory.filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase())).length > 0 && (
@@ -5357,7 +5386,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {subs.length === 0 && !showAssignSub && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No companies assigned yet.</p>
+                <p style={{ color: '#6b7280', fontSize: '14px' }}>No companies assigned yet.</p>
               )}
 
               {Object.values(subs.reduce((acc, a) => {
@@ -5372,10 +5401,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const gKey = group.company_id || group.name
                 const isExpanded = expandedCompanyKey === gKey
                 return (
-                  <div key={group.name} style={{ marginBottom: '6px', border: '1px solid #1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
+                  <div key={group.name} style={{ marginBottom: '6px', border: '1px solid #f0f0f0', borderRadius: '8px', overflow: 'hidden' }}>
                     {/* Company header — click to expand/collapse */}
                     <div
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#0f0f0f' : 'transparent', userSelect: 'none' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#f9fafb' : 'transparent', userSelect: 'none' }}
                       onClick={() => {
                         const nextKey = isExpanded ? null : gKey
                         setExpandedCompanyKey(nextKey)
@@ -5391,16 +5420,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         }
                       }}
                     >
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', flex: 1 }}>{group.name}</span>
-                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#0a2a0a' : '#1a1a1a', color: registeredCount > 0 ? '#4ade80' : '#555', border: `1px solid ${registeredCount > 0 ? '#1a4a1a' : '#2a2a2a'}` }}>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', flex: 1 }}>{group.name}</span>
+                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#dcfce7' : '#f0f0f0', color: registeredCount > 0 ? '#4ade80' : '#555', border: `1px solid ${registeredCount > 0 ? '#bbf7d0' : '#d1d5db'}` }}>
                         {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
                       </span>
-                      {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#555' }}>{group.members.length} users</span>}
-                      <span style={{ fontSize: '12px', color: '#555', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
+                      {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{group.members.length} users</span>}
+                      <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
 
                     {/* Users — only visible when expanded */}
-                    {isExpanded && <div style={{ borderTop: '1px solid #1a1a1a', padding: '8px 14px 12px' }}>
+                    {isExpanded && <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 14px 12px' }}>
                     {group.members.map(a => {
                       const contactName = a.profiles?.full_name || a._dirEntry?.contact_name
                       const phone = a.profiles?.phone || a._dirEntry?.phone
@@ -5417,7 +5446,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', gap: '4px' }}>
                             {[1,2,3,4,5].map(n => (
                               <button key={n} onClick={() => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, [field]: n } }))}
-                                style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#1a1a1a', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#2a2a2a'}`, borderRadius: '6px', color: '#f1f1f1', fontSize: '16px', cursor: 'pointer' }}>★</button>
+                                style={{ width: '32px', height: '32px', background: (rf[field] || 0) >= n ? '#e8590c' : '#f0f0f0', border: `1px solid ${(rf[field] || 0) >= n ? '#e8590c' : '#d1d5db'}`, borderRadius: '6px', color: '#111827', fontSize: '16px', cursor: 'pointer' }}>★</button>
                             ))}
                           </div>
                         </div>
@@ -5426,7 +5455,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         ? contactName.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
                         : (a.sub_email?.[0] || '?').toUpperCase()
                       return (
-                        <div key={a.id} style={{ background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                        <div key={a.id} style={{ background: '#ffffff', border: '1px solid #f0f0f0', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 14px' }}>
                             {/* Avatar */}
                             <div style={{ width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px', background: isRegistered ? '#152515' : '#181818', border: `2px solid ${isRegistered ? '#2a4a2a' : '#252525'}`, color: isRegistered ? '#4ade80' : '#444' }}>
@@ -5440,7 +5469,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </span>
                                 {existingRating && <span style={{ fontSize: '12px', color: '#e8590c' }}>{'★'.repeat(Math.round((existingRating.quality + existingRating.timeliness + existingRating.communication) / 3))}</span>}
                               </div>
-                              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#555' }}>
+                              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#6b7280' }}>
                                 {a.sub_email && contactName && <span>{a.sub_email}</span>}
                                 {phone && <span>{phone}</span>}
                                 {address && <span>{address}</span>}
@@ -5448,7 +5477,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
                             {/* Status + actions */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                              <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', background: isRegistered ? '#0a2a0a' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#1a4a1a' : '#3a2800'}` }}>
+                              <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '600', background: isRegistered ? '#dcfce7' : '#1a1200', color: isRegistered ? '#4ade80' : '#e8590c', border: `1px solid ${isRegistered ? '#bbf7d0' : '#3a2800'}` }}>
                                 {isRegistered ? '● Active' : 'Not registered'}
                               </span>
                               {isRegistered && (
@@ -5465,9 +5494,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               )}
                               {!isRegistered && a.sub_email && (
                                 notifySubResult[a.sub_email] === 'sent'
-                                  ? <span style={{ fontSize: '12px', color: '#4ade80' }}>Invite sent</span>
+                                  ? <span style={{ fontSize: '12px', color: '#16a34a' }}>Invite sent</span>
                                   : notifySubResult[a.sub_email]
-                                    ? <span style={{ fontSize: '12px', color: '#ff6b6b' }}>{notifySubResult[a.sub_email]}</span>
+                                    ? <span style={{ fontSize: '12px', color: '#dc2626' }}>{notifySubResult[a.sub_email]}</span>
                                     : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
                                         {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
                                       </button>
@@ -5478,7 +5507,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                           {/* Rating form */}
                           {isShowingRating && (
-                            <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                            <div style={{ borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' }}>
                               <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Rate {contactName || group.name}</p>
                               <StarRow field="quality" label="Quality of work" />
                               <StarRow field="timeliness" label="Timeliness" />
@@ -5496,14 +5525,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                           {/* Message thread */}
                           {isShowingMessages && (
-                            <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                            <div style={{ borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' }}>
                               <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Messages — {contactName || group.name}</p>
                               <div style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {messages.length === 0 ? <p style={{ color: '#444', fontSize: '13px' }}>No messages yet.</p> : messages.map(msg => (
+                                {messages.length === 0 ? <p style={{ color: '#6b7280', fontSize: '13px' }}>No messages yet.</p> : messages.map(msg => (
                                   <div key={msg.id} style={{ display: 'flex', flexDirection: msg.sender_role === 'pm' ? 'row-reverse' : 'row', gap: '8px' }}>
-                                    <div style={{ maxWidth: '70%', background: msg.sender_role === 'pm' ? '#1a2a0a' : '#1a1a2a', border: `1px solid ${msg.sender_role === 'pm' ? '#2a4a1a' : '#2a2a4a'}`, borderRadius: '10px', padding: '8px 12px' }}>
-                                      <div style={{ fontSize: '11px', color: '#555', marginBottom: '3px' }}>{msg.sender_name} · {new Date(msg.created_at).toLocaleString()}</div>
-                                      <div style={{ fontSize: '13px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</div>
+                                    <div style={{ maxWidth: '70%', background: msg.sender_role === 'pm' ? '#f0fdf4' : '#faf5ff', border: `1px solid ${msg.sender_role === 'pm' ? '#bbf7d0' : '#e9d5ff'}`, borderRadius: '10px', padding: '8px 12px' }}>
+                                      <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px' }}>{msg.sender_name} · {new Date(msg.created_at).toLocaleString()}</div>
+                                      <div style={{ fontSize: '13px', color: '#111827', lineHeight: '1.5' }}>{msg.message}</div>
                                     </div>
                                   </div>
                                 ))}
@@ -5525,17 +5554,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const extra = cached.filter(m => !assignedIds.has(m.id))
                       if (extra.length === 0) return null
                       return (
-                        <div style={{ borderTop: '1px solid #111', marginTop: '4px', paddingTop: '8px' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Also on this company</p>
+                        <div style={{ borderTop: '1px solid #f3f4f6', marginTop: '4px', paddingTop: '8px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Also on this company</p>
                           {extra.map(m => (
-                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #0d0d0d' }}>
-                              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#0d1e2a', border: '2px solid #1a3050', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#60a5fa', flexShrink: 0 }}>
+                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f9fafb' }}>
+                              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#eff6ff', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#2563eb', flexShrink: 0 }}>
                                 {(m.full_name || m.invite_email || '?').slice(0, 2).toUpperCase()}
                               </div>
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '13px', color: '#ccc', fontWeight: '600' }}>{m.full_name || m.invite_email}</div>
-                                {m.full_name && m.invite_email && <div style={{ fontSize: '12px', color: '#444' }}>{m.invite_email}</div>}
-                                <div style={{ fontSize: '11px', color: '#444', marginTop: '2px' }}>
+                                <div style={{ fontSize: '13px', color: '#374151', fontWeight: '600' }}>{m.full_name || m.invite_email}</div>
+                                {m.full_name && m.invite_email && <div style={{ fontSize: '12px', color: '#6b7280' }}>{m.invite_email}</div>}
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
                                   {{ sub_estimator: 'Estimator', sub_pm: 'Project Manager', sub_admin: 'Admin' }[m.role] || 'Member'} at this company · has portal access
                                 </div>
                               </div>
@@ -5559,22 +5588,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.statCard}>
                 <div style={s.statLabel}>Internal budget</div>
                 <div style={s.statValue()}>${totalBudget.toLocaleString()}</div>
-                <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>Your actual cost target</div>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Your actual cost target</div>
               </div>
               <div style={s.statCard}>
                 <div style={s.statLabel}>Owner SOV total</div>
                 <div style={s.statValue('#60a5fa')}>${totalOwnerSOV.toLocaleString()}</div>
-                <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>What owner sees on AIA</div>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>What owner sees on AIA</div>
               </div>
               <div style={s.statCard}>
                 <div style={s.statLabel}>Gross profit</div>
                 <div style={s.statValue(totalMarkup > 0 ? '#4ade80' : '#555')}>{totalMarkup > 0 ? '+' : ''}${totalMarkup.toLocaleString()}</div>
-                {totalBudget > 0 && totalMarkup > 0 && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>{((totalMarkup / totalBudget) * 100).toFixed(1)}% margin</div>}
+                {totalBudget > 0 && totalMarkup > 0 && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>{((totalMarkup / totalBudget) * 100).toFixed(1)}% margin</div>}
               </div>
             </div>
 
             {/* Budget sub-tabs */}
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '1.25rem', borderBottom: '1px solid #1e1e1e', paddingBottom: '0' }}>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '1.25rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '0' }}>
               {[
                 { key: 'lines',   label: 'Budget Lines' },
                 { key: 'eac',     label: 'EAC Forecast' },
@@ -5607,7 +5636,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </button>
                 </div>
               </div>
-              <p style={{ fontSize: '12px', color: '#333', margin: '0 0 1.25rem' }}>CSV format: cost_code, description, amount · Header row optional</p>
+              <p style={{ fontSize: '12px', color: '#374151', margin: '0 0 1.25rem' }}>CSV format: cost_code, description, amount · Header row optional</p>
 
               {showAddBudgetItem && (
                 <form onSubmit={saveBudgetItem} style={s.inlineForm}>
@@ -5617,7 +5646,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div><label style={s.label}>Internal budget *</label><input type="number" step="0.01" style={s.input} value={budgetItemForm.budget_amount} onChange={e => setBudgetItemForm(f => ({ ...f, budget_amount: e.target.value }))} required placeholder="0.00" /></div>
                     <div><label style={s.label}>Owner SOV amount</label><input type="number" step="0.01" style={s.input} value={budgetItemForm.owner_amount} onChange={e => setBudgetItemForm(f => ({ ...f, owner_amount: e.target.value }))} placeholder="Leave blank = same as budget" /></div>
                   </div>
-                  <p style={{ fontSize: '11px', color: '#444', margin: '0 0 10px' }}>Owner SOV is what appears on the AIA G702/G703. Leave blank to match internal budget.</p>
+                  <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 10px' }}>Owner SOV is what appears on the AIA G702/G703. Leave blank to match internal budget.</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="submit" style={{ ...s.btnSmallOrange, opacity: addingBudgetItem ? 0.6 : 1 }} disabled={addingBudgetItem}>{addingBudgetItem ? 'Saving...' : 'Save line'}</button>
                     <button type="button" style={s.btnSmall} onClick={() => setShowAddBudgetItem(false)}>Cancel</button>
@@ -5626,7 +5655,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {editingBudgetItem && (
-                <form onSubmit={updateBudgetItem} style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                <form onSubmit={updateBudgetItem} style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Edit budget line</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div><label style={s.label}>Cost code</label><input style={s.input} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} placeholder="03-000" /></div>
@@ -5648,16 +5677,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   return !hasAllocs && !c.budget_item_id
                 })
                 return unlinked.length > 0 ? (
-                  <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', fontSize: '13px', color: '#e8590c' }}>
+                  <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '12px 14px', marginBottom: '1rem', fontSize: '13px', color: '#e8590c' }}>
                     ⚠ {unlinked.length} contract{unlinked.length !== 1 ? 's' : ''} not linked to any budget line and not counted in committed totals:{' '}
-                    <span style={{ color: '#aaa' }}>{unlinked.map(c => c.company_name || c.vendor_name || 'Unnamed').join(', ')}</span>
+                    <span style={{ color: '#4b5563' }}>{unlinked.map(c => c.company_name || c.vendor_name || 'Unnamed').join(', ')}</span>
                     . Open each contract and assign it to a budget line.
                   </div>
                 ) : null
               })()}
 
               {budgetItems.length === 0 && !showAddBudgetItem && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No budget lines yet. Import a CSV or add lines manually.</p>
+                <p style={{ color: '#6b7280', fontSize: '14px' }}>No budget lines yet. Import a CSV or add lines manually.</p>
               )}
 
               {budgetItems.length > 0 && (
@@ -5695,24 +5724,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ ...s.budgetTableRow, opacity: editingBudgetItem === item.id ? 0.4 : 1, borderLeft: `3px solid ${rowAccent}`, paddingLeft: '10px' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace', flexShrink: 0 }}>{item.cost_code}</span>}
-                            <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{item.description}</span>
+                            {item.cost_code && <span style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace', flexShrink: 0 }}>{item.cost_code}</span>}
+                            <span style={{ fontSize: '14px', color: '#111827' }}>{item.description}</span>
                             {itemCOs.length > 0 && (
                               <span
                                 title={itemCOs.map(co => `${co.status === 'approved' ? '✓' : co.status === 'pending' ? '⏳' : '✗'} ${co.description || 'CO'}: ${Number(co.amount) >= 0 ? '+' : ''}$${Math.abs(Number(co.amount)).toLocaleString()} (${co.status})`).join('\n')}
-                                style={{ display: 'inline-flex', alignItems: 'center', background: '#1a1000', color: '#f59e0b', border: '1px solid #4a3000', borderRadius: '4px', padding: '1px 7px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', cursor: 'help', flexShrink: 0, userSelect: 'none' }}
+                                style={{ display: 'inline-flex', alignItems: 'center', background: '#1a1000', color: '#d97706', border: '1px solid #4a3000', borderRadius: '4px', padding: '1px 7px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', cursor: 'help', flexShrink: 0, userSelect: 'none' }}
                               >
                                 CO{itemCOs.length > 1 ? ` ×${itemCOs.length}` : ''}
                               </span>
                             )}
                           </div>
-                          <div style={{ height: '4px', background: '#1a1a1a', borderRadius: '2px', marginTop: '8px' }}>
+                          <div style={{ height: '4px', background: '#f0f0f0', borderRadius: '2px', marginTop: '8px' }}>
                             <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#ff6b6b' : pct > 85 ? '#e8590c' : '#4ade80', borderRadius: '2px' }} />
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right', fontSize: '14px', color: '#f1f1f1', fontWeight: '600' }}>${Number(item.budget_amount).toLocaleString()}</div>
+                        <div style={{ textAlign: 'right', fontSize: '14px', color: '#111827', fontWeight: '600' }}>${Number(item.budget_amount).toLocaleString()}</div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '14px', color: '#60a5fa', fontWeight: '600' }}>${ownerAmt.toLocaleString()}</div>
+                          <div style={{ fontSize: '14px', color: '#2563eb', fontWeight: '600' }}>${ownerAmt.toLocaleString()}</div>
                           {markup !== 0 && <div style={{ fontSize: '11px', color: markup > 0 ? '#4ade80' : '#ff6b6b', marginTop: '2px' }}>{markup > 0 ? '+' : ''}{((markup / Number(item.budget_amount)) * 100).toFixed(1)}%</div>}
                         </div>
                         <div
@@ -5738,12 +5767,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <div style={{ fontSize: '10px', fontWeight: '700', color, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</div>
                             {rows.map((r, i) => (
                               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 8px', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderRadius: '4px', gap: '12px' }}>
-                                <span style={{ fontSize: '13px', color: '#ccc', flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: '13px', color: '#374151', flex: 1, minWidth: 0 }}>
                                   {r.name}
-                                  {r.type === 'co' && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '6px' }}>({r.vendor})</span>}
-                                  {r.type === 'po' && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.status}</span>}
-                                  {r.type === 'labor' && r.start && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.start}{r.end ? ' → ' + r.end : ''}</span>}
-                                  {r.type === 'dc' && r.date && <span style={{ fontSize: '11px', color: '#888', marginLeft: '6px' }}>{r.date}</span>}
+                                  {r.type === 'co' && <span style={{ fontSize: '11px', color: '#d97706', marginLeft: '6px' }}>({r.vendor})</span>}
+                                  {r.type === 'po' && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '6px' }}>{r.status}</span>}
+                                  {r.type === 'labor' && r.start && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '6px' }}>{r.start}{r.end ? ' → ' + r.end : ''}</span>}
+                                  {r.type === 'dc' && r.date && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '6px' }}>{r.date}</span>}
                                 </span>
                                 <span style={{ fontSize: '13px', fontWeight: '700', color, whiteSpace: 'nowrap' }}>{fmt(r.amount)}</span>
                               </div>
@@ -5751,14 +5780,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )
                         return (
-                          <div style={{ gridColumn: '1 / -1', background: '#0d0d0d', border: '1px solid #1e1e1e', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px 18px', marginBottom: '2px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', marginBottom: '12px' }}>COMMITTED BREAKDOWN — {item.description.toUpperCase()}</div>
+                          <div style={{ gridColumn: '1 / -1', background: '#f9fafb', border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px 18px', marginBottom: '2px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', marginBottom: '12px' }}>COMMITTED BREAKDOWN — {item.description.toUpperCase()}</div>
                             <DrillSection label="Subcontracts" color="#60a5fa" rows={contractLines} />
                             <DrillSection label="Direct Costs" color="#4ade80" rows={dcLines} />
                             <DrillSection label="Purchase Orders" color="#facc15" rows={poLines} />
                             <DrillSection label="Labor / PM" color="#c084fc" rows={laborLines} />
                             {contractLines.length + dcLines.length + poLines.length + laborLines.length === 0 && (
-                              <div style={{ fontSize: '13px', color: '#555', textAlign: 'center', padding: '12px' }}>No committed items found for this budget line.</div>
+                              <div style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '12px' }}>No committed items found for this budget line.</div>
                             )}
                           </div>
                         )
@@ -5795,35 +5824,35 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 variance: acc.variance + (r.profit ? 0 : r.variance),
                 projProfit: acc.projProfit + (r.profit ? r.revenue : r.projProfit),
               }), { budget: 0, revenue: 0, spent: 0, contracted: 0, eac: 0, variance: 0, projProfit: 0 })
-              const hdr = { fontSize: '11px', color: '#555', textAlign: 'right' }
+              const hdr = { fontSize: '11px', color: '#6b7280', textAlign: 'right' }
               const col = { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1.2fr 1fr 1fr', gap: '8px', padding: '8px 12px' }
               return (
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.5rem' }}>Cost to Complete Forecast</p>
-                  <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates from committed (contracts + approved direct costs + labor). Enter a value to override.</p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates from committed (contracts + approved direct costs + labor). Enter a value to override.</p>
                   <div style={{ ...s.statRow, marginBottom: '1.25rem' }} className="rx-stats">
                     <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#4ade80' : '#ff6b6b')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Cost variance</div><div style={s.statValue(T.variance >= 0 ? '#4ade80' : '#ff6b6b')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Direct costs spent</div><div style={s.statValue()}>${T.spent.toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Cost EAC</div><div style={s.statValue()}>${(T.eac - forecastRows.filter(r => r.profit).reduce((a, r) => a + r.eac, 0)).toLocaleString()}</div></div>
                   </div>
-                  <div style={{ ...col, borderBottom: '1px solid #1a1a1a', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '11px', color: '#555' }}>Description</span>
+                  <div style={{ ...col, borderBottom: '1px solid #f0f0f0', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '11px', color: '#6b7280' }}>Description</span>
                     {['Budget', 'Revenue', 'DC Spent', 'Contracted', 'EAC override', 'Cost variance', 'Proj. Profit'].map(h => <span key={h} style={hdr}>{h}</span>)}
                   </div>
                   {forecastRows.map(({ item, profit, spent, contracted, autoEac, eac, revenue, variance, projProfit }) => (
-                    <div key={item.id} style={{ ...col, borderBottom: '1px solid #111', alignItems: 'center', background: profit ? 'rgba(250,204,21,0.03)' : undefined }}>
+                    <div key={item.id} style={{ ...col, borderBottom: '1px solid #f3f4f6', alignItems: 'center', background: profit ? 'rgba(250,204,21,0.03)' : undefined }}>
                       <div>
-                        {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code} · </span>}
-                        <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
-                        {profit && <span style={{ fontSize: '10px', background: '#facc1520', color: '#facc15', border: '1px solid #facc1540', borderRadius: '3px', padding: '1px 5px', marginLeft: '6px' }}>PROFIT</span>}
+                        {item.cost_code && <span style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>{item.cost_code} · </span>}
+                        <span style={{ fontSize: '13px', color: '#111827' }}>{item.description}</span>
+                        {profit && <span style={{ fontSize: '10px', background: '#facc1520', color: '#a16207', border: '1px solid #facc1540', borderRadius: '3px', padding: '1px 5px', marginLeft: '6px' }}>PROFIT</span>}
                       </div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1' }}>${Number(item.budget_amount).toLocaleString()}</div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa' }}>${revenue.toLocaleString()}</div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>{profit ? <span style={{ color: '#333' }}>—</span> : `$${spent.toLocaleString()}`}</div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>{profit ? <span style={{ color: '#333' }}>—</span> : `$${contracted.toLocaleString()}`}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#111827' }}>${Number(item.budget_amount).toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb' }}>${revenue.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563' }}>{profit ? <span style={{ color: '#374151' }}>—</span> : `$${spent.toLocaleString()}`}</div>
+                      <div style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563' }}>{profit ? <span style={{ color: '#374151' }}>—</span> : `$${contracted.toLocaleString()}`}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        {profit ? <span style={{ fontSize: '12px', color: '#333', flex: 1, textAlign: 'right' }}>—</span> : (
+                        {profit ? <span style={{ fontSize: '12px', color: '#374151', flex: 1, textAlign: 'right' }}>—</span> : (
                           <>
                             <input
                               type="number" step="1"
@@ -5834,7 +5863,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               onBlur={e => saveForecastEac(item.id, e.target.value === '' ? '' : e.target.value)}
                             />
                             {item.forecast_eac != null && (
-                              <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                              <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>
                             )}
                           </>
                         )}
@@ -5846,17 +5875,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   ))}
                   <div style={{ ...col, borderTop: '2px solid #222', marginTop: '4px' }}>
-                    <span style={{ fontSize: '13px', color: '#555', fontWeight: '700' }}>TOTAL</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1', fontWeight: '700' }}>${T.budget.toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '700' }}>${T.revenue.toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa', fontWeight: '700' }}>${T.spent.toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa', fontWeight: '700' }}>${T.contracted.toLocaleString()}</span>
+                    <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '700' }}>TOTAL</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#111827', fontWeight: '700' }}>${T.budget.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>${T.revenue.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>${T.spent.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563', fontWeight: '700' }}>${T.contracted.toLocaleString()}</span>
                     <span />
                     <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.variance >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', fontWeight: '700', color: T.projProfit >= 0 ? '#4ade80' : '#ff6b6b' }}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</span>
                   </div>
                   {forecastRows.some(r => r.profit) && (
-                    <p style={{ fontSize: '11px', color: '#444', margin: '0.5rem 0 0', textAlign: 'right' }}>
+                    <p style={{ fontSize: '11px', color: '#6b7280', margin: '0.5rem 0 0', textAlign: 'right' }}>
                       Cost variance and EAC exclude profit line items. Proj. profit = revenue − cost EAC.
                     </p>
                   )}
@@ -5880,11 +5909,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 return (
                   <div style={s.card}>
                     <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>GC Billing Progress</p>
-                    <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>Based on latest GC billing application.</p>
+                    <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>Based on latest GC billing application.</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
                       {[
                         { label: 'Scheduled Value', val: `$${totalSOV.toLocaleString()}`, color: undefined },
-                        { label: 'Billed to GC', val: `$${gcBillingTotal.toLocaleString()}`, color: '#60a5fa' },
+                        { label: 'Billed to GC', val: `$${gcBillingTotal.toLocaleString()}`, color: '#2563eb' },
                         { label: '% Complete', val: `${pctDone.toFixed(1)}%`, color: pctDone >= 100 ? '#4ade80' : '#f1f1f1' },
                       ].map(stat => (
                         <div key={stat.label} style={s.statCard}>
@@ -5894,7 +5923,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       ))}
                     </div>
                     {gcLines.length > 0 && (<>
-                      <div style={{ ...colStyle, padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e' }}>
+                      <div style={{ ...colStyle, padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb' }}>
                         <span>Description</span>
                         <span style={{ textAlign: 'right' }}>Scheduled</span>
                         <span style={{ textAlign: 'right' }}>Billed</span>
@@ -5903,18 +5932,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {gcLines.map((l, i) => {
                         const pct = l.scheduled > 0 ? l.billed / l.scheduled * 100 : 0
                         return (
-                          <div key={i} style={{ ...colStyle, borderBottom: '1px solid #111' }}>
-                            <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{l.description}</span>
-                            <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${l.scheduled.toLocaleString()}</span>
-                            <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '600' }}>${l.billed.toLocaleString()}</span>
+                          <div key={i} style={{ ...colStyle, borderBottom: '1px solid #f3f4f6' }}>
+                            <span style={{ fontSize: '13px', color: '#111827' }}>{l.description}</span>
+                            <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563' }}>${l.scheduled.toLocaleString()}</span>
+                            <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '600' }}>${l.billed.toLocaleString()}</span>
                             <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#4ade80' : '#f1f1f1' }}>{pct.toFixed(1)}%</span>
                           </div>
                         )
                       })}
                       <div style={{ ...colStyle, borderTop: '2px solid #222', marginTop: '2px' }}>
-                        <span style={{ fontSize: '13px', color: '#555', fontWeight: '700' }}>TOTAL</span>
-                        <span style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1', fontWeight: '700' }}>${totalSOV.toLocaleString()}</span>
-                        <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '700' }}>${gcBillingTotal.toLocaleString()}</span>
+                        <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '700' }}>TOTAL</span>
+                        <span style={{ textAlign: 'right', fontSize: '13px', color: '#111827', fontWeight: '700' }}>${totalSOV.toLocaleString()}</span>
+                        <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>${gcBillingTotal.toLocaleString()}</span>
                         <span style={{ textAlign: 'right', fontSize: '13px', color: pctDone >= 100 ? '#4ade80' : '#f1f1f1', fontWeight: '700' }}>{pctDone.toFixed(1)}%</span>
                       </div>
                     </>)}
@@ -5942,7 +5971,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               return (
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Owner Billing vs Budget</p>
-                  <p style={{ fontSize: '12px', color: '#444', margin: '0 0 1rem' }}>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>
                     {hasBudgetBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found — create one in the Prime Contract tab to track billing progress per line.'}
                   </p>
 
@@ -5950,7 +5979,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
                     {[
                       { label: 'Owner SOV Total', val: `$${totalOwner.toLocaleString()}`, color: undefined },
-                      { label: 'Billed to Date', val: `$${totalBilledOwner.toLocaleString()}`, color: '#60a5fa' },
+                      { label: 'Billed to Date', val: `$${totalBilledOwner.toLocaleString()}`, color: '#2563eb' },
                       { label: 'Remaining to Bill', val: `$${totalRemaining.toLocaleString()}`, color: totalRemaining > 0 ? '#e8590c' : '#4ade80' },
                       { label: '% Complete', val: `${totalPct.toFixed(1)}%`, color: totalPct >= 100 ? '#4ade80' : '#f1f1f1' },
                     ].map(stat => (
@@ -5962,7 +5991,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
 
                   {/* Table */}
-                  <div style={{ ...colStyle, padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e' }}>
+                  <div style={{ ...colStyle, padding: '8px 12px 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb' }}>
                     <span>Line Item</span>
                     <span style={{ textAlign: 'right' }}>Owner SOV</span>
                     <span style={{ textAlign: 'right' }}>Billed</span>
@@ -5970,27 +5999,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={{ textAlign: 'right' }}>% Billed</span>
                   </div>
                   {rows.map(({ item, ownerSOV, pct, billed, remaining }) => (
-                    <div key={item.id} style={{ ...colStyle, borderBottom: '1px solid #111' }}>
+                    <div key={item.id} style={{ ...colStyle, borderBottom: '1px solid #f3f4f6' }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                          {item.cost_code && <span style={{ fontSize: '11px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code}</span>}
-                          <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
+                          {item.cost_code && <span style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace' }}>{item.cost_code}</span>}
+                          <span style={{ fontSize: '13px', color: '#111827' }}>{item.description}</span>
                         </div>
-                        <div style={{ height: '3px', background: '#1a1a1a', borderRadius: '2px', marginTop: '6px', maxWidth: '200px' }}>
+                        <div style={{ height: '3px', background: '#f0f0f0', borderRadius: '2px', marginTop: '6px', maxWidth: '200px' }}>
                           <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: pct >= 100 ? '#4ade80' : pct > 75 ? '#e8590c' : '#60a5fa', borderRadius: '2px', transition: 'width 0.3s' }} />
                         </div>
                       </div>
-                      <span style={{ textAlign: 'right', fontSize: '13px', color: '#aaa' }}>${ownerSOV.toLocaleString()}</span>
-                      <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '600' }}>${billed.toLocaleString()}</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: '#4b5563' }}>${ownerSOV.toLocaleString()}</span>
+                      <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '600' }}>${billed.toLocaleString()}</span>
                       <span style={{ textAlign: 'right', fontSize: '13px', color: remaining > 0 ? '#e8590c' : '#4ade80', fontWeight: '600' }}>${remaining.toLocaleString()}</span>
                       <span style={{ textAlign: 'right', fontSize: '13px', color: pct >= 100 ? '#4ade80' : '#f1f1f1' }}>{pct.toFixed(1)}%</span>
                     </div>
                   ))}
                   {/* Total row */}
                   <div style={{ ...colStyle, borderTop: '2px solid #222', marginTop: '2px' }}>
-                    <span style={{ fontSize: '13px', color: '#555', fontWeight: '700' }}>TOTAL</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#f1f1f1', fontWeight: '700' }}>${totalOwner.toLocaleString()}</span>
-                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#60a5fa', fontWeight: '700' }}>${totalBilledOwner.toLocaleString()}</span>
+                    <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '700' }}>TOTAL</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#111827', fontWeight: '700' }}>${totalOwner.toLocaleString()}</span>
+                    <span style={{ textAlign: 'right', fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>${totalBilledOwner.toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', color: totalRemaining > 0 ? '#e8590c' : '#4ade80', fontWeight: '700' }}>${totalRemaining.toLocaleString()}</span>
                     <span style={{ textAlign: 'right', fontSize: '13px', color: totalPct >= 100 ? '#4ade80' : '#f1f1f1', fontWeight: '700' }}>{totalPct.toFixed(1)}%</span>
                   </div>
@@ -6040,7 +6069,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       alert(allOk ? `Posted $${totalAccrued.toLocaleString()} to job costs.` : 'Some entries may have failed — check the Costs tab.')
                     }}>Post to Job Costs</button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '6px 0 10px', borderBottom: '1px solid #e5e7eb', fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
                     <span>Employee</span>
                     <span style={{ textAlign: 'right' }}>Start</span>
                     <span style={{ textAlign: 'right' }}>Days ▲</span>
@@ -6048,21 +6077,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <span style={{ textAlign: 'right' }}>Accrued</span>
                   </div>
                   {rows.map(r => (
-                    <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '10px 0', borderBottom: '1px solid #111', fontSize: '13px', alignItems: 'center' }}>
+                    <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '8px', padding: '10px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px', alignItems: 'center' }}>
                       <div>
-                        <span style={{ color: '#f1f1f1' }}>{r.emp.name}</span>
-                        {r.pct < 100 && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#facc15', fontWeight: '700' }}>{r.pct}%</span>}
-                        {r.emp.title && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{r.emp.title}</div>}
+                        <span style={{ color: '#111827' }}>{r.emp.name}</span>
+                        {r.pct < 100 && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#a16207', fontWeight: '700' }}>{r.pct}%</span>}
+                        {r.emp.title && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{r.emp.title}</div>}
                       </div>
-                      <div style={{ textAlign: 'right', color: '#aaa', fontSize: '12px' }}>{r.start_date}</div>
-                      <div style={{ textAlign: 'right', color: '#4ade80' }}>{r.days}</div>
-                      <div style={{ textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>${r.effectiveWeekly.toLocaleString()}</div>
-                      <div style={{ textAlign: 'right', color: '#4ade80', fontWeight: '700' }}>${r.accrued.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', color: '#4b5563', fontSize: '12px' }}>{r.start_date}</div>
+                      <div style={{ textAlign: 'right', color: '#16a34a' }}>{r.days}</div>
+                      <div style={{ textAlign: 'right', color: '#111827', fontWeight: '600' }}>${r.effectiveWeekly.toLocaleString()}</div>
+                      <div style={{ textAlign: 'right', color: '#16a34a', fontWeight: '700' }}>${r.accrued.toLocaleString()}</div>
                     </div>
                   ))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 0', fontSize: '13px' }}>
-                    <span style={{ color: '#555' }}>{rows.length} employee{rows.length !== 1 ? 's' : ''} · accruing daily</span>
-                    <span style={{ fontWeight: '700', color: '#4ade80' }}>Total: ${totalAccrued.toLocaleString()}</span>
+                    <span style={{ color: '#6b7280' }}>{rows.length} employee{rows.length !== 1 ? 's' : ''} · accruing daily</span>
+                    <span style={{ fontWeight: '700', color: '#16a34a' }}>Total: ${totalAccrued.toLocaleString()}</span>
                   </div>
                 </div>
               )
@@ -6083,9 +6112,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
 
             {showContractGen && (
-              <div style={{ ...s.card, border: '1px solid #1a3a1a', marginBottom: '1.25rem' }}>
+              <div style={{ ...s.card, border: '1px solid #dcfce7', marginBottom: '1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <p style={{ ...s.cardTitle, margin: 0, color: '#4ade80' }}>Generate Subcontract</p>
+                  <p style={{ ...s.cardTitle, margin: 0, color: '#16a34a' }}>Generate Subcontract</p>
                   <button style={s.btnGray} onClick={() => setShowContractGen(false)}>Close</button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
@@ -6128,40 +6157,40 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {showCustomText ? '▲ Hide custom text' : '▼ Edit cover letter & contract text'}
                   </button>
                   {showCustomText && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '14px', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '14px', background: '#ffffff', border: '1px solid #f0f0f0', borderRadius: '8px' }}>
                       <div>
                         <label style={s.label}>Subcontractor entity type</label>
                         <input style={s.input} value={contractGenForm.entity_type} onChange={e => setContractGenForm(f => ({ ...f, entity_type: e.target.value }))} placeholder="sole proprietorship" />
-                        <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Appears in agreement as: "…{contractGenForm.sub_name || 'Sub Name'}, a [entity type] of the State of Texas…"</p>
+                        <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Appears in agreement as: "…{contractGenForm.sub_name || 'Sub Name'}, a [entity type] of the State of Texas…"</p>
                       </div>
                       <div>
                         <label style={s.label}>Cover letter body</label>
-                        <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>Separate paragraphs with a blank line.</p>
+                        <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>Separate paragraphs with a blank line.</p>
                         <textarea style={{ ...s.input, minHeight: '200px', resize: 'vertical', fontFamily: 'inherit', fontSize: '12px' }} value={contractGenForm.cover_letter_body} onChange={e => setContractGenForm(f => ({ ...f, cover_letter_body: e.target.value }))} />
                       </div>
                       <div>
                         <label style={s.label}>Contract documents list</label>
-                        <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>One item per line.</p>
+                        <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>One item per line.</p>
                         <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', fontSize: '12px' }} value={contractGenForm.contract_documents} onChange={e => setContractGenForm(f => ({ ...f, contract_documents: e.target.value }))} />
                       </div>
                       <div>
                         <label style={s.label}>Scope page footnotes</label>
-                        <p style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>Bullet points shown below scope of work. One per line.</p>
+                        <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>Bullet points shown below scope of work. One per line.</p>
                         <textarea style={{ ...s.input, minHeight: '100px', resize: 'vertical', fontFamily: 'inherit', fontSize: '12px' }} value={contractGenForm.scope_notes} onChange={e => setContractGenForm(f => ({ ...f, scope_notes: e.target.value }))} />
                       </div>
                     </div>
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button style={{ ...s.btn, background: '#1a3a1a', color: '#4ade80' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
-                  <button style={{ ...s.btn, background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a' }} onClick={() => { setShowSignPanel(v => !v); setSignMsg('') }}>
+                  <button style={{ ...s.btn, background: '#dcfce7', color: '#16a34a' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
+                  <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { setShowSignPanel(v => !v); setSignMsg('') }}>
                     {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
                   </button>
                 </div>
 
                 {showSignPanel && (
-                  <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '1rem', marginTop: '12px' }}>
-                    <p style={{ fontSize: '13px', fontWeight: '700', color: '#60a5fa', marginBottom: '10px' }}>Send for e-Signature</p>
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '1rem', marginTop: '12px' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '700', color: '#2563eb', marginBottom: '10px' }}>Send for e-Signature</p>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <input
                         type="email"
@@ -6186,10 +6215,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                 {signingRequests.filter(r => r.subcontract_id === contractGenForm.contract_id).length > 0 && (
                   <div style={{ marginTop: '12px' }}>
-                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Signing Requests</p>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Signing Requests</p>
                     {signingRequests.filter(r => r.subcontract_id === contractGenForm.contract_id).map(r => (
-                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #1a1a1a', fontSize: '12px' }}>
-                        <span style={{ color: '#aaa' }}>{r.signer_email}</span>
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0', fontSize: '12px' }}>
+                        <span style={{ color: '#4b5563' }}>{r.signer_email}</span>
                         <span style={{ color: r.status === 'signed' ? '#4ade80' : '#f59e0b', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
                           {r.status === 'signed' ? `✓ Signed ${new Date(r.signed_at).toLocaleDateString()}` : '⏳ Awaiting signature'}
                         </span>
@@ -6242,7 +6271,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" min="0" max="100" step="0.5" style={s.input} placeholder="10" value={contractForm.retainage_pct} onChange={e => setContractForm(f => ({ ...f, retainage_pct: e.target.value }))} />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
-                      <p style={{ fontSize: '12px', color: '#555', margin: 0 }}>
+                      <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
                         {contractForm.retainage_pct > 0
                           ? `${contractForm.retainage_pct}% of each billing will be withheld until project completion.`
                           : 'No retainage — full payment on each billing.'}
@@ -6265,7 +6294,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmall} onClick={() => setContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
                         </div>
                         {allocs.length === 0 && (
-                          <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                          <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
                         )}
                         {allocs.map((alloc, idx) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
@@ -6284,8 +6313,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         ))}
                         {allocs.length > 0 && contractVal > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', marginTop: '4px' }}>
-                            <span style={{ color: '#888' }}>Allocated: <strong style={{ color: '#f1f1f1' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#f1f1f1' }}>${contractVal.toLocaleString()}</strong></span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
+                            <span style={{ color: '#6b7280' }}>Allocated: <strong style={{ color: '#111827' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#111827' }}>${contractVal.toLocaleString()}</strong></span>
                             <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
                               {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
                             </span>
@@ -6300,7 +6329,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={s.label}>Bid proposal PDF (optional)</label>
-                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#ccc' }} />
+                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: addingContract ? 0.6 : 1 }} disabled={addingContract} onClick={addContract}>{addingContract ? 'Saving...' : 'Save contract'}</button>
@@ -6309,7 +6338,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
               )}
 
-              {contracts.length === 0 && !showAddContract && <p style={{ color: '#444', fontSize: '14px' }}>No subcontracts yet.</p>}
+              {contracts.length === 0 && !showAddContract && <p style={{ color: '#6b7280', fontSize: '14px' }}>No subcontracts yet.</p>}
 
               {contracts.map(c => {
                 const subName = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown sub'
@@ -6321,46 +6350,46 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div key={c.id} style={s.contractRow}>
                     <div style={s.contractRowHeader}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
-                        {c.description && <span style={{ fontSize: '12px', color: '#888', background: '#111', border: '1px solid #222', borderRadius: '4px', padding: '1px 7px' }}>{c.description}</span>}
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{subName}</span>
+                        {c.description && <span style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #222', borderRadius: '4px', padding: '1px 7px' }}>{c.description}</span>}
                         {allocations.length > 0
                           ? allocations.map((a, i) => {
                               const item = budgetItems.find(b => b.id === a.budget_item_id)
                               if (!item) return null
                               return (
-                                <span key={i} style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                                <span key={i} style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
                                   {item.cost_code ? `${item.cost_code} · ` : ''}{item.description}
-                                  {a.amount ? <span style={{ color: '#888', marginLeft: '4px' }}>${Number(a.amount).toLocaleString()}</span> : null}
+                                  {a.amount ? <span style={{ color: '#6b7280', marginLeft: '4px' }}>${Number(a.amount).toLocaleString()}</span> : null}
                                 </span>
                               )
                             })
-                          : budgetLine && <span style={{ fontSize: '11px', color: '#60a5fa', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 8px' }}>{budgetLine.cost_code || budgetLine.description}</span>
+                          : budgetLine && <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px' }}>{budgetLine.cost_code || budgetLine.description}</span>
                         }
                         <span style={s.contractBadge(c.status)}>{c.status}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Contract</div>
-                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>${Number(c.contract_value).toLocaleString()}</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Contract</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>${Number(c.contract_value).toLocaleString()}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>COs</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>COs</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.approved_change_orders) !== 0 ? '#4ade80' : '#333' }}>
                             {Number(c.approved_change_orders) >= 0 ? '+' : ''}${Number(c.approved_change_orders).toLocaleString()}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Revised</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Revised</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: '#e8590c' }}>${Number(c.adjusted_contract_value).toLocaleString()}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Remaining</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Remaining</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#ff6b6b' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
                         </div>
                         {(c.retainage_pct > 0) && (
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Retainage</div>
-                            <div style={{ fontSize: '14px', fontWeight: '700', color: '#facc15' }}>{Number(c.retainage_pct)}%</div>
+                            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Retainage</div>
+                            <div style={{ fontSize: '14px', fontWeight: '700', color: '#a16207' }}>{Number(c.retainage_pct)}%</div>
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -6370,14 +6399,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           }}>
                             {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
                           </button>
-                          <button style={{ ...s.btnSmall, background: '#1a3a1a', color: '#4ade80', border: '1px solid #1a3a1a' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
-                          {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#1a2a3a', color: '#60a5fa', border: '1px solid #1a2a3a' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
-                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #1a3a1a' }} onClick={() => openSignedContractUrl(c.signed_contract_url)}>Signed Contract ↗</button>}
+                          <button style={{ ...s.btnSmall, background: '#dcfce7', color: '#16a34a', border: '1px solid #dcfce7' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
+                          {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#bfdbfe', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
+                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #dcfce7' }} onClick={() => openSignedContractUrl(c.signed_contract_url)}>Signed Contract ↗</button>}
                           {(() => {
                             const req = signingRequests.find(r => r.subcontract_id === c.id)
                             if (!req) return null
                             return (
-                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#0a2a0a' : '#1a1400', color: req.status === 'signed' ? '#4ade80' : '#f59e0b', border: `1px solid ${req.status === 'signed' ? '#1a4a1a' : '#4a3800'}`, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#dcfce7' : '#1a1400', color: req.status === 'signed' ? '#4ade80' : '#f59e0b', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#4a3800'}`, whiteSpace: 'nowrap' }}>
                                 {req.status === 'signed' ? '✓ Signed' : '⏳ Awaiting sign'}
                               </span>
                             )
@@ -6415,7 +6444,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <button style={s.btnSmall} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
                               </div>
                               {allocs.length === 0 && (
-                                <p style={{ fontSize: '12px', color: '#444', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
                               )}
                               {allocs.map((alloc, idx) => (
                                 <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>
@@ -6434,8 +6463,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </div>
                               ))}
                               {allocs.length > 0 && contractVal > 0 && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '6px', marginTop: '4px' }}>
-                                  <span style={{ color: '#888' }}>Allocated: <strong style={{ color: '#f1f1f1' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#f1f1f1' }}>${contractVal.toLocaleString()}</strong></span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '8px 10px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', marginTop: '4px' }}>
+                                  <span style={{ color: '#6b7280' }}>Allocated: <strong style={{ color: '#111827' }}>${totalAllocated.toLocaleString()}</strong> of <strong style={{ color: '#111827' }}>${contractVal.toLocaleString()}</strong></span>
                                   <span style={{ fontWeight: '700', color: remaining < 0 ? '#ff6b6b' : remaining === 0 ? '#4ade80' : '#e8590c' }}>
                                     {remaining === 0 ? '✓ Fully allocated' : remaining > 0 ? `$${remaining.toLocaleString()} unallocated` : `$${Math.abs(remaining).toLocaleString()} over`}
                                   </span>
@@ -6456,8 +6485,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ marginTop: '0.75rem', marginBottom: '0.75rem' }}>
                           <label style={s.label}>Replace bid proposal PDF (optional)</label>
-                          {editContractForm.bid_proposal_url && <p style={{ fontSize: '12px', color: '#888', marginBottom: '4px' }}>Current file on record — upload a new one to replace it</p>}
-                          <input type="file" accept=".pdf,.doc,.docx" onChange={e => setEditContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#ccc' }} />
+                          {editContractForm.bid_proposal_url && <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Current file on record — upload a new one to replace it</p>}
+                          <input type="file" accept=".pdf,.doc,.docx" onChange={e => setEditContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
                         </div>
                         <button style={s.btnSmallOrange} onClick={updateContract}>Save changes</button>
                       </div>
@@ -6465,7 +6494,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                     {c.onedrive_url && !isEditing && (
                       <div style={{ ...s.contractRowExpanded, paddingTop: '10px', paddingBottom: '10px' }}>
-                        <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>View contract on OneDrive ↗</a>
+                        <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#2563eb' }}>View contract on OneDrive ↗</a>
                       </div>
                     )}
 
@@ -6482,10 +6511,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const totalRetHeld = approvedBillings.reduce((a, b) => a + Number(b.retainage_held || 0), 0)
                       const remainingToBill = Number(c.adjusted_contract_value) - totalApproved
                       const pctBilled = Number(c.adjusted_contract_value) > 0 ? totalApproved / Number(c.adjusted_contract_value) * 100 : 0
-                      const thS = { textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }
+                      const thS = { textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }
                       const fmtC = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       return (
-                        <div style={{ ...s.contractRowExpanded, background: '#060606' }}>
+                        <div style={{ ...s.contractRowExpanded, background: '#f9fafb' }}>
 
                           {/* Summary stats */}
                           <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(5, 1fr)' }} className="rx-stats">
@@ -6499,10 +6528,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {/* Progress bar */}
                           <div style={{ marginBottom: '1.5rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '5px' }}>
-                              <span style={{ color: '#555' }}>Billed to date</span>
+                              <span style={{ color: '#6b7280' }}>Billed to date</span>
                               <span style={{ fontWeight: '700', color: pctBilled > 100 ? '#ff6b6b' : pctBilled >= 95 ? '#4ade80' : '#e8590c' }}>{pctBilled.toFixed(1)}%</span>
                             </div>
-                            <div style={{ height: '6px', background: '#1a1a1a', borderRadius: '3px' }}>
+                            <div style={{ height: '6px', background: '#f0f0f0', borderRadius: '3px' }}>
                               <div style={{ height: '100%', width: Math.min(100, pctBilled) + '%', background: pctBilled > 100 ? '#ff6b6b' : pctBilled >= 95 ? '#4ade80' : '#e8590c', borderRadius: '3px', transition: 'width 0.3s' }} />
                             </div>
                           </div>
@@ -6510,12 +6539,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {/* Billing submissions */}
                           <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Billing submissions ({contractBillings.length})</p>
                           {contractBillings.length === 0 ? (
-                            <p style={{ fontSize: '13px', color: '#444', marginBottom: '1.5rem' }}>No billing submissions found for this sub.</p>
+                            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1.5rem' }}>No billing submissions found for this sub.</p>
                           ) : (
                             <div style={{ overflowX: 'auto', marginBottom: '1.5rem' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                 <thead>
-                                  <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+                                  <tr style={{ borderBottom: '1px solid #d1d5db' }}>
                                     <th style={thS}>Date</th>
                                     <th style={thS}>Period</th>
                                     <th style={{ ...thS, textAlign: 'right' }}>Amount Billed</th>
@@ -6529,18 +6558,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   {contractBillings.map(b => {
                                     const net = Number(b.amount_billed || 0) - Number(b.retainage_held || 0)
                                     const sc = b.status === 'approved'
-                                      ? { bg: '#0a2a0a', color: '#4ade80', border: '#1a4a1a' }
+                                      ? { bg: '#dcfce7', color: '#16a34a', border: '#bbf7d0' }
                                       : b.status === 'rejected'
-                                      ? { bg: '#2a0a0a', color: '#ff6b6b', border: '#4a1a1a' }
-                                      : { bg: '#1a1400', color: '#f59e0b', border: '#4a3800' }
+                                      ? { bg: '#fef2f2', color: '#dc2626', border: '#4a1a1a' }
+                                      : { bg: '#1a1400', color: '#d97706', border: '#4a3800' }
                                     return (
-                                      <tr key={b.id} style={{ borderBottom: '1px solid #111' }}>
-                                        <td style={{ padding: '8px', color: '#888', fontSize: '11px', whiteSpace: 'nowrap' }}>{new Date(b.submitted_at).toLocaleDateString()}</td>
-                                        <td style={{ padding: '8px', color: '#555', fontSize: '11px' }}>{b.billing_period ? b.billing_period.slice(0, 7) : '—'}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#f1f1f1', fontWeight: '600' }}>{fmtC(b.amount_billed)}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#facc15' }}>{Number(b.retainage_held || 0) > 0 ? fmtC(b.retainage_held) : '—'}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#4ade80' }}>{fmtC(net)}</td>
-                                        <td style={{ padding: '8px', textAlign: 'center', color: '#888', fontSize: '11px' }}>{b.pct_complete != null ? b.pct_complete + '%' : '—'}</td>
+                                      <tr key={b.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap' }}>{new Date(b.submitted_at).toLocaleDateString()}</td>
+                                        <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px' }}>{b.billing_period ? b.billing_period.slice(0, 7) : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#111827', fontWeight: '600' }}>{fmtC(b.amount_billed)}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#a16207' }}>{Number(b.retainage_held || 0) > 0 ? fmtC(b.retainage_held) : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#16a34a' }}>{fmtC(net)}</td>
+                                        <td style={{ padding: '8px', textAlign: 'center', color: '#6b7280', fontSize: '11px' }}>{b.pct_complete != null ? b.pct_complete + '%' : '—'}</td>
                                         <td style={{ padding: '8px', textAlign: 'center' }}>
                                           <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{b.status}</span>
                                         </td>
@@ -6548,11 +6577,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     )
                                   })}
                                   {approvedBillings.length > 0 && (
-                                    <tr style={{ borderTop: '2px solid #2a2a2a' }}>
-                                      <td colSpan="2" style={{ padding: '8px', fontSize: '11px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Approved Total</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#60a5fa' }}>{fmtC(totalApproved)}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#facc15' }}>{fmtC(totalRetHeld)}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#4ade80' }}>{fmtC(totalApproved - totalRetHeld)}</td>
+                                    <tr style={{ borderTop: '2px solid #d1d5db' }}>
+                                      <td colSpan="2" style={{ padding: '8px', fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Approved Total</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#2563eb' }}>{fmtC(totalApproved)}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#a16207' }}>{fmtC(totalRetHeld)}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#16a34a' }}>{fmtC(totalApproved - totalRetHeld)}</td>
                                       <td colSpan="2"></td>
                                     </tr>
                                   )}
@@ -6603,21 +6632,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
                           )}
 
-                          {!sovs && <p style={{ color: '#444', fontSize: '13px' }}>Loading...</p>}
+                          {!sovs && <p style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</p>}
                           {sovs && sovs.length === 0 && !showAddSovLine && (
-                            <p style={{ color: '#444', fontSize: '13px' }}>No SOV lines yet. Add lines to track sub's completion per scope item.</p>
+                            <p style={{ color: '#6b7280', fontSize: '13px' }}>No SOV lines yet. Add lines to track sub's completion per scope item.</p>
                           )}
 
                           {sovs && sovs.length > 0 && (
                             <div style={{ overflowX: 'auto' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                 <thead>
-                                  <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
-                                    <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>Description</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }}>Billed to Date</th>
-                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>Balance</th>
-                                    <th style={{ textAlign: 'center', padding: '6px 8px', fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>% Done</th>
+                                  <tr style={{ borderBottom: '1px solid #d1d5db' }}>
+                                    <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>Description</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }}>Billed to Date</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>Balance</th>
+                                    <th style={{ textAlign: 'center', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>% Done</th>
                                     <th style={{ width: '90px' }}></th>
                                   </tr>
                                 </thead>
@@ -6627,7 +6656,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     const pct = Number(line.scheduled_value) > 0 ? (Number(line.billed_to_date || 0) / Number(line.scheduled_value)) * 100 : 0
                                     const isEditingThisLine = editingSovLine === line.id
                                     return (
-                                      <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
+                                      <tr key={line.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                         {isEditingThisLine ? (
                                           <>
                                             <td style={{ padding: '4px' }}>
@@ -6654,21 +6683,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           </>
                                         ) : (
                                           <>
-                                            <td style={{ padding: '8px', color: '#ccc' }}>
+                                            <td style={{ padding: '8px', color: '#374151' }}>
                                               {line.description}
                                               {line.budget_items && (
-                                                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
+                                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
                                                   {line.budget_items.cost_code ? `${line.budget_items.cost_code} · ` : ''}{line.budget_items.description}
                                                 </div>
                                               )}
                                             </td>
-                                            <td style={{ padding: '8px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(line.scheduled_value).toLocaleString()}</td>
+                                            <td style={{ padding: '8px', textAlign: 'right', color: '#111827', fontFamily: 'monospace' }}>${Number(line.scheduled_value).toLocaleString()}</td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: Number(line.billed_to_date) > 0 ? '#4ade80' : '#444', fontFamily: 'monospace' }}>${Number(line.billed_to_date || 0).toLocaleString()}</td>
                                             <td style={{ padding: '8px', textAlign: 'right', color: balance < 0 ? '#ff6b6b' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString()}</td>
                                             <td style={{ padding: '8px', textAlign: 'center' }}>
                                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
                                                 <span style={{ fontSize: '11px', fontWeight: '700', color: pct >= 100 ? '#4ade80' : pct > 50 ? '#e8590c' : '#555' }}>{pct.toFixed(0)}%</span>
-                                                <div style={{ width: '56px', height: '3px', background: '#1a1a1a', borderRadius: '2px' }}>
+                                                <div style={{ width: '56px', height: '3px', background: '#f0f0f0', borderRadius: '2px' }}>
                                                   <div style={{ width: Math.min(100, pct) + '%', height: '100%', background: pct >= 100 ? '#4ade80' : '#e8590c', borderRadius: '2px' }} />
                                                 </div>
                                               </div>
@@ -6684,12 +6713,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </tr>
                                     )
                                   })}
-                                  <tr style={{ borderTop: '2px solid #2a2a2a' }}>
-                                    <td style={{ padding: '8px', color: '#888', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Total</td>
-                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#f1f1f1' }}>${totalScheduled.toLocaleString()}</td>
-                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#4ade80' }}>${totalBilled.toLocaleString()}</td>
+                                  <tr style={{ borderTop: '2px solid #d1d5db' }}>
+                                    <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>Total</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#111827' }}>${totalScheduled.toLocaleString()}</td>
+                                    <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: '#16a34a' }}>${totalBilled.toLocaleString()}</td>
                                     <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700', color: (totalScheduled - totalBilled) < 0 ? '#ff6b6b' : '#555' }}>${(totalScheduled - totalBilled).toLocaleString()}</td>
-                                    <td style={{ padding: '8px', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#555' }}>{totalScheduled > 0 ? ((totalBilled / totalScheduled) * 100).toFixed(0) : 0}%</td>
+                                    <td style={{ padding: '8px', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#6b7280' }}>{totalScheduled > 0 ? ((totalBilled / totalScheduled) * 100).toFixed(0) : 0}%</td>
                                     <td></td>
                                   </tr>
                                 </tbody>
@@ -6735,15 +6764,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const amountEntered = primeCOForm.sov.length > 0 ? true : primeCOForm.amount !== ''
                 const allLinesAssigned = primeCOForm.sov.length > 0 && primeCOForm.sov.every(r => r.budget_item_id && r.amount)
                 return (
-                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                <div style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New contract modification</p>
 
                   {(() => {
                     const approvedBillings = billingSubmissions.filter(b => b.status === 'approved')
                     if (!approvedBillings.length) return null
                     return (
-                      <div style={{ background: '#0a0f1a', border: '1px solid #1a3a5c', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
-                        <label style={{ ...s.label, color: '#60a5fa' }}>Link from approved billing (optional)</label>
+                      <div style={{ background: '#f4f6f8', border: '1px solid #1a3a5c', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
+                        <label style={{ ...s.label, color: '#2563eb' }}>Link from approved billing (optional)</label>
                         <select style={{ ...s.input, borderColor: primeCOBillingLink ? '#1a3a5c' : undefined }} value={primeCOBillingLink || ''} onChange={e => {
                           const billingId = e.target.value
                           if (!billingId) { setPrimeCOBillingLink(null); return }
@@ -6781,17 +6810,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   </div>
 
-                  <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                       <div>
-                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Budget line assignment</p>
-                        <p style={{ fontSize: '11px', color: '#555', margin: '3px 0 0' }}>When approved, each line's budget and SOV owner amount update automatically.</p>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Budget line assignment</p>
+                        <p style={{ fontSize: '11px', color: '#6b7280', margin: '3px 0 0' }}>When approved, each line's budget and SOV owner amount update automatically.</p>
                       </div>
                       <button type="button" style={s.btnSmall} onClick={() => setPrimeCOForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] }))}>+ Add line</button>
                     </div>
                     {primeCOForm.sov.map((row, i) => (
                       <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
-                        <select style={{ ...s.input, borderColor: row.budget_item_id ? '#1a4a1a' : '#4a2200' }}
+                        <select style={{ ...s.input, borderColor: row.budget_item_id ? '#bbf7d0' : '#fed7aa' }}
                           value={row.budget_item_id}
                           onChange={e => {
                             const bi = budgetItems.find(b => b.id === e.target.value)
@@ -6801,7 +6830,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
                         </select>
                         <input style={s.input} placeholder="Description (optional)" value={row.description} onChange={e => setPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
-                        <input type="number" style={{ ...s.input, borderColor: row.amount ? '#1a4a1a' : '#4a2200' }} placeholder="Amount *" value={row.amount}
+                        <input type="number" style={{ ...s.input, borderColor: row.amount ? '#bbf7d0' : '#fed7aa' }} placeholder="Amount *" value={row.amount}
                           onChange={e => {
                             const newSov = primeCOForm.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r)
                             const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
@@ -6814,11 +6843,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         }}>×</button>
                       </div>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #1a3a1a' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #dcfce7' }}>
                       <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
                         {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
                       </span>
-                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827', fontFamily: 'monospace' }}>
                         Total: ${totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
@@ -6836,7 +6865,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )
               })()}
 
-              {primeCOs.length === 0 && !showAddPrimeCO && <p style={{ color: '#444', fontSize: '14px' }}>No contract modifications yet.</p>}
+              {primeCOs.length === 0 && !showAddPrimeCO && <p style={{ color: '#6b7280', fontSize: '14px' }}>No contract modifications yet.</p>}
 
               {primeCOs.map(co => {
                 const isExpanded = expandedPrimeCOId === co.id
@@ -6852,7 +6881,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                         <p style={{ ...s.cardTitle, margin: 0 }}>Edit prime CO</p>
                         {co.status === 'approved' && (
-                          <span style={{ fontSize: '11px', color: '#f59e0b', background: '#1a1200', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
+                          <span style={{ fontSize: '11px', color: '#d97706', background: '#1a1200', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
                             Approved — amount change will adjust contract value
                           </span>
                         )}
@@ -6868,11 +6897,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
 
-                      <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
+                      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                           <div>
-                            <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Budget line assignment</p>
-                            <p style={{ fontSize: '11px', color: '#555', margin: '3px 0 0' }}>When approved, each line updates budget and SOV automatically.</p>
+                            <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 }}>Budget line assignment</p>
+                            <p style={{ fontSize: '11px', color: '#6b7280', margin: '3px 0 0' }}>When approved, each line updates budget and SOV automatically.</p>
                           </div>
                           <button type="button" style={s.btnSmall} onClick={() => setEditPrimeCOForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] }))}>+ Add line</button>
                         </div>
@@ -6885,7 +6914,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         {editPrimeCOForm.sov.map((row, i) => (
                           <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
-                            <select style={{ ...s.input, borderColor: row.budget_item_id ? '#1a4a1a' : '#4a2200' }}
+                            <select style={{ ...s.input, borderColor: row.budget_item_id ? '#bbf7d0' : '#fed7aa' }}
                               value={row.budget_item_id}
                               onChange={e => {
                                 const bi = budgetItems.find(b => b.id === e.target.value)
@@ -6895,7 +6924,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               {budgetItems.map(bi => <option key={bi.id} value={bi.id}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</option>)}
                             </select>
                             <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditPrimeCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
-                            <input type="number" style={{ ...s.input, borderColor: row.amount ? '#1a4a1a' : '#4a2200' }} placeholder="Amount" value={row.amount}
+                            <input type="number" style={{ ...s.input, borderColor: row.amount ? '#bbf7d0' : '#fed7aa' }} placeholder="Amount" value={row.amount}
                               onChange={e => {
                                 const newSov = editPrimeCOForm.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r)
                                 const newTotal = newSov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
@@ -6909,11 +6938,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         ))}
                         {editPrimeCOForm.sov.length > 0 && (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #1a3a1a' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #dcfce7' }}>
                             <span style={{ fontSize: '12px', color: allLinesAssigned ? '#4ade80' : '#e8590c' }}>
                               {allLinesAssigned ? '✓ All lines assigned' : 'Assign a budget line and amount to each row'}
                             </span>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1', fontFamily: 'monospace' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827', fontFamily: 'monospace' }}>
                               Total: ${totalAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
@@ -6936,11 +6965,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{co.description}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{co.description}</span>
                         {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedPrimeCOId(isExpanded ? null : co.id)}>{co.sov.length} SOV lines {isExpanded ? '▲' : '▼'}</span>}
-                        <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
+                        <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                       </div>
-                      {co.notes && <span style={{ fontSize: '13px', color: '#aaa' }}>{co.notes}</span>}
+                      {co.notes && <span style={{ fontSize: '13px', color: '#4b5563' }}>{co.notes}</span>}
                       {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -6955,10 +6984,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                       {co.status === 'approved' && hasSov && !co.budget_applied && (
-                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#0a1a2a', border: '1px solid #1a3a5a', color: '#60a5fa' }} onClick={() => applyPrimeCOToBudget(co)}>Apply to Budget</button>
+                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb' }} onClick={() => applyPrimeCOToBudget(co)}>Apply to Budget</button>
                       )}
                       {co.status === 'approved' && hasSov && co.budget_applied && (
-                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '600' }}>✓ Budget Applied</span>
+                        <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: '600' }}>✓ Budget Applied</span>
                       )}
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
                         loadBudgetItems()
@@ -6969,7 +6998,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1) }}>Print CO</button>
                       {co.attachment_url && <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1, true) }}>Print + Attachment</button>}
                       <button
-                        style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(sentOwnerCOIds.has(co.id) ? { background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' } : {}), opacity: (!job?.owner_email || sendingOwnerCO === co.id) ? 0.5 : 1 }}
+                        style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(sentOwnerCOIds.has(co.id) ? { background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' } : {}), opacity: (!job?.owner_email || sendingOwnerCO === co.id) ? 0.5 : 1 }}
                         title={!job?.owner_email ? 'No owner email — add it in the Details tab' : 'Email this CO to the owner for approval'}
                         disabled={!job?.owner_email || sendingOwnerCO === co.id}
                         onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); sendPrimeCOToOwner(co, idx + 1) }}
@@ -6978,24 +7007,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   </div>
                   {isExpanded && hasSov && (
-                    <div style={{ marginTop: '10px', padding: '12px', background: '#0a0a0a', borderRadius: '6px', border: '1px solid #1a1a1a' }}>
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>Schedule of Values</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '10px', color: '#444', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    <div style={{ marginTop: '10px', padding: '12px', background: '#ffffff', borderRadius: '6px', border: '1px solid #f0f0f0' }}>
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>Schedule of Values</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '10px', color: '#6b7280', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
                         <span>Description</span><span>Budget Line</span><span style={{ textAlign: 'right' }}>Amount</span>
                       </div>
                       {co.sov.map((item, i) => {
                         const bi = budgetItems.find(b => b.id === item.budget_item_id)
                         return (
-                          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '5px 0', borderTop: '1px solid #1a1a1a' }}>
+                          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '5px 0', borderTop: '1px solid #f0f0f0' }}>
                             <span>{item.description || '—'}</span>
                             <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' · ' : ''}${bi.description}` : '—'}</span>
                             <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           </div>
                         )
                       })}
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a', marginTop: '4px' }}>
-                        <span style={{ fontSize: '12px', color: '#555' }}>Total:</span>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${co.sov.reduce((a, r) => a + Number(r.amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '8px', borderTop: '1px solid #d1d5db', marginTop: '4px' }}>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>Total:</span>
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>${co.sov.reduce((a, r) => a + Number(r.amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       </div>
                     </div>
                   )}
@@ -7007,26 +7036,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const isBalanced = Math.abs(remaining) < 0.02
                     const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                     return (
-                      <div style={{ marginTop: '12px', background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '18px' }}>
+                      <div style={{ marginTop: '12px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '10px', padding: '18px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign CO to Budget Lines</p>
-                          <button onClick={() => setPrimeCOAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
+                          <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign CO to Budget Lines</p>
+                          <button onClick={() => setPrimeCOAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
                         </div>
 
                         {/* Breakdown */}
-                        <div style={{ background: '#080808', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '6px', columnGap: '24px' }}>
+                        <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'grid', gridTemplateColumns: '1fr auto', rowGap: '6px', columnGap: '24px' }}>
                           <span style={{ fontSize: '13px', color: '#777' }}>CO Total (Owner)</span>
-                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#60a5fa', textAlign: 'right' }}>{fmt(total)}</span>
-                          <span style={{ fontSize: '11px', color: '#555' }}>Assign the full amount to budget lines below. Both Internal and Owner SOV will update.</span>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#2563eb', textAlign: 'right' }}>{fmt(total)}</span>
+                          <span style={{ fontSize: '11px', color: '#6b7280' }}>Assign the full amount to budget lines below. Both Internal and Owner SOV will update.</span>
                           <span />
                         </div>
 
                         {/* Assignment rows */}
                         <div style={{ marginBottom: '10px' }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '6px', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget Line</span>
-                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Description</span>
-                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Amount</span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget Line</span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Description</span>
+                            <span style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Amount</span>
                             <span />
                           </div>
                           {lines.map((line, i) => (
@@ -7047,7 +7076,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 value={line.amount}
                                 onChange={e => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, amount: e.target.value } : l) }))} />
                               <button onClick={() => setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.filter((_, j) => j !== i) }))}
-                                style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
+                                style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '4px', color: '#6b7280', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
                             </div>
                           ))}
                           <button
@@ -7058,10 +7087,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
 
                         {/* Running total */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#080808', borderRadius: '7px', marginBottom: '14px' }}>
-                          <span style={{ fontSize: '12px', color: '#555' }}>Assigned:</span>
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{fmt(assigned)}</span>
-                          <span style={{ fontSize: '12px', color: '#555' }}>Remaining:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#f9fafb', borderRadius: '7px', marginBottom: '14px' }}>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>Assigned:</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{fmt(assigned)}</span>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>Remaining:</span>
                           <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
                             {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
                           </span>
@@ -7071,7 +7100,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const lastIdx = lines.length - 1
                               const lastAmt = (Number(lines[lastIdx].amount) || 0) + remaining
                               setPrimeCOAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === lastIdx ? { ...l, amount: String(Math.round(lastAmt * 100) / 100) } : l) }))
-                            }} style={{ fontSize: '11px', color: '#60a5fa', background: 'none', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer' }}>
+                            }} style={{ fontSize: '11px', color: '#2563eb', background: 'none', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer' }}>
                               Fill last line
                             </button>
                           )}
@@ -7081,18 +7110,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={approvePrimeCOWithSOV}
-                            style={{ padding: '9px 20px', background: isBalanced ? '#0a2a0a' : '#111', border: `1px solid ${isBalanced ? '#1a5a1a' : '#2a2a2a'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
+                            style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
                             disabled={!isBalanced}>
                             Assign &amp; Approve
                           </button>
                           <button
                             onClick={() => { setPrimeCOAssignPanel(null); reviewPrimeCO(co.id, 'approved', co.amount) }}
-                            style={{ padding: '9px 20px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '7px', color: '#888', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            style={{ padding: '9px 20px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '7px', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                             Approve Without Assigning
                           </button>
                           <button
                             onClick={() => { setPrimeCOAssignPanel(null); reviewPrimeCO(co.id, 'rejected', co.amount) }}
-                            style={{ padding: '9px 20px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '7px', color: '#ff6b6b', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            style={{ padding: '9px 20px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '7px', color: '#dc2626', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                             Reject
                           </button>
                         </div>
@@ -7149,10 +7178,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   {/* SOV Section */}
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase' }}>Schedule of Values</p>
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Schedule of Values</p>
                       <button type="button" style={s.btnSmall} onClick={() => { setCoForm(f => ({ ...f, sov: [...f.sov, { ...emptySOVRow }] })); if (!budgetItems.length) loadBudgetItems() }}>+ Add Line</button>
                     </div>
-                    {coForm.sov.length === 0 && <p style={{ fontSize: '12px', color: '#444', marginBottom: '8px' }}>No SOV lines — CO will use the amount above. Add lines to break down cost by budget item.</p>}
+                    {coForm.sov.length === 0 && <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>No SOV lines — CO will use the amount above. Add lines to break down cost by budget item.</p>}
                     {coForm.sov.map((row, i) => (
                       <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 32px', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
                         <input style={s.input} placeholder="Description" value={row.description} onChange={e => setCoForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
@@ -7165,16 +7194,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     ))}
                     {subHasSOV && (
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid #1a1a1a' }}>
-                        <span style={{ fontSize: '12px', color: '#555' }}>SOV Total:</span>
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>${subSovTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid #f0f0f0' }}>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>SOV Total:</span>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>${subSovTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
                   </div>
                   <div style={{ marginBottom: '16px' }}>
                     <label style={s.label}>Attachment (optional)</label>
                     <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setCoFile(e.target.files[0] || null)} style={{ ...s.input, padding: '6px 8px', cursor: 'pointer' }} />
-                    {coFile && <p style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>{coFile.name}</p>}
+                    {coFile && <p style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>{coFile.name}</p>}
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: addingCO ? 0.6 : 1 }} disabled={addingCO} onClick={addCO}>{addingCO ? 'Saving...' : 'Save CO'}</button>
@@ -7184,7 +7213,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )
               })()}
 
-              {allCOs.length === 0 && !showAddCO && <p style={{ color: '#444', fontSize: '14px' }}>No change orders yet.</p>}
+              {allCOs.length === 0 && !showAddCO && <p style={{ color: '#6b7280', fontSize: '14px' }}>No change orders yet.</p>}
 
               {allCOs.map((co, coIdx) => {
                 const subId = co.subcontracts?.sub_id
@@ -7200,13 +7229,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: isPushing ? '10px' : 0 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{subName}</span>
-                          {scope && <span style={{ fontSize: '11px', color: '#555' }}>{scope}</span>}
-                          <span style={{ fontSize: '11px', color: '#555' }}>{co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'}</span>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{subName}</span>
+                          {scope && <span style={{ fontSize: '11px', color: '#6b7280' }}>{scope}</span>}
+                          <span style={{ fontSize: '11px', color: '#6b7280' }}>{co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'}</span>
                           {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedSubCOId(isSOVExpanded ? null : co.id)}>{co.sov.length} SOV lines {isSOVExpanded ? '▲' : '▼'}</span>}
-                          <span style={{ fontSize: '11px', color: '#444' }}>{new Date(co.created_at).toLocaleDateString()}</span>
+                          <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(co.created_at).toLocaleDateString()}</span>
                         </div>
-                        <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
+                        <span style={{ fontSize: '13px', color: '#4b5563' }}>{co.description}</span>
                         {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
@@ -7243,10 +7272,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const sovRows = editSubCOForm.sov || []
                       const sovTotal = sovRows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
                       return (
-                        <div style={{ background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '16px', marginTop: '10px' }}>
+                        <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '16px', marginTop: '10px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                            <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit Change Order</p>
-                            <button onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '18px', cursor: 'pointer' }}>×</button>
+                            <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit Change Order</p>
+                            <button onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '18px', cursor: 'pointer' }}>×</button>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                             <div>
@@ -7283,12 +7312,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       )
                     })()}
                     {isPushing && (
-                      <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '14px 16px', marginTop: '8px' }}>
-                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>Push to Contract Modification</p>
+                      <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '14px 16px', marginTop: '8px' }}>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '10px' }}>Push to Contract Modification</p>
                         <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                           <div>
                             <label style={s.label}>Sub amount</label>
-                            <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', paddingTop: '6px' }}>${Number(co.amount).toLocaleString()}</div>
+                            <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', paddingTop: '6px' }}>${Number(co.amount).toLocaleString()}</div>
                           </div>
                           <div>
                             <label style={s.label}>Markup %</label>
@@ -7301,7 +7330,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {markedUpPreview != null && (
                             <div>
                               <label style={s.label}>Modification total</label>
-                              <div style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80', paddingTop: '6px' }}>${markedUpPreview.toLocaleString()}</div>
+                              <div style={{ fontSize: '15px', fontWeight: '700', color: '#16a34a', paddingTop: '6px' }}>${markedUpPreview.toLocaleString()}</div>
                             </div>
                           )}
                           <button style={{ ...s.btn, opacity: pushingToPrime ? 0.6 : 1, flexShrink: 0 }} disabled={pushingToPrime} onClick={() => pushSubCOToPrime(co, subName)}>
@@ -7311,24 +7340,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     )}
                     {isSOVExpanded && hasSov && (
-                      <div style={{ marginTop: '10px', padding: '12px', background: '#0a0a0a', borderRadius: '6px', border: '1px solid #1a1a1a' }}>
-                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>Schedule of Values</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '10px', color: '#444', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                      <div style={{ marginTop: '10px', padding: '12px', background: '#ffffff', borderRadius: '6px', border: '1px solid #f0f0f0' }}>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px' }}>Schedule of Values</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '10px', color: '#6b7280', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
                           <span>Description</span><span>Budget Line</span><span style={{ textAlign: 'right' }}>Amount</span>
                         </div>
                         {co.sov.map((item, i) => {
                           const bi = budgetItems.find(b => b.id === item.budget_item_id)
                           return (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '5px 0', borderTop: '1px solid #1a1a1a' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '5px 0', borderTop: '1px solid #f0f0f0' }}>
                               <span>{item.description || '—'}</span>
                               <span style={{ color: bi ? '#888' : '#555' }}>{bi ? `${bi.cost_code ? bi.cost_code + ' · ' : ''}${bi.description}` : '—'}</span>
                               <span style={{ textAlign: 'right', fontWeight: '600', color: Number(item.amount) >= 0 ? '#4ade80' : '#ff6b6b' }}>{Number(item.amount) >= 0 ? '+' : ''}${Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </div>
                           )
                         })}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '8px', borderTop: '1px solid #2a2a2a', marginTop: '4px' }}>
-                          <span style={{ fontSize: '12px', color: '#555' }}>Total:</span>
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${co.sov.reduce((a, r) => a + Number(r.amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '8px', borderTop: '1px solid #d1d5db', marginTop: '4px' }}>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>Total:</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>${co.sov.reduce((a, r) => a + Number(r.amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       </div>
                     )}
@@ -7340,24 +7369,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const isBalanced = Math.abs(remaining) < 0.02
                       const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                       return (
-                        <div style={{ marginTop: '12px', background: '#0c0c0c', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '18px' }}>
+                        <div style={{ marginTop: '12px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '10px', padding: '18px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign to Budget</p>
-                            <button onClick={() => setCoAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
+                            <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Assign to Budget</p>
+                            <button onClick={() => setCoAssignPanel(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '16px', cursor: 'pointer', padding: '0 4px' }}>×</button>
                           </div>
 
                           {/* Breakdown */}
-                          <div style={{ background: '#080808', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ background: '#f9fafb', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: '13px', color: '#777' }}>CO Total to Assign</span>
-                            <span style={{ fontSize: '15px', fontWeight: '700', color: '#60a5fa' }}>{fmt(total)}</span>
+                            <span style={{ fontSize: '15px', fontWeight: '700', color: '#2563eb' }}>{fmt(total)}</span>
                           </div>
 
                           {/* Assignment rows */}
                           <div style={{ marginBottom: '10px' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '6px', marginBottom: '6px' }}>
-                              <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget Line</span>
-                              <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Description</span>
-                              <span style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>Amount</span>
+                              <span style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget Line</span>
+                              <span style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Description</span>
+                              <span style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Amount</span>
                               <span />
                             </div>
                             {lines.map((line, i) => (
@@ -7378,7 +7407,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   value={line.amount}
                                   onChange={e => setCoAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === i ? { ...l, amount: e.target.value } : l) }))} />
                                 <button onClick={() => setCoAssignPanel(prev => ({ ...prev, lines: prev.lines.filter((_, j) => j !== i) }))}
-                                  style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '4px', color: '#555', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
+                                  style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '4px', color: '#6b7280', fontSize: '14px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>×</button>
                               </div>
                             ))}
                             <button
@@ -7389,10 +7418,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
 
                           {/* Running total */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#080808', borderRadius: '7px', marginBottom: '14px' }}>
-                            <span style={{ fontSize: '12px', color: '#555' }}>Assigned:</span>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{fmt(assigned)}</span>
-                            <span style={{ fontSize: '12px', color: '#555' }}>Remaining:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#f9fafb', borderRadius: '7px', marginBottom: '14px' }}>
+                            <span style={{ fontSize: '12px', color: '#6b7280' }}>Assigned:</span>
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{fmt(assigned)}</span>
+                            <span style={{ fontSize: '12px', color: '#6b7280' }}>Remaining:</span>
                             <span style={{ fontSize: '13px', fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#facc15' }}>
                               {remaining < 0 ? '-' : ''}{fmt(remaining)} {isBalanced ? '✓' : remaining < 0 ? '(over)' : ''}
                             </span>
@@ -7402,7 +7431,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 const lastIdx = lines.length - 1
                                 const lastAmt = (Number(lines[lastIdx].amount) || 0) + remaining
                                 setCoAssignPanel(prev => ({ ...prev, lines: prev.lines.map((l, j) => j === lastIdx ? { ...l, amount: String(Math.round(lastAmt * 100) / 100) } : l) }))
-                              }} style={{ fontSize: '11px', color: '#60a5fa', background: 'none', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer' }}>
+                              }} style={{ fontSize: '11px', color: '#2563eb', background: 'none', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '3px 10px', cursor: 'pointer' }}>
                                 Fill last line
                               </button>
                             )}
@@ -7412,18 +7441,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button
                               onClick={approveCOWithSOV}
-                              style={{ padding: '9px 20px', background: isBalanced ? '#0a2a0a' : '#111', border: `1px solid ${isBalanced ? '#1a5a1a' : '#2a2a2a'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
+                              style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#4ade80' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
                               disabled={!isBalanced}>
                               Assign &amp; Approve
                             </button>
                             <button
                               onClick={() => { setCoAssignPanel(null); reviewCO(co.id, 'approved') }}
-                              style={{ padding: '9px 20px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '7px', color: '#888', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                              style={{ padding: '9px 20px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '7px', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                               Approve Without Assigning
                             </button>
                             <button
                               onClick={() => { setCoAssignPanel(null); reviewCO(co.id, 'rejected') }}
-                              style={{ padding: '9px 20px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '7px', color: '#ff6b6b', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                              style={{ padding: '9px 20px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '7px', color: '#dc2626', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                               Reject
                             </button>
                           </div>
@@ -7460,7 +7489,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const undrawnPOs = purchaseOrders.filter(po => (po.status === 'issued' || po.status === 'received') && !po.draw_request_id)
                 const undrawnGCs = generalConditions.filter(e => !e.draw_request_id)
                 return (
-                  <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
+                  <div style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginBottom: '1rem' }}>
                     <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create new draw request</p>
                     <div style={{ marginBottom: '12px' }}>
                       <label style={s.label}>Draw title (optional)</label>
@@ -7469,17 +7498,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {undrawnApproved.length > 0 && (
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>Tag approved direct costs to this draw</label>
-                        <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                        <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
                           {undrawnApproved.map(dc => (
-                            <label key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                            <label key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
                               <input
                                 type="checkbox"
                                 checked={drawForm.dc_ids.includes(dc.id)}
                                 onChange={e => setDrawForm(f => ({ ...f, dc_ids: e.target.checked ? [...f.dc_ids, dc.id] : f.dc_ids.filter(x => x !== dc.id) }))}
                                 style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
                               />
-                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{dc.description}</span>
-                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{dc.cost_date} · ${Number(dc.amount).toLocaleString()}</span>
+                              <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{dc.description}</span>
+                              <span style={{ fontSize: '12px', color: '#6b7280', flexShrink: 0 }}>{dc.cost_date} · ${Number(dc.amount).toLocaleString()}</span>
                             </label>
                           ))}
                         </div>
@@ -7489,22 +7518,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     )}
                     {undrawnApproved.length === 0 && (
-                      <p style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>No undrawn approved direct costs to tag.</p>
+                      <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>No undrawn approved direct costs to tag.</p>
                     )}
                     {undrawnPOs.length > 0 && (
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>Tag POs to this draw</label>
-                        <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                        <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
                           {undrawnPOs.map(po => (
-                            <label key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                            <label key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
                               <input
                                 type="checkbox"
                                 checked={drawForm.po_ids.includes(po.id)}
                                 onChange={e => setDrawForm(f => ({ ...f, po_ids: e.target.checked ? [...f.po_ids, po.id] : f.po_ids.filter(x => x !== po.id) }))}
                                 style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }}
                               />
-                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
-                              <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number} · ${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
+                              <span style={{ fontSize: '11px', color: '#6b7280', flexShrink: 0 }}>{po.po_number} · ${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </label>
                           ))}
                         </div>
@@ -7516,12 +7545,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {undrawnGCs.length > 0 && (
                       <div style={{ marginBottom: '12px' }}>
                         <label style={s.label}>Tag general conditions to this draw</label>
-                        <div style={{ background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                        <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
                           {undrawnGCs.map(e => (
-                            <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                            <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
                               <input type="checkbox" checked={drawForm.gc_ids.includes(e.id)} onChange={ev => setDrawForm(f => ({ ...f, gc_ids: ev.target.checked ? [...f.gc_ids, e.id] : f.gc_ids.filter(x => x !== e.id) }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
-                              <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{e.description}</span>
-                              <span style={{ fontSize: '12px', color: '#888', flexShrink: 0 }}>{e.entry_date} · ${Number(e.amount).toLocaleString()}</span>
+                              <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{e.description}</span>
+                              <span style={{ fontSize: '12px', color: '#6b7280', flexShrink: 0 }}>{e.entry_date} · ${Number(e.amount).toLocaleString()}</span>
                             </label>
                           ))}
                         </div>
@@ -7556,7 +7585,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               })()}
 
               {drawRequests.length === 0 && !showCreateDraw && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No draw requests yet. Create one to let subs bill against a specific draw.</p>
+                <p style={{ color: '#6b7280', fontSize: '14px' }}>No draw requests yet. Create one to let subs bill against a specific draw.</p>
               )}
               {drawRequests.map(dr => {
                 const isOpen = expandedDrawId === dr.id
@@ -7571,22 +7600,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const undrawnGCsForDraw = generalConditions.filter(e => !e.draw_request_id)
                 const taggedGCTotal = taggedGCs.reduce((a, e) => a + Number(e.amount || 0), 0)
                 return (
-                  <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#1e1e1e'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                  <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                     {/* Header row — click to expand */}
                     <div
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: dr.status === 'open' ? '#140a00' : '#0a0a0a', cursor: 'pointer' }}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: dr.status === 'open' ? '#fff7ed' : '#ffffff', cursor: 'pointer' }}
                       onClick={() => { setExpandedDrawId(isOpen ? null : dr.id); setDrawAddCostIds([]); setDrawAddPOIds([]) }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{dr.title}</span>
-                        <span style={{ fontSize: '11px', color: dr.status === 'open' ? '#e8590c' : '#555', background: dr.status === 'open' ? '#2a1200' : '#1a1a1a', border: `1px solid ${dr.status === 'open' ? '#4a2200' : '#2a2a2a'}`, borderRadius: '99px', padding: '2px 8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{dr.title}</span>
+                        <span style={{ fontSize: '11px', color: dr.status === 'open' ? '#e8590c' : '#555', background: dr.status === 'open' ? '#fff7ed' : '#f0f0f0', border: `1px solid ${dr.status === 'open' ? '#fed7aa' : '#d1d5db'}`, borderRadius: '99px', padding: '2px 8px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           {dr.status}
                         </span>
-                        <span style={{ fontSize: '11px', color: '#555' }}>{taggedCosts.length} cost{taggedCosts.length !== 1 ? 's' : ''}</span>
-                        {taggedPOs.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{taggedPOs.length} PO{taggedPOs.length !== 1 ? 's' : ''}</span>}
-                        {taggedGCs.length > 0 && <span style={{ fontSize: '11px', color: '#555' }}>{taggedGCs.length} GC</span>}
+                        <span style={{ fontSize: '11px', color: '#6b7280' }}>{taggedCosts.length} cost{taggedCosts.length !== 1 ? 's' : ''}</span>
+                        {taggedPOs.length > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{taggedPOs.length} PO{taggedPOs.length !== 1 ? 's' : ''}</span>}
+                        {taggedGCs.length > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{taggedGCs.length} GC</span>}
                         {taggedTotal > 0 && <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700' }}>${taggedTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                        <span style={{ fontSize: '11px', color: '#555' }}>{drawBillings.length} billing{drawBillings.length !== 1 ? 's' : ''}</span>
+                        <span style={{ fontSize: '11px', color: '#6b7280' }}>{drawBillings.length} billing{drawBillings.length !== 1 ? 's' : ''}</span>
                       </div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                         {dr.status === 'open' ? (
@@ -7609,30 +7638,30 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           await loadDrawRequests()
                           await loadBillingForJob()
                         }}>Delete</button>
-                        <span style={{ color: '#555', fontSize: '14px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
+                        <span style={{ color: '#6b7280', fontSize: '14px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
                       </div>
                     </div>
 
                     {/* Expanded body */}
                     {isOpen && (
-                      <div style={{ borderTop: `1px solid ${dr.status === 'open' ? '#2a1200' : '#1a1a1a'}`, padding: '1rem 1.25rem', background: '#080808' }}>
+                      <div style={{ borderTop: `1px solid ${dr.status === 'open' ? '#fff7ed' : '#f0f0f0'}`, padding: '1rem 1.25rem', background: '#f9fafb' }}>
 
                         {/* Tagged direct costs */}
                         <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Direct costs drawn ({taggedCosts.length})</p>
                         {taggedCosts.length === 0 ? (
-                          <p style={{ fontSize: '13px', color: '#444', marginBottom: '1rem' }}>No direct costs tagged to this draw yet.</p>
+                          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1rem' }}>No direct costs tagged to this draw yet.</p>
                         ) : (
                           <div style={{ marginBottom: '1rem' }}>
                             {taggedCosts.map(dc => (
-                              <div key={dc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                              <div key={dc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                                 <div>
-                                  <span style={{ color: '#ccc' }}>{dc.description}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{dc.cost_date} · {dc.category}</span>
+                                  <span style={{ color: '#374151' }}>{dc.description}</span>
+                                  <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{dc.cost_date} · {dc.category}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(dc.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                   <button
-                                    style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
+                                    style={{ fontSize: '11px', padding: '3px 8px', background: '#fef2f2', border: '1px solid #3a1a1a', color: '#dc2626', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
                                       await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_dc_ids: [dc.id] }) })
                                       await loadDirectCosts()
@@ -7652,17 +7681,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {undrawnCosts.length > 0 && (
                           <>
                             <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Add direct costs to this draw</p>
-                            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                            <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
                               {undrawnCosts.map(dc => (
-                                <label key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                                <label key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
                                   <input
                                     type="checkbox"
                                     checked={drawAddCostIds.includes(dc.id)}
                                     onChange={e => setDrawAddCostIds(ids => e.target.checked ? [...ids, dc.id] : ids.filter(x => x !== dc.id))}
                                     style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }}
                                   />
-                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{dc.description}</span>
-                                  <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{dc.cost_date}</span>
+                                  <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{dc.description}</span>
+                                  <span style={{ fontSize: '11px', color: '#6b7280', flexShrink: 0 }}>{dc.cost_date}</span>
                                   <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(dc.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 </label>
                               ))}
@@ -7682,25 +7711,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </>
                         )}
                         {undrawnCosts.length === 0 && (
-                          <p style={{ fontSize: '12px', color: '#444', marginBottom: '1rem' }}>No undrawn approved direct costs available.</p>
+                          <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '1rem' }}>No undrawn approved direct costs available.</p>
                         )}
 
                         {/* Tagged POs */}
                         <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Purchase orders drawn ({taggedPOs.length})</p>
                         {taggedPOs.length === 0 ? (
-                          <p style={{ fontSize: '13px', color: '#444', marginBottom: '1rem' }}>No POs tagged to this draw yet.</p>
+                          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1rem' }}>No POs tagged to this draw yet.</p>
                         ) : (
                           <div style={{ marginBottom: '1rem' }}>
                             {taggedPOs.map(po => (
-                              <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                              <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                                 <div>
-                                  <span style={{ color: '#ccc' }}>{po.vendor_name}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
+                                  <span style={{ color: '#374151' }}>{po.vendor_name}</span>
+                                  <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                   <button
-                                    style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
+                                    style={{ fontSize: '11px', padding: '3px 8px', background: '#fef2f2', border: '1px solid #3a1a1a', color: '#dc2626', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
                                       await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: po.id, draw_request_id: null, drawn_at: null }) })
                                       await loadPurchaseOrders()
@@ -7719,17 +7748,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {undrawnPOs.length > 0 && (
                           <>
                             <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Add POs to this draw</p>
-                            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                            <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
                               {undrawnPOs.map(po => (
-                                <label key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                                <label key={po.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
                                   <input
                                     type="checkbox"
                                     checked={drawAddPOIds.includes(po.id)}
                                     onChange={e => setDrawAddPOIds(ids => e.target.checked ? [...ids, po.id] : ids.filter(x => x !== po.id))}
                                     style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }}
                                   />
-                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
-                                  <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{po.po_number}</span>
+                                  <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{po.vendor_name}{po.description ? ` · ${po.description}` : ''}</span>
+                                  <span style={{ fontSize: '11px', color: '#6b7280', flexShrink: 0 }}>{po.po_number}</span>
                                   <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 </label>
                               ))}
@@ -7748,24 +7777,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </>
                         )}
                         {undrawnPOs.length === 0 && (
-                          <p style={{ fontSize: '12px', color: '#444', marginBottom: '1rem' }}>No undrawn issued/received POs available.</p>
+                          <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '1rem' }}>No undrawn issued/received POs available.</p>
                         )}
 
                         {/* Tagged General Conditions */}
                         <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>General conditions drawn ({taggedGCs.length})</p>
                         {taggedGCs.length === 0 ? (
-                          <p style={{ fontSize: '13px', color: '#444', marginBottom: '1rem' }}>No general conditions tagged to this draw yet.</p>
+                          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1rem' }}>No general conditions tagged to this draw yet.</p>
                         ) : (
                           <div style={{ marginBottom: '1rem' }}>
                             {taggedGCs.map(e => (
-                              <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                              <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                                 <div>
-                                  <span style={{ color: '#ccc' }}>{e.description}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{e.entry_date} · {e.category}</span>
+                                  <span style={{ color: '#374151' }}>{e.description}</span>
+                                  <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{e.entry_date} · {e.category}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                  <button style={{ fontSize: '11px', padding: '3px 8px', background: '#1a0a0a', border: '1px solid #3a1a1a', color: '#ff6b6b', borderRadius: '4px', cursor: 'pointer' }}
+                                  <button style={{ fontSize: '11px', padding: '3px 8px', background: '#fef2f2', border: '1px solid #3a1a1a', color: '#dc2626', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
                                       await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_gc_ids: [e.id] }) })
                                       await loadGeneralConditions()
@@ -7781,12 +7810,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {undrawnGCsForDraw.length > 0 && (
                           <>
                             <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.5rem' }}>Add general conditions to this draw</p>
-                            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                            <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '8px', marginBottom: '10px', maxHeight: '220px', overflowY: 'auto' }}>
                               {undrawnGCsForDraw.map(e => (
-                                <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #111' }}>
+                                <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 6px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}>
                                   <input type="checkbox" checked={drawAddGCIds.includes(e.id)} onChange={ev => setDrawAddGCIds(ids => ev.target.checked ? [...ids, e.id] : ids.filter(x => x !== e.id))} style={{ accentColor: '#e8590c', width: '15px', height: '15px', flexShrink: 0 }} />
-                                  <span style={{ fontSize: '13px', color: '#ccc', flex: 1 }}>{e.description}</span>
-                                  <span style={{ fontSize: '11px', color: '#888', flexShrink: 0 }}>{e.entry_date}</span>
+                                  <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{e.description}</span>
+                                  <span style={{ fontSize: '11px', color: '#6b7280', flexShrink: 0 }}>{e.entry_date}</span>
                                   <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700', flexShrink: 0 }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                 </label>
                               ))}
@@ -7810,13 +7839,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <>
                             <p style={{ ...s.cardTitle, marginBottom: '0.75rem', marginTop: '0.25rem' }}>Billing submissions ({drawBillings.length})</p>
                             {drawBillings.map(b => (
-                              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #111', fontSize: '13px' }}>
+                              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                                 <div>
-                                  <span style={{ color: '#ccc', fontWeight: '600' }}>{b.company_name}</span>
-                                  <span style={{ color: '#555', fontSize: '11px', marginLeft: '8px' }}>{new Date(b.submitted_at).toLocaleDateString()}</span>
+                                  <span style={{ color: '#374151', fontWeight: '600' }}>{b.company_name}</span>
+                                  <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{new Date(b.submitted_at).toLocaleDateString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                  <span style={{ color: '#f1f1f1', fontWeight: '700' }}>${Number(b.amount_billed).toLocaleString()}</span>
+                                  <span style={{ color: '#111827', fontWeight: '700' }}>${Number(b.amount_billed).toLocaleString()}</span>
                                   <span style={s.coBadge(b.status)}>{b.status}</span>
                                 </div>
                               </div>
@@ -7839,9 +7868,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
 
               {showCreateBilling && (
-                <div style={{ ...s.inlineForm, border: '1px solid #4a2200' }}>
+                <div style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Create billing on behalf of subcontractor</p>
-                  <p style={{ fontSize: '12px', color: '#555', margin: '-0.5rem 0 1rem' }}>Use when a sub emails you billing info and you want to enter and approve it directly.</p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '-0.5rem 0 1rem' }}>Use when a sub emails you billing info and you want to enter and approve it directly.</p>
 
                   <div style={{ marginBottom: '12px' }}>
                     <label style={s.label}>Contractor on this project</label>
@@ -7901,9 +7930,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         const retHeld = Math.round(parseFloat(createBillingForm.amount_billed) * parseFloat(createBillingForm._retainage_pct) / 100 * 100) / 100
                         const net = parseFloat(createBillingForm.amount_billed) - retHeld
                         return (
-                          <div style={{ fontSize: '11px', marginTop: '5px', color: '#888' }}>
-                            <span style={{ color: '#facc15' }}>{createBillingForm._retainage_pct}% retainage held: ${retHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                            <span style={{ color: '#4ade80', marginLeft: '10px' }}>Net payment: ${net.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          <div style={{ fontSize: '11px', marginTop: '5px', color: '#6b7280' }}>
+                            <span style={{ color: '#a16207' }}>{createBillingForm._retainage_pct}% retainage held: ${retHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#16a34a', marginLeft: '10px' }}>Net payment: ${net.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           </div>
                         )
                       })()}
@@ -7919,8 +7948,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <textarea style={{ ...s.textarea, minHeight: '80px' }} value={createBillingForm.work_description} onChange={e => setCreateBillingForm(f => ({ ...f, work_description: e.target.value }))} placeholder="Describe the work completed this billing period..." />
                       <div style={{ marginTop: '10px' }}>
                         <label style={s.label}>Attachment (PDF, image, etc.)</label>
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#ccc' }} onChange={e => setCreateBillingFile(e.target.files[0] || null)} />
-                        {createBillingFile && <p style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{createBillingFile.name}</p>}
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#374151' }} onChange={e => setCreateBillingFile(e.target.files[0] || null)} />
+                        {createBillingFile && <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{createBillingFile.name}</p>}
                       </div>
                     </div>
                     <div>
@@ -7945,12 +7974,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </optgroup>
                               )}
                             </select>
-                            <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Select which draw this billing is for</p>
+                            <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Select which draw this billing is for</p>
                           </>
                         ) : (
                           <>
                             <input type="month" style={s.input} value={createBillingForm.billing_period} onChange={e => setCreateBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
-                            <p style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
+                            <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Month this billing covers — used to auto-fill AIA applications</p>
                           </>
                         )}
                       </div>
@@ -7958,7 +7987,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <input type="checkbox" id="autoApprove" checked={createBillingForm.auto_approve} onChange={e => setCreateBillingForm(f => ({ ...f, auto_approve: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#e8590c' }} />
-                    <label htmlFor="autoApprove" style={{ fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                    <label htmlFor="autoApprove" style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
                       Approve immediately (skip pending queue)
                     </label>
                   </div>
@@ -7968,7 +7997,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </p>
                   )}
                   {createBillingError && (
-                    <p style={{ fontSize: '12px', color: '#ff6b6b', marginBottom: '10px' }}>{createBillingError}</p>
+                    <p style={{ fontSize: '12px', color: '#dc2626', marginBottom: '10px' }}>{createBillingError}</p>
                   )}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button style={{ ...s.btn, opacity: (creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed) ? 0.4 : 1 }} disabled={creatingBilling || !createBillingForm.company_name || !createBillingForm.amount_billed} onClick={createBilling}>
@@ -7980,7 +8009,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {billingSubmissions.length === 0 && !showCreateBilling && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No billing submissions yet. Create one above or wait for subs to submit from their portal.</p>
+                <p style={{ color: '#6b7280', fontSize: '14px' }}>No billing submissions yet. Create one above or wait for subs to submit from their portal.</p>
               )}
 
               {billingSubmissions.map(b => {
@@ -7999,38 +8028,38 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 }
                 const cumPct = contractVal > 0 ? Math.round(cumAmt / contractVal * 1000) / 10 : null
                 return (
-                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.ready_to_pay ? '1px solid #1a4a1a' : b.nv_cuts_check ? '1px solid #4a2200' : '1px solid #1e1e1e' }}>
-                    <div style={{ ...s.billingEntryHeader, background: b.ready_to_pay ? '#0a1a0a' : b.nv_cuts_check ? '#140a00' : '#0f0f0f' }}>
+                  <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.ready_to_pay ? '1px solid #bbf7d0' : b.nv_cuts_check ? '1px solid #fed7aa' : '1px solid #e5e7eb' }}>
+                    <div style={{ ...s.billingEntryHeader, background: b.ready_to_pay ? '#f0fdf4' : b.nv_cuts_check ? '#fff7ed' : '#f9fafb' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</span>
-                          {b.contact_name && <span style={{ fontSize: '12px', color: '#555' }}>{b.contact_name}</span>}
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{b.company_name}</span>
+                          {b.contact_name && <span style={{ fontSize: '12px', color: '#6b7280' }}>{b.contact_name}</span>}
                           <span style={s.coBadge(b.status)}>{b.status}</span>
-                          {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
-                          {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
+                          {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
+                          {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
                           {b.status === 'approved' && b.lien_waiver_signed_at
-                            ? <span style={{ fontSize: '10px', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER SIGNED</span>
+                            ? <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER SIGNED</span>
                             : b.status === 'approved' && b.lien_waiver_sent_at
-                              ? <span style={{ fontSize: '10px', color: '#facc15', background: '#2a2000', border: '1px solid #4a4a00', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER PENDING</span>
+                              ? <span style={{ fontSize: '10px', color: '#a16207', background: '#2a2000', border: '1px solid #4a4a00', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER PENDING</span>
                               : null
                           }
                         </div>
-                        <div style={{ fontSize: '12px', color: '#555' }}>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
                           {new Date(b.submitted_at).toLocaleDateString()}
                           {b.draw_request_id
-                            ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>{drawRequests.find(d => d.id === b.draw_request_id)?.title || 'Draw'}</span>
-                            : b.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
+                            ? <span style={{ background: '#fff7ed', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>{drawRequests.find(d => d.id === b.draw_request_id)?.title || 'Draw'}</span>
+                            : b.billing_period && <span style={{ background: '#1a2a1a', color: '#16a34a', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                           }
                           {cumPct != null ? ` · ${cumPct}% billed to date` : b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
                           {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
                         </div>
                         {drawRequests.length > 0 && (
                           <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '11px', color: '#444' }}>Draw:</span>
+                            <span style={{ fontSize: '11px', color: '#6b7280' }}>Draw:</span>
                             <select
                               value={b.draw_request_id || ''}
                               onChange={e => assignBillingToDraw(b.id, e.target.value)}
-                              style={{ fontSize: '11px', padding: '3px 8px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', color: b.draw_request_id ? '#e8590c' : '#555', outline: 'none', cursor: 'pointer' }}
+                              style={{ fontSize: '11px', padding: '3px 8px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '6px', color: b.draw_request_id ? '#e8590c' : '#555', outline: 'none', cursor: 'pointer' }}
                             >
                               <option value="">— Unassigned —</option>
                               {drawRequests.map(d => (
@@ -8042,11 +8071,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</div>
+                          <div style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>${Number(b.amount_billed).toLocaleString()}</div>
                           {b.retainage_held > 0 && (
                             <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                              <span style={{ color: '#facc15' }}>Ret: ${Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                              <span style={{ color: '#4ade80', marginLeft: '8px' }}>Net: ${(Number(b.amount_billed) - Number(b.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#a16207' }}>Ret: ${Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              <span style={{ color: '#16a34a', marginLeft: '8px' }}>Net: ${(Number(b.amount_billed) - Number(b.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </div>
                           )}
                         </div>
@@ -8055,7 +8084,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <button
                               disabled={approvingBillingId === b.id}
                               onClick={() => approveBilling(b.id)}
-                              style={{ fontSize: '11px', padding: '4px 10px', background: '#0a2a0a', border: '1px solid #1a4a1a', color: '#4ade80', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: approvingBillingId === b.id ? 0.5 : 1 }}
+                              style={{ fontSize: '11px', padding: '4px 10px', background: '#dcfce7', border: '1px solid #bbf7d0', color: '#16a34a', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: approvingBillingId === b.id ? 0.5 : 1 }}
                             >
                               {approvingBillingId === b.id ? 'Approving…' : '✓ Approve'}
                             </button>
@@ -8065,7 +8094,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               title={b.ready_to_pay ? 'Mark as not ready' : 'Mark as ready to pay'}
                               disabled={togglingReadyToPay === b.id}
                               onClick={() => toggleReadyToPay(b.id, b.ready_to_pay)}
-                              style={{ fontSize: '11px', padding: '4px 10px', background: b.ready_to_pay ? '#0a2a0a' : '#1a1a1a', border: `1px solid ${b.ready_to_pay ? '#1a4a1a' : '#2a2a2a'}`, color: b.ready_to_pay ? '#4ade80' : '#888', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: togglingReadyToPay === b.id ? 0.5 : 1 }}
+                              style={{ fontSize: '11px', padding: '4px 10px', background: b.ready_to_pay ? '#dcfce7' : '#f0f0f0', border: `1px solid ${b.ready_to_pay ? '#bbf7d0' : '#d1d5db'}`, color: b.ready_to_pay ? '#4ade80' : '#888', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', opacity: togglingReadyToPay === b.id ? 0.5 : 1 }}
                             >
                               {b.ready_to_pay ? '✓ Ready to pay' : 'Mark ready to pay'}
                             </button>
@@ -8076,7 +8105,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               value={b.nv_cuts_check ? 'nv' : 'owner'}
                               disabled={togglingNvCheck === b.id}
                               onChange={e => toggleNvCutsCheck(b.id, b.nv_cuts_check)}
-                              style={{ fontSize: '11px', padding: '4px 8px', background: b.nv_cuts_check ? '#2a1200' : '#1a1a1a', border: `1px solid ${b.nv_cuts_check ? '#4a2200' : '#2a2a2a'}`, color: b.nv_cuts_check ? '#e8590c' : '#555', borderRadius: '6px', cursor: 'pointer', outline: 'none' }}
+                              style={{ fontSize: '11px', padding: '4px 8px', background: b.nv_cuts_check ? '#fff7ed' : '#f0f0f0', border: `1px solid ${b.nv_cuts_check ? '#fed7aa' : '#d1d5db'}`, color: b.nv_cuts_check ? '#e8590c' : '#555', borderRadius: '6px', cursor: 'pointer', outline: 'none' }}
                             >
                               <option value="owner">Owner pays</option>
                               <option value="nv">NV cuts check</option>
@@ -8153,13 +8182,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Amount billed ($)</label>
-                            <input type="number" step="0.01" style={{ ...s.input, ...(editBillingForm.status === 'approved' ? { color: '#888', cursor: 'default' } : {}) }} value={editBillingForm.amount_billed} readOnly={editBillingForm.status === 'approved'} tabIndex={editBillingForm.status === 'approved' ? -1 : undefined} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
+                            <input type="number" step="0.01" style={{ ...s.input, ...(editBillingForm.status === 'approved' ? { color: '#6b7280', cursor: 'default' } : {}) }} value={editBillingForm.amount_billed} readOnly={editBillingForm.status === 'approved'} tabIndex={editBillingForm.status === 'approved' ? -1 : undefined} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
                           </div>
                           <div>
                             <label style={s.label}>Retainage %</label>
                             <input type="number" min="0" max="100" step="0.5" style={s.input} value={editBillingForm.retainage_pct} onChange={e => setEditBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
                             {parseFloat(editBillingForm.retainage_pct) > 0 && parseFloat(editBillingForm.amount_billed) > 0 && (
-                              <div style={{ fontSize: '11px', marginTop: '4px', color: '#facc15' }}>
+                              <div style={{ fontSize: '11px', marginTop: '4px', color: '#a16207' }}>
                                 Held: ${Math.round(parseFloat(editBillingForm.amount_billed) * parseFloat(editBillingForm.retainage_pct) / 100 * 100) / 100}
                               </div>
                             )}
@@ -8181,8 +8210,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Attachment (PDF, image, etc.)</label>
-                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#ccc' }} onChange={e => setEditBillingFile(e.target.files[0] || null)} />
-                          {editBillingFile && <p style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{editBillingFile.name}</p>}
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#374151' }} onChange={e => setEditBillingFile(e.target.files[0] || null)} />
+                          {editBillingFile && <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{editBillingFile.name}</p>}
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Status</label>
@@ -8197,15 +8226,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmall} onClick={() => { setEditingBilling(null); setEditBillingFile(null) }}>Cancel</button>
                         </div>
                         {billingSovData[b.id] && billingSovData[b.id].length > 0 && (
-                          <div style={{ marginTop: '1.25rem', borderTop: '1px solid #1e1e1e', paddingTop: '1rem' }}>
+                          <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
                             <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Schedule of values — this submission</p>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                               <thead>
-                                <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
-                                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
-                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
-                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>This submission</th>
-                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>% Complete</th>
+                                <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
+                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
+                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>This submission</th>
+                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>% Complete</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -8214,11 +8243,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   const amt = Number(line.amount || 0)
                                   const pct = sched > 0 ? (amt / sched * 100).toFixed(0) : '—'
                                   return (
-                                    <tr key={line.id} style={{ borderBottom: '1px solid #111' }}>
-                                      <td style={{ padding: '8px', color: '#ccc' }}>{line.subcontract_sov_lines?.description || '—'}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', color: '#888' }}>${sched.toLocaleString()}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', color: '#f1f1f1', fontWeight: '600' }}>${amt.toLocaleString()}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', color: '#4ade80' }}>{pct}%</td>
+                                    <tr key={line.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                      <td style={{ padding: '8px', color: '#374151' }}>{line.subcontract_sov_lines?.description || '—'}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', color: '#6b7280' }}>${sched.toLocaleString()}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', color: '#111827', fontWeight: '600' }}>${amt.toLocaleString()}</td>
+                                      <td style={{ padding: '8px', textAlign: 'right', color: '#16a34a' }}>{pct}%</td>
                                     </tr>
                                   )
                                 })}
@@ -8237,7 +8266,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── FIELD TAB ── */}
         {activeTab === 'field' && (
           <>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid #1a1a1a', paddingBottom: '0' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid #f0f0f0', paddingBottom: '0' }}>
               {['reports', 'rfis', 'deliveries', 'milestones'].map(t => (
                 <button key={t} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: fieldSubTab === t ? '#f1f1f1' : '#555', borderBottom: fieldSubTab === t ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '-1px' }}
                   onClick={() => setFieldSubTab(t)}>
@@ -8248,24 +8277,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* Daily Reports */}
             {fieldSubTab === 'reports' && (
-              fieldDailyReports.length === 0 ? <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No daily reports submitted yet.</div>
+              fieldDailyReports.length === 0 ? <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No daily reports submitted yet.</div>
               : fieldDailyReports.map(r => (
                 <div key={r.id} style={s.billingEntryRow}>
                   <div style={s.billingEntryHeader} onClick={() => setExpandedFieldReport(expandedFieldReport === r.id ? null : r.id)}>
                     <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                      {r.weather && <span style={{ fontSize: '12px', color: '#555' }}>{r.weather}</span>}
-                      {r.crew_count != null && <span style={{ fontSize: '12px', color: '#555' }}>{r.crew_count} crew</span>}
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      {r.weather && <span style={{ fontSize: '12px', color: '#6b7280' }}>{r.weather}</span>}
+                      {r.crew_count != null && <span style={{ fontSize: '12px', color: '#6b7280' }}>{r.crew_count} crew</span>}
                     </div>
-                    <span style={{ color: '#555' }}>{expandedFieldReport === r.id ? '▲' : '▼'}</span>
+                    <span style={{ color: '#6b7280' }}>{expandedFieldReport === r.id ? '▲' : '▼'}</span>
                   </div>
                   {expandedFieldReport === r.id && (
                     <div style={s.billingEntryExpanded}>
                       {/* Weather */}
                       {(r.weather || r.weather_temp) && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Weather</p>
-                          <p style={{ fontSize: '13px', color: '#ccc', margin: 0 }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Weather</p>
+                          <p style={{ fontSize: '13px', color: '#374151', margin: 0 }}>
                             {[r.weather, r.weather_temp && `${r.weather_temp}°F`].filter(Boolean).join(' · ')}
                             {r.weather_delay && <span style={{ marginLeft: '8px', color: '#e8590c', fontWeight: '700', fontSize: '11px' }}>DELAY</span>}
                           </p>
@@ -8274,19 +8303,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Work Performed */}
                       {r.work_performed && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work Performed</p>
-                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Work Performed</p>
+                          <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
                         </div>
                       )}
                       {/* Crew Log */}
                       {r.crew_log?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Crew / Manpower</p>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Crew / Manpower</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
                             <span>Name</span><span>Company</span><span>Trade</span><span>Hrs</span>
                           </div>
                           {r.crew_log.map((c, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '4px 0', borderTop: '1px solid #f0f0f0' }}>
                               <span>{c.name || '—'}</span><span>{c.company || '—'}</span><span>{c.trade || '—'}</span><span>{c.hours || '—'}</span>
                             </div>
                           ))}
@@ -8295,11 +8324,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Subcontractor Activity */}
                       {r.subcontractor_activity?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Subcontractor Activity</p>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Subcontractor Activity</p>
                           {r.subcontractor_activity.map((sub, i) => (
-                            <div key={i} style={{ padding: '8px 12px', background: '#0f0f0f', borderRadius: '6px', marginBottom: '6px' }}>
-                              <p style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: '600', margin: '0 0 4px' }}>{sub.company || '—'} {sub.trade ? `· ${sub.trade}` : ''} {sub.crew_size ? `· ${sub.crew_size} crew` : ''}</p>
-                              {sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: 0, whiteSpace: 'pre-wrap' }}>{sub.notes}</p>}
+                            <div key={i} style={{ padding: '8px 12px', background: '#f9fafb', borderRadius: '6px', marginBottom: '6px' }}>
+                              <p style={{ fontSize: '13px', color: '#111827', fontWeight: '600', margin: '0 0 4px' }}>{sub.company || '—'} {sub.trade ? `· ${sub.trade}` : ''} {sub.crew_size ? `· ${sub.crew_size} crew` : ''}</p>
+                              {sub.notes && <p style={{ fontSize: '13px', color: '#6b7280', margin: 0, whiteSpace: 'pre-wrap' }}>{sub.notes}</p>}
                             </div>
                           ))}
                         </div>
@@ -8307,12 +8336,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Equipment */}
                       {r.equipment_log?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Equipment</p>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Equipment</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
                             <span>Equipment</span><span>Operator</span><span>Hrs</span>
                           </div>
                           {r.equipment_log.map((e, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '4px 0', borderTop: '1px solid #f0f0f0' }}>
                               <span>{e.equipment || '—'}</span><span>{e.operator || '—'}</span><span>{e.hours || '—'}</span>
                             </div>
                           ))}
@@ -8321,12 +8350,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Materials Delivered */}
                       {r.materials_delivered?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Materials Delivered</p>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Materials Delivered</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
                             <span>Material</span><span>Supplier</span><span>Qty</span>
                           </div>
                           {r.materials_delivered.map((m, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '4px 0', borderTop: '1px solid #f0f0f0' }}>
                               <span>{m.material || '—'}</span><span>{m.supplier || '—'}</span><span>{m.quantity || '—'}</span>
                             </div>
                           ))}
@@ -8335,12 +8364,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Visitors / Inspections */}
                       {r.visitors?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Visitors / Inspections</p>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Visitors / Inspections</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>
                             <span>Name</span><span>Company</span><span>Purpose</span>
                           </div>
                           {r.visitors.map((v, i) => (
-                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '13px', color: '#ccc', padding: '4px 0', borderTop: '1px solid #1a1a1a' }}>
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr', gap: '4px 12px', fontSize: '13px', color: '#374151', padding: '4px 0', borderTop: '1px solid #f0f0f0' }}>
                               <span>{v.name || '—'}</span><span>{v.company || '—'}</span><span>{v.purpose || '—'}</span>
                             </div>
                           ))}
@@ -8349,31 +8378,31 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Safety */}
                       {r.safety_observations && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Safety Observations</p>
-                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.safety_observations}</p>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Safety Observations</p>
+                          <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.safety_observations}</p>
                         </div>
                       )}
                       {/* Toolbox Talk */}
                       {r.toolbox_talk && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p>
-                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.toolbox_talk}</p>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p>
+                          <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.toolbox_talk}</p>
                         </div>
                       )}
                       {/* Issues / Delays */}
                       {r.issues && (
                         <div style={{ marginBottom: '1.2rem' }}>
                           <p style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Issues / Delays</p>
-                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.issues}</p>
+                          <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{r.issues}</p>
                         </div>
                       )}
                       {/* Photos */}
                       {r.photos?.length > 0 && (
                         <div style={{ marginBottom: '1.2rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Photos ({r.photos.length})</p>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                             {r.photos.map((ph, i) => (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#141414', border: '1px solid #222', borderRadius: '6px', padding: '5px 10px' }}>
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ffffff', border: '1px solid #222', borderRadius: '6px', padding: '5px 10px' }}>
                                 <span style={{ fontSize: '12px', color: '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
                                   onClick={async () => {
                                     const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(ph.path, 3600)
@@ -8401,29 +8430,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {/* RFIs */}
             {fieldSubTab === 'rfis' && (
-              fieldRfis.length === 0 ? <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No RFIs submitted yet.</div>
+              fieldRfis.length === 0 ? <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No RFIs submitted yet.</div>
               : fieldRfis.map(rfi => (
                 <div key={rfi.id} style={s.billingEntryRow}>
                   <div style={s.billingEntryHeader} onClick={() => setExpandedFieldRfi(expandedFieldRfi === rfi.id ? null : rfi.id)}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{rfi.title}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title}</span>
                         <span style={s.coBadge(rfi.status === 'answered' ? 'approved' : rfi.status === 'closed' ? 'rejected' : 'pending')}>{rfi.status}</span>
                       </div>
-                      <span style={{ fontSize: '12px', color: '#555' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
                     </div>
-                    <span style={{ color: '#555' }}>{expandedFieldRfi === rfi.id ? '▲' : '▼'}</span>
+                    <span style={{ color: '#6b7280' }}>{expandedFieldRfi === rfi.id ? '▲' : '▼'}</span>
                   </div>
                   {expandedFieldRfi === rfi.id && (
                     <div style={s.billingEntryExpanded}>
                       {rfi.description && <>
-                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Details</p>
-                        <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{rfi.description}</p>
+                        <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Details</p>
+                        <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{rfi.description}</p>
                       </>}
                       {rfi.response && (
-                        <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Your response</p>
-                          <p style={{ fontSize: '13px', color: '#ccc', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
+                        <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Your response</p>
+                          <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
                         </div>
                       )}
                       {respondingRfi === rfi.id ? (
@@ -8467,17 +8496,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </form>
                   </div>
                 )}
-                {fieldDeliveries.length === 0 && <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No deliveries logged yet.</div>}
+                {fieldDeliveries.length === 0 && <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No deliveries logged yet.</div>}
                 {fieldDeliveries.map(d => (
-                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 12px', borderBottom: '1px solid #1a1a1a', flexWrap: 'wrap', gap: '8px' }}>
+                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 12px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{d.material}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{d.material}</span>
                         <span style={s.coBadge(d.status === 'received' ? 'approved' : 'pending')}>{d.status}</span>
-                        {d.source === 'pm' && <span style={{ fontSize: '10px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>PM</span>}
-                        {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#888', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>DAILY RPT</span>}
+                        {d.source === 'pm' && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>PM</span>}
+                        {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px', fontWeight: '700', letterSpacing: '0.5px' }}>DAILY RPT</span>}
                       </div>
-                      <span style={{ fontSize: '12px', color: '#555' }}>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>
                         {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
                         {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
                         {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
@@ -8513,9 +8542,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </form>
                   </div>
                 )}
-                {fieldMilestones.length === 0 && !showMilestoneForm && <div style={{ textAlign: 'center', color: '#444', fontSize: '14px', padding: '3rem 0' }}>No milestones yet.</div>}
+                {fieldMilestones.length === 0 && !showMilestoneForm && <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No milestones yet.</div>}
                 {fieldMilestones.map(m => (
-                  <div key={m.id} style={{ padding: '14px 12px', borderBottom: '1px solid #1a1a1a' }}>
+                  <div key={m.id} style={{ padding: '14px 12px', borderBottom: '1px solid #f0f0f0' }}>
                     {editingMilestone === m.id ? (
                       <div style={s.inlineForm}>
                         <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
@@ -8545,11 +8574,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <span style={{ fontSize: '14px', fontWeight: '600', color: m.status === 'complete' ? '#4ade80' : '#f1f1f1' }}>{m.title}</span>
                             <span style={s.coBadge(m.status === 'complete' ? 'approved' : m.status === 'delayed' ? 'rejected' : 'pending')}>{m.status}</span>
                           </div>
-                          <span style={{ fontSize: '12px', color: '#555' }}>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>
                             {m.due_date && `Due ${new Date(m.due_date + 'T12:00:00').toLocaleDateString()}`}
                             {m.completed_date && ` · Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
                           </span>
-                          {m.notes && <div style={{ fontSize: '12px', color: '#444', marginTop: '2px' }}>{m.notes}</div>}
+                          {m.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{m.notes}</div>}
                         </div>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button onClick={() => { setEditingMilestone(m.id); setEditMilestoneForm({ title: m.title, due_date: m.due_date || '', notes: m.notes || '', status: m.status }) }} style={s.btnSmallOrange}>Edit</button>
@@ -8595,7 +8624,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {(() => {
                 const hasFilters = dcSearch || dcBudgetFilter || dcAmountMin || dcAmountMax || dcStatusFilter !== 'all'
                 return (
-                  <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem' }}>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                       {/* Keyword search */}
                       <div style={{ flex: '2 1 180px', minWidth: '150px' }}>
@@ -8646,7 +8675,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {/* Clear */}
                       {hasFilters && (
                         <button
-                          style={{ ...s.btnSmall, alignSelf: 'flex-end', background: '#1a1a1a', border: '1px solid #333', color: '#888', flexShrink: 0 }}
+                          style={{ ...s.btnSmall, alignSelf: 'flex-end', background: '#f0f0f0', border: '1px solid #333', color: '#6b7280', flexShrink: 0 }}
                           onClick={() => { setDcSearch(''); setDcBudgetFilter(''); setDcAmountMin(''); setDcAmountMax(''); setDcStatusFilter('all') }}
                         >Clear filters</button>
                       )}
@@ -8662,7 +8691,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <button
                           key={f.key}
                           onClick={() => setDcStatusFilter(f.key)}
-                          style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#2a2a2a'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#2a1200' : f.key === 'rejected' ? '#2a0a0a' : '#0a2a0a') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#555' }}
+                          style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#d1d5db'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#fff7ed' : f.key === 'rejected' ? '#fef2f2' : '#dcfce7') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#ff6b6b' : '#4ade80') : '#555' }}
                         >{f.label} ({f.count})</button>
                       ))}
                     </div>
@@ -8671,7 +8700,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               })()}
 
               {showDcForm && (
-                <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
+                <div style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginBottom: '1.25rem' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Log direct cost</p>
                   <form onSubmit={submitDirectCostPM}>
                     <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
@@ -8729,7 +8758,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
                     </div>
                     {userRole === 'apm' && (
-                      <p style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>Your cost will be submitted for PM approval. Budget line assignment is done during review.</p>
+                      <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>Your cost will be submitted for PM approval. Budget line assignment is done during review.</p>
                     )}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button type="submit" disabled={submittingDc} style={{ ...s.btn, opacity: submittingDc ? 0.6 : 1 }}>{submittingDc ? 'Saving...' : userRole === 'apm' ? 'Submit for approval' : 'Save & approve'}</button>
@@ -8740,12 +8769,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {showCsvImport && (
-                <div style={{ ...s.inlineForm, border: '1px solid #1a3a1a', marginBottom: '1.25rem' }}>
+                <div style={{ ...s.inlineForm, border: '1px solid #dcfce7', marginBottom: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <p style={{ ...s.cardTitle, margin: 0 }}>Import direct costs from CSV</p>
                     <button style={s.btnSmall} onClick={downloadDcTemplate}>Download template</button>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#555', marginBottom: '12px' }}>Columns: <strong style={{ color: '#888' }}>date, description, category, amount, notes</strong>. Budget lines can be assigned after import. Categories: Materials, Labor, Equipment, Subcontractor, Permits, Fees, Other.</p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>Columns: <strong style={{ color: '#6b7280' }}>date, description, category, amount, notes</strong>. Budget lines can be assigned after import. Categories: Materials, Labor, Equipment, Subcontractor, Permits, Fees, Other.</p>
                   <input type="file" accept=".csv" style={{ ...s.input, padding: '8px 14px', marginBottom: '12px' }} onChange={e => {
                     const file = e.target.files[0]; if (!file) return
                     const reader = new FileReader()
@@ -8758,18 +8787,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                           <thead>
                             <tr style={{ borderBottom: '1px solid #222' }}>
-                              {['Date','Description','Category','Amount','Notes','Status'].map(h => <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: '#555', fontWeight: '600' }}>{h}</th>)}
+                              {['Date','Description','Category','Amount','Notes','Status'].map(h => <th key={h} style={{ textAlign: 'left', padding: '4px 8px', color: '#6b7280', fontWeight: '600' }}>{h}</th>)}
                             </tr>
                           </thead>
                           <tbody>
                             {csvRows.map((r, i) => (
-                              <tr key={i} style={{ borderBottom: '1px solid #111', background: r.errors.length ? '#1a0a0a' : 'transparent' }}>
+                              <tr key={i} style={{ borderBottom: '1px solid #f3f4f6', background: r.errors.length ? '#fef2f2' : 'transparent' }}>
                                 <td style={{ padding: '4px 8px', color: r.errors.includes('bad date') ? '#e74c3c' : '#ccc' }}>{r.cost_date || '—'}</td>
                                 <td style={{ padding: '4px 8px', color: r.errors.includes('no description') ? '#e74c3c' : '#ccc' }}>{r.description || '—'}</td>
-                                <td style={{ padding: '4px 8px', color: '#ccc' }}>{r.category}</td>
+                                <td style={{ padding: '4px 8px', color: '#374151' }}>{r.category}</td>
                                 <td style={{ padding: '4px 8px', color: r.errors.includes('bad amount') ? '#e74c3c' : '#ccc' }}>{r.amount > 0 ? `$${r.amount.toLocaleString()}` : '—'}</td>
-                                <td style={{ padding: '4px 8px', color: '#666' }}>{r.notes || ''}</td>
-                                <td style={{ padding: '4px 8px' }}>{r.errors.length ? <span style={{ color: '#e74c3c' }}>{r.errors.join(', ')}</span> : <span style={{ color: '#4ade80' }}>OK</span>}</td>
+                                <td style={{ padding: '4px 8px', color: '#4b5563' }}>{r.notes || ''}</td>
+                                <td style={{ padding: '4px 8px' }}>{r.errors.length ? <span style={{ color: '#e74c3c' }}>{r.errors.join(', ')}</span> : <span style={{ color: '#16a34a' }}>OK</span>}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -8787,7 +8816,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {directCosts.length === 0 && !showCsvImport && (
-                <p style={{ color: '#444', fontSize: '14px' }}>No direct costs logged yet. Superintendents can log costs from the field portal.</p>
+                <p style={{ color: '#6b7280', fontSize: '14px' }}>No direct costs logged yet. Superintendents can log costs from the field portal.</p>
               )}
 
               {(() => {
@@ -8825,12 +8854,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const pairCount = Math.floor(activeDupIds.size / 2)
                 return <>
                   {activeDupIds.size > 0 && !q && (
-                    <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#f59e0b' }}>
+                    <div style={{ background: '#1a1200', border: '1px solid #4a3800', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#d97706' }}>
                       {pairCount} possible duplicate pair{pairCount !== 1 ? 's' : ''} detected (same amount) — entries marked below.
                     </div>
                   )}
                   {visibleCosts.length === 0 && (
-                    <p style={{ color: '#555', fontSize: '13px', marginBottom: '1rem' }}>No costs match the current filters.</p>
+                    <p style={{ color: '#6b7280', fontSize: '13px', marginBottom: '1rem' }}>No costs match the current filters.</p>
                   )}
                   {visibleCosts.map(c => {
                 const isRejecting = rejectingCostId === c.id
@@ -8838,15 +8867,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
                 const isDup = activeDupIds.has(c.id)
                 return (
-                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#3a1a5a' : c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
+                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#e9d5ff' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
                     <div style={s.billingEntryHeader}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{c.description}</span>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{c.description}</span>
                           <span style={s.coBadge('pending')}>{c.category}</span>
                           <span style={s.coBadge(c.status)}>{c.status}</span>
                           {drawnApp && (
-                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a' }}>
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff' }}>
                               Drawn — App #{drawnApp.app_number}
                             </span>
                           )}
@@ -8855,7 +8884,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             const tipText = matches.map(m => `${new Date(m.cost_date + 'T12:00:00').toLocaleDateString()} — ${m.description} — $${Number(m.amount).toLocaleString()}`).join('\n')
                             return (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <span title={tipText} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3800', cursor: 'help' }}>
+                                <span title={tipText} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#1a1200', color: '#d97706', border: '1px solid #4a3800', cursor: 'help' }}>
                                   Possible duplicate
                                 </span>
                                 <button
@@ -8865,14 +8894,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     try { localStorage.setItem(`dc_nodups_${id}`, JSON.stringify([...next])) } catch {}
                                     return next
                                   })}
-                                  style={{ background: 'none', border: '1px solid #4a3800', borderRadius: '99px', color: '#f59e0b', fontSize: '10px', fontWeight: '700', padding: '2px 7px', cursor: 'pointer', lineHeight: 1 }}>
+                                  style={{ background: 'none', border: '1px solid #4a3800', borderRadius: '99px', color: '#d97706', fontSize: '10px', fontWeight: '700', padding: '2px 7px', cursor: 'pointer', lineHeight: 1 }}>
                                   Not a duplicate
                                 </button>
                               </span>
                             )
                           })()}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#555' }}>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
                           {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
                           {budgetLine && ` · ${budgetLine.description}`}
                           {c.assigned_to && <span style={{ color: '#e8590c' }}> · {c.assigned_to}</span>}
@@ -8881,7 +8910,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
+                        <span style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>${Number(c.amount).toLocaleString()}</span>
                         {c.receipt_url && (
                           <button style={s.btnSmall} onClick={() => openDcReceiptUrl(c.receipt_url)}>View receipt</button>
                         )}
@@ -8907,7 +8936,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button style={s.btnSmallRed} onClick={() => updateCostStatus(c.id, 'rejected', c.notes)}>Undo approve</button>
                         )}
                         <button
-                          style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#1a0a2a', color: '#c084fc', border: '1px solid #4a1a6a' } : {}) }}
+                          style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#faf5ff', color: '#7c3aed', border: '1px solid #4a1a6a' } : {}) }}
                           onClick={() => openMovePanel(c.id)}
                         >{movingCostId === c.id ? '✕ Cancel' : '⇄ Move'}</button>
                       </div>
@@ -8940,8 +8969,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
 
                     {movingCostId === c.id && (
-                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '10px', background: '#0f0a1a', borderTop: '1px solid #2a1a4a' }}>
-                        <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap', color: '#c084fc' }}>Move to job</label>
+                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '10px', background: '#faf5ff', borderTop: '1px solid #e9d5ff' }}>
+                        <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap', color: '#7c3aed' }}>Move to job</label>
                         <select
                           style={{ ...s.input, flex: 1, opacity: loadingActiveJobs ? 0.6 : 1 }}
                           disabled={loadingActiveJobs || confirmingMoveCostId === c.id}
@@ -8954,7 +8983,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           ))}
                         </select>
                         <button
-                          style={{ padding: '8px 16px', background: '#2a1a4a', color: '#c084fc', border: '1px solid #4a1a6a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: !moveTargetJobId || confirmingMoveCostId === c.id ? 'not-allowed' : 'pointer', opacity: !moveTargetJobId || confirmingMoveCostId === c.id ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                          style={{ padding: '8px 16px', background: '#e9d5ff', color: '#7c3aed', border: '1px solid #4a1a6a', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: !moveTargetJobId || confirmingMoveCostId === c.id ? 'not-allowed' : 'pointer', opacity: !moveTargetJobId || confirmingMoveCostId === c.id ? 0.5 : 1, whiteSpace: 'nowrap' }}
                           disabled={!moveTargetJobId || confirmingMoveCostId === c.id}
                           onClick={moveCostToJob}
                         >{confirmingMoveCostId === c.id ? 'Moving...' : 'Move cost'}</button>
@@ -8987,19 +9016,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
               {job.nv_role === 'sub' ? (
                 nvSubcontracts.length > 0 && (
-                  <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
-                    GC contract total: <strong style={{ color: '#f1f1f1' }}>${nvSubcontracts.reduce((a, s) => {
+                  <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    GC contract total: <strong style={{ color: '#111827' }}>${nvSubcontracts.reduce((a, s) => {
                       const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
                       return a + Number(s.contract_value || 0) + coAdj
                     }, 0).toLocaleString()}</strong>
-                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— {nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}, manage in the Details tab</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>— {nvSubcontracts.length} subcontract{nvSubcontracts.length !== 1 ? 's' : ''}, manage in the Details tab</span>
                   </p>
                 )
               ) : (
                 job.contract_value && (
-                  <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#555' }}>
-                    Contract value: <strong style={{ color: '#f1f1f1' }}>${Number(job.contract_value).toLocaleString()}</strong>
-                    <span style={{ fontSize: '12px', color: '#444', marginLeft: '8px' }}>— edit in the Details tab</span>
+                  <p style={{ margin: '1rem 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    Contract value: <strong style={{ color: '#111827' }}>${Number(job.contract_value).toLocaleString()}</strong>
+                    <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>— edit in the Details tab</span>
                   </p>
                 )
               )}
@@ -9026,27 +9055,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 20px', fontSize: '12px', marginBottom: '10px' }}>
                     {isSub ? (
                       <>
-                        <span style={{ color: '#888' }}>{subUsingJobValue ? 'Job contract value' : `GC subcontracts (${nvSubcontracts.length})`}</span>
-                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${contractSumToDate.toLocaleString()}</span>
+                        <span style={{ color: '#6b7280' }}>{subUsingJobValue ? 'Job contract value' : `GC subcontracts (${nvSubcontracts.length})`}</span>
+                        <span style={{ color: '#111827', fontFamily: 'monospace', textAlign: 'right' }}>${contractSumToDate.toLocaleString()}</span>
                       </>
                     ) : (
                       <>
-                        <span style={{ color: '#888' }}>Original contract</span>
-                        <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${baseContractBanner.toLocaleString()}</span>
+                        <span style={{ color: '#6b7280' }}>Original contract</span>
+                        <span style={{ color: '#111827', fontFamily: 'monospace', textAlign: 'right' }}>${baseContractBanner.toLocaleString()}</span>
                         {approvedCOsTotal !== 0 && <>
-                          <span style={{ color: '#888' }}>Approved prime COs</span>
-                          <span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>
+                          <span style={{ color: '#6b7280' }}>Approved prime COs</span>
+                          <span style={{ color: '#a16207', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsTotal >= 0 ? '+' : '-'}${Math.abs(approvedCOsTotal).toLocaleString()}</span>
                         </>}
                       </>
                     )}
-                    <span style={{ color: '#aaa', fontWeight: '700' }}>Contract sum to date</span>
-                    <span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
-                    <span style={{ color: '#888' }}>Budget / SOV total</span>
-                    <span style={{ color: '#ff6b6b', fontFamily: 'monospace', textAlign: 'right' }}>${sovTotal.toLocaleString()}</span>
+                    <span style={{ color: '#4b5563', fontWeight: '700' }}>Contract sum to date</span>
+                    <span style={{ color: '#111827', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
+                    <span style={{ color: '#6b7280' }}>Budget / SOV total</span>
+                    <span style={{ color: '#dc2626', fontFamily: 'monospace', textAlign: 'right' }}>${sovTotal.toLocaleString()}</span>
                     <span style={{ color: '#e8590c', fontWeight: '700' }}>Difference</span>
                     <span style={{ color: '#e8590c', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>{diff > 0 ? '+' : '-'}${Math.abs(diff).toLocaleString()}</span>
                   </div>
-                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#888', lineHeight: '1.5' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#6b7280', lineHeight: '1.5' }}>
                     {isSub
                       ? (diff > 0
                         ? `Your contract sum is $${Math.abs(diff).toLocaleString()} more than your budget lines. Adjust owner amounts in the Budget tab to match, or add contract values to your GC subcontracts in the Details tab.`
@@ -9070,13 +9099,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const scTotal = Number(sc.contract_value || 0) + scCOAdj
                     const isShowingForm = showNewNvSubAia === sc.id
                     return (
-                      <div key={sc.id} style={{ borderTop: scIdx > 0 ? '1px solid #1a1a1a' : 'none', paddingTop: scIdx > 0 ? '1.25rem' : 0, marginBottom: '1.25rem' }}>
+                      <div key={sc.id} style={{ borderTop: scIdx > 0 ? '1px solid #f0f0f0' : 'none', paddingTop: scIdx > 0 ? '1.25rem' : 0, marginBottom: '1.25rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                           <div>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{sc.gc_name || 'GC Subcontract'}</span>
-                            {sc.scope_description && <span style={{ fontSize: '12px', color: '#555', marginLeft: '8px' }}>{sc.scope_description}</span>}
-                            <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px', fontFamily: 'monospace' }}>${scTotal.toLocaleString()}</span>
-                            {scCOAdj !== 0 && <span style={{ fontSize: '11px', color: '#facc15', marginLeft: '4px' }}>({scCOAdj >= 0 ? '+' : ''}{scCOAdj.toLocaleString()} COs)</span>}
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{sc.gc_name || 'GC Subcontract'}</span>
+                            {sc.scope_description && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>{sc.scope_description}</span>}
+                            <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px', fontFamily: 'monospace' }}>${scTotal.toLocaleString()}</span>
+                            {scCOAdj !== 0 && <span style={{ fontSize: '11px', color: '#a16207', marginLeft: '4px' }}>({scCOAdj >= 0 ? '+' : ''}{scCOAdj.toLocaleString()} COs)</span>}
                           </div>
                           {!isShowingForm && (
                             <button style={s.btnSmallOrange} onClick={() => {
@@ -9086,7 +9115,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                         </div>
                         {isShowingForm && (
-                          <form onSubmit={e => createNvSubAiaApplication(e, sc)} style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1rem' }}>
+                          <form onSubmit={e => createNvSubAiaApplication(e, sc)} style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginBottom: '1rem' }}>
                             <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New AIA Application — {sc.gc_name}</p>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                               <div>
@@ -9113,7 +9142,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <input type="number" min="0" step="0.5" style={s.input} value={newNvSubAiaForm.markup_pct} onChange={e => setNewNvSubAiaForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
                               </div>
                             </div>
-                            <p style={{ fontSize: '11px', color: '#555', margin: '0 0 12px' }}>
+                            <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 12px' }}>
                               G703 lines: {sc.scope_description || 'Base Contract'} + {(sc.change_orders || []).filter(co => co.status === 'approved').length} approved CO{(sc.change_orders || []).filter(co => co.status === 'approved').length !== 1 ? 's' : ''}
                             </p>
                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -9125,7 +9154,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </form>
                         )}
                         {scApps.length === 0 && !isShowingForm && (
-                          <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No applications yet.</p>
+                          <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No applications yet.</p>
                         )}
                         {scApps.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -9136,15 +9165,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               const shortLabel = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : `App #${app.app_number}`
                               return (
                                 <button key={app.id} onClick={() => openAiaApp(app)} title={shortLabel} style={{
-                                  padding: '5px 12px', background: isActivePill ? '#2a1200' : isCert ? '#0a1a0a' : isSubStatus ? '#1a1400' : '#111',
+                                  padding: '5px 12px', background: isActivePill ? '#fff7ed' : isCert ? '#f0fdf4' : isSubStatus ? '#1a1400' : '#f3f4f6',
                                   color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSubStatus ? '#facc15' : '#666',
-                                  border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#1a4a1a' : isSubStatus ? '#4a3800' : '#2a2a2a'}`,
+                                  border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#bbf7d0' : isSubStatus ? '#4a3800' : '#d1d5db'}`,
                                   borderRadius: '6px', fontSize: '12px', fontWeight: isActivePill ? '700' : '500',
                                   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
                                 }}>
                                   App #{app.app_number}
                                   <span style={{ fontSize: '10px', color: isActivePill ? '#e8590c88' : '#444' }}>{shortLabel}</span>
-                                  {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                                  {app.payment_received && <span style={{ color: '#16a34a', fontSize: '10px' }}>✓</span>}
                                 </button>
                               )
                             })}
@@ -9154,7 +9183,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )
                   })}
                   {aiaApplications.filter(a => a.nv_subcontract_id).length === 0 && nvSubcontracts.length > 0 && (
-                    <p style={{ color: '#555', fontSize: '12px', marginTop: '0.5rem' }}>Click "+ New application" next to a contract above to create your first billing application.</p>
+                    <p style={{ color: '#6b7280', fontSize: '12px', marginTop: '0.5rem' }}>Click "+ New application" next to a contract above to create your first billing application.</p>
                   )}
                 </div>
               ) : (
@@ -9176,7 +9205,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const isBiweekly = !isDrawType && (job?.owner_billing_frequency || job?.billing_frequency || 'monthly') === 'biweekly'
                     const canCreate = !savingAia && budgetItems.length > 0 && (isDrawType ? !!newAiaForm.linked_draw_request_id : newAiaForm.period_to && (!isBiweekly || newAiaForm.period_from))
                     return (
-                    <div style={{ ...s.inlineForm, border: '1px solid #4a2200', marginBottom: '1.25rem' }}>
+                    <div style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginBottom: '1.25rem' }}>
                       <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>{isDrawType ? 'New Draw Request' : 'New AIA Application'}</p>
                       <div style={{ display: 'grid', gridTemplateColumns: isDrawType ? '100px 1fr 100px 100px' : isBiweekly ? '100px 1fr 1fr 100px 100px' : '100px 1fr 100px 100px', gap: '12px', marginBottom: '12px' }}>
                         <div>
@@ -9243,7 +9272,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
                       {aiaApplications.length > 0 && (
-                        <p style={{ fontSize: '11px', color: '#555', margin: '0 0 12px' }}>
+                        <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 12px' }}>
                           % complete from App #{aiaApplications[0].app_number} will auto-carry forward as "Previous" on this application.
                         </p>
                       )}
@@ -9262,7 +9291,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )
                   })()}
                   {aiaApplications.length === 0 && !showNewAia && (
-                    <p style={{ color: '#444', fontSize: '14px' }}>
+                    <p style={{ color: '#6b7280', fontSize: '14px' }}>
                       {job.billing_type === 'draw_request' ? 'No draw requests yet. Create your first draw request above.' : 'No AIA applications yet. Create your first application above to get started.'}
                     </p>
                   )}
@@ -9280,9 +9309,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             title={shortLabel}
                             style={{
                               padding: '5px 12px',
-                              background: isActivePill ? '#2a1200' : isCert ? '#0a1a0a' : isSub ? '#1a1400' : '#111',
+                              background: isActivePill ? '#fff7ed' : isCert ? '#f0fdf4' : isSub ? '#1a1400' : '#f3f4f6',
                               color: isActivePill ? '#e8590c' : isCert ? '#4ade80' : isSub ? '#facc15' : '#666',
-                              border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#1a4a1a' : isSub ? '#4a3800' : '#2a2a2a'}`,
+                              border: `1px solid ${isActivePill ? '#e8590c' : isCert ? '#bbf7d0' : isSub ? '#4a3800' : '#d1d5db'}`,
                               borderRadius: '6px',
                               fontSize: '12px',
                               fontWeight: isActivePill ? '700' : '500',
@@ -9294,7 +9323,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             }}
                           >
                             {job.billing_type === 'draw_request' ? `Draw #${app.app_number}` : `App #${app.app_number}`}
-                            {app.payment_received && <span style={{ color: '#4ade80', fontSize: '10px' }}>✓</span>}
+                            {app.payment_received && <span style={{ color: '#16a34a', fontSize: '10px' }}>✓</span>}
                           </button>
                         )
                       })}
@@ -9309,29 +9338,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   ? `${new Date(activeAia.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
                   : activeAia.period_to ? new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
                 return (
-                  <div style={{ ...s.billingEntryRow, border: '1px solid #4a2200' }}>
+                  <div style={{ ...s.billingEntryRow, border: '1px solid #fed7aa' }}>
                     <div style={s.billingEntryHeader}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>
                             {job.billing_type === 'draw_request' ? `Draw #${activeAia.app_number}` : `App #${activeAia.app_number}`}
                           </span>
-                          <span style={{ fontSize: '13px', color: '#888' }}>{periodLabel}</span>
+                          <span style={{ fontSize: '13px', color: '#6b7280' }}>{periodLabel}</span>
                           <span style={s.coBadge(activeAia.status === 'certified' ? 'approved' : activeAia.status === 'submitted' ? 'pending' : 'pending')}>{activeAia.status}</span>
                           {activeAia.payment_received && (
-                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>
                               {activeAia.amount_received ? `$${Number(activeAia.amount_received).toLocaleString()} received` : 'Payment Received'}
                             </span>
                           )}
                           {activeAia.payment_received && activeAia.payment_received_at && (
-                            <span style={{ fontSize: '11px', color: '#555' }}>{new Date(activeAia.payment_received_at).toLocaleDateString()}</span>
+                            <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(activeAia.payment_received_at).toLocaleDateString()}</span>
                           )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         {relinkDrawOpen ? (
                           <>
-                            <select value={relinkDrawId} onChange={e => setRelinkDrawId(e.target.value)} style={{ padding: '5px 8px', background: '#0a0a0a', border: '1px solid #333', borderRadius: '6px', color: '#f1f1f1', fontSize: '11px' }}>
+                            <select value={relinkDrawId} onChange={e => setRelinkDrawId(e.target.value)} style={{ padding: '5px 8px', background: '#ffffff', border: '1px solid #333', borderRadius: '6px', color: '#111827', fontSize: '11px' }}>
                               <option value="">— No draw —</option>
                               {drawRequests.map(d => <option key={d.id} value={d.id}>Draw #{d.draw_number}{d.title ? ` · ${d.title}` : ''}</option>)}
                             </select>
@@ -9353,7 +9382,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {isActive && (
                       <div style={s.billingEntryExpanded}>
                         {aiaLoading ? (
-                          <p style={{ color: '#444', fontSize: '14px' }}>Loading...</p>
+                          <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading...</p>
                         ) : (
                           <>
                             <div style={{ display: 'flex', gap: '16px', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -9379,25 +9408,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             </div>
 
                             {periodBilling.length > 0 && (
-                              <div style={{ background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#2563eb', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                   Approved billing this period — ${periodBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()} from {periodBilling.length} sub{periodBilling.length !== 1 ? 's' : ''}
                                 </p>
                                 {periodBilling.map((b, i) => {
                                   const applied = appliedBillings.has(b.id)
                                   const needsManual = manualMapBillingId === b.id
                                   return (
-                                    <div key={i} style={{ padding: '6px 0', borderBottom: i < periodBilling.length - 1 ? '1px solid #1a3a5a' : 'none' }}>
+                                    <div key={i} style={{ padding: '6px 0', borderBottom: i < periodBilling.length - 1 ? '1px solid #bfdbfe' : 'none' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                          <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
+                                          <span style={{ fontSize: '13px', color: '#4b5563' }}>{b.company_name}</span>
                                           {b.retainage_held > 0 && (
-                                            <span style={{ fontSize: '11px', color: '#facc15', marginLeft: '8px' }}>({Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })} ret.)</span>
+                                            <span style={{ fontSize: '11px', color: '#a16207', marginLeft: '8px' }}>({Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })} ret.)</span>
                                           )}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                           <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(b.amount_billed).toLocaleString()}</div>
+                                            <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#111827' }}>${Number(b.amount_billed).toLocaleString()}</div>
                                             {parseFloat(activeAia?.markup_pct) > 0 && (
                                               <div style={{ fontSize: '10px', color: '#e8590c', marginTop: '1px' }}>
                                                 +{activeAia.markup_pct}% = ${(Math.round(Number(b.amount_billed) * (1 + parseFloat(activeAia.markup_pct) / 100) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} billed
@@ -9405,7 +9434,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             )}
                                           </div>
                                           <button
-                                            style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                            style={{ padding: '4px 10px', background: applied ? '#dcfce7' : '#f0fdf4', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#bbf7d0' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
                                             disabled={applied}
                                             onClick={() => applyBillingToAia(b)}
                                           >
@@ -9414,9 +9443,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         </div>
                                       </div>
                                       {needsManual && (
-                                        <div style={{ marginTop: '8px', background: '#0f1a0f', border: '1px solid #2a4a1a', borderRadius: '6px', padding: '10px' }}>
+                                        <div style={{ marginTop: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '10px' }}>
                                           <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked — pick one manually</p>
-                                          <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>To auto-map in future, assign a budget line item to this subcontract in the Contracts tab.</p>
+                                          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 8px' }}>To auto-map in future, assign a budget line item to this subcontract in the Contracts tab.</p>
                                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                             <select
                                               style={{ ...s.input, flex: 1, fontSize: '12px', padding: '7px 10px' }}
@@ -9438,7 +9467,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               Confirm
                                             </button>
                                             <button
-                                              style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                                              style={{ padding: '7px 12px', background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
                                               onClick={() => { setManualMapBillingId(null); setManualMapBudgetItemId('') }}
                                             >
                                               Cancel
@@ -9454,7 +9483,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                             {periodPOs.length > 0 && (
                               <div style={{ background: '#1a1200', border: '1px solid #4a3000', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#f59e0b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                <p style={{ fontSize: '11px', fontWeight: '700', color: '#d97706', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                   Purchase orders on this draw — ${periodPOs.reduce((a, p) => a + Number(p.amount || 0), 0).toLocaleString()} across {periodPOs.length} PO{periodPOs.length !== 1 ? 's' : ''}
                                 </p>
                                 {periodPOs.map((po, i) => {
@@ -9465,15 +9494,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div key={po.id} style={{ padding: '6px 0', borderBottom: i < periodPOs.length - 1 ? '1px solid #4a3000' : 'none' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                          <span style={{ fontSize: '13px', color: '#aaa' }}>{po.vendor_name}</span>
-                                          <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{po.po_number}</span>
-                                          {budgetLine && <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px' }}>→ {budgetLine.description}</span>}
+                                          <span style={{ fontSize: '13px', color: '#4b5563' }}>{po.vendor_name}</span>
+                                          <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px' }}>{po.po_number}</span>
+                                          {budgetLine && <span style={{ fontSize: '11px', color: '#d97706', marginLeft: '8px' }}>→ {budgetLine.description}</span>}
                                           {!budgetLine && <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px' }}>No budget line — pick one</span>}
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(po.amount || 0).toLocaleString()}</span>
+                                          <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#111827' }}>${Number(po.amount || 0).toLocaleString()}</span>
                                           <button
-                                            style={{ padding: '4px 10px', background: applied ? '#1a1200' : '#2a1a00', color: applied ? '#f59e0b' : '#fbbf24', border: `1px solid ${applied ? '#4a3000' : '#92400e'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
+                                            style={{ padding: '4px 10px', background: applied ? '#1a1200' : '#fff7ed', color: applied ? '#f59e0b' : '#fbbf24', border: `1px solid ${applied ? '#4a3000' : '#92400e'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
                                             disabled={applied}
                                             onClick={() => applyPOToAia(po)}
                                           >
@@ -9483,8 +9512,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </div>
                                       {needsManual && (
                                         <div style={{ marginTop: '8px', background: '#150f00', border: '1px solid #4a3000', borderRadius: '6px', padding: '10px' }}>
-                                          <p style={{ fontSize: '11px', color: '#f59e0b', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line on this PO — pick one</p>
-                                          <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>To auto-map in future, set a budget line on the PO in the PO tab.</p>
+                                          <p style={{ fontSize: '11px', color: '#d97706', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line on this PO — pick one</p>
+                                          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 8px' }}>To auto-map in future, set a budget line on the PO in the PO tab.</p>
                                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                             <select
                                               style={{ ...s.input, flex: 1, fontSize: '12px', padding: '7px 10px' }}
@@ -9499,14 +9528,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               ))}
                                             </select>
                                             <button
-                                              style={{ padding: '7px 14px', background: '#2a1a00', color: '#fbbf24', border: '1px solid #92400e', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: manualMapPOBudgetItemId ? 'pointer' : 'default', opacity: manualMapPOBudgetItemId ? 1 : 0.4, whiteSpace: 'nowrap' }}
+                                              style={{ padding: '7px 14px', background: '#fff7ed', color: '#fbbf24', border: '1px solid #92400e', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: manualMapPOBudgetItemId ? 'pointer' : 'default', opacity: manualMapPOBudgetItemId ? 1 : 0.4, whiteSpace: 'nowrap' }}
                                               disabled={!manualMapPOBudgetItemId}
                                               onClick={() => applyPOToAia(po, manualMapPOBudgetItemId)}
                                             >
                                               Confirm
                                             </button>
                                             <button
-                                              style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                                              style={{ padding: '7px 12px', background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
                                               onClick={() => { setManualMapPOId(null); setManualMapPOBudgetItemId('') }}
                                             >
                                               Cancel
@@ -9544,16 +9573,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 return (
                                   <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: i < list.length - 1 ? '1px solid #2a1a3a' : 'none' }}>
                                     <div>
-                                      <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}</span>
+                                      <span style={{ fontSize: '12px', color: '#6b7280', marginRight: '8px' }}>{new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}</span>
                                       <span style={{ fontSize: '13px', color: drawnElsewhere ? '#666' : '#aaa' }}>{c.description}</span>
-                                      <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{c.category}</span>
+                                      <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px' }}>{c.category}</span>
                                       {drawnElsewhere && (
-                                        <span style={{ fontSize: '11px', color: '#f59e0b', marginLeft: '8px', fontWeight: '700' }}>
+                                        <span style={{ fontSize: '11px', color: '#d97706', marginLeft: '8px', fontWeight: '700' }}>
                                           Already drawn — App #{drawnApp?.app_number || '?'}
                                         </span>
                                       )}
                                       {drawnToThisApp && (
-                                        <span style={{ fontSize: '11px', color: '#c084fc', marginLeft: '8px', fontWeight: '700' }}>
+                                        <span style={{ fontSize: '11px', color: '#7c3aed', marginLeft: '8px', fontWeight: '700' }}>
                                           Drawn — App #{drawnApp?.app_number || '?'}
                                         </span>
                                       )}
@@ -9561,18 +9590,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                       <span style={{ fontFamily: 'monospace', fontSize: '13px', color: drawnElsewhere ? '#666' : '#f1f1f1' }}>${Number(c.amount).toLocaleString()}</span>
                                       {drawnElsewhere ? (
-                                        <span style={{ padding: '4px 10px', background: '#1a1200', color: '#f59e0b', border: '1px solid #4a3000', borderRadius: '5px', fontSize: '11px', fontWeight: '700' }}>
+                                        <span style={{ padding: '4px 10px', background: '#1a1200', color: '#d97706', border: '1px solid #4a3000', borderRadius: '5px', fontSize: '11px', fontWeight: '700' }}>
                                           In App #{drawnApp?.app_number || '?'}
                                         </span>
                                       ) : drawnToThisApp ? (
                                         <button
-                                          style={{ padding: '4px 10px', background: '#1a0a2a', color: '#c084fc', border: '1px solid #3a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                          style={{ padding: '4px 10px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
                                           onClick={() => undrawDirectCost(c.id)}>
                                           Undo draw
                                         </button>
                                       ) : (
                                         <button
-                                          style={{ padding: '4px 10px', background: '#0a0a2a', color: '#a78bfa', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                          style={{ padding: '4px 10px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
                                           onClick={() => drawDirectCost(c.id, activeAia.id)}>
                                           Draw
                                         </button>
@@ -9583,19 +9612,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               }
                               return <>
                                 {thisPeriod.length > 0 && (
-                                  <div style={{ background: '#100a1a', border: '1px solid #3a1a5a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#c084fc', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                  <div style={{ background: '#100a1a', border: '1px solid #e9d5ff', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#7c3aed', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                       {linkedDrawId ? 'Direct costs — this draw' : 'Direct costs — this period'} — ${thisPeriod.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} ({thisPeriod.length} item{thisPeriod.length !== 1 ? 's' : ''})
                                     </p>
                                     {thisPeriod.map((c, i) => renderCostRow(c, i, thisPeriod))}
                                   </div>
                                 )}
                                 {otherPeriod.length > 0 && (
-                                  <div style={{ background: '#0a1a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
+                                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
                                       {linkedDrawId ? 'Other costs' : 'Previous period costs'} — ${otherPeriod.filter(c => !c.drawn_application_id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} undrawn · {otherPeriod.filter(c => c.drawn_application_id).length} drawn elsewhere
                                     </p>
-                                    <p style={{ fontSize: '11px', color: '#555', margin: '0 0 10px' }}>Costs from outside this application period. Undrawn costs can be pulled into this billing. Costs already drawn to another application are shown for reference.</p>
+                                    <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 10px' }}>Costs from outside this application period. Undrawn costs can be pulled into this billing. Costs already drawn to another application are shown for reference.</p>
                                     {otherPeriod.map((c, i) => renderCostRow(c, i, otherPeriod))}
                                   </div>
                                 )}
@@ -9613,8 +9642,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               if (!gcEntries.length) return null
                               const gcTotal = gcEntries.reduce((a, e) => a + Number(e.amount || 0), 0)
                               return (
-                                <div style={{ background: '#0a1a0a', border: '1px solid #1a4a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
-                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                                <div style={{ background: '#f0fdf4', border: '1px solid #1a4a2a', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
+                                  <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
                                     General conditions — {linkedDrawId ? 'this draw' : 'this period'} — ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({gcEntries.length} entr{gcEntries.length !== 1 ? 'ies' : 'y'})
                                   </p>
                                   {gcEntries.map((e, i) => {
@@ -9624,13 +9653,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       <div key={e.id} style={{ padding: '6px 0', borderBottom: i < gcEntries.length - 1 ? '1px solid #1a3a2a' : 'none' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                           <div>
-                                            <span style={{ fontSize: '12px', color: '#888', marginRight: '8px' }}>{e.entry_date}</span>
-                                            <span style={{ fontSize: '13px', color: '#aaa' }}>{e.description}</span>
-                                            <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{e.category}</span>
+                                            <span style={{ fontSize: '12px', color: '#6b7280', marginRight: '8px' }}>{e.entry_date}</span>
+                                            <span style={{ fontSize: '13px', color: '#4b5563' }}>{e.description}</span>
+                                            <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px' }}>{e.category}</span>
                                           </div>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             <div style={{ textAlign: 'right' }}>
-                                              <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#f1f1f1' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                              <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#111827' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                                               {parseFloat(activeAia?.markup_pct) > 0 && (
                                                 <div style={{ fontSize: '10px', color: '#e8590c', marginTop: '1px' }}>
                                                   +{activeAia.markup_pct}% = ${(Math.round(Number(e.amount) * (1 + parseFloat(activeAia.markup_pct) / 100) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} billed
@@ -9638,7 +9667,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                               )}
                                             </div>
                                             <button
-                                              style={{ padding: '4px 10px', background: applied ? '#0a2a0a' : '#1a2a0a', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#1a4a1a' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
+                                              style={{ padding: '4px 10px', background: applied ? '#dcfce7' : '#f0fdf4', color: applied ? '#4ade80' : '#a3e635', border: `1px solid ${applied ? '#bbf7d0' : '#3a5a1a'}`, borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: applied ? 'default' : 'pointer', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}
                                               disabled={applied}
                                               onClick={() => applyGCToAia(e)}
                                             >
@@ -9647,9 +9676,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           </div>
                                         </div>
                                         {needsManual && (
-                                          <div style={{ marginTop: '8px', background: '#0f1a0f', border: '1px solid #2a4a1a', borderRadius: '6px', padding: '10px' }}>
+                                          <div style={{ marginTop: '8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '10px' }}>
                                             <p style={{ fontSize: '11px', color: '#a3e635', margin: '0 0 8px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>No budget line linked — pick one manually</p>
-                                            <p style={{ fontSize: '11px', color: '#555', margin: '0 0 8px' }}>Assign a budget line to this GC entry to auto-map in future.</p>
+                                            <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 8px' }}>Assign a budget line to this GC entry to auto-map in future.</p>
                                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                               <select
                                                 style={{ ...s.input, flex: 1, fontSize: '12px', padding: '7px 10px' }}
@@ -9669,7 +9698,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                 onClick={() => applyGCManual(e)}
                                               >Confirm</button>
                                               <button
-                                                style={{ padding: '7px 12px', background: 'transparent', color: '#555', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
+                                                style={{ padding: '7px 12px', background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
                                                 onClick={() => { setGcManualMapId(null); setGcManualBudgetItemId('') }}
                                               >Cancel</button>
                                             </div>
@@ -9678,7 +9707,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </div>
                                     )
                                   })}
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px', fontSize: '12px', fontWeight: '800', color: '#4ade80' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px', fontSize: '12px', fontWeight: '800', color: '#16a34a' }}>
                                     Total: ${gcTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                   </div>
                                 </div>
@@ -9686,19 +9715,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             })()}
 
                             {aiaLines.length === 0 ? (
-                              <p style={{ color: '#444', fontSize: '14px' }}>No budget line items found. Add them in the Budget tab.</p>
+                              <p style={{ color: '#6b7280', fontSize: '14px' }}>No budget line items found. Add them in the Budget tab.</p>
                             ) : (
                               <>
                                 <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                     <thead>
-                                      <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
-                                        <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
-                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
-                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
-                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>This Period</th>
-                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total</th>
-                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
+                                      <tr style={{ borderBottom: '1px solid #d1d5db' }}>
+                                        <th style={{ textAlign: 'left', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
+                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
+                                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>This Period</th>
+                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total</th>
+                                        <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -9713,14 +9742,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         const isPinnedRow = !line.nv_sub_mode && pinnedLineIds.has(line.budget_item_id)
                                         const lineKey = line.nv_sub_mode ? line.id : line.budget_item_id
                                         return (
-                                          <tr key={lineKey} style={{ borderBottom: '1px solid #111', background: isPinnedRow ? '#1a0e00' : 'transparent' }}>
-                                            <td style={{ padding: '10px', color: '#ccc' }}>
-                                              {line.cost_code && <span style={{ fontSize: '10px', color: '#555', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
+                                          <tr key={lineKey} style={{ borderBottom: '1px solid #f3f4f6', background: isPinnedRow ? '#1a0e00' : 'transparent' }}>
+                                            <td style={{ padding: '10px', color: '#374151' }}>
+                                              {line.cost_code && <span style={{ fontSize: '10px', color: '#6b7280', marginRight: '8px', fontFamily: 'monospace' }}>{line.cost_code}</span>}
                                               {line.description}
                                               {isPinnedRow && <span style={{ fontSize: '10px', color: '#e8590c', marginLeft: '8px', fontWeight: '700', letterSpacing: '1px' }}>AUTO</span>}
                                             </td>
-                                            <td style={{ padding: '10px', textAlign: 'right', color: '#f1f1f1', fontFamily: 'monospace' }}>${Number(scheduled).toLocaleString()}</td>
-                                            <td style={{ padding: '10px', textAlign: 'center', color: '#555', fontFamily: 'monospace', fontSize: '12px' }}>
+                                            <td style={{ padding: '10px', textAlign: 'right', color: '#111827', fontFamily: 'monospace' }}>${Number(scheduled).toLocaleString()}</td>
+                                            <td style={{ padding: '10px', textAlign: 'center', color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>
                                               {parseFloat(line.pct_prev) || 0}%
                                             </td>
                                             <td style={{ padding: '6px 8px' }}>
@@ -9730,10 +9759,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                 const pctDisplay = scheduled > 0 && dollarVal ? Number((dollarVal / scheduled * 100).toFixed(6)) : (parseFloat(line.pct_this) ? Number(parseFloat(line.pct_this).toFixed(6)) : '')
                                                 return (
                                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', overflow: 'hidden', opacity: isPinned ? 0.5 : 1 }}>
-                                                      <span style={{ padding: '0 6px', fontSize: '11px', color: '#555', borderRight: '1px solid #2a2a2a' }}>$</span>
+                                                    <div style={{ display: 'flex', alignItems: 'center', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden', opacity: isPinned ? 0.5 : 1 }}>
+                                                      <span style={{ padding: '0 6px', fontSize: '11px', color: '#6b7280', borderRight: '1px solid #d1d5db' }}>$</span>
                                                       <input type="number" min="0" step="0.01"
-                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#f1f1f1', fontSize: '12px', padding: '6px 6px', width: '90px', textAlign: 'right' }}
+                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#111827', fontSize: '12px', padding: '6px 6px', width: '90px', textAlign: 'right' }}
                                                         value={dollarVal || ''}
                                                         readOnly={isPinned}
                                                         placeholder="0"
@@ -9746,9 +9775,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                             return line.nv_sub_mode ? updated : recalcPinnedLines(updated, pinnedLineIds)
                                                           })
                                                         }} />
-                                                      <span style={{ padding: '0 6px', fontSize: '11px', color: '#333', borderLeft: '1px solid #2a2a2a', borderRight: '1px solid #2a2a2a' }}>%</span>
+                                                      <span style={{ padding: '0 6px', fontSize: '11px', color: '#374151', borderLeft: '1px solid #d1d5db', borderRight: '1px solid #d1d5db' }}>%</span>
                                                       <input type="number" min="0" max="100" step="0.1"
-                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#aaa', fontSize: '12px', padding: '6px 6px', width: '54px', textAlign: 'center' }}
+                                                        style={{ background: 'transparent', border: 'none', outline: 'none', color: '#4b5563', fontSize: '12px', padding: '6px 6px', width: '54px', textAlign: 'center' }}
                                                         value={pctDisplay}
                                                         readOnly={isPinned}
                                                         placeholder="0"
@@ -9766,14 +9795,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                       <button
                                                         title="One-time: set to weighted average % of all other lines"
                                                         onClick={() => autoCalcProRataLine(i)}
-                                                        style={{ padding: '5px 7px', background: '#1a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
+                                                        style={{ padding: '5px 7px', background: '#faf5ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
                                                       >≈%</button>
                                                     )}
                                                     {!line.nv_sub_mode && (
                                                       <button
                                                         title={isPinned ? 'Pinned — auto-calculates. Click to unpin.' : 'Pin: always auto-calculate to match overall % complete'}
                                                         onClick={() => togglePinLine(line.budget_item_id)}
-                                                        style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#111', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#2a2a2a'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}
+                                                        style={{ padding: '5px 7px', background: isPinned ? '#2a1800' : '#f3f4f6', color: isPinned ? '#e8590c' : '#444', border: `1px solid ${isPinned ? '#4a2800' : '#d1d5db'}`, borderRadius: '5px', fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}
                                                       >📌</button>
                                                     )}
                                                   </div>
@@ -9830,24 +9859,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         const diff = contractSumToDate - totalSov
                                         const approvedCOsHere = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
                                         return (
-                                        <div style={{ background: '#2a1200', border: '1px solid #e8590c', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                                        <div style={{ background: '#fff7ed', border: '1px solid #e8590c', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
                                           <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
                                             SOV total doesn't match contract sum to date — G703 won't balance
                                           </p>
                                           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 16px', fontSize: '12px', marginBottom: '8px' }}>
                                             {isSubAia ? (
-                                              <><span style={{ color: '#888' }}>Contract sum</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${contractSumToDate.toLocaleString()}</span></>
+                                              <><span style={{ color: '#6b7280' }}>Contract sum</span><span style={{ color: '#111827', fontFamily: 'monospace', textAlign: 'right' }}>${contractSumToDate.toLocaleString()}</span></>
                                             ) : (
                                               <>
-                                                <span style={{ color: '#888' }}>Original contract</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right' }}>${baseContractAia.toLocaleString()}</span>
-                                                {approvedCOsHere !== 0 && <><span style={{ color: '#888' }}>Approved COs</span><span style={{ color: '#facc15', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsHere >= 0 ? '+' : '-'}${Math.abs(approvedCOsHere).toLocaleString()}</span></>}
+                                                <span style={{ color: '#6b7280' }}>Original contract</span><span style={{ color: '#111827', fontFamily: 'monospace', textAlign: 'right' }}>${baseContractAia.toLocaleString()}</span>
+                                                {approvedCOsHere !== 0 && <><span style={{ color: '#6b7280' }}>Approved COs</span><span style={{ color: '#a16207', fontFamily: 'monospace', textAlign: 'right' }}>{approvedCOsHere >= 0 ? '+' : '-'}${Math.abs(approvedCOsHere).toLocaleString()}</span></>}
                                               </>
                                             )}
-                                            <span style={{ color: '#aaa', fontWeight: '700' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
-                                            <span style={{ color: '#888' }}>SOV total (G703)</span><span style={{ color: '#ff6b6b', fontFamily: 'monospace', textAlign: 'right' }}>${totalSov.toLocaleString()}</span>
+                                            <span style={{ color: '#4b5563', fontWeight: '700' }}>Contract sum to date</span><span style={{ color: '#111827', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>${contractSumToDate.toLocaleString()}</span>
+                                            <span style={{ color: '#6b7280' }}>SOV total (G703)</span><span style={{ color: '#dc2626', fontFamily: 'monospace', textAlign: 'right' }}>${totalSov.toLocaleString()}</span>
                                             <span style={{ color: '#e8590c', fontWeight: '700' }}>Difference to fix</span><span style={{ color: '#e8590c', fontFamily: 'monospace', textAlign: 'right', fontWeight: '700' }}>{diff > 0 ? '+' : '-'}${Math.abs(diff).toLocaleString()}</span>
                                           </div>
-                                          <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>
+                                          <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                                             {isSubAia
                                               ? (diff > 0
                                                 ? `Add $${Math.abs(diff).toLocaleString()} to owner amounts in the Budget tab, or reduce GC subcontract values in the Details tab.`
@@ -9859,15 +9888,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         </div>
                                         )
                                       })()}
-                                      <div style={{ background: '#0f0f0f', border: `1px solid ${sovMismatch ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                                      <div style={{ background: '#f9fafb', border: `1px solid ${sovMismatch ? '#fecaca' : '#d1d5db'}`, borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' }}>
                                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>G702 Summary</p>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: '13px' }}>
-                                          <span style={{ color: '#555' }}>Contract sum to date</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
-                                          <span style={{ color: '#555' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#ff6b6b' : '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
-                                          <span style={{ color: '#555' }}>Total completed</span><span style={{ color: '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                          <span style={{ color: '#555' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
-                                          <span style={{ color: '#555' }}>Less previous certificates</span><span style={{ color: '#555', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
-                                          <span style={{ color: '#f1f1f1', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span style={{ color: '#6b7280' }}>Contract sum to date</span><span style={{ color: '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
+                                          <span style={{ color: '#6b7280' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#ff6b6b' : '#f1f1f1', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
+                                          <span style={{ color: '#6b7280' }}>Total completed</span><span style={{ color: '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span style={{ color: '#6b7280' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                                          <span style={{ color: '#6b7280' }}>Less previous certificates</span><span style={{ color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                                          <span style={{ color: '#111827', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </div>
                                       </div>
                                     </>
@@ -9881,11 +9910,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   return (
                                     <div style={{ background: '#2a1500', border: '1px solid #8b4513', borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
                                       <div style={{ color: '#ff9944', fontWeight: '700', fontSize: '13px', marginBottom: '8px' }}>SOV total doesn't match contract sum</div>
-                                      <div style={{ color: '#ccc', fontSize: '12px', lineHeight: '1.7' }}>
+                                      <div style={{ color: '#374151', fontSize: '12px', lineHeight: '1.7' }}>
                                         <span>SOV total: <strong style={{ color: '#fff' }}>{fmt(totalScheduled)}</strong></span><br />
                                         <span>Contract sum to date: <strong style={{ color: '#fff' }}>{fmt(contractSumToDate)}</strong></span><br />
                                         <span>Difference: <strong style={{ color: '#ff6644' }}>{diff > 0 ? '+' : ''}{fmtSigned(diff)}</strong></span>
-                                        {approvedCOsVal !== 0 && <><br /><span style={{ color: '#888', fontSize: '11px' }}>Includes {approvedCOsVal >= 0 ? '+' : ''}{fmtSigned(approvedCOsVal)} in approved change orders</span></>}
+                                        {approvedCOsVal !== 0 && <><br /><span style={{ color: '#6b7280', fontSize: '11px' }}>Includes {approvedCOsVal >= 0 ? '+' : ''}{fmtSigned(approvedCOsVal)} in approved change orders</span></>}
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                                         <button style={{ ...s.btnGray, fontSize: '12px', padding: '7px 14px' }} onClick={() => setAiaBalanceWarning(null)}>Dismiss</button>
@@ -9914,8 +9943,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── PAYMENT RECEIVED MODAL ── */}
         {paymentForm.appId && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '400px' }}>
-              <p style={{ margin: '0 0 1.25rem', fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>Record Payment Received</p>
+            <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '400px' }}>
+              <p style={{ margin: '0 0 1.25rem', fontSize: '16px', fontWeight: '700', color: '#111827' }}>Record Payment Received</p>
               <div style={{ marginBottom: '12px' }}>
                 <label style={s.label}>Amount received ($)</label>
                 <input type="number" step="0.01" min="0" autoFocus style={s.input} value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
@@ -9939,17 +9968,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <>
             <div style={s.card}>
               <p style={s.cardTitle}>Project Schedule</p>
-              <p style={{ fontSize: '13px', color: '#666', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
+              <p style={{ fontSize: '13px', color: '#4b5563', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
                 Upload Microsoft Project files (.mpp, .xml), PDFs, or Excel schedules. XML exports from MS Project will be parsed to show task progress.
               </p>
               {!showScheduleUpload ? (
-                <button style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }}
+                <button style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: '#fff7ed', color: '#e8590c', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }}
                   onClick={() => setShowScheduleUpload(true)}>
                   + Upload Schedule File
                 </button>
               ) : (
-                <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem', maxWidth: '480px' }}>
-                  <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Upload schedule</p>
+                <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '1rem', maxWidth: '480px' }}>
+                  <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Upload schedule</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginBottom: '10px' }}>
                     <div>
                       <label style={s.label}>Revision #</label>
@@ -9961,12 +9990,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', background: uploadingSchedule ? '#111' : '#2a1200', color: uploadingSchedule ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingSchedule ? 'not-allowed' : 'pointer' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 18px', background: uploadingSchedule ? '#f3f4f6' : '#fff7ed', color: uploadingSchedule ? '#555' : '#e8590c', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingSchedule ? 'not-allowed' : 'pointer' }}>
                       {uploadingSchedule ? 'Uploading...' : 'Select File'}
                       <input type="file" accept=".mpp,.xml,.pdf,.xlsx,.xls,.csv" style={{ display: 'none' }} disabled={uploadingSchedule}
                         onChange={e => { if (e.target.files?.[0]) uploadScheduleFile(e.target.files[0], scheduleUploadMeta); e.target.value = '' }} />
                     </label>
-                    <button style={{ padding: '9px 16px', background: 'none', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#555', fontSize: '12px', cursor: 'pointer' }} onClick={() => { setShowScheduleUpload(false); setScheduleUploadMeta({ revision: '', notes: '' }) }}>Cancel</button>
+                    <button style={{ padding: '9px 16px', background: 'none', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', fontSize: '12px', cursor: 'pointer' }} onClick={() => { setShowScheduleUpload(false); setScheduleUploadMeta({ revision: '', notes: '' }) }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -9976,15 +10005,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.card}>
                 <p style={s.cardTitle}>Uploaded Files</p>
                 {scheduleFiles.map(f => (
-                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '14px', color: '#f1f1f1' }}>{f.file_name}</span>
-                        {f.revision && <span style={{ padding: '2px 8px', background: '#1a2a1a', color: '#4ade80', borderRadius: '4px', fontSize: '11px', fontWeight: '700' }}>{f.revision}</span>}
-                        {f.file_type && <span style={{ padding: '2px 8px', background: '#1a1a2a', color: '#60a5fa', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>{f.file_type}</span>}
-                        <span style={{ fontSize: '12px', color: '#555' }}>{new Date(f.uploaded_at).toLocaleDateString()}</span>
+                        <span style={{ fontSize: '14px', color: '#111827' }}>{f.file_name}</span>
+                        {f.revision && <span style={{ padding: '2px 8px', background: '#1a2a1a', color: '#16a34a', borderRadius: '4px', fontSize: '11px', fontWeight: '700' }}>{f.revision}</span>}
+                        {f.file_type && <span style={{ padding: '2px 8px', background: '#faf5ff', color: '#2563eb', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>{f.file_type}</span>}
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(f.uploaded_at).toLocaleDateString()}</span>
                       </div>
-                      {f.notes && <div style={{ fontSize: '12px', color: '#666', marginTop: '3px' }}>{f.notes}</div>}
+                      {f.notes && <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '3px' }}>{f.notes}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       {f.file_type === 'xml' && (
@@ -10017,30 +10046,30 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ ...s.card, marginBottom: '1rem' }}>
                     <p style={s.cardTitle}>What's Next — from {parsedFrom}</p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                      <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                      <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
                         <div style={{ fontSize: '28px', fontWeight: '800', color: '#e8590c' }}>{inProgress.length}</div>
-                        <div style={{ fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>In Progress</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>In Progress</div>
                       </div>
-                      <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
-                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#60a5fa' }}>{upcoming.length}</div>
-                        <div style={{ fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Upcoming</div>
+                      <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#2563eb' }}>{upcoming.length}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Upcoming</div>
                       </div>
-                      <div style={{ background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
-                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#ff6b6b' }}>{overdue.length}</div>
-                        <div style={{ fontSize: '11px', color: '#555', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Overdue</div>
+                      <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '28px', fontWeight: '800', color: '#dc2626' }}>{overdue.length}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: '700', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Overdue</div>
                       </div>
                     </div>
 
                     {overdue.length > 0 && (
                       <>
-                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#ff6b6b', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Overdue</p>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#dc2626', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Overdue</p>
                         {overdue.map(t => (
-                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', marginBottom: '6px' }}>
+                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', marginBottom: '6px' }}>
                             <div>
-                              <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
-                              <span style={{ fontSize: '12px', color: '#ff6b6b', marginLeft: '10px' }}>Due {t.finish}</span>
+                              <span style={{ fontSize: '13px', color: '#111827' }}>{t.name}</span>
+                              <span style={{ fontSize: '12px', color: '#dc2626', marginLeft: '10px' }}>Due {t.finish}</span>
                             </div>
-                            <span style={{ fontSize: '12px', color: '#ff6b6b', fontWeight: '700' }}>{t.pct}%</span>
+                            <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '700' }}>{t.pct}%</span>
                           </div>
                         ))}
                       </>
@@ -10050,16 +10079,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <>
                         <p style={{ fontSize: '12px', fontWeight: '700', color: '#e8590c', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', marginTop: overdue.length > 0 ? '1rem' : 0 }}>In Progress</p>
                         {inProgress.map(t => (
-                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '6px', marginBottom: '6px' }}>
+                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '6px', marginBottom: '6px' }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
+                                <span style={{ fontSize: '13px', color: '#111827' }}>{t.name}</span>
                                 <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '700' }}>{t.pct}%</span>
                               </div>
-                              <div style={{ background: '#1a1a1a', borderRadius: '4px', height: '4px' }}>
+                              <div style={{ background: '#f0f0f0', borderRadius: '4px', height: '4px' }}>
                                 <div style={{ background: '#e8590c', borderRadius: '4px', height: '4px', width: `${t.pct}%` }} />
                               </div>
-                              <span style={{ fontSize: '11px', color: '#555' }}>{t.start} → {t.finish}</span>
+                              <span style={{ fontSize: '11px', color: '#6b7280' }}>{t.start} → {t.finish}</span>
                             </div>
                           </div>
                         ))}
@@ -10068,11 +10097,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                     {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).length > 0 && (
                       <>
-                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#60a5fa', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', marginTop: (overdue.length > 0 || inProgress.length > 0) ? '1rem' : 0 }}>Upcoming (next 30 days)</p>
+                        <p style={{ fontSize: '12px', fontWeight: '700', color: '#2563eb', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', marginTop: (overdue.length > 0 || inProgress.length > 0) ? '1rem' : 0 }}>Upcoming (next 30 days)</p>
                         {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).filter(t => t.start <= new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)).slice(0, 10).map(t => (
-                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#0a0a1a', border: '1px solid #1a2a3a', borderRadius: '6px', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{t.name}</span>
-                            <span style={{ fontSize: '12px', color: '#60a5fa' }}>{t.start} → {t.finish}</span>
+                          <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '13px', color: '#111827' }}>{t.name}</span>
+                            <span style={{ fontSize: '12px', color: '#2563eb' }}>{t.start} → {t.finish}</span>
                           </div>
                         ))}
                       </>
@@ -10081,18 +10110,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                   <div style={s.card}>
                     <p style={s.cardTitle}>All Tasks ({parsedTasks.filter(t => !t.summary).length})</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '6px 0 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #1e1e1e', marginBottom: '4px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '6px 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', marginBottom: '4px' }}>
                       <span>Task</span><span>Start</span><span>Finish</span><span style={{ textAlign: 'right' }}>Complete</span>
                     </div>
                     {parsedTasks.filter(t => !t.summary).map(t => {
                       const isOverdue = t.pct < 100 && t.finish < today
                       const isInProg = t.pct > 0 && t.pct < 100
                       return (
-                        <div key={t.uid} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '10px 0', borderBottom: '1px solid #111', alignItems: 'center' }}>
+                        <div key={t.uid} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 80px', gap: '8px', padding: '10px 0', borderBottom: '1px solid #f3f4f6', alignItems: 'center' }}>
                           <div>
                             <span style={{ fontSize: '13px', color: isOverdue ? '#ff6b6b' : '#f1f1f1' }}>{t.milestone ? '◆ ' : ''}{t.name}</span>
                           </div>
-                          <span style={{ fontSize: '12px', color: '#555' }}>{t.start}</span>
+                          <span style={{ fontSize: '12px', color: '#6b7280' }}>{t.start}</span>
                           <span style={{ fontSize: '12px', color: isOverdue ? '#ff6b6b' : '#555' }}>{t.finish}</span>
                           <div style={{ textAlign: 'right' }}>
                             <span style={{ fontSize: '12px', fontWeight: '700', color: t.pct === 100 ? '#4ade80' : isOverdue ? '#ff6b6b' : isInProg ? '#e8590c' : '#555' }}>{t.pct}%</span>
@@ -10107,7 +10136,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {scheduleFiles.length === 0 && (
               <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
-                <p style={{ color: '#555', margin: 0 }}>No schedule files uploaded yet. Upload an MS Project XML export to see task progress here.</p>
+                <p style={{ color: '#6b7280', margin: 0 }}>No schedule files uploaded yet. Upload an MS Project XML export to see task progress here.</p>
               </div>
             )}
           </>
@@ -10118,14 +10147,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <>
             <div style={s.card}>
               <p style={s.cardTitle}>Project Documents</p>
-              <p style={{ fontSize: '13px', color: '#666', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
+              <p style={{ fontSize: '13px', color: '#4b5563', marginTop: '-0.75rem', marginBottom: '1.25rem' }}>
                 Upload plans, geotech reports, permits, soil reports, and other project documents.
               </p>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <select
                   value={docCategory}
                   onChange={e => setDocCategory(e.target.value)}
-                  style={{ padding: '9px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', outline: 'none' }}
+                  style={{ padding: '9px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#111827', outline: 'none' }}
                 >
                   <option value="plans">Plans</option>
                   <option value="geotech">Geotech / Soil Reports</option>
@@ -10133,7 +10162,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <option value="specs">Specifications</option>
                   <option value="other">Other</option>
                 </select>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingDoc ? '#111' : '#2a1200', color: uploadingDoc ? '#555' : '#e8590c', border: '1px solid #4a2200', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingDoc ? 'not-allowed' : 'pointer' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', background: uploadingDoc ? '#f3f4f6' : '#fff7ed', color: uploadingDoc ? '#555' : '#e8590c', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '12px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', cursor: uploadingDoc ? 'not-allowed' : 'pointer' }}>
                   {uploadingDoc ? 'Uploading...' : '+ Upload Document'}
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.dwg,.zip" style={{ display: 'none' }} disabled={uploadingDoc}
                     onChange={e => { if (e.target.files?.[0]) uploadJobDoc(e.target.files[0]); e.target.value = '' }} />
@@ -10148,7 +10177,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <select
                     value={filterDocCategory}
                     onChange={e => setFilterDocCategory(e.target.value)}
-                    style={{ padding: '7px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '12px', color: '#aaa', outline: 'none' }}
+                    style={{ padding: '7px 12px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', color: '#4b5563', outline: 'none' }}
                   >
                     <option value="all">All categories</option>
                     <option value="plans">Plans</option>
@@ -10159,14 +10188,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </select>
                 </div>
                 {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).map(d => (
-                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div>
-                      <span style={{ fontSize: '14px', color: '#f1f1f1' }}>📄 {d.file_name}</span>
+                      <span style={{ fontSize: '14px', color: '#111827' }}>📄 {d.file_name}</span>
                       <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
                         <span style={{ padding: '2px 8px', background: '#1a1200', color: '#e8590c', border: '1px solid #3a2200', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase' }}>
                           {d.category === 'geotech' ? 'Geotech' : d.category === 'plans' ? 'Plans' : d.category === 'permits' ? 'Permits' : d.category === 'specs' ? 'Specs' : 'Other'}
                         </span>
-                        <span style={{ fontSize: '12px', color: '#555' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -10176,14 +10205,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 ))}
                 {jobDocs.filter(d => filterDocCategory === 'all' || d.category === filterDocCategory).length === 0 && (
-                  <p style={{ color: '#555', fontSize: '13px', margin: 0 }}>No documents in this category.</p>
+                  <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No documents in this category.</p>
                 )}
               </div>
             )}
 
             {jobDocs.length === 0 && (
               <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
-                <p style={{ color: '#555', margin: 0 }}>No documents uploaded yet. Select a category and upload to get started.</p>
+                <p style={{ color: '#6b7280', margin: 0 }}>No documents uploaded yet. Select a category and upload to get started.</p>
               </div>
             )}
           </>
@@ -10222,7 +10251,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )}
               </div>
               {addingContact && (
-                <div style={{ borderTop: '1px solid #1e1e1e', paddingTop: '1.5rem' }}>
+                <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1.5rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Name *</label>
@@ -10277,11 +10306,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div key={c.id} style={s.card}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                       <div>
-                        <p style={{ margin: '0 0 2px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>{c.name}</p>
-                        {c.company && <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>{c.company}</p>}
+                        <p style={{ margin: '0 0 2px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{c.name}</p>
+                        {c.company && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{c.company}</p>}
                       </div>
                       {c.role && (
-                        <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#0a1a2a', color: '#60a5fa', border: '1px solid #1a3a5a', whiteSpace: 'nowrap' }}>
+                        <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', whiteSpace: 'nowrap' }}>
                           {c.role}
                         </span>
                       )}
@@ -10289,18 +10318,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginBottom: c.notes ? '12px' : 0 }}>
                       {c.phone && (
                         <div>
-                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Phone</p>
-                          <a href={`tel:${c.phone}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.phone}</a>
+                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Phone</p>
+                          <a href={`tel:${c.phone}`} style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none' }}>{c.phone}</a>
                         </div>
                       )}
                       {c.email && (
                         <div>
-                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Email</p>
-                          <a href={`mailto:${c.email}`} style={{ fontSize: '14px', color: '#60a5fa', textDecoration: 'none' }}>{c.email}</a>
+                          <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Email</p>
+                          <a href={`mailto:${c.email}`} style={{ fontSize: '14px', color: '#2563eb', textDecoration: 'none' }}>{c.email}</a>
                         </div>
                       )}
                     </div>
-                    {c.notes && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#666', lineHeight: '1.5' }}>{c.notes}</p>}
+                    {c.notes && <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#4b5563', lineHeight: '1.5' }}>{c.notes}</p>}
                     <button style={{ ...s.btnSmallRed, marginTop: '12px' }} onClick={() => deleteContact(c.id)}>Remove</button>
                   </div>
                 ))}
@@ -10309,7 +10338,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             {jobContacts.length === 0 && !addingContact && (
               <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
-                <p style={{ color: '#555', margin: 0 }}>No contacts yet. Add city inspectors, engineers, owner reps, and other project contacts.</p>
+                <p style={{ color: '#6b7280', margin: 0 }}>No contacts yet. Add city inspectors, engineers, owner reps, and other project contacts.</p>
               </div>
             )}
           </>
@@ -10326,23 +10355,23 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <div>
                   <h2 style={s.cardTitle}>Labor Allocations</h2>
-                  <p style={{ fontSize: '13px', color: '#555', margin: 0 }}>Assign employees to this job by date range. Cost accrues weekly based on their rate.</p>
+                  <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>Assign employees to this job by date range. Cost accrues weekly based on their rate.</p>
                 </div>
                 {activeEmployees.length > 0 && (
                   <button style={s.btnSmallOrange} onClick={() => setShowAddLabor(v => !v)}>{showAddLabor ? 'Cancel' : '+ Add Allocation'}</button>
                 )}
               </div>
 
-              {laborMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: laborMsg.ok ? '#0a2a0a' : '#2a0a0a', color: laborMsg.ok ? '#4ade80' : '#ff6b6b', border: `1px solid ${laborMsg.ok ? '#1a4a1a' : '#5a1a1a'}` }}>{laborMsg.text}</div>}
+              {laborMsg && <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: laborMsg.ok ? '#dcfce7' : '#fef2f2', color: laborMsg.ok ? '#4ade80' : '#ff6b6b', border: `1px solid ${laborMsg.ok ? '#bbf7d0' : '#fecaca'}` }}>{laborMsg.text}</div>}
 
               {activeEmployees.length === 0 && (
                 <div style={{ ...s.card, textAlign: 'center', padding: '3rem', marginBottom: '1rem' }}>
-                  <p style={{ color: '#555', margin: 0 }}>No employees on file. Add employees in the Employees tab of the dashboard first.</p>
+                  <p style={{ color: '#6b7280', margin: 0 }}>No employees on file. Add employees in the Employees tab of the dashboard first.</p>
                 </div>
               )}
 
               {showAddLabor && (
-                <div style={{ ...s.card, marginBottom: '1.5rem', border: '1px solid #2a1a00' }}>
+                <div style={{ ...s.card, marginBottom: '1.5rem', border: '1px solid #fff7ed' }}>
                   <p style={s.cardTitle}>New Allocation</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div>
@@ -10369,7 +10398,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const ms = new Date(laborForm.end_date) - new Date(laborForm.start_date)
                     const weeks = Math.max(0, Math.round(ms / (7 * 24 * 60 * 60 * 1000) * 10) / 10)
                     const total = wk * weeks
-                    return <p style={{ fontSize: '12px', color: '#888', marginBottom: '12px' }}>{weeks} week{weeks !== 1 ? 's' : ''} × <strong style={{ color: '#f1f1f1' }}>{fmtD(wk)}/wk</strong> = <strong style={{ color: '#e8590c' }}>{fmtD(total)}</strong> total allocation</p>
+                    return <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>{weeks} week{weeks !== 1 ? 's' : ''} × <strong style={{ color: '#111827' }}>{fmtD(wk)}/wk</strong> = <strong style={{ color: '#e8590c' }}>{fmtD(total)}</strong> total allocation</p>
                   })()}
                   <button style={{ ...s.btnSmallOrange, opacity: savingLabor ? 0.6 : 1 }} onClick={saveAllocation} disabled={savingLabor}>{savingLabor ? 'Saving…' : 'Save Allocation'}</button>
                 </div>
@@ -10381,11 +10410,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <p style={{ ...s.cardTitle, margin: 0 }}>Allocations ({laborAllocations.length})</p>
                     <div style={{ display: 'flex', gap: '1.5rem' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Drawn to date</div>
-                        <div style={{ fontSize: '20px', fontWeight: '800', color: '#4ade80' }}>{fmtD(totalDrawn)}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Drawn to date</div>
+                        <div style={{ fontSize: '20px', fontWeight: '800', color: '#16a34a' }}>{fmtD(totalDrawn)}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total allocated</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Total allocated</div>
                         <div style={{ fontSize: '20px', fontWeight: '800', color: '#e8590c' }}>{fmtD(totalLaborCost)}</div>
                       </div>
                     </div>
@@ -10393,15 +10422,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Employee</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Type</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Period</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Weeks</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Weekly rate</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Drawn</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#555', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget line</th>
+                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Employee</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Type</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Period</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Weeks</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Weekly rate</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Drawn</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#6b7280', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Budget line</th>
                           <th style={{ padding: '8px 12px' }}></th>
                         </tr>
                       </thead>
@@ -10416,22 +10445,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const remaining = total - drawn
                           const pctDrawn = total > 0 ? (drawn / total * 100) : 0
                           return (
-                            <tr key={al.id} style={{ borderBottom: '1px solid #1a1a1a' }}>
-                              <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{e.name}{e.title ? <span style={{ fontWeight: '400', color: '#666', marginLeft: '6px' }}>{e.title}</span> : null}</td>
+                            <tr key={al.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                              <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>{e.name}{e.title ? <span style={{ fontWeight: '400', color: '#4b5563', marginLeft: '6px' }}>{e.title}</span> : null}</td>
                               <td style={{ padding: '10px 12px' }}>
-                                <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#0a1e2a' : '#1a1a0a', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#1a3a5a' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
+                                <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#eff6ff' : '#fefce8', color: e.type === 'w2' ? '#60a5fa' : '#facc15', border: `1px solid ${e.type === 'w2' ? '#bfdbfe' : '#3a3a1a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
                               </td>
-                              <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px' }}>
+                              <td style={{ padding: '10px 12px', color: '#6b7280', fontSize: '12px' }}>
                                 {new Date(al.start_date + 'T12:00:00').toLocaleDateString()} – {new Date(al.end_date + 'T12:00:00').toLocaleDateString()}
                               </td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#f1f1f1' }}>{weeks}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtD(wk)}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111827' }}>{weeks}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#6b7280' }}>{fmtD(wk)}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                                <div style={{ color: '#4ade80', fontWeight: '700' }}>{fmtD(drawn)}</div>
-                                <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{pctDrawn.toFixed(0)}% · {fmtD(remaining)} left</div>
+                                <div style={{ color: '#16a34a', fontWeight: '700' }}>{fmtD(drawn)}</div>
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{pctDrawn.toFixed(0)}% · {fmtD(remaining)} left</div>
                               </td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtD(total)}</td>
-                              <td style={{ padding: '10px 12px', color: '#666', fontSize: '12px' }}>{al.budget_line || '—'}</td>
+                              <td style={{ padding: '10px 12px', color: '#4b5563', fontSize: '12px' }}>{al.budget_line || '—'}</td>
                               <td style={{ padding: '10px 12px' }}>
                                 <button style={s.btnSmallRed} onClick={() => deleteAllocation(al.id)}>Remove</button>
                               </td>
@@ -10441,8 +10470,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </tbody>
                       <tfoot>
                         <tr style={{ borderTop: '2px solid #222' }}>
-                          <td colSpan={5} style={{ padding: '10px 12px', color: '#555', fontSize: '12px' }}>Total</td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '800' }}>{fmtD(totalDrawn)}</td>
+                          <td colSpan={5} style={{ padding: '10px 12px', color: '#6b7280', fontSize: '12px' }}>Total</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: '800' }}>{fmtD(totalDrawn)}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '15px' }}>{fmtD(totalLaborCost)}</td>
                           <td colSpan={2}></td>
                         </tr>
@@ -10454,7 +10483,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {laborAllocations.length === 0 && activeEmployees.length > 0 && !showAddLabor && (
                 <div style={{ ...s.card, textAlign: 'center', padding: '3rem' }}>
-                  <p style={{ color: '#555', margin: 0 }}>No labor allocated to this job yet.</p>
+                  <p style={{ color: '#6b7280', margin: 0 }}>No labor allocated to this job yet.</p>
                 </div>
               )}
             </>
@@ -10500,38 +10529,38 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ marginBottom: '12px' }}>
                     <label style={s.label}>Attach documents (PDF, image — select multiple)</label>
                     <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.dwg,.xlsx,.docx" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setSubmittalFile(e.target.files.length > 0 ? Array.from(e.target.files) : null)} />
-                    {submittalFile && submittalFile.length > 0 && <p style={{ fontSize: '11px', color: '#4ade80', margin: '4px 0 0' }}>{submittalFile.length} file{submittalFile.length > 1 ? 's' : ''} selected: {submittalFile.map(f => f.name).join(', ')}</p>}
+                    {submittalFile && submittalFile.length > 0 && <p style={{ fontSize: '11px', color: '#16a34a', margin: '4px 0 0' }}>{submittalFile.length} file{submittalFile.length > 1 ? 's' : ''} selected: {submittalFile.map(f => f.name).join(', ')}</p>}
                   </div>
                   <button style={{ ...s.btn, opacity: savingSubmittal || !submittalForm.title ? 0.6 : 1 }} disabled={savingSubmittal || !submittalForm.title} onClick={addSubmittal}>{savingSubmittal ? 'Saving...' : 'Add Submittal'}</button>
                 </div>
               )}
 
-              {submittals.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No submittals yet.</p> : submittals.map(sub => {
+              {submittals.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No submittals yet.</p> : submittals.map(sub => {
                 const isExp = expandedSubmittalId === sub.id
                 const color = statusColor[sub.status] || '#888'
                 return (
-                  <div key={sub.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#0f0f0f', cursor: 'pointer' }} onClick={() => setExpandedSubmittalId(isExp ? null : sub.id)}>
+                  <div key={sub.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f9fafb', cursor: 'pointer' }} onClick={() => setExpandedSubmittalId(isExp ? null : sub.id)}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
-                          <span style={{ fontSize: '12px', color: '#555', fontFamily: 'monospace' }}>#{sub.number}</span>
-                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{sub.title}</span>
+                          <span style={{ fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>#{sub.number}</span>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{sub.title}</span>
                           <span style={{ fontSize: '11px', fontWeight: '700', color: color, background: color + '22', border: `1px solid ${color}44`, borderRadius: '4px', padding: '1px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{sub.status.replace('_', ' ')}</span>
                         </div>
-                        <div style={{ fontSize: '12px', color: '#555' }}>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
                           {sub.type.replace('_', ' ')} {sub.spec_section ? `· §${sub.spec_section}` : ''} {sub.submitted_by_company ? `· ${sub.submitted_by_company}` : ''} · {new Date(sub.submitted_at).toLocaleDateString()} {parseSubmittalFiles(sub.file_url).length > 0 ? `· ${parseSubmittalFiles(sub.file_url).length} doc${parseSubmittalFiles(sub.file_url).length > 1 ? 's' : ''}` : ''}
                         </div>
                       </div>
-                      <span style={{ color: '#555' }}>{isExp ? '▲' : '▼'}</span>
+                      <span style={{ color: '#6b7280' }}>{isExp ? '▲' : '▼'}</span>
                     </div>
                     {isExp && (
-                      <div style={{ borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' }}>
+                      <div style={{ borderTop: '1px solid #e5e7eb', padding: '1rem 1.25rem', background: '#f9fafb' }}>
                         {/* Approval panel */}
                         {sub.status === 'approved' && (
-                          <div style={{ background: '#061a06', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
+                          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '1rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
-                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '0.5px' }}>✓ Approved</span>
-                              {sub.reviewed_at && <span style={{ fontSize: '11px', color: '#555' }}>{new Date(sub.reviewed_at).toLocaleDateString()}</span>}
+                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>✓ Approved</span>
+                              {sub.reviewed_at && <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(sub.reviewed_at).toLocaleDateString()}</span>}
                             </div>
                             <label style={s.label}>Approval notes</label>
                             <textarea
@@ -10548,7 +10577,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             />
                           </div>
                         )}
-                        {sub.status !== 'approved' && sub.notes && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{sub.notes}</p>}
+                        {sub.status !== 'approved' && sub.notes && <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1rem' }}>{sub.notes}</p>}
                         {/* Documents */}
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Documents ({parseSubmittalFiles(sub.file_url).length})</label>
@@ -10597,7 +10626,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           {['under_review', 'approved', 'rejected', 'resubmit'].map(st => (
                             <button key={st} onClick={() => reviewSubmittal(sub.id, st)}
-                              style={{ padding: '7px 14px', background: sub.status === st ? statusColor[st] + '33' : '#1a1a1a', border: `1px solid ${sub.status === st ? statusColor[st] : '#2a2a2a'}`, borderRadius: '6px', color: sub.status === st ? statusColor[st] : '#888', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textTransform: 'capitalize' }}>
+                              style={{ padding: '7px 14px', background: sub.status === st ? statusColor[st] + '33' : '#f0f0f0', border: `1px solid ${sub.status === st ? statusColor[st] : '#d1d5db'}`, borderRadius: '6px', color: sub.status === st ? statusColor[st] : '#888', fontSize: '12px', fontWeight: '700', cursor: 'pointer', textTransform: 'capitalize' }}>
                               {st.replace('_', ' ')}
                             </button>
                           ))}
@@ -10635,25 +10664,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
 
             {prelimNotices.filter(n => n.status === 'active').length > 0 && (
-              <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#ff6b6b' }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626' }}>
                 ⚠ {prelimNotices.filter(n => n.status === 'active').length} active lien notice{prelimNotices.filter(n => n.status === 'active').length > 1 ? 's' : ''} on this job. Ensure waivers are obtained before final payment.
               </div>
             )}
 
-            {prelimNotices.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No preliminary notices recorded.</p> : prelimNotices.map(notice => (
-              <div key={notice.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #1a1a1a', flexWrap: 'wrap', gap: '10px' }}>
+            {prelimNotices.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No preliminary notices recorded.</p> : prelimNotices.map(notice => (
+              <div key={notice.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{notice.from_company}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{notice.from_company}</span>
                     <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase',
                       color: notice.status === 'active' ? '#ff6b6b' : '#4ade80',
-                      background: notice.status === 'active' ? '#2a0a0a' : '#0a2a0a',
-                      border: `1px solid ${notice.status === 'active' ? '#5a1a1a' : '#1a4a1a'}` }}>{notice.status}</span>
+                      background: notice.status === 'active' ? '#fef2f2' : '#dcfce7',
+                      border: `1px solid ${notice.status === 'active' ? '#fecaca' : '#bbf7d0'}` }}>{notice.status}</span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#555' }}>Received {new Date(notice.received_at + 'T00:00:00').toLocaleDateString()}{notice.notes ? ` · ${notice.notes}` : ''}</div>
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>Received {new Date(notice.received_at + 'T00:00:00').toLocaleDateString()}{notice.notes ? ` · ${notice.notes}` : ''}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {notice.amount_claimed && <span style={{ fontSize: '15px', fontWeight: '700', color: '#ff6b6b' }}>${Number(notice.amount_claimed).toLocaleString()}</span>}
+                  {notice.amount_claimed && <span style={{ fontSize: '15px', fontWeight: '700', color: '#dc2626' }}>${Number(notice.amount_claimed).toLocaleString()}</span>}
                   {notice.status === 'active' && (
                     <button style={s.btnSmallGreen} onClick={async () => { await fetch('/api/prelim-notices', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: notice.id, status: 'released' }) }); await loadPrelimNotices() }}>Mark Released</button>
                   )}
@@ -10710,32 +10739,32 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={s.statLabel}>Net cash flow</div>
                   <div style={s.statValue(netCashFlow >= 0 ? '#4ade80' : '#ff6b6b')}>{fmtSigned(netCashFlow)}</div>
                 </div>
-                <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#facc15')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Retainage held</div><div style={s.statValue('#facc15')}>{fmt(retainageHeld - retainageReleased)}</div><div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{fmt(retainageReleased)} released</div></div>
               </div>
 
               {receivedNoAmount.length > 0 && (
-                <div style={{ background: '#2a1200', border: '1px solid #5a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c' }}>
+                <div style={{ background: '#fff7ed', border: '1px solid #5a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c' }}>
                   <strong>{receivedNoAmount.length} {receivedNoAmount.length === 1 ? 'application is' : 'applications are'} marked received but have no dollar amount.</strong>
-                  {' '}Go to the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab, click <strong style={{ color: '#f1f1f1' }}>Record Payment</strong> on each one, and enter the amount — or run this SQL migration first if amounts aren't saving:
-                  <code style={{ display: 'block', marginTop: '8px', padding: '8px 10px', background: '#1a0a00', borderRadius: '6px', fontSize: '12px', color: '#aaa', userSelect: 'all' }}>
+                  {' '}Go to the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab, click <strong style={{ color: '#111827' }}>Record Payment</strong> on each one, and enter the amount — or run this SQL migration first if amounts aren't saving:
+                  <code style={{ display: 'block', marginTop: '8px', padding: '8px 10px', background: '#fff7ed', borderRadius: '6px', fontSize: '12px', color: '#4b5563', userSelect: 'all' }}>
                     ALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;
                   </code>
                 </div>
               )}
               {totalIn === 0 && receivedNoAmount.length === 0 && (
-                <div style={{ background: '#1a1200', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#888' }}>
-                  No payments recorded from the owner yet. Use the <strong style={{ color: '#f1f1f1' }}>Prime Contract</strong> tab to record payments received on each {job.billing_type === 'draw_request' ? 'draw request' : 'AIA application'}.
+                <div style={{ background: '#1a1200', border: '1px solid #3a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#6b7280' }}>
+                  No payments recorded from the owner yet. Use the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab to record payments received on each {job.billing_type === 'draw_request' ? 'draw request' : 'AIA application'}.
                 </div>
               )}
 
               <div style={s.card}>
                 <p style={s.cardTitle}>Monthly cash flow</p>
-                {allMonths.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No approved billing, direct costs, or payments yet.</p> : (
+                {allMonths.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved billing, direct costs, or payments yet.</p> : (
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
-                      <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
+                      <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
                         {['Month', 'Cash in', 'Sub billings', 'Direct costs', 'Total out', 'Net'].map(h => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
+                          <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -10750,8 +10779,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           const net = inflow - out
                           running += net
                           return (
-                            <tr key={m} style={{ borderBottom: '1px solid #111' }}>
-                              <td style={{ padding: '10px 12px', color: '#f1f1f1', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
+                            <tr key={m} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                              <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#4ade80' : '#444' }}>{fmt(inflow)}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
@@ -10762,11 +10791,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         })
                       })()}
                       <tr style={{ borderTop: '2px solid #222' }}>
-                        <td style={{ padding: '10px 12px', color: '#555', fontWeight: '700' }}>Total</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '700' }}>{fmt(totalIn)}</td>
+                        <td style={{ padding: '10px 12px', color: '#6b7280', fontWeight: '700' }}>Total</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: '700' }}>{fmt(totalIn)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ff6b6b', fontWeight: '700' }}>{fmt(totalOut)}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#dc2626', fontWeight: '700' }}>{fmt(totalOut)}</td>
                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#4ade80' : '#ff6b6b' }}>{fmtSigned(netCashFlow)}</td>
                       </tr>
                     </tbody>
@@ -10778,24 +10807,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <p style={s.cardTitle}>{job.billing_type === 'draw_request' ? 'Draw Requests — Payment Status' : 'AIA Applications — Payment Status'}</p>
                   {aiaApplications.map(a => (
-                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #111', flexWrap: 'wrap', gap: '8px' }}>
+                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f3f4f6', flexWrap: 'wrap', gap: '8px' }}>
                       <div>
-                        <div style={{ fontSize: '14px', color: '#f1f1f1', fontWeight: '600' }}>
+                        <div style={{ fontSize: '14px', color: '#111827', fontWeight: '600' }}>
                           {job.billing_type === 'draw_request' ? `Draw #${a.app_number}` : `App #${a.app_number}`}
-                          {a.period_to && <span style={{ fontSize: '12px', color: '#555', marginLeft: '8px' }}>{new Date(a.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                          {a.period_to && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>{new Date(a.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {a.payment_received && a.amount_received && (
-                          <span style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80' }}>{fmt(a.amount_received)}</span>
+                          <span style={{ fontSize: '15px', fontWeight: '700', color: '#16a34a' }}>{fmt(a.amount_received)}</span>
                         )}
                         <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', textTransform: 'uppercase',
                           color: a.payment_received ? '#4ade80' : '#e8590c',
-                          background: a.payment_received ? '#0a2a0a' : '#2a1200',
-                          border: `1px solid ${a.payment_received ? '#1a4a1a' : '#4a2200'}` }}>
+                          background: a.payment_received ? '#dcfce7' : '#fff7ed',
+                          border: `1px solid ${a.payment_received ? '#bbf7d0' : '#fed7aa'}` }}>
                           {a.payment_received ? 'Received' : 'Pending'}
                         </span>
-                        {a.payment_received_at && <span style={{ fontSize: '11px', color: '#555' }}>{new Date(a.payment_received_at).toLocaleDateString()}</span>}
+                        {a.payment_received_at && <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(a.payment_received_at).toLocaleDateString()}</span>}
                       </div>
                     </div>
                   ))}
@@ -10829,47 +10858,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             return (
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em' }}>{weekLabel}</div>
-                <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#555' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.1em' }}>{weekLabel}</div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#6b7280' }}>
                   {wkManpower > 0 && <span>👷 {wkManpower} workers</span>}
-                  {wkInspect > 0 && <span style={{ color: '#f59e0b' }}>🔍 {wkInspect} inspection{wkInspect > 1 ? 's' : ''}</span>}
+                  {wkInspect > 0 && <span style={{ color: '#d97706' }}>🔍 {wkInspect} inspection{wkInspect > 1 ? 's' : ''}</span>}
                   {wkConstraints > 0 && <span style={{ color: '#ef4444' }}>⚠ {wkConstraints} constraint{wkConstraints > 1 ? 's' : ''}</span>}
-                  <span style={{ color: '#444' }}>{wkActs.length} activities</span>
+                  <span style={{ color: '#6b7280' }}>{wkActs.length} activities</span>
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
                 {weekDays.map(dt => {
                   const acts = activitiesForDay(dt)
                   return (
-                    <div key={dt} style={{ background: '#0d0d0d', border: '1px solid #1f1f1f', borderRadius: '8px', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#666', textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'center', borderBottom: '1px solid #1a1a1a', paddingBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dayLabel(dt)}</div>
-                      {acts.length === 0 && <div style={{ fontSize: '11px', color: '#2a2a2a', textAlign: 'center', padding: '6px 0' }}>—</div>}
+                    <div key={dt} style={{ background: '#f9fafb', border: '1px solid #1f1f1f', borderRadius: '8px', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+                      <div style={{ fontSize: '11px', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '.05em', textAlign: 'center', borderBottom: '1px solid #f0f0f0', paddingBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dayLabel(dt)}</div>
+                      {acts.length === 0 && <div style={{ fontSize: '11px', color: '#d1d5db', textAlign: 'center', padding: '6px 0' }}>—</div>}
                       {acts.map(act => (
                         <div key={act.id} onClick={() => openEditActivity(act)}
-                          style={{ background: '#141414', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '12px' }}
+                          style={{ background: '#ffffff', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '12px' }}
                           onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a3a3a' }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = '#252525' }}>
                           <div style={{ fontWeight: '600', color: '#e8e8e8', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
-                          {act.location && <div style={{ fontSize: '11px', color: '#555', marginBottom: '5px' }}>{act.location}</div>}
+                          {act.location && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>{act.location}</div>}
                           <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
                             {act.responsible_type === 'sub'
-                              ? <span style={{ fontSize: '10px', background: '#1a2e4a', color: '#60a5fa', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub'}</span>
+                              ? <span style={{ fontSize: '10px', background: '#1a2e4a', color: '#2563eb', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub'}</span>
                               : act.responsible_type === 'other'
-                                ? <span style={{ fontSize: '10px', background: '#2a1a0a', color: '#fb923c', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.other_company_name || 'Other'}</span>
-                                : <span style={{ fontSize: '10px', background: '#0f2215', color: '#4ade80', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
+                                ? <span style={{ fontSize: '10px', background: '#2a1a0a', color: '#ea580c', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.other_company_name || 'Other'}</span>
+                                : <span style={{ fontSize: '10px', background: '#f0fdf4', color: '#16a34a', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
                             }
-                            {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#666' }}>👷{act.manpower}</span>}
-                            {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#a78bfa' }} title={(act.additional_companies || []).map(c => c.name).join(', ')}>+{(act.additional_companies || []).length}</span>}
+                            {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563' }}>👷{act.manpower}</span>}
+                            {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7c3aed' }} title={(act.additional_companies || []).map(c => c.name).join(', ')}>+{(act.additional_companies || []).length}</span>}
                             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block', flexShrink: 0 }} title={`Materials: ${act.materials_status || 'none'}`} />
                             {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍</span>}
                             {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
-                            {act.committed && <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 700 }}>✓</span>}
-                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#f59e0b' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
+                            {act.committed && <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓</span>}
+                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#d97706' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
                           </div>
                         </div>
                       ))}
                       <button onClick={() => openAddActivity(dt)}
-                        style={{ background: 'transparent', border: '1px dashed #222', borderRadius: '6px', color: '#444', fontSize: '11px', padding: '6px', cursor: 'pointer', marginTop: 'auto' }}>
+                        style={{ background: 'transparent', border: '1px dashed #222', borderRadius: '6px', color: '#6b7280', fontSize: '11px', padding: '6px', cursor: 'pointer', marginTop: 'auto' }}>
                         + Add
                       </button>
                     </div>
@@ -10893,21 +10922,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>←</button>
+                      <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '8px 14px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>←</button>
                       <div style={{ textAlign: 'center', minWidth: '155px' }}>
-                        <div style={{ fontSize: '11px', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '2px' }}>Week of</div>
-                        <div style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: 600 }}>{new Date(lookaheadWeekStart + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '2px' }}>Week of</div>
+                        <div style={{ fontSize: '13px', color: '#111827', fontWeight: 600 }}>{new Date(lookaheadWeekStart + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</div>
                       </div>
-                      <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>→</button>
+                      <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '8px 14px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>→</button>
                     </div>
                     {!lookahead && <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>}
-                    {lookahead && <button onClick={printLookaheadPM} style={{ padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>⬇ Download PDF</button>}
+                    {lookahead && <button onClick={printLookaheadPM} style={{ padding: '8px 14px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>⬇ Download PDF</button>}
                     {lookahead?.status === 'submitted' && (
                       <button style={{ ...s.btn, background: '#16a34a', borderColor: '#166534' }} onClick={submitLookahead} disabled={submittingLookahead}>
                         {submittingLookahead ? 'Approving…' : '✓ Mark Approved'}
                       </button>
                     )}
-                    <button onClick={() => setShowEquipmentMgr(v => !v)} style={{ ...s.btn, background: showEquipmentMgr ? '#2a2a2a' : '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', fontSize: '12px' }}>⚙ Equipment</button>
+                    <button onClick={() => setShowEquipmentMgr(v => !v)} style={{ ...s.btn, background: showEquipmentMgr ? '#d1d5db' : '#f0f0f0', color: '#4b5563', border: '1px solid #d1d5db', fontSize: '12px' }}>⚙ Equipment</button>
                   </div>
                 </div>
 
@@ -10918,33 +10947,33 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   const constraints = lookaheadActivities.filter(a => a.constraints_notes)
                   const materialsNeeded = lookaheadActivities.filter(a => a.materials_status === 'needed')
                   return (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #1a1a1a' }}>
-                      {totalWorkers > 0 && <div style={{ background: '#0f1a0f', border: '1px solid #1a3a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#4ade80', fontVariantNumeric: 'tabular-nums' }}>{totalWorkers}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Workers</div></div>}
-                      {lookaheadActivities.length > 0 && <div style={{ background: '#111', border: '1px solid #222', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f1f1f1', fontVariantNumeric: 'tabular-nums' }}>{lookaheadActivities.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Activities</div></div>}
-                      {inspections.length > 0 && <div style={{ background: '#1a1400', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#f59e0b', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections ✓'}</div></div>}
-                      {constraints.length > 0 && <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ef4444', fontVariantNumeric: 'tabular-nums' }}>{constraints.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Constraints</div></div>}
-                      {materialsNeeded.length > 0 && <div style={{ background: '#1a0f0a', border: '1px solid #3a2a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#fb923c', fontVariantNumeric: 'tabular-nums' }}>{materialsNeeded.length}</div><div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Need Materials</div></div>}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #f0f0f0' }}>
+                      {totalWorkers > 0 && <div style={{ background: '#f0fdf4', border: '1px solid #dcfce7', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{totalWorkers}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Workers</div></div>}
+                      {lookaheadActivities.length > 0 && <div style={{ background: '#f3f4f6', border: '1px solid #222', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#111827', fontVariantNumeric: 'tabular-nums' }}>{lookaheadActivities.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Activities</div></div>}
+                      {inspections.length > 0 && <div style={{ background: '#1a1400', border: '1px solid #3a3000', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#d97706', fontVariantNumeric: 'tabular-nums' }}>{inspections.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>{unscheduled.length > 0 ? `${unscheduled.length} Not Scheduled` : 'Inspections ✓'}</div></div>}
+                      {constraints.length > 0 && <div style={{ background: '#fef2f2', border: '1px solid #3a1a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ef4444', fontVariantNumeric: 'tabular-nums' }}>{constraints.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Constraints</div></div>}
+                      {materialsNeeded.length > 0 && <div style={{ background: '#1a0f0a', border: '1px solid #3a2a1a', borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}><div style={{ fontSize: '18px', fontWeight: '800', color: '#ea580c', fontVariantNumeric: 'tabular-nums' }}>{materialsNeeded.length}</div><div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Need Materials</div></div>}
                     </div>
                   )
                 })()}
 
                 {lookahead && lookaheadActivities.some(a => a.inspection_required || a.constraints_notes) && (
-                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #1a1a1a' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '8px' }}>Attention Items</div>
+                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '8px' }}>Attention Items</div>
                     {lookaheadActivities.filter(a => a.inspection_required || a.constraints_notes).map(act => (
-                      <div key={act.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #111', fontSize: '12px' }}>
+                      <div key={act.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #f3f4f6', fontSize: '12px' }}>
                         <span style={{ color: act.constraints_notes ? '#ef4444' : act.inspection_scheduled ? '#4ade80' : '#f59e0b', flexShrink: 0, fontSize: '13px' }}>
                           {act.constraints_notes ? '⚠' : act.inspection_scheduled ? '🔍✓' : '🔍'}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600, color: '#e8e8e8', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.description}</div>
-                          <div style={{ color: '#555' }}>
+                          <div style={{ color: '#6b7280' }}>
                             {new Date(act.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
                             {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#4ade80' : '#f59e0b', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
                             {act.constraints_notes && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints_notes}</span>}
                           </div>
                         </div>
-                        <button onClick={() => openEditActivity(act)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '5px', color: '#555', fontSize: '11px', cursor: 'pointer', padding: '3px 8px', flexShrink: 0 }}>Edit</button>
+                        <button onClick={() => openEditActivity(act)} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '5px', color: '#6b7280', fontSize: '11px', cursor: 'pointer', padding: '3px 8px', flexShrink: 0 }}>Edit</button>
                       </div>
                     ))}
                   </div>
@@ -10955,7 +10984,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                     <p style={s.cardTitle}>Company Equipment Fleet</p>
-                    <span style={{ fontSize: '12px', color: '#555' }}>Selected equipment triggers an alert in the PM notification email</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>Selected equipment triggers an alert in the PM notification email</span>
                   </div>
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
                     <input style={{ ...s.input, flex: 1, minWidth: '160px' }} placeholder="Equipment name (e.g. Excavator CAT 320)" value={newEqName} onChange={e => setNewEqName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addEquipment()} />
@@ -10963,16 +10992,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <button style={s.btn} onClick={addEquipment} disabled={addingEquipment || !newEqName.trim()}>{addingEquipment ? 'Adding…' : '+ Add'}</button>
                   </div>
                   {companyEquipment.length === 0 ? (
-                    <div style={{ fontSize: '13px', color: '#444', textAlign: 'center', padding: '16px 0' }}>No equipment added yet.</div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '16px 0' }}>No equipment added yet.</div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {companyEquipment.map(eq => (
-                        <div key={eq.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '6px' }}>
+                        <div key={eq.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
                           <div>
-                            <span style={{ fontSize: '13px', color: '#f1f1f1', fontWeight: 600 }}>{eq.name}</span>
-                            {eq.category && <span style={{ fontSize: '11px', color: '#555', marginLeft: '8px' }}>{eq.category}</span>}
+                            <span style={{ fontSize: '13px', color: '#111827', fontWeight: 600 }}>{eq.name}</span>
+                            {eq.category && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px' }}>{eq.category}</span>}
                           </div>
-                          <button onClick={() => deleteEquipment(eq.id)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
+                          <button onClick={() => deleteEquipment(eq.id)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
                         </div>
                       ))}
                     </div>
@@ -10982,7 +11011,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {!lookahead && (
                 <div style={{ ...s.card, textAlign: 'center', padding: '48px 24px' }}>
-                  <div style={{ fontSize: '14px', color: '#444', marginBottom: '16px' }}>No lookahead for this week yet.</div>
+                  <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>No lookahead for this week yet.</div>
                   <button style={s.btn} onClick={createLookahead}>+ Create Lookahead</button>
                 </div>
               )}
@@ -10997,10 +11026,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {showActivityModal && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
                   onClick={e => { if (e.target === e.currentTarget) setShowActivityModal(false) }}>
-                  <div style={{ background: '#111', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+                  <div style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f1f1f1' }}>{editingActivity ? 'Edit Activity' : 'Add Activity'} — {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
-                      <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{editingActivity ? 'Edit Activity' : 'Add Activity'} — {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
+                      <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div>
@@ -11063,14 +11092,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               setNewCoName('')
                               setNewCoManpower('')
                             }}
-                            style={{ background: '#1a2e4a', border: '1px solid #2d4a6a', color: '#60a5fa', borderRadius: '6px', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
+                            style={{ background: '#1a2e4a', border: '1px solid #2d4a6a', color: '#2563eb', borderRadius: '6px', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                             + Add Company
                           </button>
                         </div>
                         {(activityForm.additional_companies || []).map((co, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '6px 10px', marginBottom: '6px', fontSize: '13px', color: '#ccc' }}>
-                            <span>{co.name}{co.manpower > 0 ? <span style={{ color: '#666', marginLeft: '6px' }}>👷{co.manpower}</span> : null}</span>
-                            <button type="button" onClick={() => setActivityForm(f => ({ ...f, additional_companies: (f.additional_companies || []).filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#555', fontSize: '16px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>×</button>
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', padding: '6px 10px', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
+                            <span>{co.name}{co.manpower > 0 ? <span style={{ color: '#4b5563', marginLeft: '6px' }}>👷{co.manpower}</span> : null}</span>
+                            <button type="button" onClick={() => setActivityForm(f => ({ ...f, additional_companies: (f.additional_companies || []).filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '16px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>×</button>
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
@@ -11081,11 +11110,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div>
                         <label style={s.label}>Company Equipment Needed</label>
                         {companyEquipment.length === 0 ? (
-                          <div style={{ fontSize: '12px', color: '#555', padding: '8px 0' }}>No company equipment added yet — use the ⚙ Equipment button in the header to add your fleet.</div>
+                          <div style={{ fontSize: '12px', color: '#6b7280', padding: '8px 0' }}>No company equipment added yet — use the ⚙ Equipment button in the header to add your fleet.</div>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
                             {companyEquipment.map(eq => (
-                              <label key={eq.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                              <label key={eq.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
                                 <input type="checkbox"
                                   checked={(activityForm.company_equipment_ids || []).includes(eq.id)}
                                   onChange={e => {
@@ -11094,7 +11123,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   }}
                                 />
                                 <span>{eq.name}</span>
-                                {eq.category && <span style={{ fontSize: '11px', color: '#555' }}>({eq.category})</span>}
+                                {eq.category && <span style={{ fontSize: '11px', color: '#6b7280' }}>({eq.category})</span>}
                               </label>
                             ))}
                           </div>
@@ -11109,21 +11138,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </select>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
                           <input type="checkbox" checked={!!activityForm.inspection_required} onChange={e => setActivityForm(f => ({ ...f, inspection_required: e.target.checked }))} />
                           Inspection Required
                         </label>
                         {activityForm.inspection_required && (
-                          <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer', paddingLeft: '20px' }}>
+                          <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer', paddingLeft: '20px' }}>
                             <input type="checkbox" checked={!!activityForm.inspection_scheduled} onChange={e => setActivityForm(f => ({ ...f, inspection_scheduled: e.target.checked }))} />
                             Inspection Scheduled
                           </label>
                         )}
-                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
                           <input type="checkbox" checked={!!activityForm.preceding_work_complete} onChange={e => setActivityForm(f => ({ ...f, preceding_work_complete: e.target.checked }))} />
                           Preceding Work Complete
                         </label>
-                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#ccc', cursor: 'pointer' }}>
+                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
                           <input type="checkbox" checked={!!activityForm.committed} onChange={e => setActivityForm(f => ({ ...f, committed: e.target.checked }))} />
                           Committed
                         </label>
@@ -11137,11 +11166,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div>
                         {editingActivity && (
                           <button onClick={() => { deleteActivity(editingActivity.id); setShowActivityModal(false) }}
-                            style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#666', padding: '8px 14px', cursor: 'pointer', fontSize: '13px' }}>Delete</button>
+                            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', padding: '8px 14px', cursor: 'pointer', fontSize: '13px' }}>Delete</button>
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', padding: '8px 16px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
+                        <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', padding: '8px 16px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
                         <button onClick={saveActivity} disabled={savingActivity || !activityForm.description} style={{ ...s.btn, opacity: !activityForm.description ? 0.5 : 1 }}>
                           {savingActivity ? 'Saving…' : editingActivity ? 'Save Changes' : 'Add Activity'}
                         </button>
@@ -11169,13 +11198,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           return (
             <>
               {allClear ? (
-                <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'center' }}>
+                <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'center' }}>
                   <div style={{ fontSize: '28px', marginBottom: '8px' }}>✓</div>
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#4ade80' }}>Project ready to close</div>
-                  <div style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, marginTop: '4px' }}>All punch items approved, retainage released, and no active lien notices.</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#16a34a' }}>Project ready to close</div>
+                  <div style={{ fontSize: '13px', color: '#16a34a', opacity: 0.7, marginTop: '4px' }}>All punch items approved, retainage released, and no active lien notices.</div>
                 </div>
               ) : (
-                <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '13px', color: '#e8590c' }}>
+                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '13px', color: '#e8590c' }}>
                   <strong>Project not yet ready to close.</strong> Resolve the items below.
                 </div>
               )}
@@ -11184,18 +11213,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Open punch items</div>
                   <div style={s.statValue(openItems.length ? '#e8590c' : '#4ade80')}>{openItems.length}</div>
-                  {subComplete.length > 0 && <div style={{ fontSize: '12px', color: '#facc15', marginTop: '4px' }}>{subComplete.length} awaiting approval</div>}
-                  {openItems.length === 0 && subComplete.length === 0 && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>All clear</div>}
+                  {subComplete.length > 0 && <div style={{ fontSize: '12px', color: '#a16207', marginTop: '4px' }}>{subComplete.length} awaiting approval</div>}
+                  {openItems.length === 0 && subComplete.length === 0 && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>All clear</div>}
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Retainage balance</div>
                   <div style={s.statValue(retainageBalance > 0 ? '#facc15' : '#4ade80')}>{fmt(retainageBalance)}</div>
-                  <div style={{ fontSize: '12px', color: '#555', marginTop: '4px' }}>{fmt(totalReleased)} released</div>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{fmt(totalReleased)} released</div>
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Active lien notices</div>
                   <div style={s.statValue(activeNotices.length ? '#ff6b6b' : '#4ade80')}>{activeNotices.length}</div>
-                  {activeNotices.length === 0 && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>Clear</div>}
+                  {activeNotices.length === 0 && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>Clear</div>}
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Punch approved</div>
@@ -11211,7 +11240,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { label: 'No active lien notices', done: activeNotices.length === 0, action: 'prelim', actionLabel: 'View Lien Log' },
                   { label: 'All sub billing approved', done: billingSubmissions.every(b => b.status !== 'pending'), action: 'billing', actionLabel: 'View Billing' },
                 ].map(item => (
-                  <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                  <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <span style={{ fontSize: '16px' }}>{item.done ? '✓' : '○'}</span>
                       <span style={{ fontSize: '14px', color: item.done ? '#4ade80' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}</span>
@@ -11256,21 +11285,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
             )}
 
-            {punchItems.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No punch list items yet.</p> : punchItems.map(item => {
+            {punchItems.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No punch list items yet.</p> : punchItems.map(item => {
               const statusColor = { open: '#e8590c', sub_complete: '#facc15', approved: '#4ade80', rejected: '#ff6b6b' }
               const color = statusColor[item.status] || '#888'
               return (
-                <div key={item.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                <div key={item.id} style={{ padding: '14px 0', borderBottom: '1px solid #f0f0f0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{item.title}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title}</span>
                         <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', color, background: color + '22', border: `1px solid ${color}44` }}>{item.status.replace('_', ' ')}</span>
-                        {item.assigned_company && <span style={{ fontSize: '12px', color: '#555' }}>{item.assigned_company}</span>}
+                        {item.assigned_company && <span style={{ fontSize: '12px', color: '#6b7280' }}>{item.assigned_company}</span>}
                         {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#ff6b6b' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
                       </div>
-                      {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{item.description}</p>}
-                      {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#888', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
+                      {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#4b5563' }}>{item.description}</p>}
+                      {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                       {item.status === 'sub_complete' && (
@@ -11336,14 +11365,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 )}
 
-                {retainageReleases.length === 0 ? <p style={{ color: '#444', fontSize: '14px' }}>No retainage releases recorded yet.</p> : retainageReleases.map(r => (
-                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                {retainageReleases.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No retainage releases recorded yet.</p> : retainageReleases.map(r => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{r.company_name}</div>
-                      <div style={{ fontSize: '12px', color: '#555' }}>{new Date(r.released_at).toLocaleDateString()}{r.notes ? ` · ${r.notes}` : ''}</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{r.company_name}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(r.released_at).toLocaleDateString()}{r.notes ? ` · ${r.notes}` : ''}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#4ade80' }}>{fmt(r.amount)}</span>
+                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#16a34a' }}>{fmt(r.amount)}</span>
                       <button style={s.btnSmallRed} onClick={async () => { await fetch(`/api/retainage-release?id=${r.id}`, { method: 'DELETE' }); await loadRetainageReleases() }}>Del</button>
                     </div>
                   </div>
@@ -11396,7 +11425,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {warrantySetting.start_date && (
                       <div>
                         <p style={{ ...s.label, margin: '0 0 4px' }}>Start</p>
-                        <p style={{ margin: 0, fontSize: '15px', color: '#f1f1f1', fontWeight: '600' }}>{new Date(warrantySetting.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        <p style={{ margin: 0, fontSize: '15px', color: '#111827', fontWeight: '600' }}>{new Date(warrantySetting.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                       </div>
                     )}
                     {warrantySetting.end_date && (() => {
@@ -11412,12 +11441,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {warrantySetting.coverage_notes && (
                       <div style={{ flex: 1 }}>
                         <p style={{ ...s.label, margin: '0 0 4px' }}>Coverage</p>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#aaa', lineHeight: '1.6' }}>{warrantySetting.coverage_notes}</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#4b5563', lineHeight: '1.6' }}>{warrantySetting.coverage_notes}</p>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p style={{ color: '#555', fontSize: '13px', margin: 0 }}>No warranty period set. Click "Set Period" to configure.</p>
+                  <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No warranty period set. Click "Set Period" to configure.</p>
                 )}
               </div>
 
@@ -11471,30 +11500,30 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                 )}
 
-                {warrantyOrders.length === 0 && <p style={{ color: '#444', fontSize: '14px' }}>No warranty orders yet.</p>}
+                {warrantyOrders.length === 0 && <p style={{ color: '#6b7280', fontSize: '14px' }}>No warranty orders yet.</p>}
 
                 {openOrders.length > 0 && (
                   <>
-                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>Open ({openOrders.length})</p>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>Open ({openOrders.length})</p>
                     {openOrders.map(order => (
-                      <div key={order.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                      <div key={order.id} style={{ padding: '14px 0', borderBottom: '1px solid #f0f0f0' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{order.title}</span>
-                              <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: order.status === 'in_progress' ? '#1a1200' : '#1a1a1a', color: order.status === 'in_progress' ? '#facc15' : '#888', border: `1px solid ${order.status === 'in_progress' ? '#4a4400' : '#2a2a2a'}` }}>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{order.title}</span>
+                              <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: order.status === 'in_progress' ? '#1a1200' : '#f0f0f0', color: order.status === 'in_progress' ? '#facc15' : '#888', border: `1px solid ${order.status === 'in_progress' ? '#4a4400' : '#d1d5db'}` }}>
                                 {order.status === 'in_progress' ? 'In Progress' : 'Open'}
                               </span>
                             </div>
                             {(order.assigned_employee_name || order.assigned_company) && (
-                              <div style={{ fontSize: '12px', color: '#555', marginBottom: '2px' }}>
+                              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>
                                 {order.assigned_employee_name && `Employee: ${order.assigned_employee_name}`}
                                 {order.assigned_employee_name && order.assigned_company && ' · '}
                                 {order.assigned_company && `Sub: ${order.assigned_company}`}
                               </div>
                             )}
                             {order.due_date && <div style={{ fontSize: '12px', color: new Date(order.due_date + 'T12:00:00') < new Date() ? '#ff6b6b' : '#555' }}>Due {new Date(order.due_date + 'T12:00:00').toLocaleDateString()}</div>}
-                            {order.description && <div style={{ fontSize: '12px', color: '#444', marginTop: '4px' }}>{order.description}</div>}
+                            {order.description && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{order.description}</div>}
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                             {order.status === 'open' && (
@@ -11507,8 +11536,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                         {/* Inline resolution form */}
                         {resolvingOrder?.id === order.id && (
-                          <div style={{ ...s.inlineForm, marginTop: '12px', border: '1px solid #1a4a1a' }}>
-                            <p style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 12px' }}>Resolve work order</p>
+                          <div style={{ ...s.inlineForm, marginTop: '12px', border: '1px solid #bbf7d0' }}>
+                            <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 12px' }}>Resolve work order</p>
                             <div style={{ marginBottom: '10px' }}>
                               <label style={s.label}>Resolution notes</label>
                               <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={resolvingOrder.resolution_notes} onChange={e => setResolvingOrder(r => ({ ...r, resolution_notes: e.target.value }))} placeholder="Describe what was done to resolve this..." />
@@ -11518,14 +11547,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               {resolvingOrder.photos.length > 0 && (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
                                   {resolvingOrder.photos.map((p, i) => (
-                                    <div key={i} style={{ background: '#0f0f0f', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <div key={i} style={{ background: '#f9fafb', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                       📷 {p.name}
-                                      <button type="button" onClick={() => setResolvingOrder(r => ({ ...r, photos: r.photos.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
+                                      <button type="button" onClick={() => setResolvingOrder(r => ({ ...r, photos: r.photos.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
                                     </div>
                                   ))}
                                 </div>
                               )}
-                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: uploadingWarrantyPhoto ? '#111' : '#0a1a0a', color: uploadingWarrantyPhoto ? '#555' : '#4ade80', border: '1px solid #1a4a1a', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: uploadingWarrantyPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: uploadingWarrantyPhoto ? '#f3f4f6' : '#f0fdf4', color: uploadingWarrantyPhoto ? '#555' : '#4ade80', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: uploadingWarrantyPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
                                 {uploadingWarrantyPhoto ? 'Uploading...' : '+ Add Photo'}
                                 <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingWarrantyPhoto} onChange={async e => {
                                   const file = e.target.files?.[0]; if (!file) return
@@ -11538,16 +11567,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   e.target.value = ''
                                 }} />
                               </label>
-                              {resolvingOrder.photos.length === 0 && <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#555' }}>Photos are required before marking resolved.</p>}
+                              {resolvingOrder.photos.length === 0 && <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#6b7280' }}>Photos are required before marking resolved.</p>}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '14px', flexWrap: 'wrap' }}>
                               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                                 <input type="checkbox" checked={resolvingOrder.is_billable} onChange={e => setResolvingOrder(r => ({ ...r, is_billable: e.target.checked }))} style={{ width: '16px', height: '16px' }} />
-                                <span style={{ fontSize: '13px', color: '#aaa', fontWeight: '600' }}>This item is billable to the owner</span>
+                                <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: '600' }}>This item is billable to the owner</span>
                               </label>
                               {resolvingOrder.is_billable && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span style={{ fontSize: '12px', color: '#555' }}>Amount ($)</span>
+                                  <span style={{ fontSize: '12px', color: '#6b7280' }}>Amount ($)</span>
                                   <input type="number" step="0.01" min="0" style={{ ...s.input, width: '140px' }} value={resolvingOrder.billable_amount} onChange={e => setResolvingOrder(r => ({ ...r, billable_amount: e.target.value }))} placeholder="0.00" />
                                 </div>
                               )}
@@ -11584,19 +11613,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                 {resolvedOrders.length > 0 && (
                   <>
-                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', margin: `${openOrders.length > 0 ? '1.5rem' : '0'} 0 8px` }}>Resolved ({resolvedOrders.length})</p>
+                    <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', margin: `${openOrders.length > 0 ? '1.5rem' : '0'} 0 8px` }}>Resolved ({resolvedOrders.length})</p>
                     {resolvedOrders.map(order => (
-                      <div key={order.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a', opacity: 0.75 }}>
+                      <div key={order.id} style={{ padding: '14px 0', borderBottom: '1px solid #f0f0f0', opacity: 0.75 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#aaa', textDecoration: 'line-through' }}>{order.title}</span>
-                          <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>Resolved</span>
-                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#1a1200', color: '#facc15', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` · $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#4b5563', textDecoration: 'line-through' }}>{order.title}</span>
+                          <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>Resolved</span>
+                          {order.is_billable && <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', background: '#1a1200', color: '#a16207', border: '1px solid #4a4400' }}>Billable{order.billable_amount ? ` · $${Number(order.billable_amount).toLocaleString()}` : ''}</span>}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#444', marginTop: '3px' }}>
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>
                           {order.resolved_at && `Resolved ${new Date(order.resolved_at).toLocaleDateString()}`}
                           {order.photos?.length > 0 && ` · ${order.photos.length} photo${order.photos.length !== 1 ? 's' : ''} on file`}
                         </div>
-                        {order.resolution_notes && <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>{order.resolution_notes}</div>}
+                        {order.resolution_notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>{order.resolution_notes}</div>}
                       </div>
                     ))}
                   </>
@@ -11613,27 +11642,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           return (
             <>
               {fieldPhotos.length === 0 ? (
-                <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' }}>
+                <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                   No field photos yet. Photos taken by the superintendent will appear here once uploaded.
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: '13px', color: '#555', margin: '0 0 1.25rem' }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} — gallery uploads + daily reports</p>
+                  <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1.25rem' }}>{fieldPhotos.length} photo{fieldPhotos.length !== 1 ? 's' : ''} — gallery uploads + daily reports</p>
                   {dates.map(date => (
                     <div key={date} style={{ marginBottom: '1.5rem' }}>
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 10px' }}>
                         {date !== 'Unknown' ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown Date'}
-                        <span style={{ color: '#333', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
+                        <span style={{ color: '#374151', marginLeft: '8px' }}>{byDate[date].length} photo{byDate[date].length !== 1 ? 's' : ''}</span>
                       </p>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }} className="rx-grid-photos">
                         {byDate[date].map((p, i) => (
-                          <div key={i} style={{ aspectRatio: '1', background: '#0f0f0f', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) })}>
+                          <div key={i} style={{ aspectRatio: '1', background: '#f9fafb', overflow: 'hidden', borderRadius: '4px', position: 'relative', cursor: 'pointer' }} onClick={() => setFieldLightbox({ photos: fieldPhotos, index: fieldPhotos.indexOf(p) })}>
                             {(fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path])
                               ? <img src={fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path]} loading="lazy" decoding="async" onError={e => { const full = fieldPhotoUrls[p.path]; if (full && e.target.src !== full) e.target.src = full }} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt={p.name} />
-                              : <div style={{ width: '100%', height: '100%', background: '#141414', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: '10px' }}>...</div>
+                              : <div style={{ width: '100%', height: '100%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151', fontSize: '10px' }}>...</div>
                             }
                             {p.tag && <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tag}</div>}
-                            {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
+                            {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); deleteFieldPhoto(p) }}
@@ -11654,10 +11683,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {/* ── ORDERS ── */}
               {activeTab === 'po' && (() => {
                 const PO_STATUS = {
-                  draft:    { color: '#888',    bg: '#111',    border: '#2a2a2a' },
-                  issued:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
-                  received: { color: '#4ade80', bg: '#0a2a0a', border: '#1a4a1a' },
-                  closed:   { color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' },
+                  draft:    { color: '#6b7280',    bg: '#f3f4f6',    border: '#d1d5db' },
+                  issued:   { color: '#a16207', bg: '#2a2200', border: '#4a3a00' },
+                  received: { color: '#16a34a', bg: '#dcfce7', border: '#bbf7d0' },
+                  closed:   { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
                 }
                 const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                 const issuedPOs = purchaseOrders.filter(p => p.status === 'issued')
@@ -11667,21 +11696,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const POLineItemsTable = ({ items, small }) => {
                   const lineTotal = (items || []).reduce((a, i) => a + Number(i.amount || 0), 0)
                   return (
-                    <div style={{ border: '1px solid #1e1e1e', borderRadius: '6px', overflow: 'hidden', marginTop: small ? '8px' : '12px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '6px 12px', background: '#0a0a0a', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflow: 'hidden', marginTop: small ? '8px' : '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '6px 12px', background: '#ffffff', fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>
                         <span>Description</span><span style={{ textAlign: 'right' }}>Qty</span><span>Unit</span><span style={{ textAlign: 'right' }}>Unit Price</span><span style={{ textAlign: 'right' }}>Amount</span>
                       </div>
                       {(items || []).map((i, idx) => (
-                        <div key={i.id || idx} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '1px solid #111', fontSize: '13px', color: '#ccc' }}>
+                        <div key={i.id || idx} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '1px solid #f3f4f6', fontSize: '13px', color: '#374151' }}>
                           <span>{i.description}</span>
-                          <span style={{ textAlign: 'right', color: '#888' }}>{Number(i.qty)}</span>
-                          <span style={{ color: '#555' }}>{i.unit || '—'}</span>
+                          <span style={{ textAlign: 'right', color: '#6b7280' }}>{Number(i.qty)}</span>
+                          <span style={{ color: '#6b7280' }}>{i.unit || '—'}</span>
                           <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{fmt(i.unit_price)}</span>
-                          <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#f1f1f1' }}>{fmt(i.amount)}</span>
+                          <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '600', color: '#111827' }}>{fmt(i.amount)}</span>
                         </div>
                       ))}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '2px solid #2a2a2a', background: '#111' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/5', textAlign: 'right' }}>Total</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 60px 60px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: '2px solid #d1d5db', background: '#f3f4f6' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', gridColumn: '1/5', textAlign: 'right' }}>Total</span>
                         <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', color: '#e8590c', fontSize: '14px' }}>{fmt(lineTotal)}</span>
                       </div>
                     </div>
@@ -11712,14 +11741,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                     {/* PO list */}
                     <div style={s.card}>
-                      {purchaseOrders.length === 0 && <p style={{ color: '#444', fontSize: '13px', margin: 0 }}>No purchase orders yet. Click "+ New PO" to create one.</p>}
+                      {purchaseOrders.length === 0 && <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No purchase orders yet. Click "+ New PO" to create one.</p>}
                       {purchaseOrders.map(po => {
                         const isExpanded = expandedPOId === po.id
                         const isEditing = editingPOId === po.id
                         const sc = PO_STATUS[po.status] || PO_STATUS.draft
                         const bi = budgetItems.find(b => b.id === po.budget_item_id)
                         return (
-                          <div key={po.id} style={{ borderBottom: '1px solid #111', paddingBottom: '0', marginBottom: '0' }}>
+                          <div key={po.id} style={{ borderBottom: '1px solid #f3f4f6', paddingBottom: '0', marginBottom: '0' }}>
                             {isEditing ? (
                               <EditPOForm s={s} fmt={fmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} />
                             ) : (
@@ -11728,34 +11757,34 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   onClick={() => setExpandedPOId(isExpanded ? null : po.id)}>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>{po.vendor_name}</span>
-                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#555' }}>{po.po_number}</span>
-                                      {po.description && <span style={{ fontSize: '12px', color: '#888' }}>{po.description}</span>}
+                                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{po.vendor_name}</span>
+                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280' }}>{po.po_number}</span>
+                                      {po.description && <span style={{ fontSize: '12px', color: '#6b7280' }}>{po.description}</span>}
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>{po.status}</span>
                                       {po.payment_type === 'reimbursement'
-                                        ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#0a1525', color: '#60a5fa', border: '1px solid #1a3050' }}>Reimbursement</span>
-                                        : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#111', color: '#888', border: '1px solid #222' }}>Check to vendor</span>
+                                        ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>Reimbursement</span>
+                                        : <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#f3f4f6', color: '#6b7280', border: '1px solid #222' }}>Check to vendor</span>
                                       }
-                                      {bi && <span style={{ fontSize: '11px', color: '#555' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
+                                      {bi && <span style={{ fontSize: '11px', color: '#6b7280' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span>}
                                       {!bi && <span style={{ fontSize: '11px', color: '#3a3a3a' }}>No budget line</span>}
-                                      <span style={{ fontSize: '11px', color: '#444' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
-                                      {po.draw_request_id && (() => { const dr = drawRequests.find(d => d.id === po.draw_request_id); return dr ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#0a1f2e', color: '#38bdf8', border: '1px solid #0c2d42' }}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span> : null })()}
+                                      <span style={{ fontSize: '11px', color: '#6b7280' }}>{(po.purchase_order_items || []).length} item{(po.purchase_order_items || []).length !== 1 ? 's' : ''}</span>
+                                      {po.draw_request_id && (() => { const dr = drawRequests.find(d => d.id === po.draw_request_id); return dr ? <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: '#eff6ff', color: '#38bdf8', border: '1px solid #bae6fd' }}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span> : null })()}
                                     </div>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#f1f1f1' }}>{fmt(po.amount)}</span>
-                                    <span style={{ color: '#555', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
+                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#111827' }}>{fmt(po.amount)}</span>
+                                    <span style={{ color: '#6b7280', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
                                   </div>
                                 </div>
 
                                 {isExpanded && (
                                   <div style={{ paddingBottom: '14px' }}>
-                                    {po.notes && <p style={{ fontSize: '13px', color: '#666', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
+                                    {po.notes && <p style={{ fontSize: '13px', color: '#4b5563', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
                                     <div style={{ display: 'flex', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
                                       {po.payment_type && (
-                                        <span style={{ fontSize: '12px', color: '#888' }}>
+                                        <span style={{ fontSize: '12px', color: '#6b7280' }}>
                                           Payment: <span style={{ color: po.payment_type === 'reimbursement' ? '#60a5fa' : '#f1f1f1', fontWeight: '600' }}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
                                         </span>
                                       )}
@@ -11769,7 +11798,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                                       {po.status === 'draft' && <>
                                         <button style={{ ...s.btnSmallGreen, opacity: (updatingPOId === po.id || !po.attachment_url) ? 0.6 : 1 }} disabled={updatingPOId === po.id || !po.attachment_url} title={!po.attachment_url ? 'Attach a document before issuing' : ''} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>
-                                        {!po.attachment_url && <span style={{ fontSize: '12px', color: '#888' }}>Attachment required to issue</span>}
+                                        {!po.attachment_url && <span style={{ fontSize: '12px', color: '#6b7280' }}>Attachment required to issue</span>}
                                         <button style={s.btnSmall} onClick={() => { setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm({ vendor_name: po.vendor_name, description: po.description || '', budget_item_id: po.budget_item_id || '', notes: po.notes || '', payment_type: po.payment_type || 'check', items: (po.purchase_order_items || []).map((i, idx) => ({ uid: idx, description: i.description, qty: String(i.qty), unit: i.unit || '', unit_price: String(i.unit_price) })) }) }}>Edit</button>
                                         <button style={s.btnSmallRed} onClick={() => deletePO(po.id)}>Delete</button>
                                       </>}
@@ -11814,7 +11843,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
 
                       {/* Add entry form */}
-                      <div style={{ ...s.inlineForm, border: '1px solid #2a2a2a', marginBottom: '1.5rem' }}>
+                      <div style={{ ...s.inlineForm, border: '1px solid #d1d5db', marginBottom: '1.5rem' }}>
                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Log entry</p>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                           <div style={{ gridColumn: '1 / -1' }}>
@@ -11853,8 +11882,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Attachment (PDF/image)</label>
-                            <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e => setGcFile(e.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#888' }} />
-                            {gcFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>📎 {gcFile.name}</div>}
+                            <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e => setGcFile(e.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#6b7280' }} />
+                            {gcFile && <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '3px' }}>📎 {gcFile.name}</div>}
                           </div>
                         </div>
                         <button
@@ -11882,7 +11911,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                       {/* Entries list */}
                       {generalConditions.length === 0 ? (
-                        <p style={{ fontSize: '14px', color: '#444' }}>No general conditions logged yet.</p>
+                        <p style={{ fontSize: '14px', color: '#6b7280' }}>No general conditions logged yet.</p>
                       ) : (
                         <div>
                           {generalConditions.map(e => {
@@ -11890,7 +11919,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             const budgetItem = budgetItems.find(b => b.id === e.budget_item_id)
                             const draw = drawRequests.find(d => d.id === e.draw_request_id)
                             return (
-                              <div key={e.id} style={{ borderBottom: '1px solid #111', padding: '10px 0' }}>
+                              <div key={e.id} style={{ borderBottom: '1px solid #f3f4f6', padding: '10px 0' }}>
                                 {isEditing ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingBottom: '8px' }}>
                                     <div style={{ gridColumn: '1 / -1' }}>
@@ -11923,9 +11952,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ gridColumn: '1 / -1' }}>
                                       <label style={s.label}>Replace attachment (optional)</label>
-                                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e2 => setGcEditFile(e2.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#888' }} />
-                                      {gcEditFile && <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '3px' }}>📎 {gcEditFile.name}</div>}
-                                      {e.doc_url && !gcEditFile && <div style={{ fontSize: '11px', color: '#555', marginTop: '3px' }}>Current attachment on file — upload a new file to replace it</div>}
+                                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e2 => setGcEditFile(e2.target.files[0] || null)} style={{ ...s.input, padding: '7px 12px', cursor: 'pointer', color: '#6b7280' }} />
+                                      {gcEditFile && <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '3px' }}>📎 {gcEditFile.name}</div>}
+                                      {e.doc_url && !gcEditFile && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '3px' }}>Current attachment on file — upload a new file to replace it</div>}
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                                       <button style={s.btn} onClick={async () => {
@@ -11953,14 +11982,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{e.description}</span>
-                                        <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#1a1a1a', color: '#888', border: '1px solid #2a2a2a' }}>{catLabel(e.category)}</span>
-                                        {draw && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#0a1a0a', color: '#4ade80', border: '1px solid #1a3a1a' }}>{draw.title}</span>}
+                                        <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{e.description}</span>
+                                        <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#f0f0f0', color: '#6b7280', border: '1px solid #d1d5db' }}>{catLabel(e.category)}</span>
+                                        {draw && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #dcfce7' }}>{draw.title}</span>}
                                       </div>
-                                      <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>
+                                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>
                                         {e.entry_date && <span style={{ marginRight: '10px' }}>{e.entry_date}</span>}
                                         {budgetItem && <span style={{ marginRight: '10px' }}>→ {budgetItem.description}</span>}
-                                        {e.notes && <span style={{ color: '#444' }}>{e.notes}</span>}
+                                        {e.notes && <span style={{ color: '#6b7280' }}>{e.notes}</span>}
                                       </div>
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
@@ -11992,11 +12021,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {activeTab === 'orders' && (() => {
                 const STATUS_COLORS = {
-                  ordered:   { color: '#facc15', bg: '#2a2200', border: '#4a3a00' },
-                  shipped:   { color: '#60a5fa', bg: '#0a1a2a', border: '#1a3a5a' },
-                  delivered: { color: '#4ade80', bg: '#0a2a0a', border: '#1a4a1a' },
-                  installed: { color: '#a78bfa', bg: '#1a0a2a', border: '#3a1a5a' },
-                  canceled:  { color: '#ff6b6b', bg: '#2a0a0a', border: '#5a1a1a' },
+                  ordered:   { color: '#a16207', bg: '#2a2200', border: '#4a3a00' },
+                  shipped:   { color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+                  delivered: { color: '#16a34a', bg: '#dcfce7', border: '#bbf7d0' },
+                  installed: { color: '#7c3aed', bg: '#faf5ff', border: '#e9d5ff' },
+                  canceled:  { color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
                 }
                 const STATUSES = ['ordered', 'shipped', 'delivered', 'installed', 'canceled']
                 const CARRIERS = ['UPS', 'FedEx', 'USPS', 'Amazon', 'Other']
@@ -12012,20 +12041,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   const c = STATUS_COLORS[status] || STATUS_COLORS.ordered
                   return { padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}`, cursor: 'pointer', outline: 'none' }
                 }
-                const inputStyle = { width: '100%', padding: '9px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '7px', fontSize: '13px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }
-                const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#555', marginBottom: '5px', letterSpacing: '1.5px', textTransform: 'uppercase' }
+                const inputStyle = { width: '100%', padding: '9px 12px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '7px', fontSize: '13px', color: '#111827', boxSizing: 'border-box', outline: 'none' }
+                const labelStyle = { display: 'block', fontSize: '11px', fontWeight: '600', color: '#6b7280', marginBottom: '5px', letterSpacing: '1.5px', textTransform: 'uppercase' }
                 const btnStyle = { padding: '8px 18px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '7px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px' }
-                const btnSmStyle = (color) => ({ padding: '5px 12px', background: color === 'green' ? '#0a2a0a' : color === 'blue' ? '#0a1a2a' : '#2a1a00', border: `1px solid ${color === 'green' ? '#1a4a1a' : color === 'blue' ? '#1a3a5a' : '#4a2a00'}`, borderRadius: '6px', color: color === 'green' ? '#4ade80' : color === 'blue' ? '#60a5fa' : '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' })
+                const btnSmStyle = (color) => ({ padding: '5px 12px', background: color === 'green' ? '#dcfce7' : color === 'blue' ? '#eff6ff' : '#fff7ed', border: `1px solid ${color === 'green' ? '#bbf7d0' : color === 'blue' ? '#bfdbfe' : '#4a2a00'}`, borderRadius: '6px', color: color === 'green' ? '#4ade80' : color === 'blue' ? '#60a5fa' : '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' })
                 return (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '12px' }}>
-                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#f1f1f1' }}>Orders</h2>
+                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#111827' }}>Orders</h2>
                       <button style={btnStyle} onClick={() => setShowAddOrder(v => !v)}>{showAddOrder ? 'Cancel' : '+ Add Order'}</button>
                     </div>
 
                     {/* Add Order Form */}
                     {showAddOrder && (
-                      <form onSubmit={saveJobOrder} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                      <form onSubmit={saveJobOrder} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.25rem' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <div>
                             <label style={labelStyle}>Vendor</label>
@@ -12053,7 +12082,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '10px' }}>
                           <div>
                             <label style={labelStyle}>Carrier</label>
-                            <select value={addOrderForm.carrier} onChange={e => setAddOrderForm(f => ({ ...f, carrier: e.target.value }))} style={{ ...inputStyle, color: '#f1f1f1' }}>
+                            <select value={addOrderForm.carrier} onChange={e => setAddOrderForm(f => ({ ...f, carrier: e.target.value }))} style={{ ...inputStyle, color: '#111827' }}>
                               {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                           </div>
@@ -12063,7 +12092,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={labelStyle}>Status</label>
-                            <select value={addOrderForm.status} onChange={e => setAddOrderForm(f => ({ ...f, status: e.target.value }))} style={{ ...inputStyle, color: '#f1f1f1' }}>
+                            <select value={addOrderForm.status} onChange={e => setAddOrderForm(f => ({ ...f, status: e.target.value }))} style={{ ...inputStyle, color: '#111827' }}>
                               {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                             </select>
                           </div>
@@ -12079,11 +12108,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )}
 
                     {/* Template Assignment */}
-                    <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.25rem' }}>
+                    <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.25rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: jobAssignedTemplates.length > 0 ? '1rem' : 0 }}>
-                        <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Procurement Templates</p>
+                        <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Procurement Templates</p>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <select value={selectedTplId} onChange={e => setSelectedTplId(e.target.value)} style={{ padding: '6px 10px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', color: '#888' }}>
+                          <select value={selectedTplId} onChange={e => setSelectedTplId(e.target.value)} style={{ padding: '6px 10px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', color: '#6b7280' }}>
                             <option value="">Apply template…</option>
                             {allOrderTemplates.filter(t => !jobAssignedTemplates.some(a => a.template_id === t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                           </select>
@@ -12092,7 +12121,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
 
                       {jobAssignedTemplates.length === 0 ? (
-                        <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#444' }}>No templates applied yet. Select one above to add a procurement checklist.</p>
+                        <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#6b7280' }}>No templates applied yet. Select one above to add a procurement checklist.</p>
                       ) : jobAssignedTemplates.map(assignment => {
                         const tpl = assignment.order_templates
                         const items = [...(tpl?.order_template_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -12100,21 +12129,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         return (
                           <div key={assignment.id} style={{ marginBottom: '1rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{tpl?.name}</span>
-                              <button onClick={() => removeTemplateAssignment(assignment.id)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{tpl?.name}</span>
+                              <button onClick={() => removeTemplateAssignment(assignment.id)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
                             </div>
                             {categories.map(cat => {
                               const catItems = items.filter(i => (i.category || 'General') === cat)
                               return (
                                 <div key={cat} style={{ marginBottom: '8px' }}>
-                                  {categories.length > 1 && <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>{cat}</p>}
+                                  {categories.length > 1 && <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>{cat}</p>}
                                   {catItems.map(item => {
                                     const existingOrder = jobOrders.find(o => o.template_item_id === item.id)
                                     return (
-                                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: '#0f0f0f', marginBottom: '4px', flexWrap: 'wrap' }}>
+                                      <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', borderRadius: '6px', background: '#f9fafb', marginBottom: '4px', flexWrap: 'wrap' }}>
                                         <span style={{ fontSize: '20px' }}>{existingOrder ? '✅' : '⬜'}</span>
                                         <span style={{ flex: 1, fontSize: '13px', color: existingOrder ? '#555' : '#f1f1f1', textDecoration: existingOrder ? 'line-through' : 'none' }}>{item.item_name}</span>
-                                        <span style={{ fontSize: '12px', color: '#444' }}>{item.default_qty} {item.unit}</span>
+                                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{item.default_qty} {item.unit}</span>
                                         {existingOrder ? (
                                           <span style={statusBadge(existingOrder.status)}>{existingOrder.status}</span>
                                         ) : orderingItemId === item.id ? (
@@ -12123,7 +12152,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             <input type="number" value={orderingItemForm.amount} onChange={e => setOrderingItemForm(f => ({ ...f, amount: e.target.value }))} style={{ ...inputStyle, width: '80px' }} placeholder="$" />
                                             <input value={orderingItemForm.tracking_number} onChange={e => setOrderingItemForm(f => ({ ...f, tracking_number: e.target.value }))} style={{ ...inputStyle, width: '120px' }} placeholder="Tracking #" />
                                             <button onClick={() => saveItemOrder(item.id)} disabled={savingItemOrder} style={btnSmStyle('green')}>{savingItemOrder ? '…' : 'Save'}</button>
-                                            <button onClick={() => setOrderingItemId(null)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer' }}>✕</button>
+                                            <button onClick={() => setOrderingItemId(null)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer' }}>✕</button>
                                           </div>
                                         ) : (
                                           <button onClick={() => { setOrderingItemId(item.id); setOrderingItemForm({ vendor: '', amount: '', tracking_number: '', carrier: 'UPS', notes: '' }) }} style={btnSmStyle('orange')}>Order This</button>
@@ -12140,25 +12169,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
 
                     {/* All Orders List */}
-                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>All Orders ({jobOrders.length})</p>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>All Orders ({jobOrders.length})</p>
                     {jobOrders.length === 0 ? (
-                      <p style={{ color: '#444', fontSize: '13px' }}>No orders yet.</p>
+                      <p style={{ color: '#6b7280', fontSize: '13px' }}>No orders yet.</p>
                     ) : jobOrders.map(o => {
                       const tUrl = trackingUrl(o.carrier, o.tracking_number)
                       return (
-                        <div key={o.id} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px 16px', marginBottom: '6px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div key={o.id} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 16px', marginBottom: '6px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{o.description}</div>
-                            <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{o.vendor ? `${o.vendor}` : ''}{o.po_number ? ` · PO ${o.po_number}` : ''}{o.ordered_at ? ` · ${o.ordered_at}` : ''}</div>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{o.description}</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{o.vendor ? `${o.vendor}` : ''}{o.po_number ? ` · PO ${o.po_number}` : ''}{o.ordered_at ? ` · ${o.ordered_at}` : ''}</div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
-                            {o.amount != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${Number(o.amount).toLocaleString()}</span>}
+                            {o.amount != null && <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>${Number(o.amount).toLocaleString()}</span>}
                             {tUrl ? (
-                              <a href={tUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#60a5fa', textDecoration: 'none' }}>
+                              <a href={tUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none' }}>
                                 {o.carrier} ↗
                               </a>
                             ) : o.tracking_number ? (
-                              <span style={{ fontSize: '12px', color: '#555' }}>{o.tracking_number}</span>
+                              <span style={{ fontSize: '12px', color: '#6b7280' }}>{o.tracking_number}</span>
                             ) : null}
                             <select
                               value={o.status}
@@ -12168,7 +12197,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             >
                               {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                             </select>
-                            <button onClick={() => deleteJobOrder(o.id)} style={{ background: 'none', border: 'none', color: '#333', cursor: 'pointer', fontSize: '16px' }}>×</button>
+                            <button onClick={() => deleteJobOrder(o.id)} style={{ background: 'none', border: 'none', color: '#374151', cursor: 'pointer', fontSize: '16px' }}>×</button>
                           </div>
                         </div>
                       )
@@ -12193,7 +12222,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {['all', ...DISCIPLINES].map(d => (
-                    <button key={d} onClick={() => setDrawingFilter(d)} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid', fontSize: '12px', fontWeight: '600', cursor: 'pointer', background: drawingFilter === d ? '#e8590c' : 'transparent', color: drawingFilter === d ? '#fff' : '#555', borderColor: drawingFilter === d ? '#e8590c' : '#2a2a2a' }}>
+                    <button key={d} onClick={() => setDrawingFilter(d)} style={{ padding: '5px 12px', borderRadius: '99px', border: '1px solid', fontSize: '12px', fontWeight: '600', cursor: 'pointer', background: drawingFilter === d ? '#e8590c' : 'transparent', color: drawingFilter === d ? '#fff' : '#555', borderColor: drawingFilter === d ? '#e8590c' : '#d1d5db' }}>
                       {d === 'all' ? `All (${drawings.length})` : d}
                     </button>
                   ))}
@@ -12206,7 +12235,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               </div>
 
               {showDrawingUpload && (
-                <div style={{ background: '#141414', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
+                <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div>
                       <label style={s.label}>Sheet Number</label>
@@ -12233,7 +12262,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input style={s.input} placeholder="Optional notes..." value={drawingUploadForm.notes} onChange={e => setDrawingUploadForm(f => ({ ...f, notes: e.target.value }))} />
                     </div>
                   </div>
-                  <label style={{ display: 'block', padding: '14px 20px', background: uploadingDrawing ? '#0a0a0a' : '#1a0a00', border: '2px dashed #3a1800', borderRadius: '8px', color: uploadingDrawing ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600', cursor: uploadingDrawing ? 'not-allowed' : 'pointer', textAlign: 'center' }}>
+                  <label style={{ display: 'block', padding: '14px 20px', background: uploadingDrawing ? '#ffffff' : '#fff7ed', border: '2px dashed #3a1800', borderRadius: '8px', color: uploadingDrawing ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600', cursor: uploadingDrawing ? 'not-allowed' : 'pointer', textAlign: 'center' }}>
                     {uploadingDrawing ? 'Uploading...' : 'Click to select PDF or image file'}
                     <input type="file" accept=".pdf,.png,.jpg,.jpeg,.dwg,.dxf" style={{ display: 'none' }} disabled={uploadingDrawing} onChange={e => { if (e.target.files[0]) uploadDrawing(e.target.files[0]) }} />
                   </label>
@@ -12241,36 +12270,36 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {drawings.length === 0 ? (
-                <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '10px', padding: '48px 24px', textAlign: 'center' }}>
+                <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '10px', padding: '48px 24px', textAlign: 'center' }}>
                   <div style={{ fontSize: '32px', marginBottom: '12px' }}>📐</div>
-                  <div style={{ fontSize: '14px', color: '#555' }}>No drawings uploaded yet. Upload plan sheets to keep them accessible to the whole team.</div>
+                  <div style={{ fontSize: '14px', color: '#6b7280' }}>No drawings uploaded yet. Upload plan sheets to keep them accessible to the whole team.</div>
                 </div>
               ) : Object.keys(grouped).length === 0 ? (
-                <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '10px', padding: '32px 24px', textAlign: 'center', color: '#555', fontSize: '14px' }}>No drawings match this filter.</div>
+                <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '10px', padding: '32px 24px', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>No drawings match this filter.</div>
               ) : (
                 Object.entries(grouped).map(([discipline, sheets]) => (
                   <div key={discipline} style={{ marginBottom: '24px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #1e1e1e' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #e5e7eb' }}>
                       {discipline} · {sheets.length} sheet{sheets.length !== 1 ? 's' : ''}
                     </div>
                     <div style={{ display: 'grid', gap: '6px' }}>
                       {sheets.map(d => (
-                        <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#141414', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '10px 14px' }}>
+                        <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '10px 14px' }}>
                           <div style={{ fontSize: '20px', flexShrink: 0 }}>{d.file_name?.endsWith('.pdf') ? '📄' : '🖼'}</div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
                               {d.sheet_number && <span style={{ fontSize: '12px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{d.sheet_number}</span>}
-                              <span style={{ fontSize: '13px', fontWeight: '600', color: '#f1f1f1' }}>{d.sheet_name || d.file_name}</span>
-                              {d.revision && d.revision !== '0' && <span style={{ fontSize: '10px', color: '#555', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '4px', padding: '1px 6px' }}>Rev {d.revision}</span>}
+                              <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{d.sheet_name || d.file_name}</span>
+                              {d.revision && d.revision !== '0' && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px' }}>Rev {d.revision}</span>}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>
+                            <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
                               {new Date(d.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               {d.notes && <span> · {d.notes}</span>}
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                            <button onClick={() => openDrawing(d.storage_path)} style={{ padding: '6px 12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>View</button>
-                            {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#555', fontSize: '11px', cursor: 'pointer' }}>×</button>}
+                            <button onClick={() => openDrawing(d.storage_path)} style={{ padding: '6px 12px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>View</button>
+                            {!isSub && <button onClick={() => deleteDrawing(d.id, d.storage_path)} style={{ padding: '6px 12px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', cursor: 'pointer' }}>×</button>}
                           </div>
                         </div>
                       ))}
@@ -12293,25 +12322,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'rgba(0,0,0,0.6)', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               {fieldLightbox.photos[fieldLightbox.index]?.tag && <span style={{ background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '10px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px' }}>{fieldLightbox.photos[fieldLightbox.index].tag}</span>}
-              {fieldLightbox.photos[fieldLightbox.index]?.caption && <span style={{ color: '#f1f1f1', fontWeight: '700', fontSize: '14px' }}>{fieldLightbox.photos[fieldLightbox.index].caption}</span>}
-              {fieldLightbox.photos[fieldLightbox.index]?.date && <span style={{ color: '#555', fontSize: '12px' }}>{new Date(fieldLightbox.photos[fieldLightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#444', fontSize: '11px' }}>· Daily report</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.caption && <span style={{ color: '#111827', fontWeight: '700', fontSize: '14px' }}>{fieldLightbox.photos[fieldLightbox.index].caption}</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.date && <span style={{ color: '#6b7280', fontSize: '12px' }}>{new Date(fieldLightbox.photos[fieldLightbox.index].date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+              {fieldLightbox.photos[fieldLightbox.index]?.fromReport && <span style={{ color: '#6b7280', fontSize: '11px' }}>· Daily report</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ color: '#555', fontSize: '12px' }}>{fieldLightbox.index + 1} / {fieldLightbox.photos.length}</span>
+              <span style={{ color: '#6b7280', fontSize: '12px' }}>{fieldLightbox.index + 1} / {fieldLightbox.photos.length}</span>
               <button
                 onClick={() => deleteFieldPhoto(fieldLightbox.photos[fieldLightbox.index])}
                 disabled={deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path}
-                style={{ padding: '6px 14px', background: 'rgba(90,10,10,0.8)', border: '1px solid #5a1a1a', borderRadius: '6px', color: deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
+                style={{ padding: '6px 14px', background: 'rgba(90,10,10,0.8)', border: '1px solid #fecaca', borderRadius: '6px', color: deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
                 {deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? 'Deleting...' : 'Delete'}
               </button>
-              <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#888', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
+              <button onClick={() => setFieldLightbox(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
             </div>
           </div>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', padding: '0 60px' }}>
             {fieldPhotoUrls[fieldLightbox.photos[fieldLightbox.index]?.path]
               ? <img src={fieldPhotoUrls[fieldLightbox.photos[fieldLightbox.index].path]} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px', userSelect: 'none' }} alt="" />
-              : <div style={{ color: '#444', fontSize: '13px' }}>Loading...</div>
+              : <div style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</div>
             }
             {fieldLightbox.photos.length > 1 && <>
               <button onClick={() => setFieldLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
@@ -12321,10 +12350,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           {fieldLightbox.photos.length > 1 && (
             <div style={{ display: 'flex', gap: '4px', padding: '10px 14px', background: 'rgba(0,0,0,0.8)', overflowX: 'auto', flexShrink: 0 }}>
               {fieldLightbox.photos.map((p, i) => (
-                <button key={i} onClick={() => setFieldLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === fieldLightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#111' }}>
+                <button key={i} onClick={() => setFieldLightbox(l => ({ ...l, index: i }))} style={{ flexShrink: 0, width: '52px', height: '52px', borderRadius: '6px', border: i === fieldLightbox.index ? '2px solid #e8590c' : '2px solid transparent', overflow: 'hidden', cursor: 'pointer', padding: 0, background: '#f3f4f6' }}>
                   {(fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path])
                     ? <img src={fieldPhotoUrls[fpThumb(p.path)] || fieldPhotoUrls[p.path]} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="" />
-                    : <div style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
+                    : <div style={{ width: '100%', height: '100%', background: '#f0f0f0' }} />
                   }
                 </button>
               ))}
@@ -12338,7 +12367,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
 export default function JobDetail() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', color: '#6b7280' }}>Loading...</div>}>
       <JobDetailInner />
     </Suspense>
   )

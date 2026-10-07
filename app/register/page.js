@@ -12,18 +12,18 @@ const TRADES = [
 ]
 
 const s = {
-  page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '1rem' },
-  card: { width: '100%', maxWidth: '480px', background: '#141414', border: '1px solid #222', borderRadius: '16px', padding: '2.5rem' },
+  page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f6f8', padding: '1rem' },
+  card: { width: '100%', maxWidth: '480px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '2.5rem', boxShadow: '0 4px 24px rgba(0,0,0,0.07)' },
   logo: { display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' },
-  logoImg: { width: '80px', height: '80px', objectFit: 'contain', marginBottom: '12px' },
-  logoText: { fontSize: '11px', fontWeight: '600', letterSpacing: '4px', color: '#666', textTransform: 'uppercase' },
-  label: { display: 'block', fontSize: '12px', fontWeight: '600', color: '#888', marginBottom: '6px', letterSpacing: '1px', textTransform: 'uppercase' },
-  input: { width: '100%', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
-  btn: { width: '100%', padding: '13px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase', marginTop: '8px' },
-  err: { background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' },
+  logoImg: { width: '72px', height: '72px', objectFit: 'contain', marginBottom: '10px' },
+  logoText: { fontSize: '11px', fontWeight: '600', letterSpacing: '3px', color: '#9ca3af', textTransform: 'uppercase' },
+  label: { display: 'block', fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '5px' },
+  input: { width: '100%', padding: '10px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' },
+  btn: { width: '100%', padding: '11px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', marginTop: '8px' },
+  err: { background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 12px', borderRadius: '6px', fontSize: '13px', marginBottom: '1rem' },
   link: { color: '#e8590c', fontWeight: '600', textDecoration: 'none' },
-  divider: { borderTop: '1px solid #1e1e1e', margin: '1.5rem 0' },
-  footer: { textAlign: 'center', fontSize: '13px', color: '#555' },
+  divider: { borderTop: '1px solid #f3f4f6', margin: '1.5rem 0' },
+  footer: { textAlign: 'center', fontSize: '13px', color: '#6b7280' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
 }
 

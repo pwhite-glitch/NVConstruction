@@ -2,42 +2,105 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Responsive utilities ─────────────────────────────────────────────── */
+/* ── Design tokens ────────────────────────────────────────────────────────── */
+:root {
+  /* Brand */
+  --nv-orange:        #e8590c;
+  --nv-orange-dim:    #c44a08;
+  --nv-orange-tint:   rgba(232, 89, 12, 0.10);
 
-/* Horizontal scroll wrapper for complex multi-col tables/grids */
+  /* Page surfaces */
+  --nv-page:          #f4f6f8;
+  --nv-surface:       #ffffff;
+  --nv-surface-alt:   #f9fafb;
+  --nv-surface-inset: #f3f4f6;
+
+  /* Borders */
+  --nv-border:        #e5e7eb;
+  --nv-border-dim:    #f0f0f0;
+  --nv-border-strong: #d1d5db;
+
+  /* Text */
+  --nv-text-primary:  #111827;
+  --nv-text-secondary:#6b7280;
+  --nv-text-tertiary: #9ca3af;
+  --nv-text-disabled: #d1d5db;
+
+  /* Navigation sidebar */
+  --nv-nav-bg:        #1a2332;
+  --nv-nav-border:    rgba(255, 255, 255, 0.06);
+  --nv-nav-text:      rgba(255, 255, 255, 0.65);
+  --nv-nav-text-active: #ffffff;
+  --nv-nav-item-active: rgba(232, 89, 12, 0.14);
+
+  /* Semantic */
+  --nv-green:         #16a34a;
+  --nv-green-bg:      #dcfce7;
+  --nv-green-border:  #bbf7d0;
+  --nv-red:           #dc2626;
+  --nv-red-bg:        #fee2e2;
+  --nv-red-border:    #fecaca;
+  --nv-yellow:        #a16207;
+  --nv-yellow-bg:     #fefce8;
+  --nv-yellow-border: #fef08a;
+  --nv-blue:          #1d4ed8;
+  --nv-blue-bg:       #eff6ff;
+  --nv-blue-border:   #bfdbfe;
+
+  /* Shadows */
+  --nv-shadow-sm:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --nv-shadow:        0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+}
+
+/* ── Base reset ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Form focus ring — globally scoped, not just mobile */
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--nv-orange) !important;
+  box-shadow: 0 0 0 3px rgba(232, 89, 12, 0.12) !important;
+  outline: none !important;
+}
+
+/* ── Navigation sidebar ───────────────────────────────────────────────────── */
+.rx-sidebar {
+  background: var(--nv-nav-bg) !important;
+  border-right: 1px solid rgba(0,0,0,0.2) !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.rx-sidebar::-webkit-scrollbar { display: none; }
+
+/* Bottom nav ── hidden on desktop, shown on mobile */
+.rx-bottom-nav {
+  display: none;
+  background: var(--nv-surface);
+  border-top: 1px solid var(--nv-border);
+}
+
+/* ── Responsive layout ────────────────────────────────────────────────────── */
 .rx-scroll-x {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-
-/* Mobile section nav dropdown (jobdetail) — hidden on desktop */
 .rx-mobile-nav-select { display: none !important; }
-
-/* Hide scrollbar on sticky sidebars while keeping scroll functionality */
-.rx-sidebar::-webkit-scrollbar { display: none; }
-.rx-sidebar { scrollbar-width: none; -ms-overflow-style: none; }
-
-/* Bottom nav: hidden on desktop, shown on mobile */
-.rx-bottom-nav {
-  display: none;
-}
 
 @media (max-width: 640px) {
   /* Sidebar: hide on mobile */
   .rx-sidebar { display: none !important; }
 
-  /* Bottom nav: show on mobile */
+  /* Bottom nav */
   .rx-bottom-nav {
     display: flex !important;
     position: fixed;
     bottom: 0; left: 0; right: 0;
-    background: #0d0d0d;
-    border-top: 1px solid #1a1a1a;
     z-index: 100;
     height: 60px;
   }
 
-  /* Content: no left margin, pad bottom for bottom nav */
+  /* Content: no left margin, pad bottom for nav */
   .rx-content {
     padding: 1rem 0.75rem 80px !important;
     max-width: 100% !important;
@@ -48,40 +111,20 @@
   .rx-grid-3    { grid-template-columns: 1fr !important; }
   .rx-stats     { grid-template-columns: 1fr 1fr !important; }
   .rx-row       { grid-template-columns: 1fr !important; gap: 0.25rem !important; }
-
-  /* Legacy spacing classes (other pages) */
   .rx-main      { padding-left: 0.75rem !important; padding-right: 0.75rem !important; padding-top: 1.25rem !important; }
   .rx-card      { padding: 1rem !important; }
   .rx-card-body { padding: 1rem !important; }
 
-  /* Mobile section nav dropdown (jobdetail) */
+  /* Mobile section nav dropdown */
   .rx-mobile-nav-select { display: block !important; }
 
-  /* Photo grid: 3-col on mobile instead of 4 */
+  /* Photo grid: 3-col on mobile */
   .rx-grid-photos { grid-template-columns: repeat(3, 1fr) !important; }
 
-  /* Multi-column form rows (crew log, equipment, etc.) */
+  /* Multi-column form rows */
   .rx-form-row  { grid-template-columns: 1fr 1fr !important; }
 
-  /* Input / select / textarea focus glow */
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: #e8590c !important;
-  box-shadow: 0 0 0 3px rgba(232, 89, 12, 0.15) !important;
-  outline: none !important;
-}
-
-/* Wizard step entrance animation */
-@keyframes wizardIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.wizard-step {
-  animation: wizardIn 0.18s ease-out;
-}
-
-/* Prevent iOS input zoom (font-size < 16px triggers auto-zoom) */
+  /* Prevent iOS input zoom */
   input[type="text"],
   input[type="email"],
   input[type="password"],
@@ -93,4 +136,89 @@ textarea:focus {
   textarea {
     font-size: 16px !important;
   }
+}
+
+/* ── Dashboard nav items ──────────────────────────────────────────────────── */
+.nv-nav-btn {
+  transition: background 0.12s ease, color 0.12s ease !important;
+}
+.nv-nav-btn:hover {
+  background: rgba(255,255,255,0.06) !important;
+  color: #fff !important;
+}
+
+/* ── Table / list rows ────────────────────────────────────────────────────── */
+.nv-table-row:hover {
+  background: #f9fafb !important;
+}
+
+/* ── Wizard step entrance animation ──────────────────────────────────────── */
+@keyframes wizardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wizard-step { animation: wizardIn 0.15s ease-out; }
+
+/* ── Stat / metric cards ──────────────────────────────────────────────────── */
+.nv-stat-card {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+  cursor: default;
+}
+.nv-stat-card:hover {
+  border-color: rgba(232,89,12,0.25) !important;
+  box-shadow: 0 0 0 3px rgba(232,89,12,0.06), var(--nv-shadow-sm) !important;
+}
+
+/* ── Kanban cards ─────────────────────────────────────────────────────────── */
+.nv-kanban-card {
+  transition: box-shadow 0.12s ease, border-color 0.12s ease !important;
+}
+.nv-kanban-card:hover {
+  box-shadow: var(--nv-shadow) !important;
+  border-color: var(--nv-border-strong) !important;
+}
+
+/* ── Metric cards ─────────────────────────────────────────────────────────── */
+.nv-metric-card {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+.nv-metric-card:hover {
+  border-color: rgba(232,89,12,0.2) !important;
+  box-shadow: 0 0 0 3px rgba(232,89,12,0.05) !important;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.nv-btn {
+  transition: opacity 0.12s ease, box-shadow 0.12s ease !important;
+}
+.nv-btn:hover { opacity: 0.88 !important; }
+.nv-btn:active { opacity: 0.75 !important; transform: scale(0.98) !important; }
+
+/* ── Inner tabs (section-level tabs within pages) ────────────────────────── */
+.nv-inner-tab {
+  transition: color 0.12s ease, border-color 0.12s ease !important;
+}
+.nv-inner-tab:hover { color: var(--nv-orange) !important; }
+
+/* ── Badge pulse for notification badges ──────────────────────────────────── */
+.nv-badge-pulse {
+  animation: nv-pulse 2.5s ease-in-out infinite;
+}
+@keyframes nv-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+/* ── Sidebar top accent line ──────────────────────────────────────────────── */
+.nv-sidebar-shimmer {
+  height: 1px;
+  background: rgba(232,89,12,0.6);
+  margin: 0.5rem 0 0.25rem;
+  border-radius: 1px;
+}
+
+/* ── Estimator override ───────────────────────────────────────────────────── */
+.nv-estimator {
+  padding: 0 !important;
+  max-width: unset !important;
 }

@@ -11,7 +11,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body style={{ backgroundColor: '#0a0a0a', fontFamily: "'Inter', system-ui, sans-serif", color: '#f1f1f1', margin: 0 }}>
+      <body style={{ backgroundColor: '#f4f6f8', fontFamily: "'Inter', system-ui, sans-serif", color: '#111827', margin: 0 }}>
         {children}
         <DevRoleSwitcher />
       </body>

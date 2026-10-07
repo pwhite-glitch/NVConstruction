@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import React from 'react'
 
 export default function MeetingsTab({
@@ -33,7 +33,7 @@ export default function MeetingsTab({
       </div>
 
       {meetingMsg && (
-        <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: meetingMsg.ok ? '#0a2a0a' : '#2a0a0a', color: meetingMsg.ok ? '#4ade80' : '#ff6b6b', border: meetingMsg.ok ? '1px solid #1a4a1a' : '1px solid #5a1a1a' }}>
+        <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: meetingMsg.ok ? '#dcfce7' : '#fef2f2', color: meetingMsg.ok ? '#4ade80' : '#ff6b6b', border: meetingMsg.ok ? '1px solid #bbf7d0' : '1px solid #fecaca' }}>
           {meetingMsg.text}
         </div>
       )}
@@ -183,7 +183,7 @@ export default function MeetingsTab({
                       <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#2a1200', color: '#e8590c', border: '1px solid #4a2200' }}>{openItems.length} open</span>
                     )}
                     {m.meeting_action_items && m.meeting_action_items.length > 0 && openItems.length === 0 && (
-                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a' }}>all done</span>
+                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>all done</span>
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -198,10 +198,10 @@ export default function MeetingsTab({
                       <div style={{ marginBottom: '1.25rem' }}>
                         <p style={s.label}>Action Items</p>
                         {m.meeting_action_items.map(a => (
-                          <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a' }}>
+                          <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
                             <button
                               onClick={() => toggleActionItem(a.id, a.status)}
-                              style={{ width: '20px', height: '20px', borderRadius: '4px', border: '2px solid', flexShrink: 0, marginTop: '2px', cursor: 'pointer', background: a.status === 'done' ? '#1a4a1a' : 'transparent', borderColor: a.status === 'done' ? '#4ade80' : '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4ade80', fontSize: '12px', fontWeight: '700' }}>
+                              style={{ width: '20px', height: '20px', borderRadius: '4px', border: '2px solid', flexShrink: 0, marginTop: '2px', cursor: 'pointer', background: a.status === 'done' ? '#bbf7d0' : 'transparent', borderColor: a.status === 'done' ? '#4ade80' : '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: '12px', fontWeight: '700' }}>
                               {a.status === 'done' ? '✓' : ''}
                             </button>
                             <div style={{ flex: 1 }}>
@@ -220,7 +220,7 @@ export default function MeetingsTab({
                       <div style={{ marginBottom: '1.25rem' }}>
                         <p style={s.label}>Decisions</p>
                         {m.meeting_decisions.map(d => (
-                          <div key={d.id} style={{ display: 'flex', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'flex-start' }}>
+                          <div key={d.id} style={{ display: 'flex', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f0f0f0', alignItems: 'flex-start' }}>
                             <span style={{ color: '#e8590c', fontSize: '14px', flexShrink: 0 }}>&#x25c6;</span>
                             <p style={{ margin: 0, fontSize: '14px', color: '#ccc', lineHeight: '1.5' }}>{d.description}</p>
                           </div>
@@ -231,7 +231,7 @@ export default function MeetingsTab({
                     {m.raw_transcript && (
                       <details style={{ marginBottom: '1rem' }}>
                         <summary style={{ fontSize: '12px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>View original transcript</summary>
-                        <pre style={{ marginTop: '8px', padding: '12px', background: '#080808', border: '1px solid #1a1a1a', borderRadius: '6px', fontSize: '12px', color: '#555', lineHeight: '1.6', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '300px', overflowY: 'auto' }}>{m.raw_transcript}</pre>
+                        <pre style={{ marginTop: '8px', padding: '12px', background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '6px', fontSize: '12px', color: '#555', lineHeight: '1.6', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '300px', overflowY: 'auto' }}>{m.raw_transcript}</pre>
                       </details>
                     )}
 

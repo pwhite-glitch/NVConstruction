@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import React from 'react'
 import PaymentTypeSelector from './PaymentTypeSelector'
 
@@ -36,8 +36,8 @@ export default function NewPOForm({ s, poForm, setPOForm, poFile, setPOFile, bud
       <div style={{ marginBottom: '12px' }}>
         <label style={s.label}>Line items</label>
         <div>
-          <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #1e1e1e', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '7px 10px', borderBottom: '1px solid #e5e7eb', fontSize: '10px', fontWeight: '700', color: '#444', letterSpacing: '1px', textTransform: 'uppercase' }}>
               <span>Description</span>
               <span style={{ textAlign: 'right' }}>Qty</span>
               <span>Unit</span>
@@ -57,7 +57,7 @@ export default function NewPOForm({ s, poForm, setPOForm, poFile, setPOFile, bud
                 <button onClick={() => setPOForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#ff6b6b', cursor: 'pointer', fontSize: '16px', padding: 0, textAlign: 'center' }}>&times;</button>
               </div>
             ))}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #1e1e1e' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 90px 70px 110px 36px', gap: '0 4px', padding: '8px 10px', background: '#111', borderTop: '2px solid #e5e7eb' }}>
               <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', gridColumn: '1/4', textAlign: 'right' }}>Total:</span>
               <span style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace', fontSize: '14px' }}>{fmt(poForm.items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0))}</span>
               <span />
@@ -77,7 +77,7 @@ export default function NewPOForm({ s, poForm, setPOForm, poFile, setPOFile, bud
 
       <div style={{ marginBottom: '1.25rem' }}>
         <label style={s.label}>Attachment {!poFile && <span style={{ color: '#888', fontWeight: 'normal' }}>(required to issue)</span>}</label>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '7px 14px', background: '#0a0a0a', border: poFile ? '1px solid #3a1a00' : '1px dashed #2a2a2a', borderRadius: '6px', fontSize: '12px', color: poFile ? '#f1f1f1' : '#555' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '7px 14px', background: '#ffffff', border: poFile ? '1px solid #3a1a00' : '1px dashed #d1d5db', borderRadius: '6px', fontSize: '12px', color: poFile ? '#f1f1f1' : '#555' }}>
           {poFile ? poFile.name : '+ Attach file (PDF, image, etc.)'}
           <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e => setPOFile(e.target.files[0] || null)} />
         </label>

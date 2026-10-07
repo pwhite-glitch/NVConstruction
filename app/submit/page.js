@@ -8,60 +8,89 @@ import { authFetch } from '../../lib/client-fetch'
 const PM_EMAIL = 'pwhite@nvim.co'
 
 const s = {
-  page: { minHeight: '100vh', background: '#0a0a0a', display: 'flex' },
-  header: { background: '#141414', borderBottom: '1px solid #222', padding: '0 1.5rem' },
-  headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' },
-  logoRow: { display: 'flex', alignItems: 'center', gap: '12px' },
-  logoImg: { width: '40px', height: '40px', objectFit: 'contain' },
-  logoName: { fontWeight: '700', fontSize: '15px', color: '#f1f1f1', letterSpacing: '1px' },
-  logoSub: { fontSize: '11px', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' },
-  signOut: { padding: '7px 16px', background: 'transparent', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' },
+  // ── Layout ──
+  page: { minHeight: '100vh', background: '#f4f6f8', display: 'flex' },
+  header: { background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem' },
+  headerInner: { maxWidth: '760px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px' },
+  logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
+  logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
+  logoSub: { fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' },
+  signOut: { padding: '6px 14px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' },
   main: { maxWidth: '760px', margin: '0 auto', padding: '2rem 1.5rem' },
-  card: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '1.75rem', marginBottom: '1.5rem' },
-  cardTitle: { fontSize: '16px', fontWeight: '700', color: '#f1f1f1', marginTop: 0, marginBottom: '1.5rem', letterSpacing: '0.5px' },
-  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' },
-  input: { width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' },
+
+  // ── Cards ──
+  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.5rem', marginBottom: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  cardTitle: { fontSize: '15px', fontWeight: '700', color: '#111827', marginTop: 0, marginBottom: '1.25rem' },
+
+  // ── Forms ──
+  label: { display: 'block', fontSize: '12px', fontWeight: '500', color: '#374151', marginBottom: '5px' },
+  input: { width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  btn: { padding: '11px 28px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' },
-  success: { background: '#0a1a0a', border: '1px solid #1a4a1a', color: '#4ade80', padding: '14px 16px', borderRadius: '8px', fontSize: '14px', marginBottom: '1.5rem' },
-  empty: { background: '#141414', border: '1px solid #222', borderRadius: '12px', padding: '3rem', textAlign: 'center', color: '#555', fontSize: '14px' },
+
+  // ── Buttons ──
+  btn: { padding: '10px 24px', background: '#e8590c', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+
+  // ── Alerts ──
+  success: { background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '12px 16px', borderRadius: '6px', fontSize: '14px', marginBottom: '1.25rem' },
+  empty: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center', color: '#9ca3af', fontSize: '14px' },
+
+  // ── Status badges ──
   badge: (status) => ({
-    padding: '3px 12px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: status === 'approved' ? '#0a2a0a' : status === 'rejected' ? '#2a0a0a' : '#2a1a00',
-    color: status === 'approved' ? '#4ade80' : status === 'rejected' ? '#ff6b6b' : '#e8590c',
-    border: `1px solid ${status === 'approved' ? '#1a4a1a' : status === 'rejected' ? '#5a1a1a' : '#4a2a00'}`
+    padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase',
+    background: status === 'approved' ? '#dcfce7' : status === 'rejected' ? '#fee2e2' : '#fff7ed',
+    color: status === 'approved' ? '#15803d' : status === 'rejected' ? '#dc2626' : '#c2410c',
+    border: `1px solid ${status === 'approved' ? '#bbf7d0' : status === 'rejected' ? '#fecaca' : '#fed7aa'}`
   }),
-  tabRow: { display: 'flex', marginBottom: '1.5rem', borderBottom: '1px solid #222' },
+
+  // ── Tabs ──
+  tabRow: { display: 'flex', marginBottom: '1.5rem', borderBottom: '1px solid #e5e7eb', overflowX: 'auto' },
   tab: (active) => ({
-    padding: '10px 20px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none',
-    color: active ? '#f1f1f1' : '#555', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent',
-    letterSpacing: '0.5px', marginBottom: '-1px'
+    padding: '10px 20px', fontSize: '13px', fontWeight: active ? '600' : '400', cursor: 'pointer', background: 'none', border: 'none',
+    color: active ? '#111827' : '#6b7280', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent',
+    marginBottom: '-1px', whiteSpace: 'nowrap', flexShrink: 0,
   }),
-  contractRow: { border: '1px solid #1e1e1e', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' },
-  contractRowHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', cursor: 'pointer', background: '#0f0f0f' },
-  contractRowExpanded: { borderTop: '1px solid #1e1e1e', padding: '1rem 1.25rem', background: '#080808' },
-  coRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1a1a1a' },
+
+  // ── Contract rows ──
+  contractRow: { border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden', background: '#fff' },
+  contractRowHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 16px', cursor: 'pointer', background: '#fff' },
+  contractRowExpanded: { borderTop: '1px solid #f3f4f6', padding: '1rem 1.25rem', background: '#f9fafb' },
+  coRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f3f4f6' },
   coBadge: (status) => ({
-    padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase',
-    background: status === 'approved' ? '#0a2a0a' : status === 'rejected' ? '#2a0a0a' : '#2a1200',
-    color: status === 'approved' ? '#4ade80' : status === 'rejected' ? '#ff6b6b' : '#e8590c',
-    border: `1px solid ${status === 'approved' ? '#1a4a1a' : status === 'rejected' ? '#5a1a1a' : '#4a2200'}`
+    padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase',
+    background: status === 'approved' ? '#dcfce7' : status === 'rejected' ? '#fee2e2' : '#fff7ed',
+    color: status === 'approved' ? '#15803d' : status === 'rejected' ? '#dc2626' : '#c2410c',
+    border: `1px solid ${status === 'approved' ? '#bbf7d0' : status === 'rejected' ? '#fecaca' : '#fed7aa'}`
   }),
+
+  // ── Stat cards ──
   statRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' },
-  statCard: { background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem' },
-  statLabel: { fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' },
-  statValue: (accent) => ({ fontSize: '22px', fontWeight: '800', color: accent || '#f1f1f1', margin: 0 }),
-  sidebar: { width: '220px', flexShrink: 0, background: '#0d0d0d', borderRight: '1px solid #1a1a1a', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  sidebarTop: { padding: '1.5rem 1.25rem 1.25rem', borderBottom: '1px solid #1a1a1a' },
-  sidebarLogo: { width: '32px', height: '32px', objectFit: 'contain', display: 'block', marginBottom: '10px' },
-  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#f1f1f1', letterSpacing: '0.5px', margin: '0 0 2px' },
-  sidebarRole: { fontSize: '10px', color: '#333', letterSpacing: '2px', textTransform: 'uppercase', margin: 0 },
-  sidebarUser: { fontSize: '12px', color: '#3a3a3a', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', margin: '12px 0 0' },
+  statCard: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  statLabel: { fontSize: '11px', fontWeight: '600', color: '#6b7280', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '6px' },
+  statValue: (accent) => ({ fontSize: '22px', fontWeight: '700', color: accent || '#111827', margin: 0 }),
+
+  // ── Sidebar — dark charcoal (matches PM nav) ──
+  sidebar: { width: '220px', flexShrink: 0, background: '#1a2332', borderRight: '1px solid rgba(0,0,0,0.2)', position: 'sticky', top: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  sidebarTop: { padding: '1.25rem 1rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' },
+  sidebarLogo: { width: '28px', height: '28px', objectFit: 'contain', display: 'block', marginBottom: '8px', filter: 'brightness(0) invert(1)' },
+  sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#fff', letterSpacing: '0.5px', margin: '0 0 1px' },
+  sidebarRole: { fontSize: '10px', color: '#64748b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 },
+  sidebarUser: { fontSize: '12px', color: '#94a3b8', margin: '8px 0 0' },
   sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
-  navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: active ? 'rgba(232,89,12,0.08)' : 'transparent', color: active ? '#f1f1f1' : '#555', fontSize: '13px', fontWeight: active ? '600' : '400', border: 'none', boxShadow: active ? 'inset 3px 0 0 #e8590c' : 'none', width: '100%', textAlign: 'left', outline: 'none' }),
-  navBadge: { background: '#e8590c', color: 'white', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 7px', marginLeft: 'auto', flexShrink: 0 },
-  sidebarBottom: { padding: '1rem 1.25rem', borderTop: '1px solid #1a1a1a' },
-  sidebarSignOut: { width: '100%', padding: '9px 14px', background: 'transparent', border: '1px solid #222', borderRadius: '8px', color: '#444', cursor: 'pointer', fontSize: '12px' },
+  navItem: (active) => ({
+    display: 'flex', alignItems: 'center', gap: '9px',
+    padding: active ? '9px 1rem 9px calc(1rem - 3px)' : '9px 1rem',
+    cursor: 'pointer',
+    background: active ? 'rgba(232,89,12,0.14)' : 'transparent',
+    color: active ? '#e8590c' : 'rgba(255,255,255,0.58)',
+    fontSize: '13px', fontWeight: active ? '600' : '400',
+    border: 'none',
+    borderLeft: active ? '3px solid #e8590c' : '3px solid transparent',
+    width: '100%', textAlign: 'left', outline: 'none',
+  }),
+  navBadge: { background: '#e8590c', color: '#fff', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 6px', marginLeft: 'auto', flexShrink: 0 },
+  sidebarBottom: { padding: '0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.06)' },
+  sidebarSignOut: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#64748b', cursor: 'pointer', fontSize: '12px', textAlign: 'left' },
   content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
 }
 
@@ -1034,10 +1063,10 @@ export default function Submit() {
           return (
             <div>
               <div style={{ marginBottom: '1.5rem' }}>
-                <p style={{ margin: '0 0 2px', fontSize: '20px', fontWeight: '700', color: '#f1f1f1' }}>
+                <p style={{ margin: '0 0 2px', fontSize: '20px', fontWeight: '700', color: '#111827' }}>
                   {monthNames[month]} {year}
                 </p>
-                <p style={{ margin: 0, fontSize: '12px', color: '#444' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                   {jobs.length} active job{jobs.length !== 1 ? 's' : ''}
                 </p>
               </div>
@@ -1050,17 +1079,17 @@ export default function Submit() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#2a1a4a' }} /><span style={{ fontSize: '11px', color: '#666' }}>Bid deadline</span></div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
-                  <button style={{ padding: '6px 14px', background: '#141414', border: '1px solid #222', borderRadius: '6px', color: '#888', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
+                  <button style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month - 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>‹</button>
+                  <button style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#e8590c', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }} onClick={() => setCalMonth({ year: today.getFullYear(), month: today.getMonth() })}>Today</button>
+                  <button style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>›</button>
                 </div>
               </div>
 
-              <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '12px', overflow: 'hidden' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
                 {/* Day headers */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #1e1e1e' }}>
                   {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
-                    <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '1px', padding: '10px 0', textTransform: 'uppercase' }}>{d}</div>
+                    <div key={d} style={{ textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', padding: '10px 0', textTransform: 'uppercase' }}>{d}</div>
                   ))}
                 </div>
                 {/* Cells */}
@@ -1081,7 +1110,7 @@ export default function Submit() {
                           <>
                             <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>
                             {dues.map((j, idx) => (
-                              <div key={`due-${idx}`} style={{ background: '#0a2a14', border: '1px solid #1a4a2a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#4ade80', lineHeight: '1.3', fontWeight: '600' }}>
+                              <div key={`due-${idx}`} style={{ background: '#0a2a14', border: '1px solid #1a4a2a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#16a34a', lineHeight: '1.3', fontWeight: '600' }}>
                                 #{j.job_number} due
                               </div>
                             ))}
@@ -1105,13 +1134,13 @@ export default function Submit() {
 
               {/* Upcoming summary */}
               {submissions.length > 0 && (
-                <div style={{ marginTop: '1.5rem', background: '#141414', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '1rem 1.25rem' }}>
-                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase' }}>Recent submissions</p>
+                <div style={{ marginTop: '1.5rem', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1rem 1.25rem' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Recent submissions</p>
                   {submissions.slice(0, 3).map(sub => (
-                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #1a1a1a' }}>
+                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                       <div>
-                        <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#ccc', fontWeight: '600' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}</p>
-                        <p style={{ margin: 0, fontSize: '11px', color: '#555' }}>{new Date(sub.submitted_at).toLocaleDateString()}</p>
+                        <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#374151', fontWeight: '600' }}>#{sub.jobs?.job_number} — {sub.jobs?.project_name}</p>
+                        <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>{new Date(sub.submitted_at).toLocaleDateString()}</p>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${Number(sub.amount_billed).toLocaleString()}</span>
@@ -1119,7 +1148,7 @@ export default function Submit() {
                       </div>
                     </div>
                   ))}
-                  <button onClick={() => setActiveTab('history')} style={{ marginTop: '10px', fontSize: '12px', color: '#555', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View all history →</button>
+                  <button onClick={() => setActiveTab('history')} style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View all history →</button>
                 </div>
               )}
             </div>
@@ -1144,16 +1173,16 @@ export default function Submit() {
                 {sovForm.length > 0 && (
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={s.label}>Schedule of values</label>
-                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid #1e1e1e' }}>
-                            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Line item</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Ret %</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Prev %</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', width: '120px' }}>% This period</th>
-                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#555', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount ($)</th>
+                            <th style={{ textAlign: 'left', padding: '8px 12px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Line item</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Ret %</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Prev %</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', width: '120px' }}>% This period</th>
+                            <th style={{ textAlign: 'right', padding: '8px 12px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Amount ($)</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1164,21 +1193,21 @@ export default function Submit() {
                             const isOver = (line.pct_prev || 0) + (parseFloat(line.pct_this) || 0) > 100
                             return (
                               <tr key={line.sov_line_id} style={{ borderBottom: '1px solid #111', background: isOver ? 'rgba(255,50,50,0.05)' : 'transparent' }}>
-                                <td style={{ padding: '8px 12px', color: '#ccc' }}>
+                                <td style={{ padding: '8px 12px', color: '#374151' }}>
                                   {line.description}
-                                  {line.contract_description && <div style={{ fontSize: '11px', color: '#555', marginTop: '2px' }}>{line.contract_description}</div>}
+                                  {line.contract_description && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{line.contract_description}</div>}
                                 </td>
-                                <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>${line.scheduled_value.toLocaleString()}</td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right', color: '#6b7280' }}>${line.scheduled_value.toLocaleString()}</td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right', color: line.retainage_pct > 0 ? '#facc15' : '#444' }}>
                                   {line.retainage_pct > 0 ? `${line.retainage_pct}%` : '—'}
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                   {(line.pct_prev || 0) > 0 ? (
                                     <div>
-                                      <span style={{ color: '#888', fontSize: '13px' }}>{line.pct_prev}%</span>
+                                      <span style={{ color: '#6b7280', fontSize: '13px' }}>{line.pct_prev}%</span>
                                       <div style={{ fontSize: '11px', color: remaining > 0 ? '#555' : '#ff6b6b', marginTop: '2px' }}>{remaining}% left</div>
                                     </div>
-                                  ) : <span style={{ color: '#333' }}>—</span>}
+                                  ) : <span style={{ color: '#374151' }}>—</span>}
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                   <input
@@ -1215,8 +1244,8 @@ export default function Submit() {
                                   />
                                   {line.retainage_pct > 0 && line.amount_this > 0 && (
                                     <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                                      <span style={{ color: '#facc15' }}>−${lineRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                                      <span style={{ color: '#4ade80', marginLeft: '6px' }}>=${lineNet.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      <span style={{ color: '#a16207' }}>−${lineRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                      <span style={{ color: '#16a34a', marginLeft: '6px' }}>=${lineNet.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                     </div>
                                   )}
                                 </td>
@@ -1229,23 +1258,23 @@ export default function Submit() {
                             const totalNet = totalGross - totalRetHeld
                             return (
                               <>
-                                <tr style={{ background: '#111' }}>
-                                  <td colSpan={5} style={{ padding: '8px 12px', color: '#888', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Gross this period:</td>
+                                <tr style={{ background: '#f9fafb' }}>
+                                  <td colSpan={5} style={{ padding: '8px 12px', color: '#6b7280', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Gross this period:</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '800', fontSize: '14px' }}>
                                     ${totalGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </td>
                                 </tr>
                                 {totalRetHeld > 0 && (
                                   <>
-                                    <tr style={{ background: '#0f0f0f' }}>
-                                      <td colSpan={5} style={{ padding: '6px 12px', color: '#facc15', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Retainage held:</td>
-                                      <td style={{ padding: '6px 12px', textAlign: 'right', color: '#facc15', fontWeight: '700' }}>
+                                    <tr style={{ background: '#f9fafb' }}>
+                                      <td colSpan={5} style={{ padding: '6px 12px', color: '#a16207', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Retainage held:</td>
+                                      <td style={{ padding: '6px 12px', textAlign: 'right', color: '#a16207', fontWeight: '700' }}>
                                         −${totalRetHeld.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </td>
                                     </tr>
-                                    <tr style={{ background: '#0a0a0a' }}>
-                                      <td colSpan={5} style={{ padding: '6px 12px', color: '#4ade80', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Net payment due:</td>
-                                      <td style={{ padding: '6px 12px', textAlign: 'right', color: '#4ade80', fontWeight: '800', fontSize: '14px' }}>
+                                    <tr style={{ background: '#f9fafb' }}>
+                                      <td colSpan={5} style={{ padding: '6px 12px', color: '#16a34a', fontSize: '12px', textAlign: 'right', fontWeight: '700' }}>Net payment due:</td>
+                                      <td style={{ padding: '6px 12px', textAlign: 'right', color: '#16a34a', fontWeight: '800', fontSize: '14px' }}>
                                         ${totalNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                       </td>
                                     </tr>
@@ -1260,7 +1289,7 @@ export default function Submit() {
                   </div>
                 )}
                 {form.job_id && noContract && (
-                  <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '14px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '14px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
                     No subcontract on file for this project. Contact NV Construction to have your subcontract issued before submitting billing.
                   </div>
                 )}
@@ -1272,14 +1301,14 @@ export default function Submit() {
                   const remaining = contractMax - totalDraft
                   const isBalanced = Math.round(totalDraft * 100) === Math.round(contractMax * 100)
                   return (
-                    <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem', marginBottom: '1rem' }}>
+                    <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '10px', padding: '1.25rem', marginBottom: '1rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
                         <div>
-                          <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#f1f1f1' }}>Create your Schedule of Values</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#555', lineHeight: '1.6' }}>Break your contract into billing line items. Total must match your contract value.</p>
+                          <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>Create your Schedule of Values</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', lineHeight: '1.6' }}>Break your contract into billing line items. Total must match your contract value.</p>
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '16px' }}>
-                          <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px', letterSpacing: '1px', textTransform: 'uppercase' }}>Contract value</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px', letterSpacing: '1px', textTransform: 'uppercase' }}>Contract value</div>
                           <div style={{ fontSize: '22px', fontWeight: '800', color: '#e8590c' }}>${contractMax.toLocaleString()}</div>
                         </div>
                       </div>
@@ -1302,7 +1331,7 @@ export default function Submit() {
                           {sovDraftLines.length > 1 && (
                             <button
                               type="button"
-                              style={{ padding: '10px', background: '#2a0a0a', color: '#ff6b6b', border: '1px solid #5a1a1a', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
+                              style={{ padding: '10px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
                               onClick={() => setSovDraftLines(lines => lines.filter((_, i) => i !== idx))}
                             >✕</button>
                           )}
@@ -1311,13 +1340,13 @@ export default function Submit() {
 
                       <button
                         type="button"
-                        style={{ fontSize: '12px', color: '#888', background: 'none', border: '1px dashed #2a2a2a', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer', marginBottom: '1rem', width: '100%' }}
+                        style={{ fontSize: '12px', color: '#6b7280', background: 'none', border: '1px dashed #2a2a2a', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer', marginBottom: '1rem', width: '100%' }}
                         onClick={() => setSovDraftLines(lines => [...lines, { description: '', amount: '' }])}
                       >+ Add line item</button>
 
                       {contractMax > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', background: '#080808', border: `1px solid ${isBalanced ? '#1a4a1a' : remaining < 0 ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', marginBottom: '1rem' }}>
-                          <span style={{ color: '#888' }}>Total: <strong style={{ color: '#f1f1f1' }}>${totalDraft.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '10px 14px', background: '#f3f4f6', border: `1px solid ${isBalanced ? '#1a4a1a' : remaining < 0 ? '#5a1a1a' : '#2a2a2a'}`, borderRadius: '8px', marginBottom: '1rem' }}>
+                          <span style={{ color: '#6b7280' }}>Total: <strong style={{ color: '#111827' }}>${totalDraft.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong></span>
                           <span style={{ fontWeight: '700', color: isBalanced ? '#4ade80' : remaining < 0 ? '#ff6b6b' : '#e8590c' }}>
                             {isBalanced ? '✓ Matches contract' : remaining > 0 ? `$${remaining.toLocaleString('en-US', { minimumFractionDigits: 2 })} remaining` : `$${Math.abs(remaining).toLocaleString('en-US', { minimumFractionDigits: 2 })} over contract`}
                           </span>
@@ -1337,7 +1366,7 @@ export default function Submit() {
                 {/* ── Billing form: SOV exists ── */}
                 {!noContract && sovForm.length > 0 && (
                   <>
-                    {sovSaved && <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#4ade80', marginBottom: '1rem' }}>✓ Schedule of values saved — fill in the fields below to submit your billing.</div>}
+                    {sovSaved && <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#16a34a', marginBottom: '1rem' }}>✓ Schedule of values saved — fill in the fields below to submit your billing.</div>}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }} className="rx-grid-3">
                       <div>
                         <label style={s.label}>Amount billed ($)</label>
@@ -1363,16 +1392,16 @@ export default function Submit() {
                     <div style={{ marginBottom: '1rem' }}>
                       <label style={s.label}>Invoice # <span style={{ color: '#e8590c' }}>*</span></label>
                       <input style={s.input} value={form.invoice_number} onChange={e => update('invoice_number', e.target.value)} placeholder="e.g. INV-2024-001" />
-                      {!form.invoice_number.trim() && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required — enter the invoice number from your invoice</div>}
+                      {!form.invoice_number.trim() && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Required — enter the invoice number from your invoice</div>}
                     </div>
                     <div style={{ marginBottom: '1.5rem' }}>
                       <label style={s.label}>Invoice PDF <span style={{ color: '#e8590c' }}>*</span></label>
-                      <input type="file" accept=".pdf" required onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
-                      {billingFile && <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>📎 {billingFile.name}</div>}
-                      {!billingFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>Required — attach your invoice to receive payment</div>}
+                      <input type="file" accept=".pdf" required onChange={e => setBillingFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#6b7280' }} />
+                      {billingFile && <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px' }}>📎 {billingFile.name}</div>}
+                      {!billingFile && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Required — attach your invoice to receive payment</div>}
                     </div>
-                    {sovError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
-                    {submitError && <div style={{ background: '#2a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{submitError}</div>}
+                    {sovError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{sovError}</div>}
+                    {submitError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{submitError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                       <button type="submit" disabled={loading} style={{ ...s.btn, opacity: loading ? 0.6 : 1 }}>{loading ? 'Submitting...' : 'Submit billing'}</button>
                     </div>
@@ -1412,28 +1441,28 @@ export default function Submit() {
                 <div key={c.id} style={s.contractRow}>
                   <div style={s.contractRowHeader} onClick={() => toggleContract(c.id)}>
                     <div>
-                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>
                         #{c.job?.job_number} — {c.job?.project_name}
                       </div>
-                      {c.description && <div style={{ fontSize: '12px', color: '#555', marginTop: '3px' }}>{c.description}</div>}
+                      {c.description && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>{c.description}</div>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Contract</div>
-                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#f1f1f1' }}>${Number(c.contract_value).toLocaleString()}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Contract</div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>${Number(c.contract_value).toLocaleString()}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>COs</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>COs</div>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: Number(c.approved_change_orders) !== 0 ? '#4ade80' : '#333' }}>
                           {Number(c.approved_change_orders) >= 0 ? '+' : ''}${Number(c.approved_change_orders).toLocaleString()}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Revised</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Revised</div>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: '#e8590c' }}>${Number(c.adjusted_contract_value).toLocaleString()}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '11px', color: '#555', marginBottom: '2px' }}>Remaining</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Remaining</div>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#ff6b6b' : '#aaa' }}>
                           ${Number(c.remaining_balance).toLocaleString()}
                         </div>
@@ -1441,16 +1470,16 @@ export default function Submit() {
                       {(() => {
                         const sr = mySigningRequests.find(r => r.subcontract_id === c.id)
                         if (sr?.status === 'signed') return (
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '99px', padding: '3px 10px' }}>✓ Signed</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '99px', padding: '3px 10px' }}>✓ Signed</span>
                         )
                         if (sr) return (
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '99px', padding: '3px 10px' }}>⏳ Awaiting Signature</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#e8590c', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '99px', padding: '3px 10px' }}>⏳ Awaiting Signature</span>
                         )
                         return (
-                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#555', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '99px', padding: '3px 10px' }}>Unsigned</span>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '99px', padding: '3px 10px' }}>Unsigned</span>
                         )
                       })()}
-                      <span style={{ color: '#555', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
+                      <span style={{ color: '#6b7280', fontSize: '16px' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </div>
 
@@ -1461,28 +1490,28 @@ export default function Submit() {
                         return (
                           <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             {sr?.status === 'signed' ? (
-                              <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>
+                              <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '700' }}>
                                 ✓ Contract signed{sr.signed_at ? ` on ${new Date(sr.signed_at).toLocaleDateString()}` : ''}
                               </span>
                             ) : sr ? (
                               <>
-                                <span style={{ fontSize: '12px', color: '#aaa' }}>Contract pending your signature</span>
+                                <span style={{ fontSize: '12px', color: '#4b5563' }}>Contract pending your signature</span>
                                 <a
                                   href={`/sign?token=${sr.token}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  style={{ padding: '7px 18px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '7px', color: '#4ade80', fontSize: '12px', fontWeight: '700', textDecoration: 'none' }}
+                                  style={{ padding: '7px 18px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '7px', color: '#16a34a', fontSize: '12px', fontWeight: '700', textDecoration: 'none' }}
                                 >
                                   Sign Contract
                                 </a>
                               </>
                             ) : (
                               <>
-                                <span style={{ fontSize: '12px', color: '#aaa' }}>No signature on file</span>
+                                <span style={{ fontSize: '12px', color: '#4b5563' }}>No signature on file</span>
                                 <button
                                   onClick={() => initiateSign(c.id)}
                                   disabled={initiatingSignFor === c.id}
-                                  style={{ padding: '7px 18px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '7px', color: '#4ade80', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: initiatingSignFor === c.id ? 0.6 : 1 }}
+                                  style={{ padding: '7px 18px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '7px', color: '#16a34a', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: initiatingSignFor === c.id ? 0.6 : 1 }}
                                 >
                                   {initiatingSignFor === c.id ? 'Preparing…' : 'Sign Contract'}
                                 </button>
@@ -1491,7 +1520,7 @@ export default function Submit() {
                             <button
                               onClick={() => printContract(c.id)}
                               disabled={printingContractFor === c.id}
-                              style={{ padding: '7px 18px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '7px', color: '#60a5fa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: printingContractFor === c.id ? 0.6 : 1 }}
+                              style={{ padding: '7px 18px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '7px', color: '#2563eb', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: printingContractFor === c.id ? 0.6 : 1 }}
                             >
                               {printingContractFor === c.id ? 'Loading…' : 'Print Contract'}
                             </button>
@@ -1500,14 +1529,14 @@ export default function Submit() {
                       })()}
                       {c.onedrive_url && (
                         <div style={{ marginBottom: '1rem' }}>
-                          <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#60a5fa' }}>
+                          <a href={c.onedrive_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '13px', color: '#2563eb' }}>
                             📄 View contract document ↗
                           </a>
                         </div>
                       )}
 
-                      <div style={{ marginBottom: '1.25rem', padding: '14px 16px', background: '#0c0c0c', borderRadius: '10px', border: '1px solid #1e1e1e' }}>
-                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Signed Contract</p>
+                      <div style={{ marginBottom: '1.25rem', padding: '14px 16px', background: '#0c0c0c', borderRadius: '10px', border: '1px solid #e5e7eb' }}>
+                        <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Signed Contract</p>
                         {contractUploadMsg[c.id] && (
                           <div style={{ padding: '8px 12px', borderRadius: '6px', marginBottom: '10px', fontSize: '12px', background: contractUploadMsg[c.id].type === 'err' ? '#2a0a0a' : '#0a2a0a', color: contractUploadMsg[c.id].type === 'err' ? '#ff6b6b' : '#4ade80', border: `1px solid ${contractUploadMsg[c.id].type === 'err' ? '#5a1a1a' : '#1a4a1a'}` }}>
                             {contractUploadMsg[c.id].text}
@@ -1515,19 +1544,19 @@ export default function Submit() {
                         )}
                         {c.signed_contract_url ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Signed document on file</span>
-                            <button onClick={() => viewSignedContract(c.signed_contract_url)} style={{ padding: '6px 14px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '6px', color: '#60a5fa', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                            <span style={{ fontSize: '13px', color: '#16a34a' }}>✓ Signed document on file</span>
+                            <button onClick={() => viewSignedContract(c.signed_contract_url)} style={{ padding: '6px 14px', background: '#0a1a2a', border: '1px solid #1a3a5a', borderRadius: '6px', color: '#2563eb', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
                               View / Download
                             </button>
-                            <label style={{ padding: '6px 14px', background: '#141414', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                            <label style={{ padding: '6px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
                               Replace
                               <input type="file" accept=".pdf,.doc,.docx,.png,.jpg" style={{ display: 'none' }} onChange={e => e.target.files[0] && uploadSignedContract(c.id, e.target.files[0])} disabled={uploadingSignedContract === c.id} />
                             </label>
                           </div>
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '13px', color: '#555' }}>No signed document uploaded yet</span>
-                            <label style={{ padding: '7px 16px', background: '#1a1a0a', border: '1px solid #3a3a1a', borderRadius: '6px', color: '#facc15', fontSize: '12px', fontWeight: '600', cursor: uploadingSignedContract === c.id ? 'not-allowed' : 'pointer', opacity: uploadingSignedContract === c.id ? 0.6 : 1 }}>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>No signed document uploaded yet</span>
+                            <label style={{ padding: '7px 16px', background: '#1a1a0a', border: '1px solid #3a3a1a', borderRadius: '6px', color: '#a16207', fontSize: '12px', fontWeight: '600', cursor: uploadingSignedContract === c.id ? 'not-allowed' : 'pointer', opacity: uploadingSignedContract === c.id ? 0.6 : 1 }}>
                               {uploadingSignedContract === c.id ? 'Uploading…' : '↑ Upload Signed Contract'}
                               <input type="file" accept=".pdf,.doc,.docx,.png,.jpg" style={{ display: 'none' }} onChange={e => e.target.files[0] && uploadSignedContract(c.id, e.target.files[0])} disabled={uploadingSignedContract === c.id} />
                             </label>
@@ -1535,27 +1564,27 @@ export default function Submit() {
                         )}
                       </div>
 
-                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '0.75rem' }}>
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginTop: 0, marginBottom: '0.75rem' }}>
                         Change orders ({cos.length})
                       </p>
                       {cos.length === 0 ? (
-                        <p style={{ fontSize: '13px', color: '#444' }}>No change orders yet.</p>
+                        <p style={{ fontSize: '13px', color: '#6b7280' }}>No change orders yet.</p>
                       ) : cos.map(co => (
                         <div key={co.id}>
                           <div style={s.coRow}>
                             <div style={{ flex: 1 }}>
-                              <span style={{ fontSize: '13px', color: '#aaa' }}>{co.description}</span>
-                              <span style={{ fontSize: '11px', color: '#555', marginLeft: '10px' }}>
+                              <span style={{ fontSize: '13px', color: '#4b5563' }}>{co.description}</span>
+                              <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '10px' }}>
                                 {co.direction === 'pm_to_sub' ? 'NV → You' : 'Your request'} · {new Date(co.created_at).toLocaleDateString()}
                               </span>
                               {co.direction === 'sub_to_pm' && co.status === 'pending' && (
                                 <span style={{ fontSize: '11px', color: '#e8590c', marginLeft: '8px', fontWeight: '700' }}>⏳ Awaiting PM approval</span>
                               )}
                               {co.direction === 'sub_to_pm' && co.status === 'approved' && (
-                                <span style={{ fontSize: '11px', color: '#4ade80', marginLeft: '8px', fontWeight: '700' }}>✓ Approved — added to your SOV</span>
+                                <span style={{ fontSize: '11px', color: '#16a34a', marginLeft: '8px', fontWeight: '700' }}>✓ Approved — added to your SOV</span>
                               )}
                               {co.dispute_reason && (
-                                <div style={{ fontSize: '12px', color: '#ff6b6b', marginTop: '4px' }}>Dispute: {co.dispute_reason}</div>
+                                <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>Dispute: {co.dispute_reason}</div>
                               )}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1568,19 +1597,19 @@ export default function Submit() {
                                   <button
                                     onClick={() => respondCO(co, 'approved')}
                                     disabled={savingCOResponse}
-                                    style={{ padding: '4px 12px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '6px', color: '#4ade80', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                    style={{ padding: '4px 12px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '6px', color: '#16a34a', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
                                   >Approve</button>
                                   <button
                                     onClick={() => { setRespondingCO(co.id); setCoDisputeReason('') }}
-                                    style={{ padding: '4px 12px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', color: '#ff6b6b', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                    style={{ padding: '4px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
                                   >Dispute</button>
                                 </>
                               )}
                             </div>
                           </div>
                           {respondingCO === co.id && (
-                            <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '1rem', margin: '4px 0 8px' }}>
-                              <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#ff6b6b', fontWeight: '700' }}>Dispute reason</p>
+                            <div style={{ background: '#1a0a0a', border: '1px solid #fecaca', borderRadius: '8px', padding: '1rem', margin: '4px 0 8px' }}>
+                              <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#dc2626', fontWeight: '700' }}>Dispute reason</p>
                               <textarea
                                 value={coDisputeReason}
                                 onChange={e => setCoDisputeReason(e.target.value)}
@@ -1592,11 +1621,11 @@ export default function Submit() {
                                 <button
                                   onClick={() => respondCO(co, 'disputed')}
                                   disabled={savingCOResponse || !coDisputeReason.trim()}
-                                  style={{ padding: '7px 16px', background: '#2a0a0a', border: '1px solid #5a1a1a', borderRadius: '6px', color: '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: (!coDisputeReason.trim() || savingCOResponse) ? 0.5 : 1 }}
+                                  style={{ padding: '7px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#dc2626', fontSize: '12px', fontWeight: '700', cursor: 'pointer', opacity: (!coDisputeReason.trim() || savingCOResponse) ? 0.5 : 1 }}
                                 >{savingCOResponse ? 'Submitting...' : 'Submit dispute'}</button>
                                 <button
                                   onClick={() => setRespondingCO(null)}
-                                  style={{ padding: '7px 16px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#888', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                                  style={{ padding: '7px 16px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
                                 >Cancel</button>
                               </div>
                             </div>
@@ -1606,7 +1635,7 @@ export default function Submit() {
 
                       {/* Sub-initiated CO request section */}
                       {coRequestMsg[c.id] && (
-                        <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#4ade80', marginTop: '1rem' }}>
+                        <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#16a34a', marginTop: '1rem' }}>
                           {coRequestMsg[c.id]}
                         </div>
                       )}
@@ -1614,15 +1643,15 @@ export default function Submit() {
                       <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #1e1e1e' }}>
                         {showCORequestFor !== c.id ? (
                           <button
-                            style={{ padding: '8px 18px', background: '#1a1200', border: '1px solid #4a2a00', borderRadius: '7px', color: '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                            style={{ padding: '8px 18px', background: '#1a1200', border: '1px solid #fdba74', borderRadius: '7px', color: '#e8590c', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
                             onClick={() => { setShowCORequestFor(c.id); setCoRequestForm({ description: '', amount: '', notes: '' }) }}
                           >+ Request Change Order</button>
                         ) : (
-                          <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem' }}>
-                            <p style={{ margin: '0 0 1rem', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>New CO Request — Sub → PM</p>
+                          <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '1rem' }}>
+                            <p style={{ margin: '0 0 1rem', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>New CO Request — Sub → PM</p>
                             <form onSubmit={e => submitCORequest(e, c.id)}>
                               <div style={{ marginBottom: '12px' }}>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Description *</label>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Description *</label>
                                 <input
                                   required
                                   style={s.input}
@@ -1632,7 +1661,7 @@ export default function Submit() {
                                 />
                               </div>
                               <div style={{ marginBottom: '12px' }}>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Amount ($) *</label>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Amount ($) *</label>
                                 <input
                                   required
                                   type="number"
@@ -1644,7 +1673,7 @@ export default function Submit() {
                                 />
                               </div>
                               <div style={{ marginBottom: '14px' }}>
-                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Supporting notes</label>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Supporting notes</label>
                                 <textarea
                                   rows={3}
                                   style={{ ...s.input, resize: 'vertical' }}
@@ -1662,7 +1691,7 @@ export default function Submit() {
                                 <button
                                   type="button"
                                   onClick={() => setShowCORequestFor(null)}
-                                  style={{ padding: '9px 18px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '7px', color: '#888', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+                                  style={{ padding: '9px 18px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '7px', color: '#6b7280', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
                                 >Cancel</button>
                               </div>
                             </form>
@@ -1688,22 +1717,22 @@ export default function Submit() {
                 <div key={s2.id} style={{ padding: '14px 0', borderBottom: '1px solid #1e1e1e' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#555', marginTop: '3px' }}>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>#{s2.jobs?.job_number} — {s2.jobs?.project_name}</p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', marginTop: '3px' }}>
                         {new Date(s2.submitted_at).toLocaleDateString()} · {s2.pct_complete ?? '—'}% complete
                         {s2.draw_request_id
-                          ? <span style={{ background: '#2a1200', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>Draw #{s2.draw_request_id.slice(-4)}</span>
-                          : s2.billing_period && <span style={{ background: '#1a2a1a', color: '#4ade80', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
+                          ? <span style={{ background: '#fff7ed', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>Draw #{s2.draw_request_id.slice(-4)}</span>
+                          : s2.billing_period && <span style={{ background: '#1a2a1a', color: '#16a34a', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(s2.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                         }
                       </p>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: '700', fontSize: '15px', color: '#f1f1f1' }}>${s2.amount_billed?.toLocaleString()}</div>
+                        <div style={{ fontWeight: '700', fontSize: '15px', color: '#111827' }}>${s2.amount_billed?.toLocaleString()}</div>
                         {s2.retainage_held > 0 && (
                           <div style={{ fontSize: '11px', marginTop: '2px' }}>
-                            <span style={{ color: '#facc15' }}>Ret: ${Number(s2.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                            <span style={{ color: '#4ade80', marginLeft: '6px' }}>Net: ${(Number(s2.amount_billed) - Number(s2.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#a16207' }}>Ret: ${Number(s2.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            <span style={{ color: '#16a34a', marginLeft: '6px' }}>Net: ${(Number(s2.amount_billed) - Number(s2.retainage_held)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                           </div>
                         )}
                       </div>
@@ -1711,33 +1740,33 @@ export default function Submit() {
                       {s2.status === 'approved' && (
                         <button
                           onClick={() => printLienWaiver(s2)}
-                          style={{ padding: '5px 12px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '6px', color: '#aaa', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
+                          style={{ padding: '5px 12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
                         >🖨 Print Waiver</button>
                       )}
                       {s2.status === 'approved' && !s2.lien_waiver_signed_at && (
                         <button
                           onClick={() => { setLienWaiverSub(s2); setSignerName(profile?.full_name || ''); setHasSigned(false) }}
-                          style={{ padding: '5px 12px', background: '#2a1200', border: '1px solid #4a2200', borderRadius: '6px', color: '#e8590c', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
+                          style={{ padding: '5px 12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '6px', color: '#e8590c', fontSize: '11px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}
                         >✍ Sign Waiver</button>
                       )}
                       {s2.lien_waiver_signed_at && (
-                        <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: '700' }}>✓ Signed {new Date(s2.lien_waiver_signed_at).toLocaleDateString()}</span>
+                        <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: '700' }}>✓ Signed {new Date(s2.lien_waiver_signed_at).toLocaleDateString()}</span>
                       )}
                     </div>
                   </div>
                   {s2.status === 'rejected' && s2.rejection_reason && (
                     <div style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px' }}>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '4px' }}>Rejection reason</p>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#ff6b6b', lineHeight: '1.5' }}>{s2.rejection_reason}</p>
+                      <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700', marginBottom: '4px' }}>Rejection reason</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{s2.rejection_reason}</p>
                     </div>
                   )}
                   {s2.paid_at && (
-                    <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#4ade80', letterSpacing: '0.5px' }}>✓ Payment received</span>
-                      {s2.payment_amount && <span style={{ fontSize: '13px', color: '#4ade80', fontWeight: '700' }}>${Number(s2.payment_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
-                      <span style={{ fontSize: '12px', color: '#4ade80', opacity: 0.7 }}>{new Date(s2.paid_at).toLocaleDateString()}</span>
+                    <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a', letterSpacing: '0.5px' }}>✓ Payment received</span>
+                      {s2.payment_amount && <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '700' }}>${Number(s2.payment_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                      <span style={{ fontSize: '12px', color: '#16a34a', opacity: 0.7 }}>{new Date(s2.paid_at).toLocaleDateString()}</span>
                       {s2.payment_method && <span style={{ fontSize: '11px', color: '#1a5a1a', background: '#0d2e0d', borderRadius: '4px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s2.payment_method}{s2.check_number ? ` #${s2.check_number}` : ''}</span>}
-                      {s2.payment_notes && <span style={{ fontSize: '12px', color: '#4ade80', opacity: 0.6 }}>{s2.payment_notes}</span>}
+                      {s2.payment_notes && <span style={{ fontSize: '12px', color: '#16a34a', opacity: 0.6 }}>{s2.payment_notes}</span>}
                     </div>
                   )}
                 </div>
@@ -1769,58 +1798,58 @@ export default function Submit() {
                     }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{pkg.title}</span>
+                          <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{pkg.title}</span>
                           <span style={s.coBadge(badgeStatus)}>{inv.status}</span>
-                          {isClosed && <span style={{ fontSize: '11px', color: '#555' }}>Bidding closed</span>}
+                          {isClosed && <span style={{ fontSize: '11px', color: '#6b7280' }}>Bidding closed</span>}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#555' }}>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
                           {pkg.due_date ? `Bids due ${new Date(pkg.due_date + 'T00:00:00').toLocaleDateString()}` : 'No due date'}
                           {myBid && ` · Your bid: $${Number(myBid.amount).toLocaleString()}`}
                         </div>
                       </div>
-                      <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                      <span style={{ color: '#6b7280', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                     </div>
 
                     {isExp && (
                       <div style={s.contractRowExpanded}>
-                        {pkg.description && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{pkg.description}</p>}
+                        {pkg.description && <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1rem' }}>{pkg.description}</p>}
 
                         {pkg.scope_of_work && (
-                          <div style={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Scope of work</div>
-                            <div style={{ fontSize: '13px', color: '#aaa', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>{pkg.scope_of_work}</div>
+                          <div style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Scope of work</div>
+                            <div style={{ fontSize: '13px', color: '#4b5563', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>{pkg.scope_of_work}</div>
                           </div>
                         )}
 
                         {/* Plans */}
                         <div style={{ marginBottom: '1.25rem' }}>
-                          <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Plans & documents ({plans.length})</div>
-                          {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#444' }}>No plans uploaded yet.</p> : plans.map(plan => (
-                            <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#111', borderRadius: '6px', marginBottom: '4px' }}>
-                              <span style={{ fontSize: '13px', color: '#ccc' }}>📄 {plan.file_name}</span>
-                              <button style={{ padding: '6px 14px', background: '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }} onClick={() => openPlan(plan.storage_path)}>Open</button>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Plans & documents ({plans.length})</div>
+                          {plans.length === 0 ? <p style={{ fontSize: '13px', color: '#6b7280' }}>No plans uploaded yet.</p> : plans.map(plan => (
+                            <div key={plan.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#f9fafb', borderRadius: '6px', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '13px', color: '#374151' }}>📄 {plan.file_name}</span>
+                              <button style={{ padding: '6px 14px', background: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }} onClick={() => openPlan(plan.storage_path)}>Open</button>
                             </div>
                           ))}
                         </div>
 
                         {/* Bid form or existing bid */}
                         {myBid ? (
-                          <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '1rem' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#4ade80', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Your submitted bid</div>
-                            <div style={{ fontSize: '24px', fontWeight: '800', color: '#4ade80' }}>${Number(myBid.amount).toLocaleString()}</div>
-                            {myBid.notes && <p style={{ fontSize: '13px', color: '#4ade80', opacity: 0.7, margin: '6px 0 0' }}>{myBid.notes}</p>}
+                          <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Your submitted bid</div>
+                            <div style={{ fontSize: '24px', fontWeight: '800', color: '#16a34a' }}>${Number(myBid.amount).toLocaleString()}</div>
+                            {myBid.notes && <p style={{ fontSize: '13px', color: '#16a34a', opacity: 0.7, margin: '6px 0 0' }}>{myBid.notes}</p>}
                             <p style={{ fontSize: '11px', color: '#1a4a1a', margin: '6px 0 0' }}>Submitted {new Date(myBid.submitted_at).toLocaleDateString()}{myBid.status === 'awarded' ? ' · AWARDED' : ''}</p>
                             {myBid.doc_url && (
-                              <button onClick={() => openBidDoc(myBid.doc_url)} style={{ marginTop: '10px', fontSize: '12px', color: '#4ade80', background: 'none', border: '1px solid #1a4a1a', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>
+                              <button onClick={() => openBidDoc(myBid.doc_url)} style={{ marginTop: '10px', fontSize: '12px', color: '#16a34a', background: 'none', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer' }}>
                                 📎 View attached estimate
                               </button>
                             )}
                           </div>
                         ) : isClosed ? (
-                          <p style={{ fontSize: '13px', color: '#555' }}>Bidding is closed for this package.</p>
+                          <p style={{ fontSize: '13px', color: '#6b7280' }}>Bidding is closed for this package.</p>
                         ) : (
-                          <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '1rem' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Submit your bid</div>
+                          <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', padding: '1rem' }}>
+                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '1rem' }}>Submit your bid</div>
                             <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                               <div>
                                 <label style={s.label}>Bid amount ($) *</label>
@@ -1833,8 +1862,8 @@ export default function Submit() {
                             </div>
                             <div style={{ marginBottom: '12px' }}>
                               <label style={s.label}>Attach estimate (optional)</label>
-                              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBidFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#888' }} />
-                              {bidFile && <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>📎 {bidFile.name}</div>}
+                              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" onChange={e => setBidFile(e.target.files[0] || null)} style={{ ...s.input, padding: '8px 14px', cursor: 'pointer', color: '#6b7280' }} />
+                              {bidFile && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>📎 {bidFile.name}</div>}
                             </div>
                             <button
                               style={{ ...s.btn, opacity: submittingBidFor === pkg.id || !bidSubmitForm.amount ? 0.6 : 1 }}
@@ -1858,26 +1887,26 @@ export default function Submit() {
           <div style={s.card}>
             <h2 style={s.cardTitle}>My Documents & Compliance</h2>
             {!dirEntry ? (
-              <p style={{ color: '#555', fontSize: '14px' }}>No directory record found for your account. Contact NV Construction to get set up.</p>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>No directory record found for your account. Contact NV Construction to get set up.</p>
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }} className="rx-grid-2">
                   <div>
-                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>W-9</p>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>W-9</p>
                     {dirEntry.w9_url
-                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>✓ On file</p>
+                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#16a34a' }}>✓ On file</p>
                       : <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c' }}>Not on file</p>}
-                    <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', marginBottom: 0 }}>
+                    <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', marginBottom: 0 }}>
                       {docsW9File ? `📎 ${docsW9File.name}` : dirEntry.w9_url ? 'Replace W-9' : 'Upload W-9'}
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => setDocsW9File(e.target.files[0] || null)} />
                     </label>
                   </div>
                   <div>
-                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase' }}>Certificate of Insurance (COI)</p>
+                    <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Certificate of Insurance (COI)</p>
                     {dirEntry.coi_url
-                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#4ade80' }}>✓ On file</p>
+                      ? <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#16a34a' }}>✓ On file</p>
                       : <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#e8590c' }}>Not on file</p>}
-                    <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', marginBottom: 0 }}>
+                    <label style={{ ...s.label, cursor: 'pointer', display: 'inline-block', padding: '8px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', marginBottom: 0 }}>
                       {docsCoiFile ? `📎 ${docsCoiFile.name}` : dirEntry.coi_url ? 'Replace COI' : 'Upload COI'}
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => setDocsCoiFile(e.target.files[0] || null)} />
                     </label>
@@ -1887,15 +1916,15 @@ export default function Submit() {
                   <label style={s.label}>COI expiration date</label>
                   <input type="date" style={s.input} value={docsCoiExpiry} onChange={e => setDocsCoiExpiry(e.target.value)} />
                   {dirEntry.coi_expiration && !docsCoiExpiry && (
-                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#555' }}>Current: {new Date(dirEntry.coi_expiration).toLocaleDateString()}</p>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280' }}>Current: {new Date(dirEntry.coi_expiration).toLocaleDateString()}</p>
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <button style={{ ...s.btn, opacity: savingDocs ? 0.6 : 1 }} disabled={savingDocs} onClick={saveDocs}>
                     {savingDocs ? 'Saving...' : 'Save documents'}
                   </button>
-                  {docsSaved && <span style={{ fontSize: '13px', color: '#4ade80' }}>✓ Saved — NV Construction can now view your documents.</span>}
-                  {docError && <span style={{ fontSize: '13px', color: '#ff6b6b' }}>{docError}</span>}
+                  {docsSaved && <span style={{ fontSize: '13px', color: '#16a34a' }}>✓ Saved — NV Construction can now view your documents.</span>}
+                  {docError && <span style={{ fontSize: '13px', color: '#dc2626' }}>{docError}</span>}
                 </div>
               </>
             )}
@@ -1908,8 +1937,8 @@ export default function Submit() {
             <h2 style={s.cardTitle}>RFIs (Requests for Information)</h2>
 
             {/* Submit new RFI */}
-            <div style={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem' }}>
-              <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: '1px' }}>Submit new RFI</p>
+            <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '1px' }}>Submit new RFI</p>
               <div style={{ marginBottom: '10px' }}>
                 <label style={s.label}>Project</label>
                 <select style={s.input} value={rfiForm.job_id} onChange={e => setRfiForm(f => ({ ...f, job_id: e.target.value }))}>
@@ -1930,13 +1959,13 @@ export default function Submit() {
                 disabled={submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question}
                 onClick={submitRfi}
               >{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
-              {rfiSuccess && <p style={{ fontSize: '13px', color: '#4ade80', marginTop: '10px', marginBottom: 0 }}>✓ RFI submitted — NV Construction will respond within 1–2 business days.</p>}
-              {rfiError && <p style={{ fontSize: '13px', color: '#ff6b6b', marginTop: '10px', marginBottom: 0 }}>{rfiError}</p>}
+              {rfiSuccess && <p style={{ fontSize: '13px', color: '#16a34a', marginTop: '10px', marginBottom: 0 }}>✓ RFI submitted — NV Construction will respond within 1–2 business days.</p>}
+              {rfiError && <p style={{ fontSize: '13px', color: '#dc2626', marginTop: '10px', marginBottom: 0 }}>{rfiError}</p>}
             </div>
 
             {/* RFI list */}
             {rfis.length === 0 ? (
-              <p style={{ color: '#555', fontSize: '14px' }}>No RFIs submitted yet.</p>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>No RFIs submitted yet.</p>
             ) : rfis.map(rfi => {
               const isExp = expandedRfiId === rfi.id
               const statusColor = rfi.status === 'answered' ? '#4ade80' : rfi.status === 'closed' ? '#555' : '#e8590c'
@@ -1947,28 +1976,28 @@ export default function Submit() {
                   <div style={s.contractRowHeader} onClick={() => setExpandedRfiId(isExp ? null : rfi.id)}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                        {rfi.number && <span style={{ fontSize: '11px', color: '#555', fontWeight: '700' }}>RFI #{rfi.number}</span>}
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{rfi.title || rfi.question?.slice(0, 60)}</span>
+                        {rfi.number && <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: '700' }}>RFI #{rfi.number}</span>}
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title || rfi.question?.slice(0, 60)}</span>
                         <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>{rfi.status}</span>
                       </div>
-                      <div style={{ fontSize: '12px', color: '#555' }}>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>
                         {rfi.jobs?.job_number ? `#${rfi.jobs.job_number} — ${rfi.jobs.project_name}` : ''}{rfi.created_at ? ` · ${new Date(rfi.created_at).toLocaleDateString()}` : ''}
                       </div>
                     </div>
-                    <span style={{ color: '#555', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
+                    <span style={{ color: '#6b7280', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                   </div>
                   {isExp && (
                     <div style={s.contractRowExpanded}>
-                      <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1px' }}>Your question</p>
-                      <p style={{ margin: '0 0 1rem', fontSize: '14px', color: '#ccc', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.question}</p>
+                      <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Your question</p>
+                      <p style={{ margin: '0 0 1rem', fontSize: '14px', color: '#374151', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.question}</p>
                       {rfi.response ? (
-                        <div style={{ background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', padding: '12px 16px' }}>
-                          <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#4ade80', textTransform: 'uppercase', letterSpacing: '1px' }}>Response from NV Construction</p>
-                          <p style={{ margin: 0, fontSize: '14px', color: '#4ade80', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
+                        <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 16px' }}>
+                          <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#16a34a', textTransform: 'uppercase', letterSpacing: '1px' }}>Response from NV Construction</p>
+                          <p style={{ margin: 0, fontSize: '14px', color: '#16a34a', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
                           {rfi.responded_at && <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#1a4a1a' }}>{new Date(rfi.responded_at).toLocaleDateString()}</p>}
                         </div>
                       ) : (
-                        <p style={{ fontSize: '13px', color: '#555', fontStyle: 'italic' }}>Awaiting response from NV Construction.</p>
+                        <p style={{ fontSize: '13px', color: '#6b7280', fontStyle: 'italic' }}>Awaiting response from NV Construction.</p>
                       )}
                     </div>
                   )}
@@ -1984,7 +2013,7 @@ export default function Submit() {
             <h2 style={s.cardTitle}>Messages</h2>
 
             {jobs.length === 0 ? (
-              <p style={{ color: '#555', fontSize: '14px' }}>No active jobs to message about.</p>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>No active jobs to message about.</p>
             ) : (
               <>
                 {jobs.length > 1 && (
@@ -2005,15 +2034,15 @@ export default function Submit() {
                       {/* Message thread */}
                       <div style={{ minHeight: '200px', maxHeight: '400px', overflowY: 'auto', marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {thread.length === 0 ? (
-                          <p style={{ color: '#555', fontSize: '14px', textAlign: 'center', marginTop: '3rem' }}>No messages yet. Send a message to NV Construction below.</p>
+                          <p style={{ color: '#6b7280', fontSize: '14px', textAlign: 'center', marginTop: '3rem' }}>No messages yet. Send a message to NV Construction below.</p>
                         ) : thread.map(msg => {
                           const isMe = msg.sender_role === 'sub'
                           return (
                             <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                               <div style={{ maxWidth: '75%', background: isMe ? '#2a1200' : '#141414', border: `1px solid ${isMe ? '#4a2200' : '#222'}`, borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding: '10px 14px' }}>
                                 {!isMe && <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '0.5px' }}>NV Construction</p>}
-                                <p style={{ margin: 0, fontSize: '14px', color: '#f1f1f1', lineHeight: '1.5' }}>{msg.message}</p>
-                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#555' }}>{new Date(msg.created_at).toLocaleString()}</p>
+                                <p style={{ margin: 0, fontSize: '14px', color: '#111827', lineHeight: '1.5' }}>{msg.message}</p>
+                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>{new Date(msg.created_at).toLocaleString()}</p>
                               </div>
                             </div>
                           )
@@ -2041,7 +2070,7 @@ export default function Submit() {
                 })()}
 
                 {!selectedMessageJob && (
-                  <p style={{ color: '#555', fontSize: '14px' }}>Select a project above to view messages.</p>
+                  <p style={{ color: '#6b7280', fontSize: '14px' }}>Select a project above to view messages.</p>
                 )}
               </>
             )}
@@ -2054,11 +2083,11 @@ export default function Submit() {
             <h2 style={s.cardTitle}>Punch List</h2>
 
             {myPunchItems.length === 0 ? (
-              <p style={{ color: '#555', fontSize: '14px' }}>No punch list items assigned to you.</p>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>No punch list items assigned to you.</p>
             ) : (
               <>
                 {myPunchItems.filter(p => p.status === 'open').length > 0 && (
-                  <div style={{ background: '#2a1200', border: '1px solid #4a2200', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
+                  <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c', fontWeight: '700' }}>
                     {myPunchItems.filter(p => p.status === 'open').length} open item{myPunchItems.filter(p => p.status === 'open').length !== 1 ? 's' : ''} require your attention
                   </div>
                 )}
@@ -2068,20 +2097,20 @@ export default function Submit() {
                   const statusBorder = item.status === 'approved' ? '#1a4a1a' : item.status === 'sub_complete' ? '#1a3a5a' : item.status === 'rejected' ? '#5a1a1a' : '#4a2200'
                   const statusLabel = item.status === 'sub_complete' ? 'Marked complete' : item.status
                   return (
-                    <div key={item.id} style={{ border: '1px solid #1e1e1e', borderRadius: '8px', padding: '1rem 1.25rem', marginBottom: '10px', background: '#0f0f0f' }}>
+                    <div key={item.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem 1.25rem', marginBottom: '10px', background: '#f9fafb' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: item.description ? '8px' : 0 }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f1f1f1' }}>{item.title}</span>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{item.title}</span>
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>{statusLabel}</span>
                           </div>
                           {item.due_date && (
-                            <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</p>
+                            <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</p>
                           )}
                         </div>
                         {item.status === 'open' && (
                           <button
-                            style={{ padding: '7px 16px', background: '#0a2a0a', border: '1px solid #1a4a1a', borderRadius: '8px', color: '#4ade80', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, letterSpacing: '0.5px' }}
+                            style={{ padding: '7px 16px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', color: '#16a34a', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, letterSpacing: '0.5px' }}
                             onClick={async () => {
                               await fetch('/api/punch-list', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id, status: 'sub_complete' }) })
                               await loadMyPunchItems(user.id)
@@ -2089,10 +2118,10 @@ export default function Submit() {
                           >Mark Complete</button>
                         )}
                       </div>
-                      {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#888', lineHeight: '1.6' }}>{item.description}</p>}
+                      {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280', lineHeight: '1.6' }}>{item.description}</p>}
                       {item.notes && (
-                        <div style={{ marginTop: '8px', padding: '8px 12px', background: '#080808', border: '1px solid #1a1a1a', borderRadius: '6px' }}>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>{item.notes}</p>
+                        <div style={{ marginTop: '8px', padding: '8px 12px', background: '#f3f4f6', border: '1px solid #f0f0f0', borderRadius: '6px' }}>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{item.notes}</p>
                         </div>
                       )}
                     </div>
@@ -2110,22 +2139,22 @@ export default function Submit() {
 
             {/* Current members */}
             <div style={{ marginBottom: '2rem' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
                 {teamMembers.length} member{teamMembers.length !== 1 ? 's' : ''}
               </p>
               {teamMembers.length === 0 ? (
-                <p style={{ fontSize: '14px', color: '#555' }}>No other team members yet. Invite someone below.</p>
+                <p style={{ fontSize: '14px', color: '#6b7280' }}>No other team members yet. Invite someone below.</p>
               ) : teamMembers.map(m => {
                 const initials = m.full_name
                   ? m.full_name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
                   : (m.email?.[0] || '?').toUpperCase()
                 const hasLoggedIn = !!m.last_sign_in_at
                 return (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: '#0f0f0f', border: '1px solid #1e1e1e', borderRadius: '10px', marginBottom: '8px' }}>
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', marginBottom: '8px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#1e1e1e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: '#e8590c', flexShrink: 0 }}>{initials}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{m.full_name || m.email || 'Unnamed'}</div>
-                      <div style={{ fontSize: '12px', color: '#555', marginTop: '2px' }}>{m.email}</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{m.full_name || m.email || 'Unnamed'}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{m.email}</div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
                       <div style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', background: hasLoggedIn ? '#0a2a0a' : '#1a1a0a', color: hasLoggedIn ? '#4ade80' : '#888', border: `1px solid ${hasLoggedIn ? '#1a4a1a' : '#2a2a1a'}` }}>
@@ -2141,7 +2170,7 @@ export default function Submit() {
                         </button>
                       )}
                       {m.role && m.role !== 'subcontractor' && (
-                        <div style={{ fontSize: '10px', color: '#444', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.role.replace('sub_', '')}</div>
+                        <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.role.replace('sub_', '')}</div>
                       )}
                     </div>
                   </div>
@@ -2150,21 +2179,21 @@ export default function Submit() {
             </div>
 
             {/* Invite form */}
-            <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '1.5rem' }}>
-              <p style={{ fontSize: '11px', fontWeight: '700', color: '#444', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>Invite a team member</p>
+            <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1.5rem' }}>
+              <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>Invite a team member</p>
               {!teamCompanyId ? (
-                <p style={{ fontSize: '13px', color: '#555' }}>Your account isn't linked to a company yet. Contact your project manager.</p>
+                <p style={{ fontSize: '13px', color: '#6b7280' }}>Your account isn't linked to a company yet. Contact your project manager.</p>
               ) : (
                 <form onSubmit={sendTeamInvite}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Their name</label>
-                      <input style={{ width: '100%', padding: '10px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }}
+                      <input style={{ width: '100%', padding: '10px 12px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#111827', boxSizing: 'border-box', outline: 'none' }}
                         value={teamInviteForm.name} onChange={e => setTeamInviteForm(f => ({ ...f, name: e.target.value }))} placeholder="Jane Smith" />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Their email *</label>
-                      <input type="email" style={{ width: '100%', padding: '10px 12px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '13px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }}
+                      <input type="email" style={{ width: '100%', padding: '10px 12px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px', color: '#111827', boxSizing: 'border-box', outline: 'none' }}
                         value={teamInviteForm.email} onChange={e => setTeamInviteForm(f => ({ ...f, email: e.target.value }))} required placeholder="jane@yourcompany.com" />
                     </div>
                   </div>
@@ -2196,12 +2225,12 @@ export default function Submit() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={s.card}>
                 <h2 style={s.cardTitle}>Upcoming Work</h2>
-                <p style={{ fontSize: '13px', color: '#555', marginTop: '-8px' }}>Your activities scheduled for the next 14 days.</p>
+                <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '-8px' }}>Your activities scheduled for the next 14 days.</p>
               </div>
-              {!myLookaheadLoaded && <div style={{ ...s.card, color: '#555', fontSize: '14px' }}>Loading...</div>}
+              {!myLookaheadLoaded && <div style={{ ...s.card, color: '#6b7280', fontSize: '14px' }}>Loading...</div>}
               {myLookaheadLoaded && sortedDates.length === 0 && (
                 <div style={{ ...s.card, textAlign: 'center', padding: '48px 24px' }}>
-                  <div style={{ fontSize: '14px', color: '#444' }}>No activities scheduled for you in the next 14 days.</div>
+                  <div style={{ fontSize: '14px', color: '#6b7280' }}>No activities scheduled for you in the next 14 days.</div>
                 </div>
               )}
               {sortedDates.map(date => {
@@ -2209,18 +2238,18 @@ export default function Submit() {
                 const dateLabel = new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
                 return (
                   <div key={date} style={s.card}>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '12px', borderBottom: '1px solid #1a1a1a', paddingBottom: '8px' }}>{dateLabel}</div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '12px', borderBottom: '1px solid #f3f4f6', paddingBottom: '8px' }}>{dateLabel}</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {acts.map(act => (
-                        <div key={act.id} style={{ background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px' }}>
+                        <div key={act.id} style={{ background: '#0d0d0d', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1', marginBottom: '4px' }}>{act.description}</div>
-                              {act.location && <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px' }}>{act.location}</div>}
-                              <div style={{ fontSize: '11px', color: '#444' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` · Job #${act.lookaheads.jobs.job_number}` : ''}</div>
+                              <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{act.description}</div>
+                              {act.location && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{act.location}</div>}
+                              <div style={{ fontSize: '11px', color: '#6b7280' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` · Job #${act.lookaheads.jobs.job_number}` : ''}</div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', flexShrink: 0 }}>
-                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#888' }}>👷 {act.manpower} crew</span>}
+                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#6b7280' }}>👷 {act.manpower} crew</span>}
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block' }} />
                                 <span style={{ fontSize: '11px', color: '#666' }}>{mLabel[act.materials_status] || 'No materials'}</span>
@@ -2228,7 +2257,7 @@ export default function Submit() {
                               {act.inspection_required && (
                                 <span style={{ fontSize: '11px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍 Inspection {act.inspection_scheduled ? 'scheduled' : 'required'}</span>
                               )}
-                              {act.committed && <span style={{ fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>✓ Committed</span>}
+                              {act.committed && <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>✓ Committed</span>}
                             </div>
                           </div>
                           {act.equipment && (
@@ -2310,20 +2339,20 @@ export default function Submit() {
 
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, overflowY: 'auto', padding: '20px' }}>
-            <div style={{ maxWidth: '600px', margin: '0 auto', background: '#141414', border: '1px solid #222', borderRadius: '16px', overflow: 'hidden' }}>
-              <div style={{ padding: '24px 28px', borderBottom: '1px solid #222' }}>
+            <div style={{ maxWidth: '600px', margin: '0 auto', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', overflow: 'hidden' }}>
+              <div style={{ padding: '24px 28px', borderBottom: '1px solid #e5e7eb' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <p style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: '800', color: '#f1f1f1' }}>Sign Lien Waiver</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#555' }}>Conditional Waiver and Release on Progress Payment</p>
+                    <p style={{ margin: '0 0 2px', fontSize: '16px', fontWeight: '800', color: '#111827' }}>Sign Lien Waiver</p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>Conditional Waiver and Release on Progress Payment</p>
                   </div>
-                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg(''); setHasSigned(false) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+                  <button onClick={() => { setLienWaiverSub(null); setSignerName(''); setWaiverMsg(''); setHasSigned(false) }} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
                 </div>
               </div>
 
               <div style={{ padding: '20px 28px' }}>
                 {/* Waiver details */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0', border: '1px solid #222', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', fontSize: '13px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', marginBottom: '20px', fontSize: '13px' }}>
                   {[
                     ['Claimant', sub.company_name],
                     ['Hiring Party', 'NV Construction'],
@@ -2333,13 +2362,13 @@ export default function Submit() {
                     ['Through Date', period],
                   ].map(([label, val], i) => (
                     <div key={label} style={{ padding: '10px 14px', borderBottom: i < 4 ? '1px solid #1e1e1e' : 'none', borderRight: i % 2 === 0 ? '1px solid #1e1e1e' : 'none' }}>
-                      <div style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '3px' }}>{label}</div>
+                      <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '3px' }}>{label}</div>
                       <div style={{ color: label === 'Payment Amount' ? '#e8590c' : '#f1f1f1', fontWeight: label === 'Payment Amount' ? '800' : '600' }}>{val}</div>
                     </div>
                   ))}
                 </div>
 
-                <p style={{ fontSize: '11px', color: '#555', lineHeight: '1.7', marginBottom: '20px', padding: '12px 14px', background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px' }}>
+                <p style={{ fontSize: '11px', color: '#6b7280', lineHeight: '1.7', marginBottom: '20px', padding: '12px 14px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   By signing below, I conditionally waive and release any mechanic's lien, stop payment notice, or payment bond right for labor, services, equipment, or materials furnished through the above Through Date, conditioned upon receipt of the above payment amount in good funds.
                 </p>
 
@@ -2347,7 +2376,7 @@ export default function Submit() {
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '600', color: '#666', marginBottom: '6px', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Your full name & title *</label>
                   <input
-                    style={{ width: '100%', padding: '11px 14px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: '14px', color: '#f1f1f1', boxSizing: 'border-box', outline: 'none' }}
+                    style={{ width: '100%', padding: '11px 14px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none' }}
                     value={signerName}
                     onChange={e => setSignerName(e.target.value)}
                     placeholder="John Smith, Owner"
@@ -2358,13 +2387,13 @@ export default function Submit() {
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <label style={{ fontSize: '11px', fontWeight: '600', color: '#666', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Draw your signature *</label>
-                    <button type="button" onClick={clearCanvas} style={{ fontSize: '11px', color: '#888', background: 'none', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}>Clear</button>
+                    <button type="button" onClick={clearCanvas} style={{ fontSize: '11px', color: '#6b7280', background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer' }}>Clear</button>
                   </div>
                   <canvas
                     ref={canvasRef}
                     width={540}
                     height={120}
-                    style={{ width: '100%', height: '120px', background: '#ffffff', border: '1px solid #2a2a2a', borderRadius: '8px', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
+                    style={{ width: '100%', height: '120px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
                     onMouseDown={startDraw}
                     onMouseMove={draw}
                     onMouseUp={endDraw}
@@ -2373,16 +2402,16 @@ export default function Submit() {
                     onTouchMove={draw}
                     onTouchEnd={endDraw}
                   />
-                  <p style={{ fontSize: '11px', color: '#444', marginTop: '5px' }}>Use your mouse or finger to draw your signature above</p>
+                  <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '5px' }}>Use your mouse or finger to draw your signature above</p>
                 </div>
 
-                {waiverMsg && <p style={{ fontSize: '13px', color: '#ff6b6b', marginBottom: '12px' }}>{waiverMsg}</p>}
+                {waiverMsg && <p style={{ fontSize: '13px', color: '#dc2626', marginBottom: '12px' }}>{waiverMsg}</p>}
 
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', paddingTop: '4px' }}>
                   <button
                     type="button"
                     onClick={() => printLienWaiver(sub)}
-                    style={{ padding: '10px 20px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#aaa', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}
+                    style={{ padding: '10px 20px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}
                   >🖨 Print blank form</button>
                   <button
                     type="button"
@@ -2399,4 +2428,5 @@ export default function Submit() {
     </div>
   )
 }
+
 

@@ -388,7 +388,9 @@ export default function Dashboard() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       if (!prof) { router.push('/login'); return }
       if (prof.role === 'super') { router.push('/field'); return }
-      if (prof.role !== 'pm' && prof.role !== 'apm') { router.push('/submit'); return }
+      if (prof.role === 'roofing_rep') { router.push('/roofing'); return }
+      if (prof.role === 'metal_rep') { router.push('/metal-buildings'); return }
+      if (prof.role !== 'pm' && prof.role !== 'apm' && prof.role !== 'admin') { router.push('/submit'); return }
       if (prof.role === 'pm') localStorage.setItem('nvc_pm_session', '1')
       const devRole = localStorage.getItem('nvc_dev_role')
       const effectiveProf = (devRole && prof.role === 'pm') ? { ...prof, role: devRole } : prof
@@ -3074,6 +3076,15 @@ ${estimate.notes ? `
               {badge ? <span className="nv-badge-pulse" style={s.navBadge}>{badge}</span> : null}
             </button>
           ))}
+          <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.18)', letterSpacing: '2px', textTransform: 'uppercase', padding: '16px 1.25rem 6px', fontWeight: '700' }}>Divisions</div>
+          <a href="/roofing" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Commercial Roofing
+          </a>
+          <a href="/metal-buildings" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 1.25rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+            Metal Buildings
+          </a>
         </div>
         <div style={s.sidebarBottom}>
           <button style={s.sidebarSignOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>

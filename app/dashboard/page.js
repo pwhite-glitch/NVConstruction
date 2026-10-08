@@ -1811,9 +1811,8 @@ export default function Dashboard() {
       setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
       setEstimateLines([{ description: '', amount: '', scope: '' }])
       await loadEstimates()
-      // Open workspace for the newly created estimate
-      const { data: fresh } = await supabase.from('estimates').select('*, estimate_line_items(*)').eq('id', est.id).single()
-      if (fresh) setOpenEstimate(fresh)
+      // Navigate to the dedicated estimate workspace
+      if (est?.id) router.push('/estimate/' + est.id)
     }
     setSavingEstimate(false)
   }
@@ -5347,8 +5346,8 @@ ${estimate.notes ? `
 
                   return (
                     <div key={pkg.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
-                      <button type="button" className="est-package-row" hidden={isExp} style={{ display: isExp ? 'none' : 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', background: '#ffffff', cursor: 'pointer' }}
-                        onClick={() => { setExpandedBid(pkg.id); setBidWorkspaceStep('plans'); loadBidDetail(pkg.id); loadScopeItems(pkg.id) }}>
+                      <button type="button" className="est-package-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', background: '#ffffff', cursor: 'pointer', width: '100%', border: 'none', textAlign: 'left' }}
+                        onClick={() => router.push('/bid/' + pkg.id)}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{pkg.title}</span>
@@ -5361,7 +5360,7 @@ ${estimate.notes ? `
                             {submissions.length > 0 && ` · ${submissions.length} bid${submissions.length !== 1 ? 's' : ''} received`}
                           </div>
                         </div>
-                        <span style={{ color: '#6b7280', fontSize: '13px' }}>Open workspace →</span>
+                        <span style={{ color: '#e8590c', fontSize: '13px', fontWeight: '600' }}>Open workspace →</span>
                       </button>
 
                       {isExp && (
@@ -6472,22 +6471,6 @@ ${estimate.notes ? `
 
             {/* ── ESTIMATES (inside Estimator) ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'estimates' && (
-              openEstimate ? (
-                <EstimateWorkspace
-                  estimate={openEstimate}
-                  profile={profile}
-                  generatePDF={generateEstimatePDF}
-                  onBack={() => setOpenEstimate(null)}
-                  onUpdated={updated => {
-                    setEstimates(prev => prev.map(e => e.id === updated.id ? updated : e))
-                    setOpenEstimate(updated)
-                  }}
-                  onDeleted={id => {
-                    setEstimates(prev => prev.filter(e => e.id !== id))
-                    setOpenEstimate(null)
-                  }}
-                />
-              ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} — won/lost are in Archive</p>
@@ -6628,7 +6611,7 @@ ${estimate.notes ? `
 
                 <EstimatorHome
                   estimates={estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status))}
-                  onOpen={(est) => setOpenEstimate(est)}
+                  onOpen={(est) => router.push('/estimate/' + est.id)}
                 />
 
                 {false && estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).map(est => {
@@ -6945,7 +6928,6 @@ ${estimate.notes ? `
                   )
                 })}
               </>
-              )
             )}
 
             {/* ── ESTIMATOR ARCHIVE ── */}

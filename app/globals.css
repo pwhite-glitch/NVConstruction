@@ -67,11 +67,76 @@ textarea:focus {
 /* ── Navigation sidebar ───────────────────────────────────────────────────── */
 .rx-sidebar {
   background: var(--nv-nav-bg) !important;
-  border-right: 1px solid rgba(0,0,0,0.2) !important;
+  border: 1px solid rgba(0,0,0,0.25) !important;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .rx-sidebar::-webkit-scrollbar { display: none; }
+
+/* Section group headings inside the dark sidebar */
+.rx-sidebar-group {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.28);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 0 8px;
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+/* Tab buttons inside the dark sidebar */
+.rx-sidebar-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  margin-bottom: 1px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  color: var(--nv-nav-text);    /* rgba(255,255,255,0.65) */
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.rx-sidebar-btn:hover {
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.9);
+}
+.rx-sidebar-btn:focus-visible {
+  outline: 2px solid var(--nv-orange);
+  outline-offset: -2px;
+}
+.rx-sidebar-btn.rx-active {
+  background: var(--nv-nav-item-active);   /* rgba(232,89,12,0.14) */
+  border-left-color: var(--nv-orange);
+  color: var(--nv-nav-text-active);        /* #ffffff */
+  font-weight: 600;
+}
+
+/* Badges inside the dark sidebar */
+.rx-sidebar-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.45);
+  border: 1px solid rgba(255,255,255,0.1);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rx-sidebar-badge-alert {
+  background: rgba(232,89,12,0.18);
+  color: #fb923c;
+  border-color: rgba(232,89,12,0.28);
+}
 
 /* Bottom nav ── hidden on desktop, shown on mobile */
 .rx-bottom-nav {

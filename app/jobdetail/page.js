@@ -259,6 +259,21 @@ function JobDetailInner() {
   const [dcAmountMax, setDcAmountMax] = useState('')
   const [dcStatusFilter, setDcStatusFilter] = useState('all')
 
+  // Owner Reimbursements state
+  const [reimbInvoices, setReimbInvoices] = useState([])
+  const [reimbLoaded, setReimbLoaded] = useState(false)
+  const [reimbLoading, setReimbLoading] = useState(false)
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false)
+  const [invoiceForm, setInvoiceForm] = useState({ invoice_number: '', bill_to_name: '', bill_to_address: '', issue_date: '', due_date: '', notes: '', markup_pct: '0' })
+  const [invoiceSelectedCosts, setInvoiceSelectedCosts] = useState({})
+  const [savingInvoice, setSavingInvoice] = useState(false)
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState(null)
+  const [reimbPaymentForm, setReimbPaymentForm] = useState({ invoice_id: '', received_date: new Date().toISOString().split('T')[0], amount: '', payment_method: '', reference: '', notes: '' })
+  const [savingReimbPayment, setSavingReimbPayment] = useState(false)
+  const [showPaymentFormId, setShowPaymentFormId] = useState(null)
+  const [reimbMsg, setReimbMsg] = useState('')
+  const [reimbErr, setReimbErr] = useState('')
+
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
   const [expandedCompanyKey, setExpandedCompanyKey] = useState(null)
@@ -302,7 +317,7 @@ function JobDetailInner() {
   const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
 
@@ -816,6 +831,19 @@ function JobDetailInner() {
     }
   }
 
+  async function loadReimbursements() {
+    if (reimbLoading) return
+    setReimbLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch(`/api/owner-reimb-invoices?job_id=${id}`, { headers: { Authorization: `Bearer ${token}` } })
+      const json = await res.json()
+      if (!json.error) { setReimbInvoices(json.invoices || []); setReimbLoaded(true) }
+    } catch (err) { console.error('loadReimbursements:', err) }
+    setReimbLoading(false)
+  }
+
   async function loadGeneralConditions() {
     const res = await fetch(`/api/general-conditions?job_id=${id}`)
     const json = await res.json()
@@ -862,6 +890,8 @@ function JobDetailInner() {
         notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
         assigned_to: dcForm.assigned_to || currentUserName || null,
         status: userRole === 'apm' ? 'pending' : 'approved',
+        bill_to_owner: dcForm.bill_to_owner || false,
+        owner_auth_ref: dcForm.owner_auth_ref || null,
       }
       let res, json
       if (dcFile) {
@@ -874,7 +904,7 @@ function JobDetailInner() {
       }
       json = await res.json()
       if (json.error) { setErrMsg('Failed to save: ' + json.error); setTimeout(() => setErrMsg(''), 6000); setSubmittingDc(false); return }
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '' })
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -1843,6 +1873,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
     if (activeTab === 'overview') loadOverviewSummary()
     if (activeTab === 'prelim') { loadPrelimNotices() }
+    if (activeTab === 'reimb') { loadReimbursements(); loadDirectCosts() }
     if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
@@ -4892,7 +4923,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
 
           {/* Left sidebar nav */}
-          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
+          <aside className="rx-sidebar" style={{ width: '196px', flexShrink: 0, position: 'sticky', top: '80px', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
             {[
               {
                 group: 'Project',
@@ -4921,6 +4952,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'cashflow', label: 'Cash Flow' },
                   { key: 'retainage', label: 'Retainage' },
                   { key: 'prelim', label: 'Lien Log', badge: prelimNotices.filter(n => n.status === 'active').length > 0 ? prelimNotices.filter(n => n.status === 'active').length : null, alert: prelimNotices.filter(n => n.status === 'active').length > 0 },
+                  { key: 'reimb', label: 'Reimbursements', badge: reimbInvoices.filter(i => i.isOverdue).length > 0 ? `${reimbInvoices.filter(i => i.isOverdue).length} overdue` : reimbInvoices.length > 0 ? reimbInvoices.length : null, alert: reimbInvoices.filter(i => i.isOverdue).length > 0 },
                 ],
               },
               {
@@ -4945,37 +4977,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               },
             ].map(({ group, items }) => (
               <div key={group} style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '4px' }}>{group}</div>
+                <div className="rx-sidebar-group">{group}</div>
                 {items.map(({ key, label, badge, alert }) => {
                   const active = activeTab === key
                   return (
                     <button
                       key={key}
+                      className={`rx-sidebar-btn${active ? ' rx-active' : ''}`}
                       onClick={() => setActiveTab(key)}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        width: '100%', padding: '7px 10px', marginBottom: '1px',
-                        background: active ? 'rgba(232,89,12,0.09)' : 'transparent',
-                        border: 'none',
-                        borderLeft: active ? '2px solid #e8590c' : '2px solid transparent',
-                        borderRadius: '6px',
-                        color: active ? '#c2410c' : '#374151',
-                        fontSize: '13px', fontWeight: active ? '600' : '400',
-                        cursor: 'pointer', textAlign: 'left',
-                        transition: 'color 0.1s',
-                      }}
-                      onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#f3f4f6'; e.currentTarget.style.color = '#111827' } }}
-                      onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#374151' } }}
                     >
                       <span>{label}</span>
                       {badge ? (
-                        <span style={{
-                          fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px',
-                          background: alert ? '#fff7ed' : '#f3f4f6',
-                          color: alert ? '#c2410c' : '#6b7280',
-                          border: `1px solid ${alert ? '#fed7aa' : '#e5e7eb'}`,
-                          letterSpacing: '0.3px', whiteSpace: 'nowrap',
-                        }}>{badge}</span>
+                        <span className={`rx-sidebar-badge${alert ? ' rx-sidebar-badge-alert' : ''}`}>{badge}</span>
                       ) : null}
                     </button>
                   )
@@ -5009,6 +5022,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <option value="cashflow">Cash Flow</option>
             <option value="retainage">Retainage</option>
             <option value="prelim">Lien Log</option>
+            <option value="reimb">Reimbursements</option>
           </optgroup>
           <optgroup label="Field">
             <option value="field">Field Reports</option>
@@ -9100,6 +9114,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                     </div>
+                    {(userRole === 'pm' || userRole === 'admin' || userRole === 'super') && (
+                      <div style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={dcForm.bill_to_owner} onChange={e => setDcForm(f => ({ ...f, bill_to_owner: e.target.checked }))} />
+                          <span style={{ fontSize: '13px', color: '#374151' }}>Bill separately to owner (owner reimbursement)</span>
+                        </label>
+                        {dcForm.bill_to_owner && (
+                          <div>
+                            <label style={s.label}>Owner authorization / reference</label>
+                            <input style={s.input} value={dcForm.owner_auth_ref} onChange={e => setDcForm(f => ({ ...f, owner_auth_ref: e.target.value }))} placeholder="Email thread, approval ref, PO#..." />
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div style={{ marginBottom: '1.25rem' }}>
                       <label style={s.label}>Receipt (photo / PDF)</label>
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
@@ -12735,6 +12763,468 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
           </div>
         )}
+
+        {/* ── OWNER REIMBURSEMENTS TAB ── */}
+        {activeTab === 'reimb' && (() => {
+          const fmtC = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+          const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+          const unbilledCosts = directCosts.filter(c => c.bill_to_owner && !c.billing_route)
+          const billedCosts = directCosts.filter(c => c.bill_to_owner && c.billing_route === 'reimbursement')
+          const totalUnbilled = unbilledCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+          const totalInvoiced = reimbInvoices.filter(i => i.status !== 'voided').reduce((a, i) => a + (i.totalBilled || 0), 0)
+          const totalCollected = reimbInvoices.filter(i => i.status !== 'voided').reduce((a, i) => a + (i.totalPaid || 0), 0)
+          const totalOutstanding = reimbInvoices.filter(i => !['voided','paid'].includes(i.status)).reduce((a, i) => a + (i.outstanding || 0), 0)
+          const overdueCount = reimbInvoices.filter(i => i.isOverdue).length
+
+          const statusColors = {
+            draft: { bg: '#f3f4f6', color: '#6b7280' },
+            issued: { bg: '#eff6ff', color: '#1d4ed8' },
+            partially_paid: { bg: '#fef3c7', color: '#92400e' },
+            paid: { bg: '#dcfce7', color: '#166534' },
+            overdue: { bg: '#fee2e2', color: '#991b1b' },
+            voided: { bg: '#f3f4f6', color: '#9ca3af' },
+          }
+
+          async function createInvoice(e) {
+            e.preventDefault()
+            if (Object.keys(invoiceSelectedCosts).filter(k => invoiceSelectedCosts[k]).length === 0) {
+              setReimbErr('Select at least one expense to include.'); return
+            }
+            setSavingInvoice(true); setReimbErr('')
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const selectedIds = Object.keys(invoiceSelectedCosts).filter(k => invoiceSelectedCosts[k])
+            const lines = selectedIds.map(dcId => {
+              const dc = unbilledCosts.find(c => c.id === dcId)
+              if (!dc) return null
+              const markup = parseFloat(invoiceForm.markup_pct) || 0
+              const billedAmt = dc.amount * (1 + markup / 100)
+              return {
+                direct_cost_id: dcId,
+                description: dc.description,
+                expense_date: dc.cost_date,
+                vendor: dc.assigned_to || '',
+                expense_amount: dc.amount,
+                markup_pct: markup,
+                billed_amount: Math.round(billedAmt * 100) / 100,
+              }
+            }).filter(Boolean)
+
+            const body = {
+              job_id: id,
+              invoice_number: invoiceForm.invoice_number,
+              bill_to_name: invoiceForm.bill_to_name,
+              bill_to_address: invoiceForm.bill_to_address,
+              issue_date: invoiceForm.issue_date,
+              due_date: invoiceForm.due_date || null,
+              notes: invoiceForm.notes,
+              markup_pct: parseFloat(invoiceForm.markup_pct) || 0,
+              lines,
+            }
+            const res = await fetch('/api/owner-reimb-invoices', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(body),
+            })
+            const json = await res.json()
+            if (json.error) { setReimbErr(json.error); setSavingInvoice(false); return }
+            setReimbMsg('Invoice created.'); setTimeout(() => setReimbMsg(''), 5000)
+            setShowCreateInvoice(false)
+            setInvoiceSelectedCosts({})
+            setInvoiceForm({ invoice_number: '', bill_to_name: '', bill_to_address: '', issue_date: '', due_date: '', notes: '', markup_pct: '0' })
+            await loadReimbursements(); await loadDirectCosts()
+            setSavingInvoice(false)
+          }
+
+          async function issueInvoice(invId) {
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const res = await fetch(`/api/owner-reimb-invoices/${invId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ action: 'issue' }),
+            })
+            const json = await res.json()
+            if (json.error) { setReimbErr(json.error); return }
+            await loadReimbursements()
+          }
+
+          async function voidInvoice(invId) {
+            const reason = window.prompt('Void reason (optional):')
+            if (reason === null) return
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const res = await fetch(`/api/owner-reimb-invoices/${invId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ action: 'void', void_reason: reason }),
+            })
+            const json = await res.json()
+            if (json.error) { setReimbErr(json.error); return }
+            await loadReimbursements()
+          }
+
+          async function recordPayment(e) {
+            e.preventDefault()
+            setSavingReimbPayment(true); setReimbErr('')
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const res = await fetch('/api/owner-reimb-payments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(reimbPaymentForm),
+            })
+            const json = await res.json()
+            if (json.error) { setReimbErr(json.error); setSavingReimbPayment(false); return }
+            setReimbMsg('Payment recorded.'); setTimeout(() => setReimbMsg(''), 5000)
+            setShowPaymentFormId(null)
+            setReimbPaymentForm({ invoice_id: '', received_date: new Date().toISOString().split('T')[0], amount: '', payment_method: '', reference: '', notes: '' })
+            await loadReimbursements()
+            setSavingReimbPayment(false)
+          }
+
+          function generateReimbPDF(inv) {
+            const w = window.open('', '_blank')
+            if (!w) { alert('Allow popups to generate PDF.'); return }
+            const lines = inv.owner_reimb_invoice_lines || []
+            const payments = (inv.owner_reimb_payments || []).filter(p => !p.voided)
+            const totalBilled = lines.reduce((a, l) => a + Number(l.billed_amount || 0), 0)
+            const totalPaid = payments.reduce((a, p) => a + Number(p.amount || 0), 0)
+            const outstanding = totalBilled - totalPaid
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Invoice ${esc(inv.invoice_number)}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+@page { size: letter; margin: 0.5in; }
+body { font-family: Arial, sans-serif; font-size: 10px; color: #111; }
+.no-print { padding: 10px; background: #111; display: flex; gap: 8px; }
+.btn { padding: 7px 16px; background: #e8590c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 700; }
+.btn-sec { padding: 7px 12px; background: transparent; color: #aaa; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 11px; }
+@media print { .no-print { display: none !important; } }
+.header { background: #111; color: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+.co { font-size: 13px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
+.co-sub { font-size: 8px; color: #666; margin-top: 3px; }
+.inv-type { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; text-align: right; }
+.inv-num { font-size: 13px; font-weight: 800; color: #fff; text-align: right; margin-top: 3px; }
+.inv-date { font-size: 8px; color: #666; text-align: right; margin-top: 4px; }
+.rule { height: 2px; background: #e8590c; }
+.body { padding: 20px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.section-label { font-size: 8px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #e8590c; margin-bottom: 6px; }
+.bill-to-name { font-size: 12px; font-weight: 700; }
+.bill-to-addr { font-size: 10px; color: #555; line-height: 1.5; margin-top: 2px; }
+table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 16px; }
+th { padding: 5px 8px; background: #f4f4f4; border: 1px solid #ddd; font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; text-align: left; font-weight: 800; }
+th.r { text-align: right; }
+td { padding: 6px 8px; border: 1px solid #eee; vertical-align: top; }
+td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tfoot td { font-weight: 700; border-top: 2px solid #111; background: #f9f9f9; }
+tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.due-row td { font-size: 13px; font-weight: 800; border-top: 2px solid #111; background: #1a1a1a; color: #fff; }
+.due-row td.r { font-size: 13px; font-weight: 800; color: #fff; }
+.notes-box { background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; padding: 10px 12px; font-size: 10px; line-height: 1.6; color: #555; margin-bottom: 16px; }
+.foot { margin-top: 20px; font-size: 8px; color: #bbb; border-top: 1px solid #eee; padding-top: 8px; display: flex; justify-content: space-between; }
+</style></head><body>
+<div class="no-print">
+  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+  <button class="btn-sec" onclick="window.close()">Close</button>
+</div>
+<div class="header">
+  <div>
+    <div class="co">NV Construction, LLC</div>
+    <div class="co-sub">General Contractor &nbsp;·&nbsp; management@nvim.co &nbsp;·&nbsp; nvim.co</div>
+  </div>
+  <div>
+    <div class="inv-type">Reimbursement Invoice</div>
+    <div class="inv-num">${esc(inv.invoice_number)}</div>
+    <div class="inv-date">Issue: ${fmtD(inv.issue_date)}${inv.due_date ? ' &nbsp;·&nbsp; Due: ' + fmtD(inv.due_date) : ''}</div>
+  </div>
+</div>
+<div class="rule"></div>
+<div class="body">
+  <div class="two-col">
+    <div>
+      <div class="section-label">Bill To</div>
+      <div class="bill-to-name">${esc(inv.bill_to_name)}</div>
+      ${inv.bill_to_address ? `<div class="bill-to-addr">${esc(inv.bill_to_address).replace(/\n/g, '<br>')}</div>` : ''}
+    </div>
+    <div>
+      <div class="section-label">Project</div>
+      <div class="bill-to-name">${esc(job?.project_name || '')}</div>
+      <div class="bill-to-addr">Job #${esc(String(job?.job_number || ''))}</div>
+    </div>
+  </div>
+  ${inv.notes ? `<div class="notes-box">${esc(inv.notes)}</div>` : ''}
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Description</th><th>Vendor / Reference</th>
+      <th class="r">Expense</th><th class="r">Markup</th><th class="r">Billed</th>
+    </tr></thead>
+    <tbody>
+      ${lines.map(l => `<tr>
+        <td style="white-space:nowrap">${fmtD(l.expense_date)}</td>
+        <td>${esc(l.description)}</td>
+        <td>${esc(l.vendor || '')}</td>
+        <td class="r">${fmtC(l.expense_amount)}</td>
+        <td class="r">${l.markup_pct ? l.markup_pct + '%' : '—'}</td>
+        <td class="r">${fmtC(l.billed_amount)}</td>
+      </tr>`).join('')}
+    </tbody>
+    <tfoot>
+      <tr><td colspan="5">Total Due</td><td class="r">${fmtC(totalBilled)}</td></tr>
+      ${totalPaid > 0 ? `<tr><td colspan="5">Payments Received</td><td class="r">(${fmtC(totalPaid)})</td></tr>` : ''}
+      <tr class="due-row"><td colspan="5">Balance Due</td><td class="r">${fmtC(outstanding)}</td></tr>
+    </tfoot>
+  </table>
+  ${payments.length > 0 ? `
+  <div class="section-label" style="margin-bottom:6px">Payment History</div>
+  <table>
+    <thead><tr><th>Date</th><th>Method</th><th>Reference</th><th class="r">Amount</th></tr></thead>
+    <tbody>${payments.map(p => `<tr><td>${fmtD(p.received_date)}</td><td>${esc(p.payment_method || '—')}</td><td>${esc(p.reference || '—')}</td><td class="r">${fmtC(p.amount)}</td></tr>`).join('')}</tbody>
+  </table>` : ''}
+  <div class="foot">
+    <span>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; This is not an official AIA document.</span>
+    <span>Invoice ${esc(inv.invoice_number)} &nbsp;·&nbsp; ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+  </div>
+</div></body></html>`
+            w.document.write(html)
+            w.document.close()
+            return html
+          }
+
+          async function exportReimbZip(inv) {
+            const invHtml = generateReimbPDF(inv)
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            const res = await fetch('/api/owner-reimb-export', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ invoiceId: inv.id, invoiceHtml: invHtml }),
+            })
+            if (!res.ok) { const j = await res.json(); setReimbErr(j.error || 'Export failed'); return }
+            const blob = await res.blob()
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url; a.download = `Reimb_${inv.invoice_number.replace(/[^a-zA-Z0-9]+/g, '_')}.zip`
+            document.body.appendChild(a); a.click(); document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+          }
+
+          return (
+            <>
+              {/* Summary strip */}
+              <div style={s.statRow} className="rx-stats">
+                <div style={s.statCard}><div style={s.statLabel}>Unbilled expenses</div><div style={s.statValue('#e8590c')}>{fmtC(totalUnbilled)}</div><div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{unbilledCosts.length} item{unbilledCosts.length !== 1 ? 's' : ''}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total invoiced</div><div style={s.statValue()}>{fmtC(totalInvoiced)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Outstanding</div><div style={s.statValue(totalOutstanding > 0 ? '#d97706' : undefined)}>{fmtC(totalOutstanding)}</div>{overdueCount > 0 && <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>{overdueCount} overdue</div>}</div>
+                <div style={s.statCard}><div style={s.statLabel}>Collected</div><div style={s.statValue('#16a34a')}>{fmtC(totalCollected)}</div></div>
+              </div>
+
+              {reimbMsg && <p style={{ color: '#16a34a', fontSize: '13px', marginBottom: '12px' }}>{reimbMsg}</p>}
+              {reimbErr && <p style={{ color: '#dc2626', fontSize: '13px', marginBottom: '12px' }}>{reimbErr}</p>}
+
+              {/* Unbilled expenses */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Unbilled Reimbursable Expenses ({unbilledCosts.length})</p>
+                  {unbilledCosts.length > 0 && (
+                    <button style={s.btnSmallOrange} onClick={() => { setShowCreateInvoice(v => !v); setInvoiceSelectedCosts({}); setInvoiceForm(f => ({ ...f, bill_to_name: job?.owner_company || job?.owner_name || '', issue_date: new Date().toISOString().split('T')[0] })) }}>
+                      {showCreateInvoice ? 'Cancel' : '+ Create Invoice'}
+                    </button>
+                  )}
+                </div>
+                {unbilledCosts.length === 0 ? (
+                  <p style={{ color: '#6b7280', fontSize: '13px' }}>No unbilled reimbursable expenses. Flag direct costs as "Bill to owner" when logging costs, or check the Direct Costs tab.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {unbilledCosts.map(dc => (
+                      <div key={dc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                        {showCreateInvoice && (
+                          <input type="checkbox" checked={!!invoiceSelectedCosts[dc.id]} onChange={e => setInvoiceSelectedCosts(prev => ({ ...prev, [dc.id]: e.target.checked }))} style={{ flexShrink: 0 }} />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '500', color: '#111827' }}>{dc.description}</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>{fmtD(dc.cost_date)}{dc.category ? ` · ${dc.category}` : ''}{dc.owner_auth_ref ? ` · Auth: ${dc.owner_auth_ref}` : ''}</div>
+                        </div>
+                        <div style={{ fontWeight: '700', color: '#e8590c', whiteSpace: 'nowrap', fontSize: '13px' }}>{fmtC(dc.amount)}</div>
+                        <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '99px', background: dc.status === 'approved' ? '#dcfce7' : '#fff7ed', color: dc.status === 'approved' ? '#166534' : '#92400e', border: `1px solid ${dc.status === 'approved' ? '#bbf7d0' : '#fde68a'}`, whiteSpace: 'nowrap' }}>{dc.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Create invoice form */}
+                {showCreateInvoice && (
+                  <form onSubmit={createInvoice} style={{ ...s.inlineForm, border: '1px solid #fed7aa', marginTop: '1rem' }}>
+                    <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>New Reimbursement Invoice</p>
+                    <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
+                      <div><label style={s.label}>Invoice # *</label><input style={s.input} required value={invoiceForm.invoice_number} onChange={e => setInvoiceForm(f => ({ ...f, invoice_number: e.target.value }))} placeholder="REIMB-2024-001" /></div>
+                      <div><label style={s.label}>Issue Date *</label><input type="date" style={s.input} required value={invoiceForm.issue_date} onChange={e => setInvoiceForm(f => ({ ...f, issue_date: e.target.value }))} /></div>
+                      <div><label style={s.label}>Due Date</label><input type="date" style={s.input} value={invoiceForm.due_date} onChange={e => setInvoiceForm(f => ({ ...f, due_date: e.target.value }))} /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                      <div><label style={s.label}>Bill To (Name) *</label><input style={s.input} required value={invoiceForm.bill_to_name} onChange={e => setInvoiceForm(f => ({ ...f, bill_to_name: e.target.value }))} /></div>
+                      <div><label style={s.label}>Bill To (Address)</label><input style={s.input} value={invoiceForm.bill_to_address} onChange={e => setInvoiceForm(f => ({ ...f, bill_to_address: e.target.value }))} placeholder="Optional — appears on PDF" /></div>
+                    </div>
+                    <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                      <div><label style={s.label}>Markup % (optional)</label><input type="number" step="0.01" min="0" max="100" style={s.input} value={invoiceForm.markup_pct} onChange={e => setInvoiceForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" /></div>
+                      <div><label style={s.label}>Notes</label><input style={s.input} value={invoiceForm.notes} onChange={e => setInvoiceForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes on invoice..." /></div>
+                    </div>
+                    <p style={{ fontSize: '12px', color: '#92400e', marginBottom: '12px' }}>
+                      {Object.values(invoiceSelectedCosts).filter(Boolean).length} of {unbilledCosts.length} expense{unbilledCosts.length !== 1 ? 's' : ''} selected.
+                      {parseFloat(invoiceForm.markup_pct) > 0 && ` Markup of ${invoiceForm.markup_pct}% applied to each line.`}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="submit" disabled={savingInvoice} style={{ ...s.btn, opacity: savingInvoice ? 0.6 : 1 }}>{savingInvoice ? 'Saving...' : 'Save as Draft'}</button>
+                      <button type="button" style={s.btnGray} onClick={() => { setShowCreateInvoice(false); setInvoiceSelectedCosts({}) }}>Cancel</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Invoice list */}
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Reimbursement Invoices ({reimbInvoices.filter(i => i.status !== 'voided').length})</p>
+                </div>
+                {reimbLoading && <p style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</p>}
+                {!reimbLoading && reimbInvoices.length === 0 && (
+                  <p style={{ color: '#6b7280', fontSize: '13px' }}>No reimbursement invoices yet. Create one from unbilled expenses above.</p>
+                )}
+                {reimbInvoices.map(inv => {
+                  const isExpanded = expandedInvoiceId === inv.id
+                  const sc = statusColors[inv.status] || statusColors.draft
+                  const lines = inv.owner_reimb_invoice_lines || []
+                  const payments = (inv.owner_reimb_payments || []).filter(p => !p.voided)
+                  return (
+                    <div key={inv.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
+                      {/* Invoice header row */}
+                      <button
+                        onClick={() => setExpandedInvoiceId(isExpanded ? null : inv.id)}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', background: isExpanded ? '#f9fafb' : '#fff', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                      >
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827', flex: 1 }}>#{inv.invoice_number}</span>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtD(inv.issue_date)}</span>
+                        {inv.due_date && <span style={{ fontSize: '11px', color: inv.isOverdue ? '#dc2626' : '#6b7280' }}>Due {fmtD(inv.due_date)}</span>}
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827', minWidth: '90px', textAlign: 'right' }}>{fmtC(inv.totalBilled)}</span>
+                        <span style={{ fontSize: '10px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: sc.bg, color: sc.color, border: `1px solid ${sc.color}30`, whiteSpace: 'nowrap' }}>
+                          {inv.status.replace('_', ' ').toUpperCase()}
+                        </span>
+                        <span style={{ color: '#9ca3af', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
+                      </button>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <div style={{ padding: '14px 16px', borderTop: '1px solid #e5e7eb', background: '#fafafa' }}>
+                          {/* Bill-to info */}
+                          <div style={{ display: 'flex', gap: '20px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                            <div><span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Bill To</span><div style={{ fontSize: '13px', fontWeight: '600' }}>{inv.bill_to_name}</div>{inv.bill_to_address && <div style={{ fontSize: '11px', color: '#6b7280' }}>{inv.bill_to_address}</div>}</div>
+                            <div><span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Outstanding</span><div style={{ fontSize: '13px', fontWeight: '700', color: inv.outstanding > 0 ? '#e8590c' : '#16a34a' }}>{fmtC(inv.outstanding)}</div></div>
+                            {inv.notes && <div style={{ flex: 1, minWidth: '160px' }}><span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Notes</span><div style={{ fontSize: '12px', color: '#4b5563' }}>{inv.notes}</div></div>}
+                          </div>
+
+                          {/* Lines table */}
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '12px' }}>
+                            <thead><tr style={{ background: '#f3f4f6' }}>
+                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expense</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Markup</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Billed</th>
+                            </tr></thead>
+                            <tbody>
+                              {lines.map(l => (
+                                <tr key={l.id}>
+                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb' }}>{l.description}</td>
+                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{fmtD(l.expense_date)}</td>
+                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtC(l.expense_amount)}</td>
+                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right' }}>{l.markup_pct ? `${l.markup_pct}%` : '—'}</td>
+                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontWeight: '600', fontVariantNumeric: 'tabular-nums' }}>{fmtC(l.billed_amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ background: '#f3f4f6' }}>
+                                <td colSpan={4} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', fontWeight: '700', fontSize: '12px' }}>Total Billed</td>
+                                <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontWeight: '800', fontVariantNumeric: 'tabular-nums' }}>{fmtC(inv.totalBilled)}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
+
+                          {/* Payment history */}
+                          {payments.length > 0 && (
+                            <div style={{ marginBottom: '12px' }}>
+                              <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Payment History</p>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {payments.map(p => (
+                                  <div key={p.id} style={{ display: 'flex', gap: '12px', fontSize: '12px', padding: '6px 8px', background: '#f0fdf4', borderRadius: '4px', border: '1px solid #bbf7d0' }}>
+                                    <span style={{ color: '#166534', fontWeight: '700' }}>{fmtC(p.amount)}</span>
+                                    <span style={{ color: '#6b7280' }}>{fmtD(p.received_date)}</span>
+                                    {p.payment_method && <span style={{ color: '#6b7280' }}>{p.payment_method}</span>}
+                                    {p.reference && <span style={{ color: '#6b7280' }}>Ref: {p.reference}</span>}
+                                    {p.notes && <span style={{ color: '#9ca3af' }}>{p.notes}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Record payment form */}
+                          {showPaymentFormId === inv.id && (
+                            <form onSubmit={recordPayment} style={{ ...s.inlineForm, border: '1px solid #bbf7d0', marginBottom: '12px' }}>
+                              <p style={{ ...s.cardTitle, marginBottom: '10px' }}>Record Payment</p>
+                              <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
+                                <div><label style={s.label}>Date *</label><input type="date" style={s.input} required value={reimbPaymentForm.received_date} onChange={e => setReimbPaymentForm(f => ({ ...f, received_date: e.target.value }))} /></div>
+                                <div><label style={s.label}>Amount ($) *</label><input type="number" step="0.01" min="0.01" style={s.input} required value={reimbPaymentForm.amount} onChange={e => setReimbPaymentForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" /></div>
+                                <div><label style={s.label}>Method</label><select style={s.input} value={reimbPaymentForm.payment_method} onChange={e => setReimbPaymentForm(f => ({ ...f, payment_method: e.target.value }))}><option value="">—</option><option>Check</option><option>ACH</option><option>Wire</option><option>Credit Card</option><option>Cash</option><option>Other</option></select></div>
+                              </div>
+                              <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                                <div><label style={s.label}>Reference / Check #</label><input style={s.input} value={reimbPaymentForm.reference} onChange={e => setReimbPaymentForm(f => ({ ...f, reference: e.target.value }))} placeholder="Check number, wire ref..." /></div>
+                                <div><label style={s.label}>Notes</label><input style={s.input} value={reimbPaymentForm.notes} onChange={e => setReimbPaymentForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button type="submit" disabled={savingReimbPayment} style={{ ...s.btn, opacity: savingReimbPayment ? 0.6 : 1 }}>{savingReimbPayment ? 'Saving...' : 'Record Payment'}</button>
+                                <button type="button" style={s.btnGray} onClick={() => setShowPaymentFormId(null)}>Cancel</button>
+                              </div>
+                            </form>
+                          )}
+
+                          {/* Action buttons */}
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {inv.status === 'draft' && (
+                              <button style={s.btnSmall} onClick={() => issueInvoice(inv.id)}>Issue Invoice</button>
+                            )}
+                            {['issued','partially_paid','overdue'].includes(inv.status) && (
+                              <button style={s.btnSmall} onClick={() => { setShowPaymentFormId(inv.id === showPaymentFormId ? null : inv.id); setReimbPaymentForm(f => ({ ...f, invoice_id: inv.id })) }}>
+                                {showPaymentFormId === inv.id ? 'Cancel Payment' : 'Record Payment'}
+                              </button>
+                            )}
+                            <button style={s.btnSmall} onClick={() => generateReimbPDF(inv)}>Export PDF</button>
+                            <button style={s.btnSmall} onClick={() => exportReimbZip(inv)}>Export ZIP + Receipts</button>
+                            {inv.status !== 'voided' && inv.status !== 'paid' && (
+                              <button style={s.btnSmallRed} onClick={() => voidInvoice(inv.id)}>Void</button>
+                            )}
+                          </div>
+
+                          {inv.status === 'voided' && inv.void_reason && (
+                            <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>Voided: {inv.void_reason}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Financial integrity note */}
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 16px', fontSize: '12px', color: '#92400e' }}>
+                <strong>Note:</strong> Reimbursement invoices are kept separate from the project contract and regular pay applications. Original contract values and budget are not affected. Only collected reimbursements (recorded payments) count as cash in — invoiced-but-uncollected amounts are not treated as received.
+              </div>
+            </>
+          )
+        })()}
 
           </div>{/* end content area */}
         </div>{/* end sidebar + content flex */}

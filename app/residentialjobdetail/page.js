@@ -35,7 +35,7 @@ const s = {
   jobTitle: { fontSize: '22px', fontWeight: '700', color: '#f1f1f1', margin: '0 0 4px' },
   jobMeta: { fontSize: '13px', color: '#555', margin: '0 0 16px' },
   tabs: { display: 'flex', gap: '0', overflowX: 'auto' },
-  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: 'none', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', color: active ? '#e8590c' : '#555', whiteSpace: 'nowrap' }),
+  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: 'none', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', color: active ? '#e8590c' : '#999', whiteSpace: 'nowrap' }),
   body: { padding: '24px 28px', maxWidth: '1100px' },
   card: { background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '20px', marginBottom: '20px' },
   cardTitle: { fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 16px' },

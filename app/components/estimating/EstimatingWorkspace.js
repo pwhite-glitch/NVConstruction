@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react'
 import './estimating.css'
 
 export const BID_STEPS = [
-  ['plans', 'Plans', 'Current drawings, specifications, and addenda'],
-  ['scope', 'Scope', 'Build and review what each trade must include'],
-  ['quotes', 'Sub quotes', 'Invite subcontractors and collect their proposals'],
-  ['compare', 'Compare & price', 'Compare inclusions, exclusions, and amounts'],
-  ['proposal', 'Proposal & handoff', 'Review the package and prepare the next step'],
+  ['plans', 'Documents', 'Current drawings, specifications, and addenda'],
+  ['scope', 'Trade Scopes', 'Build and review what each trade must include'],
+  ['quotes', 'Quotes & Pricing', 'Invite subcontractors and collect their proposals'],
+  ['compare', 'Compare & Price', 'Compare inclusions, exclusions, and amounts'],
+  ['proposal', 'Proposal', 'Review the package and prepare the next step'],
 ]
 
 export function EstimatingHeader({ active, onChange, estimates, packages }) {

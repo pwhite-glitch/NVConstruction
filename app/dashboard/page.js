@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
+import EstimatorHome from '../components/estimating/EstimatorHome'
+import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -407,6 +409,7 @@ export default function Dashboard() {
   // Estimates state
   const [estimates, setEstimates] = useState([])
   const [expandedEstimate, setExpandedEstimate] = useState(null)
+  const [openEstimate, setOpenEstimate] = useState(null)
   const [showNewEstimate, setShowNewEstimate] = useState(false)
   const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
   const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '', scope: '' }])
@@ -1808,6 +1811,9 @@ export default function Dashboard() {
       setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
       setEstimateLines([{ description: '', amount: '', scope: '' }])
       await loadEstimates()
+      // Open workspace for the newly created estimate
+      const { data: fresh } = await supabase.from('estimates').select('*, estimate_line_items(*)').eq('id', est.id).single()
+      if (fresh) setOpenEstimate(fresh)
     }
     setSavingEstimate(false)
   }
@@ -6264,8 +6270,15 @@ ${estimate.notes ? `
             {/* ── ESTIMATOR PIPELINE OVERVIEW ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'overview' && (() => {
               const calcTotal = (est) => {
-                const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
-                return raw * (1 + Number(est.markup_pct || 0) / 100) + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
+                const globalPct = Number(est.markup_pct || 0)
+                const lines = est.estimate_line_items || []
+                const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+                const billed = lines.reduce((a, l) => {
+                  const pct  = l.markup_pct  != null ? Number(l.markup_pct)  : globalPct
+                  const flat = l.markup_flat != null ? Number(l.markup_flat) : 0
+                  return a + Number(l.amount || 0) * (1 + pct / 100) + flat
+                }, 0)
+                return billed + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
               }
               const getStage = (est) => {
                 const s = (est.status || 'lead').toLowerCase()
@@ -6459,6 +6472,22 @@ ${estimate.notes ? `
 
             {/* ── ESTIMATES (inside Estimator) ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'estimates' && (
+              openEstimate ? (
+                <EstimateWorkspace
+                  estimate={openEstimate}
+                  profile={profile}
+                  generatePDF={generateEstimatePDF}
+                  onBack={() => setOpenEstimate(null)}
+                  onUpdated={updated => {
+                    setEstimates(prev => prev.map(e => e.id === updated.id ? updated : e))
+                    setOpenEstimate(updated)
+                  }}
+                  onDeleted={id => {
+                    setEstimates(prev => prev.filter(e => e.id !== id))
+                    setOpenEstimate(null)
+                  }}
+                />
+              ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} — won/lost are in Archive</p>
@@ -6501,15 +6530,15 @@ ${estimate.notes ? `
                       </div>
                       <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', padding: '8px 12px', borderBottom: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-                          <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center' }}>M%</div><div style={{ textAlign: 'center' }}>M$</div><div></div>
+                          <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center' }}>Markup %</div><div style={{ textAlign: 'center' }}>Markup $</div><div></div>
                         </div>
                         {estimateLines.map((line, idx) => (
-                          <div key={idx} style={{ borderBottom: idx < estimateLines.length - 1 ? '1px solid #1a1a1a' : 'none' }}>
+                          <div key={idx} style={{ borderBottom: idx < estimateLines.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', alignItems: 'center' }}>
-                              <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #1e1e1e' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
-                              <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #1e1e1e' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
-                              <input type="number" step="0.1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #1e1e1e', fontSize: '12px', padding: '0 4px' }} value={line.markup_pct} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_pct: e.target.value } : x))} placeholder="%" />
-                              <input type="number" step="1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #1e1e1e', fontSize: '12px', padding: '0 4px' }} value={line.markup_flat} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_flat: e.target.value } : x))} placeholder="$" />
+                              <input style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', borderRight: '1px solid #f3f4f6' }} value={line.description} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))} placeholder={`Line item ${idx + 1}`} />
+                              <input type="number" step="0.01" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'right', borderRight: '1px solid #f3f4f6' }} value={line.amount} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))} placeholder="0.00" />
+                              <input type="number" step="0.1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #f3f4f6', fontSize: '12px', padding: '0 4px' }} value={line.markup_pct} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_pct: e.target.value } : x))} placeholder="%" />
+                              <input type="number" step="1" min="0" style={{ ...s.input, border: 'none', borderRadius: 0, background: 'transparent', textAlign: 'center', borderRight: '1px solid #f3f4f6', fontSize: '12px', padding: '0 4px' }} value={line.markup_flat} onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, markup_flat: e.target.value } : x))} placeholder="$" />
                               <button style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0, width: '40px', textAlign: 'center' }} onClick={() => setEstimateLines(l => l.filter((_, i) => i !== idx))}>×</button>
                             </div>
                             <textarea
@@ -6518,7 +6547,7 @@ ${estimate.notes ? `
                               onChange={e => setEstimateLines(l => l.map((x, i) => i === idx ? { ...x, scope: e.target.value } : x))}
                               onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
                               placeholder="Scope of work (optional)"
-                              style={{ display: 'block', width: '100%', padding: '5px 12px', background: 'transparent', border: 'none', borderTop: '1px solid #111', color: '#666', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: '1.5', minHeight: '28px', overflow: 'hidden' }}
+                              style={{ display: 'block', width: '100%', padding: '5px 12px', background: '#fafafa', border: 'none', borderTop: '1px solid #f3f4f6', color: '#6b7280', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: '1.5', minHeight: '28px', overflow: 'hidden' }}
                             />
                           </div>
                         ))}
@@ -6537,7 +6566,7 @@ ${estimate.notes ? `
                           const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                           const hasExtra = estimateForm.taxable || markupAmt > 0
                           return (
-                            <div style={{ padding: '10px 12px', background: '#f9fafb', borderTop: '2px solid #1e1e1e' }}>
+                            <div style={{ padding: '10px 12px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: hasExtra ? '4px' : 0 }}>
                                 <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textAlign: 'right' }}>Cost subtotal:</div>
                                 <div style={{ textAlign: 'right', fontWeight: '700', color: '#888', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(rawTotal)}</div>
@@ -6557,7 +6586,7 @@ ${estimate.notes ? `
                                   <div></div>
                                 </div>
                               )}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: hasExtra ? '1px solid #2a2a2a' : 'none', paddingTop: hasExtra ? '6px' : 0, marginTop: hasExtra ? '2px' : 0 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', borderTop: hasExtra ? '1px solid #e5e7eb' : 'none', paddingTop: hasExtra ? '6px' : 0, marginTop: hasExtra ? '2px' : 0 }}>
                                 <div style={{ fontSize: '12px', fontWeight: '700', color: hasExtra ? '#e8590c' : '#555', textAlign: 'right' }}>{hasExtra ? 'Owner total:' : 'Total:'}</div>
                                 <div style={{ textAlign: 'right', fontWeight: '800', color: '#e8590c', fontSize: hasExtra ? '15px' : '14px', fontFamily: 'monospace' }}>{fmt2(grandTotal)}</div>
                                 <div></div>
@@ -6597,9 +6626,12 @@ ${estimate.notes ? `
                   </div>
                 )}
 
-                {estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length === 0 && !showNewEstimate && <div style={s.emptyMsg}>No active estimates. Won/lost estimates are in Archive.</div>}
+                <EstimatorHome
+                  estimates={estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status))}
+                  onOpen={(est) => setOpenEstimate(est)}
+                />
 
-                {estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).map(est => {
+                {false && estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).map(est => {
                   const isExp = expandedEstimate === est.id
                   const lines = est.estimate_line_items || []
                   const globalPct = Number(est.markup_pct || 0)
@@ -6682,7 +6714,7 @@ ${estimate.notes ? `
                                 </div>
                                 <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 62px 72px 40px', padding: '8px 12px', borderBottom: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-                                    <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center' }}>M%</div><div style={{ textAlign: 'center' }}>M$</div><div></div>
+                                    <div>Description</div><div style={{ textAlign: 'right' }}>Cost</div><div style={{ textAlign: 'center' }}>Markup %</div><div style={{ textAlign: 'center' }}>Markup $</div><div></div>
                                   </div>
                                   {editEstimateLines.map((line, idx) => (
                                     <div key={idx} style={{ borderBottom: idx < editEstimateLines.length - 1 ? '1px solid #1a1a1a' : 'none' }}>
@@ -6699,7 +6731,7 @@ ${estimate.notes ? `
                                         onChange={e => setEditEstimateLines(l => l.map((x, i) => i === idx ? { ...x, scope: e.target.value } : x))}
                                         onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
                                         placeholder="Scope of work (optional)"
-                                        style={{ display: 'block', width: '100%', padding: '5px 12px', background: 'transparent', border: 'none', borderTop: '1px solid #111', color: '#666', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: '1.5', minHeight: '28px', overflow: 'hidden' }}
+                                        style={{ display: 'block', width: '100%', padding: '5px 12px', background: '#fafafa', border: 'none', borderTop: '1px solid #f3f4f6', color: '#6b7280', fontSize: '12px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: '1.5', minHeight: '28px', overflow: 'hidden' }}
                                       />
                                     </div>
                                   ))}
@@ -6718,7 +6750,7 @@ ${estimate.notes ? `
                                     const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                     const editHasExtra = editEstimateForm.taxable || editMarkupAmt > 0
                                     return (
-                                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderTop: '2px solid #1e1e1e' }}>
+                                      <div style={{ padding: '10px 12px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: editHasExtra ? '4px' : 0 }}>
                                           <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textAlign: 'right' }}>Cost subtotal:</div>
                                           <div style={{ textAlign: 'right', fontWeight: '700', color: '#888', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(editRaw)}</div>
@@ -6913,13 +6945,21 @@ ${estimate.notes ? `
                   )
                 })}
               </>
+              )
             )}
 
             {/* ── ESTIMATOR ARCHIVE ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'archive' && (() => {
               const calcTotal = (est) => {
-                const raw = (est.estimate_line_items || []).reduce((a, l) => a + Number(l.amount || 0), 0)
-                return raw * (1 + Number(est.markup_pct || 0) / 100) + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
+                const globalPct = Number(est.markup_pct || 0)
+                const lines = est.estimate_line_items || []
+                const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+                const billed = lines.reduce((a, l) => {
+                  const pct  = l.markup_pct  != null ? Number(l.markup_pct)  : globalPct
+                  const flat = l.markup_flat != null ? Number(l.markup_flat) : 0
+                  return a + Number(l.amount || 0) * (1 + pct / 100) + flat
+                }, 0)
+                return billed + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
               }
               const archived = estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status))
               const won = archived.filter(e => ['won','accepted'].includes(e.status))

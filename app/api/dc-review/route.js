@@ -10,6 +10,23 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 const APPROVER_ROLES = new Set(['pm', 'apm', 'admin'])
 
+// Columns added in migration 022 — may not exist yet if migration hasn't been run.
+const NEW_022_COLS = new Set(['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at'])
+
+// Try the update; if Supabase reports a missing-column schema error, strip the
+// migration-022 columns and retry so pre-migration databases keep working.
+async function dcUpdate(updates, id) {
+  const { error } = await adminSupabase.from('direct_costs').update(updates).eq('id', id)
+  if (!error) return null
+  if (error.message && error.message.includes('schema cache')) {
+    const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => !NEW_022_COLS.has(k)))
+    if (Object.keys(safe).length === 0) return error
+    const { error: e2 } = await adminSupabase.from('direct_costs').update(safe).eq('id', id)
+    return e2
+  }
+  return error
+}
+
 // POST /api/dc-review
 // Handles all status transitions for direct cost entries.
 // Body (JSON): { action, id, ...fields }
@@ -76,10 +93,7 @@ export async function POST(request) {
   if (action === 'approve') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
     if (cost.status !== 'pending') return Response.json({ error: 'Only pending costs can be approved' }, { status: 422 })
-    const { error } = await adminSupabase
-      .from('direct_costs')
-      .update({ status: 'approved', reviewed_by: auth.userId, reviewed_at: now })
-      .eq('id', id)
+    const error = await dcUpdate({ status: 'approved', reviewed_by: auth.userId, reviewed_at: now }, id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   }
@@ -88,10 +102,7 @@ export async function POST(request) {
   if (action === 'unapprove') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
     if (cost.status !== 'approved') return Response.json({ error: 'Only approved costs can be unapproved' }, { status: 422 })
-    const { error } = await adminSupabase
-      .from('direct_costs')
-      .update({ status: 'pending', reviewed_by: null, reviewed_at: null })
-      .eq('id', id)
+    const error = await dcUpdate({ status: 'pending', reviewed_by: null, reviewed_at: null }, id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   }
@@ -108,18 +119,15 @@ export async function POST(request) {
 
     const newCycle = (cost.review_cycle || 0) + 1
 
-    const { error: upErr } = await adminSupabase
-      .from('direct_costs')
-      .update({
-        status: 'rejected',
-        rejection_reason,
-        rejected_at: now,
-        rejected_by: auth.userId,
-        review_cycle: newCycle,
-        reviewed_by: auth.userId,
-        reviewed_at: now,
-      })
-      .eq('id', id)
+    const upErr = await dcUpdate({
+      status: 'rejected',
+      rejection_reason,
+      rejected_at: now,
+      rejected_by: auth.userId,
+      review_cycle: newCycle,
+      reviewed_by: auth.userId,
+      reviewed_at: now,
+    }, id)
 
     if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
 
@@ -176,7 +184,7 @@ export async function POST(request) {
             </div>
           `,
         })
-        await adminSupabase.from('direct_costs').update({ notif_sent_at: now }).eq('id', id)
+        await dcUpdate({ notif_sent_at: now }, id)
       } catch (_) {}
     }
 
@@ -192,14 +200,13 @@ export async function POST(request) {
     for (const f of EDITABLE) {
       if (fields[f] !== undefined) updates[f] = fields[f]
     }
-    // amount must be a valid number
     if (updates.amount !== undefined) {
       const parsed = parseFloat(updates.amount)
       if (isNaN(parsed) || parsed < 0) return Response.json({ error: 'Invalid amount' }, { status: 400 })
       updates.amount = parsed
     }
 
-    const { error } = await adminSupabase.from('direct_costs').update(updates).eq('id', id)
+    const error = await dcUpdate(updates, id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   }
@@ -245,7 +252,7 @@ export async function POST(request) {
       updates.receipt_url = path
     }
 
-    const { error } = await adminSupabase.from('direct_costs').update(updates).eq('id', id)
+    const error = await dcUpdate(updates, id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   }

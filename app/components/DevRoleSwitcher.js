@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import supabase from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 
 const ROLES = [
   { value: 'pm',            label: 'PM',          color: '#e8590c', portal: '/dashboard' },

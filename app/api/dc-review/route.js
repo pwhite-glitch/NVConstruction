@@ -46,11 +46,22 @@ export async function POST(request) {
 
   const { data: cost, error: fetchErr } = await adminSupabase
     .from('direct_costs')
-    .select('*, profiles:submitted_by(id, full_name, email)')
+    .select('*')
     .eq('id', id)
     .maybeSingle()
 
   if (fetchErr || !cost) return Response.json({ error: 'Cost not found' }, { status: 404 })
+
+  // Fetch submitter profile separately (no FK declared from submitted_by to profiles)
+  let submitterProfile = null
+  if (cost.submitted_by) {
+    const { data: p } = await adminSupabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .eq('id', cost.submitted_by)
+      .maybeSingle()
+    submitterProfile = p
+  }
 
   const { data: jobRow } = await adminSupabase
     .from('jobs')
@@ -112,8 +123,8 @@ export async function POST(request) {
 
     if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
 
-    const submitterEmail = cost.profiles?.email
-    const submitterName = cost.profiles?.full_name || 'Superintendent'
+    const submitterEmail = submitterProfile?.email
+    const submitterName = submitterProfile?.full_name || 'Superintendent'
     const amountStr = `$${Number(cost.amount).toLocaleString()}`
     const dedupKey = `dc_reject_${id}_v${newCycle}`
 

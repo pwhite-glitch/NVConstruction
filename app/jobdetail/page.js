@@ -341,6 +341,7 @@ function JobDetailInner() {
   const [csvRows, setCsvRows] = useState([])
   const [importingCsv, setImportingCsv] = useState(false)
   const [submittingDc, setSubmittingDc] = useState(false)
+  const [dcSaveErr, setDcSaveErr] = useState('')
   const [dismissedDupIds, setDismissedDupIds] = useState(new Set())
 
   const [billingByItem, setBillingByItem] = useState({})
@@ -909,14 +910,15 @@ function JobDetailInner() {
         res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
       }
       json = await res.json()
-      if (json.error) { setErrMsg('Failed to save: ' + json.error); setTimeout(() => setErrMsg(''), 6000); setSubmittingDc(false); return }
+      if (json.error) { setDcSaveErr('Save failed: ' + json.error); setSubmittingDc(false); return }
+      setDcSaveErr('')
       setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
       if (userRole === 'apm') { setMsg('Cost submitted for PM approval.'); setTimeout(() => setMsg(''), 5000) }
     } catch (err) {
-      setErrMsg('Error submitting cost: ' + err.message); setTimeout(() => setErrMsg(''), 6000)
+      setDcSaveErr('Error submitting cost: ' + err.message)
     }
     setSubmittingDc(false)
   }
@@ -9201,9 +9203,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {userRole === 'apm' && (
                       <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>Your cost will be submitted for PM approval. Budget line assignment is done during review.</p>
                     )}
+                    {dcSaveErr && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '10px 14px', fontSize: '13px', marginBottom: '8px' }}>{dcSaveErr}</div>}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button type="submit" disabled={submittingDc} style={{ ...s.btn, opacity: submittingDc ? 0.6 : 1 }}>{submittingDc ? 'Saving...' : userRole === 'apm' ? 'Submit for approval' : 'Save & approve'}</button>
-                      <button type="button" style={s.btnGray} onClick={() => setShowDcForm(false)}>Cancel</button>
+                      <button type="button" style={s.btnGray} onClick={() => { setShowDcForm(false); setDcSaveErr('') }}>Cancel</button>
                     </div>
                   </form>
                 </div>

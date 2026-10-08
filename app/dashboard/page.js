@@ -273,6 +273,9 @@ export default function Dashboard() {
   const [showCompletedJobs, setShowCompletedJobs] = useState(false)
   const [showStarredJobs, setShowStarredJobs] = useState(false)
   const [starredJobIds, setStarredJobIds] = useState(new Set())
+  const [jobSearch, setJobSearch] = useState('')
+  const [jobSort, setJobSort] = useState('name')
+  const [resJobSearch, setResJobSearch] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -3477,7 +3480,7 @@ ${estimate.notes ? `
 
             {/* ── MY WORK ── */}
             {activeTab === 'my-work' && (() => {
-              const mwSection = (label, items, color, renderItem) => items.length === 0 ? null : (
+              const mwSection = (label, items, color, renderItem, navTab) => items.length === 0 ? null : (
                 <div style={{ marginBottom: '1.75rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
                     <p style={{ ...s.ovSectionTitle, margin: 0 }}>{label}</p>
@@ -3485,7 +3488,7 @@ ${estimate.notes ? `
                   </div>
                   <div style={s.sectionCard}>
                     {items.map((item, i) => (
-                      <div key={item.id} className="nv-table-row" style={{ ...s.rowBorder, padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: item.jobs ? 'pointer' : 'default', borderBottom: i < items.length - 1 ? '1px solid #f3f4f6' : 'none' }} onClick={() => item.jobs && router.push(`/jobdetail?id=${item.jobs.id}`)}>
+                      <div key={item.id} className="nv-table-row" style={{ ...s.rowBorder, padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: item.jobs ? 'pointer' : 'default', borderBottom: i < items.length - 1 ? '1px solid #f3f4f6' : 'none' }} onClick={() => item.jobs && router.push(`/jobdetail?id=${item.jobs.id}${navTab ? `&tab=${navTab}` : ''}`)}>
                         {renderItem(item)}
                       </div>
                     ))}
@@ -3532,7 +3535,7 @@ ${estimate.notes ? `
                         <span style={{ fontSize: '12px', color: '#e8590c' }}>Review →</span>
                       </div>
                     </>
-                  ))}
+                  ), 'billing')}
 
                   {myWork && !myWork.error && mwSection('Open RFIs', myWork.rfis, '#2563eb', (item) => (
                     <>
@@ -3545,7 +3548,7 @@ ${estimate.notes ? `
                         <span style={{ fontSize: '12px', color: '#2563eb' }}>Respond →</span>
                       </div>
                     </>
-                  ))}
+                  ), 'field')}
 
                   {myWork && !myWork.error && mwSection('My action items', myWork.actionItems, '#d97706', (item) => (
                     <>
@@ -3558,7 +3561,7 @@ ${estimate.notes ? `
                         <span style={{ fontSize: '12px', color: '#d97706' }}>View →</span>
                       </div>
                     </>
-                  ))}
+                  ), 'schedule')}
 
                   {myWork && !myWork.error && mwSection('Upcoming milestones', myWork.milestones, '#16a34a', (item) => (
                     <>
@@ -3571,7 +3574,7 @@ ${estimate.notes ? `
                         <span style={{ fontSize: '12px', color: '#16a34a' }}>View →</span>
                       </div>
                     </>
-                  ))}
+                  ), 'schedule')}
                 </>
               )
             })()}
@@ -4698,11 +4701,19 @@ ${estimate.notes ? `
             {/* ── JOBS ── */}
             {activeTab === 'jobs' && (
               <>
+                <div style={s.filterRow}>
+                  <input style={{ ...s.filterInput, flex: 1 }} value={jobSearch} onChange={e => setJobSearch(e.target.value)} placeholder="Search by name, number, or location…" />
+                  <select style={{ padding: '8px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', color: '#111827', outline: 'none', flexShrink: 0 }} value={jobSort} onChange={e => setJobSort(e.target.value)}>
+                    <option value="name">Sort: Name</option>
+                    <option value="contract">Sort: Contract ↓</option>
+                    <option value="start">Sort: Start Date ↓</option>
+                  </select>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedJobs && !showStarredJobs ? '#fff7ed' : '#ffffff', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed ({jobs.filter(j => j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed ({jobs.filter(j => j.job_type !== 'residential' && j.status === 'complete').length})</button>
                   </div>
                   {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
@@ -4811,11 +4822,12 @@ ${estimate.notes ? `
                   const gcTotal = activeCommercial.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const subTotal = activeCommercial.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const activeContractTotal = gcTotal + subTotal
+                  const billedTotal = activeCommercial.reduce((a, j) => a + (billedByJob[j.id] || 0), 0)
                   if (activeContractTotal === 0) return null
                   return (
-                    <div style={{ background: '#eff6ff', border: '1px solid #1a2a3a', borderRadius: '8px', padding: '12px 18px', marginBottom: '14px', display: 'flex', gap: '28px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 18px', marginBottom: '14px', display: 'flex', gap: '28px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div>
-                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#3a5a8a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Contract Sum to Date</div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#3a5a8a', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Active Contract Sum</div>
                         <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(activeContractTotal)}</div>
                       </div>
                       {gcTotal > 0 && <div>
@@ -4825,6 +4837,10 @@ ${estimate.notes ? `
                       {subTotal > 0 && <div>
                         <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Sub Contracts</div>
                         <div style={{ fontSize: '14px', fontWeight: '700', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(subTotal)}</div>
+                      </div>}
+                      {billedTotal > 0 && <div>
+                        <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Sub-Billed (Approved)</div>
+                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(billedTotal)}</div>
                       </div>}
                       <div style={{ marginLeft: 'auto' }}>
                         <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>In Progress</div>
@@ -4838,9 +4854,18 @@ ${estimate.notes ? `
                   const visibleJobs = jobs.filter(j => {
                     if (j.job_type === 'residential') return false
                     if (showStarredJobs) return starredJobIds.has(j.id)
-                    return showCompletedJobs ? j.status === 'complete' : j.status !== 'complete'
+                    if (!(showCompletedJobs ? j.status === 'complete' : j.status !== 'complete')) return false
+                    if (jobSearch) {
+                      const q = jobSearch.toLowerCase()
+                      return (j.project_name || '').toLowerCase().includes(q) || String(j.job_number || '').includes(q) || (j.location || '').toLowerCase().includes(q)
+                    }
+                    return true
+                  }).sort((a, b) => {
+                    if (jobSort === 'contract') return (parseFloat(b.adjusted_contract_value || b.contract_value) || 0) - (parseFloat(a.adjusted_contract_value || a.contract_value) || 0)
+                    if (jobSort === 'start') return (b.start_date || '').localeCompare(a.start_date || '')
+                    return (a.project_name || '').localeCompare(b.project_name || '')
                   })
-                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
+                  if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{jobSearch ? `No jobs match "${jobSearch}".` : showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
                   return visibleJobs.map(j => {
                     const billed = billedByJob[j.id] || 0
                     const contract = parseFloat(j.adjusted_contract_value || j.contract_value || 0)
@@ -4893,6 +4918,9 @@ ${estimate.notes ? `
             {/* ── RESIDENTIAL JOBS ── */}
             {activeTab === 'residential' && (
               <>
+                <div style={s.filterRow}>
+                  <input style={{ ...s.filterInput, flex: 1 }} value={resJobSearch} onChange={e => setResJobSearch(e.target.value)} placeholder="Search by name, owner, or address…" />
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#fff7ed' : '#ffffff', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
@@ -4970,9 +4998,14 @@ ${estimate.notes ? `
                   const resJobs = jobs.filter(j => {
                     if (j.job_type !== 'residential') return false
                     if (showStarredResJobs) return starredJobIds.has(j.id)
-                    return showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete'
-                  })
-                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
+                    if (!(showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete')) return false
+                    if (resJobSearch) {
+                      const q = resJobSearch.toLowerCase()
+                      return (j.project_name || '').toLowerCase().includes(q) || (j.owner_name || '').toLowerCase().includes(q) || String(j.job_number || '').includes(q) || (j.location || '').toLowerCase().includes(q)
+                    }
+                    return true
+                  }).sort((a, b) => (a.project_name || '').localeCompare(b.project_name || ''))
+                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{resJobSearch ? `No projects match "${resJobSearch}".` : showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
                   return resJobs.map(j => {
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
                     const isStarred = starredJobIds.has(j.id)

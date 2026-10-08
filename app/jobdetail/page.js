@@ -140,13 +140,17 @@ function JobDetailInner() {
   const [msg, setMsg] = useState('')
   const [errMsg, setErrMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [activeTab, setActiveTab] = useState('details')
+  const [activeTab, setActiveTab] = useState('overview')
   const [aiaBalanceWarning, setAiaBalanceWarning] = useState(null)
   const [budgetView, setBudgetView] = useState('lines')
   const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
   const [currentUserName, setCurrentUserName] = useState('')
   const [hideBudget, setHideBudget] = useState(false)
+
+  // Overview summary
+  const [overviewSummary, setOverviewSummary] = useState(null)
+  const [overviewLoading, setOverviewLoading] = useState(false)
 
   // Change history
   const [changeLog, setChangeLog] = useState([])
@@ -1741,6 +1745,7 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'punch') { loadPunchItems(); loadContracts() }
     if (activeTab === 'retainage') { loadRetainageReleases(); loadContracts(); loadBillingForJob() }
     if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
+    if (activeTab === 'overview') loadOverviewSummary()
     if (activeTab === 'prelim') { loadPrelimNotices() }
     if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
@@ -1750,6 +1755,26 @@ ${sovLines.length > 0 ? `
     if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems(); loadDrawRequests() }
     if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment() }
   }, [activeTab, id])
+
+  async function loadOverviewSummary() {
+    if (overviewSummary) return
+    setOverviewLoading(true)
+    try {
+      const [billingRes, rfiRes, milestoneRes, activityRes] = await Promise.all([
+        supabase.from('billing_submissions').select('id, company_name, amount_billed, status').eq('job_id', id),
+        supabase.from('rfis').select('id, title, status').eq('job_id', id),
+        supabase.from('milestones').select('id, title, due_date, completed').eq('job_id', id).eq('completed', false),
+        supabase.from('change_log').select('id, action, details, created_at, user_email').eq('job_id', id).order('created_at', { ascending: false }).limit(6)
+      ])
+      setOverviewSummary({
+        billing: billingRes.data || [],
+        rfis: rfiRes.data || [],
+        milestones: milestoneRes.data || [],
+        activity: activityRes.data || []
+      })
+    } catch {}
+    setOverviewLoading(false)
+  }
 
   async function loadNvSubcontracts() {
     const { data } = await supabase.from('nv_subcontracts').select('*').eq('job_id', id).order('created_at', { ascending: true })
@@ -4776,6 +4801,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {
                 group: 'Project',
                 items: [
+                  { key: 'overview', label: 'Overview' },
                   { key: 'details', label: 'Details' },
                   { key: 'contacts', label: 'Contacts', badge: jobContacts.length || null },
                   { key: 'meetings', label: 'Meetings', badge: meetings.length || null },
@@ -4868,6 +4894,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {/* ── MOBILE SECTION NAV (hidden on desktop) ── */}
         <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#111827', fontSize: '16px', marginBottom: '1.25rem' }}>
           <optgroup label="Project">
+            <option value="overview">Overview</option>
             <option value="details">Details</option>
             <option value="contacts">Contacts</option>
             <option value="documents">Documents</option>
@@ -4901,6 +4928,191 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             {userRole === 'pm' && <option value="labor">Labor</option>}
           </optgroup>
         </select>
+
+        {/* ── OVERVIEW TAB ── */}
+        {activeTab === 'overview' && (() => {
+          const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+          const fmtDFull = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null
+          const isOverdue = d => d && new Date(d + 'T12:00:00') < new Date()
+          const pending = overviewSummary?.billing?.filter(b => b.status === 'pending') || []
+          const approved = overviewSummary?.billing?.filter(b => b.status === 'approved') || []
+          const approvedTotal = approved.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+          const pendingTotal = pending.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+          const openRfis = overviewSummary?.rfis?.filter(r => r.status !== 'closed') || []
+          const upcomingMilestones = (overviewSummary?.milestones || []).filter(m => !m.completed).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')).slice(0, 5)
+          const recentActivity = overviewSummary?.activity || []
+          const keyContacts = jobContacts.filter(c => ['pm', 'superintendent', 'owner', 'architect'].includes(c.role)).slice(0, 4)
+          const contractVal = parseFloat(job?.adjusted_contract_value || job?.contract_value || 0)
+
+          const ovCard = (children, opts = {}) => (
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1.25rem 1.5rem', marginBottom: '1rem', ...opts.style }}>
+              {children}
+            </div>
+          )
+          const ovSec = title => (
+            <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '0.75rem' }}>{title}</div>
+          )
+
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'start' }} className="rx-grid-2">
+
+              {/* Left column */}
+              <div>
+                {/* Attention needed */}
+                {(pending.length > 0 || openRfis.length > 0) && ovCard(
+                  <>
+                    {ovSec('Needs Attention')}
+                    {pending.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#fff7ed', borderRadius: '7px', marginBottom: '8px', cursor: 'pointer' }} onClick={() => setActiveTab('billing')}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#e8590c', flexShrink: 0, display: 'inline-block' }} />
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#92400e' }}>{pending.length} pending billing submission{pending.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '13px', color: '#92400e', fontVariantNumeric: 'tabular-nums' }}>${pendingTotal.toLocaleString()}</span>
+                          <span style={{ fontSize: '12px', color: '#e8590c' }}>Review →</span>
+                        </div>
+                      </div>
+                    )}
+                    {openRfis.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#eff6ff', borderRadius: '7px', cursor: 'pointer' }} onClick={() => setActiveTab('field')}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2563eb', flexShrink: 0, display: 'inline-block' }} />
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#1e3a8a' }}>{openRfis.length} open RFI{openRfis.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <span style={{ fontSize: '12px', color: '#2563eb' }}>Respond →</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Upcoming milestones */}
+                {ovCard(
+                  <>
+                    {ovSec('Upcoming Milestones')}
+                    {overviewLoading && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Loading…</p>}
+                    {!overviewLoading && upcomingMilestones.length === 0 && (
+                      <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>No open milestones.</p>
+                    )}
+                    {upcomingMilestones.map((m, i) => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: i < upcomingMilestones.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                        <span style={{ fontSize: '13px', color: '#111827' }}>{m.title}</span>
+                        {m.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: isOverdue(m.due_date) ? '#dc2626' : '#374151', flexShrink: 0, marginLeft: '12px' }}>{isOverdue(m.due_date) ? 'Overdue · ' : ''}{fmtD(m.due_date)}</span>}
+                      </div>
+                    ))}
+                    <button onClick={() => setActiveTab('schedule')} style={{ marginTop: upcomingMilestones.length > 0 ? '10px' : 0, fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>View schedule →</button>
+                  </>
+                )}
+
+                {/* Key contacts */}
+                {keyContacts.length > 0 && ovCard(
+                  <>
+                    {ovSec('Key Contacts')}
+                    {keyContacts.map(c => (
+                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f9fafb' }}>
+                        <div>
+                          <span style={{ fontSize: '13px', fontWeight: '500', color: '#111827' }}>{c.name}</span>
+                          <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '8px', textTransform: 'capitalize' }}>{c.role?.replace('_', ' ')}</span>
+                        </div>
+                        {c.phone && <a href={`tel:${c.phone}`} style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none' }}>{c.phone}</a>}
+                      </div>
+                    ))}
+                    <button onClick={() => setActiveTab('contacts')} style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>All contacts →</button>
+                  </>
+                )}
+              </div>
+
+              {/* Right column */}
+              <div>
+                {/* Financial summary (PM only) */}
+                {userRole === 'pm' && ovCard(
+                  <>
+                    {ovSec('Financial Summary')}
+                    {overviewLoading && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Loading…</p>}
+                    {!overviewLoading && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {contractVal > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>Contract value</span>
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827', fontVariantNumeric: 'tabular-nums' }}>${contractVal.toLocaleString()}</span>
+                          </div>
+                        )}
+                        {approvedTotal > 0 && (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                              <span style={{ fontSize: '13px', color: '#6b7280' }}>Approved billings</span>
+                              <span style={{ fontSize: '14px', fontWeight: '700', color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>${approvedTotal.toLocaleString()}</span>
+                            </div>
+                            {contractVal > 0 && (
+                              <div style={{ height: '5px', background: '#f3f4f6', borderRadius: '3px' }}>
+                                <div style={{ height: '100%', width: Math.min(100, (approvedTotal / contractVal) * 100) + '%', background: '#16a34a', borderRadius: '3px', transition: 'width 0.3s' }} />
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {pendingTotal > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                            <span style={{ fontSize: '13px', color: '#6b7280' }}>Pending review</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#e8590c', fontVariantNumeric: 'tabular-nums' }}>${pendingTotal.toLocaleString()}</span>
+                          </div>
+                        )}
+                        {approvedTotal === 0 && pendingTotal === 0 && contractVal === 0 && (
+                          <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>No financial data yet.</p>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={() => setActiveTab('billing')} style={{ marginTop: '12px', fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>Full billing tab →</button>
+                  </>
+                )}
+
+                {/* Recent activity */}
+                {ovCard(
+                  <>
+                    {ovSec('Recent Activity')}
+                    {overviewLoading && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Loading…</p>}
+                    {!overviewLoading && recentActivity.length === 0 && (
+                      <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>No activity recorded yet.</p>
+                    )}
+                    {recentActivity.map((entry, i) => {
+                      const ago = (() => {
+                        const ms = Date.now() - new Date(entry.created_at)
+                        const mins = Math.floor(ms / 60000)
+                        if (mins < 60) return `${mins}m ago`
+                        const hrs = Math.floor(mins / 60)
+                        if (hrs < 24) return `${hrs}h ago`
+                        return `${Math.floor(hrs / 24)}d ago`
+                      })()
+                      return (
+                        <div key={entry.id} style={{ padding: '7px 0', borderBottom: i < recentActivity.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                            <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{entry.action}</span>
+                            <span style={{ fontSize: '11px', color: '#9ca3af', flexShrink: 0 }}>{ago}</span>
+                          </div>
+                          {entry.user_email && <span style={{ fontSize: '11px', color: '#9ca3af' }}>{entry.user_email}</span>}
+                        </div>
+                      )
+                    })}
+                    {userRole === 'pm' && <button onClick={() => setActiveTab('history')} style={{ marginTop: recentActivity.length > 0 ? '10px' : 0, fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>Full history →</button>}
+                  </>
+                )}
+
+                {/* Quick actions */}
+                {userRole === 'pm' && ovCard(
+                  <>
+                    {ovSec('Quick Actions')}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {pending.length > 0 && <button onClick={() => setActiveTab('billing')} style={{ padding: '7px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '7px', color: '#c2410c', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Review billing ({pending.length})</button>}
+                      {openRfis.length > 0 && <button onClick={() => setActiveTab('field')} style={{ padding: '7px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '7px', color: '#1d4ed8', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Open RFIs ({openRfis.length})</button>}
+                      <button onClick={() => setActiveTab('contacts')} style={{ padding: '7px 14px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '7px', color: '#374151', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Contacts</button>
+                      <button onClick={() => setActiveTab('documents')} style={{ padding: '7px 14px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '7px', color: '#374151', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Documents</button>
+                      <button onClick={() => setActiveTab('drawings')} style={{ padding: '7px 14px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '7px', color: '#374151', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Drawings</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── DETAILS TAB ── */}
         {activeTab === 'details' && (

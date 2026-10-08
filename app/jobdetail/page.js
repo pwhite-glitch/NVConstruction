@@ -4502,7 +4502,11 @@ ${(budgets || []).length > 0 ? `
   async function saveJob(e) {
     e.preventDefault()
     setSaving(true)
-    const fields = {
+    // Columns that may not exist yet in the DB if a migration hasn't been run.
+    const JOB_OPT_COLS = new Set(['nv_role', 'billing_type', 'pm_email',
+      'sub_billing_start', 'sub_billing_frequency', 'sub_billing_due', 'sub_billing_anchor',
+      'owner_billing_start', 'owner_billing_frequency', 'owner_billing_due', 'owner_billing_anchor'])
+    let jobFields = {
       job_number: form.job_number, project_name: form.project_name, location: form.location,
       contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
       markup_pct: form.markup_pct ? parseFloat(form.markup_pct) : null,
@@ -4527,9 +4531,13 @@ ${(budgets || []).length > 0 ? `
       billing_type: form.billing_type || 'aia',
       nv_role: form.nv_role || 'gc',
     }
-    const saveRes = await authFetch('/api/job-save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
-    const saveJson = await saveRes.json()
-    if (saveJson.error) { setErrMsg('Save failed: ' + saveJson.error); setTimeout(() => setErrMsg(''), 8000); setSaving(false); return }
+    let { error } = await supabase.from('jobs').update(jobFields).eq('id', id)
+    if (error && error.message && error.message.includes('schema cache')) {
+      jobFields = Object.fromEntries(Object.entries(jobFields).filter(([k]) => !JOB_OPT_COLS.has(k)))
+      const retry = await supabase.from('jobs').update(jobFields).eq('id', id)
+      error = retry.error
+    }
+    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 8000); setSaving(false); return }
     else {
       // Log high-value field changes
       const logCalls = []

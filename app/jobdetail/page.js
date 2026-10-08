@@ -9140,18 +9140,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'admin') ? '2fr 1fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '2fr 1fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
                       </div>
-                      {(userRole === 'pm' || userRole === 'admin') && (
+                      {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Vendor</label>
                           <input style={s.input} value={dcForm.vendor} onChange={e => setDcForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Home Depot, ABC Supply..." />
                         </div>
                       )}
-                      {(userRole === 'pm' || userRole === 'admin') && (
+                      {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Budget line</label>
                           <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
@@ -9165,12 +9165,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'admin') ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Reason *</label>
                         <input style={s.input} required value={dcForm.reason} onChange={e => setDcForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why was this purchase made?" />
                       </div>
-                      {(userRole === 'pm' || userRole === 'admin') && (
+                      {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Assigned To</label>
                           <select style={s.input} value={dcForm.assigned_to} onChange={e => setDcForm(f => ({ ...f, assigned_to: e.target.value }))}>
@@ -9180,7 +9180,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                     </div>
-                    {(userRole === 'pm' || userRole === 'admin' || userRole === 'super') && (
+                    {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin' || userRole === 'super') && (
                       <div style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                           <input type="checkbox" checked={dcForm.bill_to_owner} onChange={e => setDcForm(f => ({ ...f, bill_to_owner: e.target.checked }))} />
@@ -9309,7 +9309,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
                 const isDup = activeDupIds.has(c.id)
-                const canReview = userRole === 'pm' || userRole === 'admin'
+                const canReview = userRole === 'pm' || userRole === 'apm' || userRole === 'admin'
                 return (
                   <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#e9d5ff' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
                     <div style={s.billingEntryHeader}>

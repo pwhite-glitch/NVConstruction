@@ -276,6 +276,14 @@ export default function Dashboard() {
   const [jobSearch, setJobSearch] = useState('')
   const [jobSort, setJobSort] = useState('name')
   const [resJobSearch, setResJobSearch] = useState('')
+  const [viewMode, setViewMode] = useState(() => { try { return localStorage.getItem('nvc_proj_view') || 'grid' } catch { return 'grid' } })
+  const [coverUrls, setCoverUrls] = useState({})
+  const [coverPickerJob, setCoverPickerJob] = useState(null)
+  const [coverPickerPhotos, setCoverPickerPhotos] = useState([])
+  const [coverPickerPhotoUrls, setCoverPickerPhotoUrls] = useState({})
+  const [coverPickerLoading, setCoverPickerLoading] = useState(false)
+  const [uploadingCover, setUploadingCover] = useState(false)
+  const [coverMsg, setCoverMsg] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteJobId, setInviteJobId] = useState('')
   const [jobMsg, setJobMsg] = useState('')
@@ -746,6 +754,7 @@ export default function Dashboard() {
     setSubmissions(subs || [])
     const { data: jobList } = await jobsQ
     setJobs(jobList || [])
+    if (jobList?.length) loadCoverUrls(jobList)
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
     const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
@@ -754,6 +763,87 @@ export default function Dashboard() {
       fetch('/api/company-members').then(r => r.json()),
     ])
     setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes2.members || [])
+  }
+
+  async function loadCoverUrls(jobList) {
+    const withCovers = (jobList || []).filter(j => j.cover_image_path)
+    if (!withCovers.length) return
+    const paths = withCovers.map(j => j.cover_image_path)
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(paths, 7200)
+    if (data) {
+      const urls = {}
+      data.forEach(d => {
+        if (d.signedUrl) { const job = withCovers.find(jj => jj.cover_image_path === d.path); if (job) urls[job.id] = d.signedUrl }
+      })
+      setCoverUrls(prev => ({ ...prev, ...urls }))
+    }
+  }
+
+  async function compressForCover(file) {
+    return new Promise(resolve => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const MAX = 1200
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', 0.82)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.src = url
+    })
+  }
+
+  async function openCoverPicker(job) {
+    setCoverPickerJob(job)
+    setCoverPickerLoading(true)
+    setCoverPickerPhotos([])
+    setCoverPickerPhotoUrls({})
+    setCoverMsg('')
+    const { data } = await supabase.from('job_photos').select('*').eq('job_id', job.id).order('taken_at', { ascending: false }).limit(24)
+    const photos = data || []
+    setCoverPickerPhotos(photos)
+    if (photos.length) {
+      const thumbs = photos.map(p => p.storage_path.replace(/\.jpg$/i, '_thumb.jpg'))
+      const { data: signed } = await supabase.storage.from('daily-report-photos').createSignedUrls([...thumbs, ...photos.map(p => p.storage_path)], 3600)
+      if (signed) { const m = {}; signed.forEach(s => { if (s.signedUrl) m[s.path] = s.signedUrl }); setCoverPickerPhotoUrls(m) }
+    }
+    setCoverPickerLoading(false)
+  }
+
+  async function saveCover(jobId, storagePath) {
+    await supabase.from('jobs').update({ cover_image_path: storagePath }).eq('id', jobId)
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, cover_image_path: storagePath } : j))
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(storagePath, 7200)
+    if (data?.signedUrl) setCoverUrls(prev => ({ ...prev, [jobId]: data.signedUrl }))
+    setCoverPickerJob(null)
+    setCoverMsg('')
+  }
+
+  async function uploadCover(file, jobId) {
+    if (file.size > 15 * 1024 * 1024) { setCoverMsg('File too large (max 15 MB).'); return }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setCoverMsg('Unsupported type. Use JPEG, PNG, or WebP.'); return }
+    setUploadingCover(true)
+    setCoverMsg('')
+    try {
+      const compressed = await compressForCover(file)
+      const path = `covers/${jobId}/${Date.now()}.jpg`
+      const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed, { contentType: 'image/jpeg' })
+      if (error) { setCoverMsg('Upload failed: ' + error.message); setUploadingCover(false); return }
+      await saveCover(jobId, path)
+    } catch (e) { setCoverMsg('Upload error: ' + (e.message || 'Unknown error')) }
+    setUploadingCover(false)
+  }
+
+  async function removeCover(jobId) {
+    await supabase.from('jobs').update({ cover_image_path: null }).eq('id', jobId)
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, cover_image_path: null } : j))
+    setCoverUrls(prev => { const u = { ...prev }; delete u[jobId]; return u })
+    setCoverPickerJob(null)
   }
 
   async function updateStatus(sub, status, rejectionReason = '') {
@@ -3160,6 +3250,10 @@ ${estimate.notes ? `
     if (sub.status === 'approved') map[sub.job_id] = (map[sub.job_id] || 0) + (sub.amount_billed || 0)
     return map
   }, {})
+  const pendingByJob = submissions.reduce((map, sub) => {
+    if (sub.status === 'pending') { map[sub.job_id] = (map[sub.job_id] || 0) + 1 }
+    return map
+  }, {})
   const PAGE_SIZE = 25
   const pagedFiltered = filtered.slice(0, billingPage * PAGE_SIZE)
 
@@ -3273,6 +3367,60 @@ ${estimate.notes ? `
         /* Bottom nav (mobile) */
         .rx-bottom-nav { background: #fff !important; border-top: 1px solid #e5e7eb !important; }
       `}</style>
+
+      {/* ── COVER PHOTO PICKER MODAL ── */}
+      {coverPickerJob && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={() => { setCoverPickerJob(null); setCoverMsg('') }}>
+          <div style={{ background: '#fff', borderRadius: '12px', width: '100%', maxWidth: '580px', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+              <div>
+                <p style={{ margin: 0, fontSize: '10px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', color: '#e8590c' }}>Cover Photo</p>
+                <p style={{ margin: '2px 0 0', fontSize: '15px', fontWeight: '700', color: '#111827' }}>#{coverPickerJob.job_number} — {coverPickerJob.project_name}</p>
+              </div>
+              <button onClick={() => { setCoverPickerJob(null); setCoverMsg('') }} style={{ background: 'none', border: 'none', fontSize: '22px', color: '#6b7280', cursor: 'pointer', padding: '2px 8px', lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: '18px 20px' }}>
+              {/* Upload */}
+              <div style={{ marginBottom: '20px' }}>
+                <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Upload new cover</p>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '8px 16px', background: uploadingCover ? '#f9fafb' : '#fff', border: '1px solid #d1d5db', borderRadius: '7px', cursor: uploadingCover ? 'not-allowed' : 'pointer', fontSize: '13px', color: '#374151', transition: 'border-color 0.1s' }}>
+                  {uploadingCover ? 'Uploading…' : 'Choose photo'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} disabled={uploadingCover} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCover(f, coverPickerJob.id); e.target.value = '' }} />
+                </label>
+                <span style={{ marginLeft: '10px', fontSize: '11px', color: '#9ca3af' }}>JPEG, PNG or WebP · max 15 MB</span>
+                {coverMsg && <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#dc2626' }}>{coverMsg}</p>}
+              </div>
+              {/* Existing photos */}
+              {coverPickerLoading && <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>Loading project photos…</p>}
+              {!coverPickerLoading && coverPickerPhotos.length > 0 && (
+                <div>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Pick from project photos</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {coverPickerPhotos.map(photo => {
+                      const tp = photo.storage_path.replace(/\.jpg$/i, '_thumb.jpg')
+                      const url = coverPickerPhotoUrls[tp] || coverPickerPhotoUrls[photo.storage_path]
+                      return (
+                        <div key={photo.id} onClick={() => saveCover(coverPickerJob.id, photo.storage_path)} style={{ paddingBottom: '66%', position: 'relative', overflow: 'hidden', borderRadius: '7px', cursor: 'pointer', background: '#f3f4f6', border: '2px solid transparent', transition: 'border-color 0.1s' }}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = '#e8590c'} onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}>
+                          {url ? <img src={url} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '11px' }}>No preview</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {!coverPickerLoading && coverPickerPhotos.length === 0 && (
+                <p style={{ color: '#9ca3af', fontSize: '13px', margin: 0 }}>No project photos yet. Upload a cover above, or add photos via the Field portal.</p>
+              )}
+              {coverPickerJob.cover_image_path && (
+                <div style={{ marginTop: '18px', paddingTop: '14px', borderTop: '1px solid #f3f4f6' }}>
+                  <button onClick={() => removeCover(coverPickerJob.id)} style={{ fontSize: '12px', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Remove current cover</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── SUBCONTRACT EDITOR MODAL ── */}
       {subcontractModal && (
@@ -4703,11 +4851,16 @@ ${estimate.notes ? `
               <>
                 <div style={s.filterRow}>
                   <input style={{ ...s.filterInput, flex: 1 }} value={jobSearch} onChange={e => setJobSearch(e.target.value)} placeholder="Search by name, number, or location…" />
-                  <select style={{ padding: '8px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', color: '#111827', outline: 'none', flexShrink: 0 }} value={jobSort} onChange={e => setJobSort(e.target.value)}>
+                  <select style={{ ...s.filterSelect, flexShrink: 0 }} value={jobSort} onChange={e => setJobSort(e.target.value)}>
                     <option value="name">Sort: Name</option>
                     <option value="contract">Sort: Contract ↓</option>
                     <option value="start">Sort: Start Date ↓</option>
                   </select>
+                  <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}>
+                    {[['grid', 'Grid'], ['list', 'List']].map(([m, label]) => (
+                      <button key={m} onClick={() => { setViewMode(m); try { localStorage.setItem('nvc_proj_view', m) } catch {} }} style={{ padding: '7px 13px', background: viewMode === m ? '#111827' : '#fff', border: 'none', borderRight: m === 'grid' ? '1px solid #d1d5db' : 'none', cursor: 'pointer', fontSize: '12px', fontWeight: viewMode === m ? '700' : '400', color: viewMode === m ? '#fff' : '#6b7280', lineHeight: 1 }}>{label}</button>
+                    ))}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
@@ -4866,45 +5019,87 @@ ${estimate.notes ? `
                     return (a.project_name || '').localeCompare(b.project_name || '')
                   })
                   if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{jobSearch ? `No jobs match "${jobSearch}".` : showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
+                  const teamByEmail = teamMembers.reduce((m, t) => { m[t.email] = t; return m }, {})
+                  if (viewMode === 'grid') return (
+                    <div className="nv-project-grid">
+                      {visibleJobs.map(j => {
+                        const billed = billedByJob[j.id] || 0
+                        const contract = parseFloat(j.adjusted_contract_value || j.contract_value || 0)
+                        const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
+                        const over = pct > 100
+                        const isStarred = starredJobIds.has(j.id)
+                        const pmFirst = teamByEmail[j.pm_email]?.full_name?.split(' ')[0] || null
+                        const pendingCount = pendingByJob[j.id] || 0
+                        return (
+                          <div key={j.id} className="nv-project-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ position: 'relative', paddingBottom: '58%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0 }}>
+                              {coverUrls[j.id]
+                                ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#d1d5db', letterSpacing: '1px' }}>#{j.job_number}</span>
+                                    <button onClick={e => { e.stopPropagation(); openCoverPicker(j) }} style={{ fontSize: '11px', color: '#9ca3af', background: 'none', border: '1px solid #e5e7eb', borderRadius: '5px', padding: '3px 10px', cursor: 'pointer' }}>+ Add cover</button>
+                                  </div>
+                              }
+                              <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.28)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '13px', color: isStarred ? '#fbbf24' : 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
+                              {coverUrls[j.id] && <button onClick={e => { e.stopPropagation(); openCoverPicker(j) }} style={{ position: 'absolute', bottom: '7px', right: '8px', background: 'rgba(0,0,0,0.38)', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '10px', color: 'rgba(255,255,255,0.88)', cursor: 'pointer', letterSpacing: '0.2px' }}>Change cover</button>}
+                              {pendingCount > 0 && <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#e8590c', borderRadius: '99px', padding: '2px 8px', fontSize: '10px', fontWeight: '700', color: '#fff' }}>{pendingCount} pending</div>}
+                            </div>
+                            <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ padding: '12px 14px', flex: 1, cursor: 'pointer' }}>
+                              <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px', fontVariantNumeric: 'tabular-nums' }}>#{j.job_number}</div>
+                              <p style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{j.project_name}</p>
+                              {j.location && <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location}</p>}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                                <span style={s.jobBadge(j.status)}>{j.status}</span>
+                                {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 5px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>SUB</span>}
+                              </div>
+                              {pmFirst && <div style={{ marginTop: '5px', fontSize: '11px', color: '#6b7280' }}>PM: {pmFirst}</div>}
+                              {j.nv_role !== 'sub' && contract > 0 && (
+                                <div style={{ marginTop: '8px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                                    <span style={{ fontSize: '10px', color: '#9ca3af' }}>{pct.toFixed(0)}% sub-billed (approved)</span>
+                                    {over && <span style={{ fontSize: '10px', color: '#dc2626', fontWeight: '600' }}>Over</span>}
+                                  </div>
+                                  <div style={{ height: '3px', background: '#f0f0f0', borderRadius: '2px' }}>
+                                    <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#16a34a', borderRadius: '2px' }} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
                   return visibleJobs.map(j => {
                     const billed = billedByJob[j.id] || 0
                     const contract = parseFloat(j.adjusted_contract_value || j.contract_value || 0)
                     const pct = contract > 0 ? Math.min(110, (billed / contract) * 100) : 0
                     const over = pct > 100
                     const isStarred = starredJobIds.has(j.id)
+                    const pendingCount = pendingByJob[j.id] || 0
                     return (
-                      <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #f0f0f0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#d97706' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this job'}>{isStarred ? '★' : '☆'}</button>
-                        <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
+                      <div key={j.id} style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '52px', height: '38px', borderRadius: '5px', overflow: 'hidden', background: '#f3f4f6', flexShrink: 0 }}>
+                          {coverUrls[j.id] ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: '9px', color: '#d1d5db', fontWeight: '700' }}>#{j.job_number}</span></div>}
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: isStarred ? '#d97706' : '#ccc', padding: '0 2px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
+                        <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ minWidth: 0 }}>
                               <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                              <p style={s.meta}>{j.location}{contract > 0 ? ' · ' + fmtMoney(contract) + ' contract' : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
+                              <p style={s.meta}>{j.location}{contract > 0 ? ' · ' + fmtMoney(contract) : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              {j.nv_role === 'sub' ? (
-                                contract > 0 && (
-                                  <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#2563eb' }}>{fmtMoney(contract)}</div>
-                                    <div style={{ fontSize: '11px', color: '#3a5a8a' }}>our contract</div>
-                                  </div>
-                                )
-                              ) : (
-                                contract > 0 && (
-                                  <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#dc2626' : '#111827', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}</div>
-                                    <div style={{ fontSize: '11px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% sub-billed (approved)</div>
-                                  </div>
-                                )
-                              )}
-                              {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', letterSpacing: '0.5px' }}>SUB</span>}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                              {pendingCount > 0 && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>{pendingCount} pending</span>}
+                              {j.nv_role === 'sub' ? (contract > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '13px', fontWeight: '700', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(contract)}</div><div style={{ fontSize: '10px', color: '#3a5a8a' }}>our contract</div></div>) : (contract > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#dc2626' : '#111827', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}</div><div style={{ fontSize: '10px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% sub-billed</div></div>)}
+                              {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>SUB</span>}
                               <span style={s.jobBadge(j.status)}>{j.status}</span>
-                              <span style={{ color: '#6b7280', fontSize: '18px' }}>›</span>
+                              <span style={{ color: '#9ca3af', fontSize: '16px' }}>›</span>
                             </div>
                           </div>
                           {j.nv_role !== 'sub' && contract > 0 && (
-                            <div style={{ height: '3px', background: '#f3f4f6', borderRadius: '2px', marginTop: '10px' }}>
-                              <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#16a34a', borderRadius: '2px', transition: 'width 0.3s' }} />
+                            <div style={{ height: '2px', background: '#f3f4f6', borderRadius: '1px', marginTop: '7px' }}>
+                              <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#16a34a', borderRadius: '1px' }} />
                             </div>
                           )}
                         </div>
@@ -4920,6 +5115,11 @@ ${estimate.notes ? `
               <>
                 <div style={s.filterRow}>
                   <input style={{ ...s.filterInput, flex: 1 }} value={resJobSearch} onChange={e => setResJobSearch(e.target.value)} placeholder="Search by name, owner, or address…" />
+                  <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}>
+                    {[['grid', 'Grid'], ['list', 'List']].map(([m, label]) => (
+                      <button key={m} onClick={() => { setViewMode(m); try { localStorage.setItem('nvc_proj_view', m) } catch {} }} style={{ padding: '7px 13px', background: viewMode === m ? '#111827' : '#fff', border: 'none', borderRight: m === 'grid' ? '1px solid #d1d5db' : 'none', cursor: 'pointer', fontSize: '12px', fontWeight: viewMode === m ? '700' : '400', color: viewMode === m ? '#fff' : '#6b7280', lineHeight: 1 }}>{label}</button>
+                    ))}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
@@ -5006,22 +5206,59 @@ ${estimate.notes ? `
                     return true
                   }).sort((a, b) => (a.project_name || '').localeCompare(b.project_name || ''))
                   if (resJobs.length === 0) return <div style={s.emptyMsg}>{resJobSearch ? `No projects match "${resJobSearch}".` : showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
+                  if (viewMode === 'grid') return (
+                    <div className="nv-project-grid">
+                      {resJobs.map(j => {
+                        const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                        const isStarred = starredJobIds.has(j.id)
+                        return (
+                          <div key={j.id} className="nv-project-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ position: 'relative', paddingBottom: '58%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0 }}>
+                              {coverUrls[j.id]
+                                ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#d1d5db', letterSpacing: '1px' }}>#{j.job_number}</span>
+                                    <button onClick={e => { e.stopPropagation(); openCoverPicker(j) }} style={{ fontSize: '11px', color: '#9ca3af', background: 'none', border: '1px solid #e5e7eb', borderRadius: '5px', padding: '3px 10px', cursor: 'pointer' }}>+ Add cover</button>
+                                  </div>
+                              }
+                              <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.28)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '13px', color: isStarred ? '#fbbf24' : 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
+                              {coverUrls[j.id] && <button onClick={e => { e.stopPropagation(); openCoverPicker(j) }} style={{ position: 'absolute', bottom: '7px', right: '8px', background: 'rgba(0,0,0,0.38)', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '10px', color: 'rgba(255,255,255,0.88)', cursor: 'pointer', letterSpacing: '0.2px' }}>Change cover</button>}
+                            </div>
+                            <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ padding: '12px 14px', flex: 1, cursor: 'pointer' }}>
+                              <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px', fontVariantNumeric: 'tabular-nums' }}>#{j.job_number}</div>
+                              <p style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{j.project_name}</p>
+                              {j.owner_name && <p style={{ margin: '0 0 2px', fontSize: '12px', color: '#374151', fontWeight: '500' }}>{j.owner_name}</p>}
+                              {j.location && <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location}</p>}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                                <span style={s.jobBadge(j.status)}>{j.status}</span>
+                                <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 5px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>RESIDENTIAL</span>
+                              </div>
+                              {contract > 0 && <div style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>${contract.toLocaleString()} contract</div>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
                   return resJobs.map(j => {
                     const contract = j.contract_value ? parseFloat(j.contract_value) : 0
                     const isStarred = starredJobIds.has(j.id)
                     return (
-                      <div key={j.id} style={{ padding: '14px 8px', borderBottom: '1px solid #f0f0f0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: isStarred ? '#d97706' : '#333', padding: '0 4px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star this project'}>{isStarred ? '★' : '☆'}</button>
-                        <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
+                      <div key={j.id} style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '52px', height: '38px', borderRadius: '5px', overflow: 'hidden', background: '#f3f4f6', flexShrink: 0 }}>
+                          {coverUrls[j.id] ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: '9px', color: '#d1d5db', fontWeight: '700' }}>#{j.job_number}</span></div>}
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: isStarred ? '#d97706' : '#ccc', padding: '0 2px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
+                        <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ minWidth: 0 }}>
                               <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + new Date(j.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
+                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', letterSpacing: '0.5px' }}>RESIDENTIAL</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                              <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>RESIDENTIAL</span>
                               <span style={s.jobBadge(j.status)}>{j.status}</span>
-                              <span style={{ color: '#6b7280', fontSize: '18px' }}>›</span>
+                              <span style={{ color: '#9ca3af', fontSize: '16px' }}>›</span>
                             </div>
                           </div>
                         </div>

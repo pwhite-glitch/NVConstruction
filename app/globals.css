@@ -217,6 +217,27 @@ textarea:focus {
   border-radius: 1px;
 }
 
+/* ── Project gallery grid ─────────────────────────────────────────────────── */
+.nv-project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+@media (max-width: 1100px) {
+  .nv-project-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .nv-project-grid { grid-template-columns: 1fr; }
+}
+
+.nv-project-card {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease !important;
+}
+.nv-project-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+  border-color: #d1d5db !important;
+}
+
 /* ── Estimator override ───────────────────────────────────────────────────── */
 .nv-estimator {
   padding: 0 !important;

@@ -330,13 +330,23 @@ function ResidentialJobDetailInner() {
   async function saveDetails() {
     setSavingDetails(true)
     setDetailsMsg('')
+    // Guard against accidentally clearing a contract value that exists
+    const newCV = detailsForm.contract_value !== '' && detailsForm.contract_value != null
+      ? parseFloat(detailsForm.contract_value)
+      : null
+    if (!newCV && job.contract_value) {
+      const confirmed = window.confirm(
+        `Contract value will be cleared (currently $${Number(job.contract_value).toLocaleString()}). Are you sure?`
+      )
+      if (!confirmed) { setSavingDetails(false); return }
+    }
     const { error } = await supabase.from('jobs').update({
       project_name: detailsForm.project_name,
       job_number: detailsForm.job_number,
       location: detailsForm.location,
       start_date: detailsForm.start_date || null,
       end_date: detailsForm.end_date || null,
-      contract_value: detailsForm.contract_value || null,
+      contract_value: newCV,
       owner_name: detailsForm.owner_name,
       owner_email: detailsForm.owner_email,
       owner_phone: detailsForm.owner_phone,

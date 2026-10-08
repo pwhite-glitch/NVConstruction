@@ -242,6 +242,5 @@ textarea:focus {
 .nv-estimator {
   padding: 0 !important;
   max-width: unset !important;
-  background: #0f1318 !important;
   min-height: 100%;
 }

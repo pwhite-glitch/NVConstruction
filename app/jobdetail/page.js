@@ -1553,42 +1553,46 @@ function JobDetailInner() {
         ? (subNvTotal > 0 ? subNvTotal : baseContract)
         : baseContract + approvedCOsVal
     const origContract = (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
-    const periodDate = app.period_to ? new Date(app.period_to + 'T12:00:00').toLocaleDateString() : '—'
-    const genDate = new Date().toLocaleDateString()
-    const fmt = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    const isDraft = !app.period_to
+    const periodFrom = app.period_from ? new Date(app.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+    const periodTo   = app.period_to  ? new Date(app.period_to  + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+    const genDate    = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    const fmt      = n => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
+    const esc      = v => String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 
     const r2 = n => Math.round(n * 100) / 100
     const sovLines = aiaLines.map((line, idx) => {
       const scheduled = r2(Number(line.budget_amount || 0))
-      const prevAmt = line.dollar_prev != null ? r2(Number(line.dollar_prev)) : r2(scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100)
+      const prevAmt = line.dollar_prev != null ? r2(Number(line.dollar_prev)) : r2(scheduled * Math.max(0, parseFloat(line.pct_prev) || 0) / 100)
       const thisAmt = line.dollar_this !== undefined
         ? r2(Number(line.dollar_this))
-        : r2(scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100)
+        : r2(scheduled * Math.max(0, parseFloat(line.pct_this) || 0) / 100)
       const totalAmt = prevAmt + thisAmt
-      const totalPct = scheduled > 0 ? Math.min(100, totalAmt / scheduled * 100) : 0
+      // Do NOT cap at 100% — show actual percentage so overbilling is visible
+      const totalPct = scheduled > 0 ? totalAmt / scheduled * 100 : 0
+      const isOverbilled = totalPct > 100 + 0.01
       const balance = scheduled - totalAmt
-      return { ...line, idx: idx + 1, scheduled, prevAmt, thisAmt, totalAmt, totalPct, balance, retainage: totalAmt * retPct }
+      return { ...line, idx: idx + 1, scheduled, prevAmt, thisAmt, totalAmt, totalPct, isOverbilled, balance, retainage: totalAmt * retPct }
     })
 
-    const totalScheduled = sovLines.reduce((a, l) => a + l.scheduled, 0)
-    const totalPrev = sovLines.reduce((a, l) => a + l.prevAmt, 0)
-    const totalThis = sovLines.reduce((a, l) => a + l.thisAmt, 0)
-    const totalCompleted = sovLines.reduce((a, l) => a + l.totalAmt, 0)
-    const totalRetainage = sovLines.reduce((a, l) => a + l.retainage, 0)
+    const totalScheduled  = sovLines.reduce((a, l) => a + l.scheduled, 0)
+    const totalPrev       = sovLines.reduce((a, l) => a + l.prevAmt, 0)
+    const totalThis       = sovLines.reduce((a, l) => a + l.thisAmt, 0)
+    const totalCompleted  = sovLines.reduce((a, l) => a + l.totalAmt, 0)
+    const totalRetainage  = sovLines.reduce((a, l) => a + l.retainage, 0)
     const totalEarnedLessRet = totalCompleted - totalRetainage
-    // Previous certificates must use the PREVIOUS app's retainage rate, not the current one.
-    // On a final billing where retainage drops to 0%, the prior apps were paid at e.g. 90%.
-    // Using current retPct (0%) here would overcount prevCertificates and make Line 8 negative.
-    const appsInSequence = aiaApplications
+    const appsInSequence  = aiaApplications
       .filter(a => app.nv_subcontract_id ? a.nv_subcontract_id === app.nv_subcontract_id : !a.nv_subcontract_id)
       .sort((x, y) => x.app_number - y.app_number)
-    const prevAppInSeq = appsInSequence[appsInSequence.findIndex(a => a.id === app.id) - 1]
-    const prevRetPct = prevAppInSeq ? Math.max(0, Math.min(100, parseFloat(prevAppInSeq.retainage_pct) || 0)) / 100 : retPct
+    const prevAppInSeq    = appsInSequence[appsInSequence.findIndex(a => a.id === app.id) - 1]
+    const prevRetPct      = prevAppInSeq ? Math.max(0, Math.min(100, parseFloat(prevAppInSeq.retainage_pct) || 0)) / 100 : retPct
     const prevCertificates = totalPrev * (1 - prevRetPct)
     const currentPaymentDue = totalEarnedLessRet - prevCertificates
     const balanceToFinish = contractSumToDate - totalCompleted
-    const overallPct = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
+    const overallPct      = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
+    const overbilledLines = sovLines.filter(l => l.isOverbilled)
 
     if (!override && Math.abs(totalScheduled - contractSumToDate) > 0.01) {
       const diff = contractSumToDate - totalScheduled
@@ -1599,126 +1603,218 @@ function JobDetailInner() {
 
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
+
+    const visibleSovLines = sovLines.filter(l => l.scheduled > 0)
+
     w.document.write(`<!DOCTYPE html><html><head>
-<title>AIA G702/G703 — App #${app.app_number} — Job #${job.job_number}</title>
+<meta charset="utf-8">
+<title>Pay App #${app.app_number} — ${esc(job.project_name)} — Job #${job.job_number}</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 24px; line-height: 1.5; }
-.btn { padding: 8px 20px; background: #111; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; margin-bottom: 20px; margin-right: 8px; }
-@media print { .btn { display: none; } }
-h1 { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; border-bottom: 3px solid #111; padding-bottom: 8px; margin-bottom: 4px; }
-.sub { font-size: 10px; color: #777; margin-bottom: 18px; }
-.hgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-.hblock { border: 1px solid #ddd; padding: 10px 12px; border-radius: 4px; }
-.hlabel { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin-bottom: 2px; }
-.hval { font-size: 12px; font-weight: 700; }
-.hsub { font-size: 10px; color: #666; margin-top: 2px; }
-.stitle { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #666; font-weight: 700; margin: 18px 0 8px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-.g702 { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-.g702 td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
-.g702 td:first-child { color: #888; width: 28px; font-size: 10px; }
-.g702 td:last-child { text-align: right; font-family: monospace; font-size: 12px; font-weight: 600; min-width: 130px; }
-.g702 tr.due td { font-weight: 800; font-size: 13px; border-top: 2px solid #111; background: #f5f5f5; }
-.page-break { page-break-before: always; padding-top: 24px; }
-.g703 { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 8px; }
-.g703 th { padding: 5px 7px; border: 1px solid #ccc; background: #f0f0f0; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.3px; text-align: center; line-height: 1.3; }
-.g703 td { padding: 5px 7px; border: 1px solid #e8e8e8; }
-.g703 td.r { text-align: right; font-family: monospace; }
-.g703 td.c { text-align: center; }
-.g703 td.code { font-family: monospace; font-size: 9px; color: #888; }
-.g703 tr.tot td { font-weight: 700; border-top: 2px solid #111; background: #f5f5f5; }
-.foot { margin-top: 24px; font-size: 9px; color: #bbb; border-top: 1px solid #eee; padding-top: 8px; }
+@page { size: letter landscape; margin: 0.45in 0.5in; }
+@page { @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8px; color: #bbb; font-family: Arial, sans-serif; } }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 10px; color: #111; background: #fff; line-height: 1.45; }
+.no-print { padding: 10px 20px; background: #111; display: flex; gap: 8px; align-items: center; }
+.btn { padding: 7px 18px; background: #e8590c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 700; }
+.btn-sec { padding: 7px 14px; background: transparent; color: #aaa; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 11px; }
+@media print { .no-print { display: none !important; } }
+.doc { padding: 0; }
+
+/* Header band */
+.header-band { background: #111; padding: 14px 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+.co-name { font-size: 13px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #fff; }
+.co-info { font-size: 8px; color: #666; margin-top: 3px; letter-spacing: 0.3px; }
+.hdr-right { text-align: right; }
+.hdr-type { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; }
+.hdr-title { font-size: 13px; font-weight: 800; color: #fff; margin-top: 3px; }
+.hdr-meta { font-size: 8px; color: #666; margin-top: 4px; line-height: 1.7; }
+.rule { height: 2px; background: #e8590c; }
+
+${isDraft ? `.draft-banner { background: #fef3c7; border-bottom: 1px solid #fde68a; padding: 5px 20px; font-size: 9px; font-weight: 700; color: #92400e; letter-spacing: 1px; text-transform: uppercase; }` : ''}
+
+/* G702 page */
+.g702-page { padding: 16px 20px 20px; page-break-after: always; }
+.page-eyebrow { font-size: 8px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #6b7280; margin-bottom: 8px; }
+.info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 16px; border: 1px solid #ddd; }
+.info-cell { padding: 9px 12px; }
+.info-cell + .info-cell { border-left: 1px solid #eee; }
+.info-label { font-size: 7px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #e8590c; margin-bottom: 4px; }
+.info-val { font-size: 11px; font-weight: 700; color: #111; }
+.info-sub { font-size: 9px; color: #777; margin-top: 1px; }
+
+.g702-table { width: 100%; border-collapse: collapse; }
+.g702-table td { padding: 6px 12px; border-bottom: 1px solid #f0f0f0; font-size: 10px; }
+.g702-table td:first-child { width: 24px; color: #aaa; font-size: 9px; }
+.g702-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; min-width: 140px; }
+.g702-table tr.due td { font-weight: 800; font-size: 13px; border-top: 2px solid #111; background: #1a1a1a; color: #fff; }
+.g702-table tr.due td:last-child { color: #fff; }
+.g702-table tr.balance td { border-top: 1px solid #ddd; }
+
+/* Continuation sheet */
+.g703-page { padding: 0 20px 20px; }
+.cont-header { padding: 10px 0 6px; border-bottom: 1px solid #e5e7eb; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
+.cont-title { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #111; }
+.cont-meta { font-size: 8px; color: #777; }
+
+/* G703 table */
+.g703 { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+.g703 thead th { padding: 5px 6px; background: #f4f4f4; border: 1px solid #d0d0d0; font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.3px; text-align: center; line-height: 1.25; vertical-align: bottom; font-weight: 800; color: #333; }
+.g703 thead th.left { text-align: left; }
+.g703 thead { display: table-header-group; } /* Repeat on every printed page */
+.g703 tbody tr { page-break-inside: avoid; }
+.g703 tbody td { padding: 5px 6px; border: 1px solid #e8e8e8; vertical-align: top; }
+.g703 td.num { text-align: center; color: #aaa; font-size: 8px; width: 22px; }
+.g703 td.code { font-family: 'Courier New', monospace; font-size: 8.5px; color: #777; white-space: nowrap; width: 70px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
+.g703 td.desc { word-break: break-word; min-width: 160px; }
+.g703 td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g703 td.pct { text-align: center; font-variant-numeric: tabular-nums; width: 46px; }
+.g703 td.flag { text-align: center; width: 16px; font-size: 8px; }
+.g703 tr.over td { background: #fff7ed; }
+.g703 tr.over td.pct { color: #c2410c; font-weight: 700; }
+.g703 tfoot td { padding: 6px 6px; border: 1px solid #d0d0d0; background: #f4f4f4; font-weight: 700; vertical-align: top; }
+.g703 tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g703 tfoot td.pct { text-align: center; font-variant-numeric: tabular-nums; }
+
+.warn-box { margin-top: 10px; padding: 8px 12px; background: #fff7ed; border: 1px solid #fed7aa; border-left: 3px solid #e8590c; font-size: 9px; color: #92400e; line-height: 1.6; }
+.foot { margin-top: 10px; font-size: 8px; color: #bbb; border-top: 1px solid #eee; padding-top: 6px; display: flex; justify-content: space-between; }
 </style></head><body>
-<button class="btn" onclick="window.print()">Print / Save as PDF</button>
-<button class="btn" style="background:#666" onclick="window.close()">Close</button>
 
-<h1>Application and Certificate for Payment</h1>
-<div class="sub">AIA Document G702 &nbsp;·&nbsp; Application No. ${app.app_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+<div class="no-print">
+  <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+  <button class="btn-sec" onclick="window.close()">Close</button>
+  ${isDraft ? `<span style="font-size:11px;color:#f59e0b;font-weight:700;margin-left:8px">⚠ DRAFT — Billing period is not set</span>` : ''}
+  ${overbilledLines.length > 0 ? `<span style="font-size:11px;color:#dc2626;font-weight:700;margin-left:8px">⚠ ${overbilledLines.length} line${overbilledLines.length > 1 ? 's' : ''} exceed scheduled value</span>` : ''}
+</div>
 
-<div class="hgrid">
+<div class="doc">
+
+<!-- Header band -->
+<div class="header-band">
   <div>
-    <div class="hblock" style="margin-bottom:10px">
-      <div class="hlabel">To Owner</div>
-      <div class="hval">${job.owner_company || '—'}</div>
-      ${job.owner_name ? `<div class="hsub">${job.owner_name}</div>` : ''}
-    </div>
-    <div class="hblock">
-      <div class="hlabel">Via Architect</div>
-      <div class="hval">${job.architect_name || job.architect_company || '—'}</div>
-      ${job.architect_company && job.architect_name ? `<div class="hsub">${job.architect_company}</div>` : ''}
-    </div>
+    <div class="co-name">NV Construction, LLC</div>
+    <div class="co-info">General Contractor &nbsp;·&nbsp; management@nvim.co &nbsp;·&nbsp; nvim.co &nbsp;·&nbsp; LA License # CL 10283</div>
   </div>
-  <div>
-    <div class="hblock" style="margin-bottom:10px">
-      <div class="hlabel">From Contractor</div>
-      <div class="hval">NV Construction</div>
-    </div>
-    <div class="hblock">
-      <div class="hlabel">Project</div>
-      <div class="hval">${job.project_name}</div>
-      <div class="hsub">Contract No. ${job.job_number}${job.location ? ' &nbsp;·&nbsp; ' + job.location : ''}</div>
-    </div>
+  <div class="hdr-right">
+    <div class="hdr-type">Application for Payment</div>
+    <div class="hdr-title">Application No. ${app.app_number}${isDraft ? ' — DRAFT' : ''}</div>
+    <div class="hdr-meta">Period: ${periodFrom} – ${periodTo}<br>Generated: ${genDate}</div>
+  </div>
+</div>
+<div class="rule"></div>
+${isDraft ? `<div class="draft-banner">DRAFT — Billing period end date is required before final submission</div>` : ''}
+
+<!-- G702 Application for Payment -->
+<div class="g702-page">
+<div class="page-eyebrow">AIA Document G702 &nbsp;·&nbsp; Contractor's Application and Certificate for Payment</div>
+
+<div class="info-grid">
+  <div class="info-cell">
+    <div class="info-label">To Owner</div>
+    <div class="info-val">${esc(job.owner_company || '—')}</div>
+    ${job.owner_name ? `<div class="info-sub">${esc(job.owner_name)}</div>` : ''}
+  </div>
+  <div class="info-cell">
+    <div class="info-label">From Contractor</div>
+    <div class="info-val">NV Construction, LLC</div>
+    <div class="info-sub">General Contractor</div>
+  </div>
+  <div class="info-cell">
+    <div class="info-label">Project</div>
+    <div class="info-val">${esc(job.project_name)}</div>
+    <div class="info-sub">Contract #${job.job_number}${job.location ? ' &nbsp;·&nbsp; ' + esc(job.location) : ''}</div>
+  </div>
+  <div class="info-cell">
+    <div class="info-label">Billing Period</div>
+    <div class="info-val">${periodFrom} – ${periodTo}</div>
+    <div class="info-sub">Retainage: ${app.retainage_pct || 10}%</div>
   </div>
 </div>
 
-<div class="stitle">Contractor's Application for Payment (G702)</div>
-<table class="g702">
-  <tr><td>1.</td><td>Original Contract Sum</td><td>${fmt(origContract)}</td></tr>
-  <tr><td>2.</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
-  <tr><td>3.</td><td>Contract Sum to Date (Line 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
-  <tr><td>4.</td><td>Total Completed &amp; Stored to Date (column G, G703)</td><td>${fmt(totalCompleted)}</td></tr>
-  <tr><td>5.</td><td>Retainage: ${app.retainage_pct}% of Completed Work</td><td>(${fmt(totalRetainage)})</td></tr>
-  <tr><td>6.</td><td>Total Earned Less Retainage (Line 4 less 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
-  <tr><td>7.</td><td>Less Previous Certificates for Payment</td><td>(${fmt(prevCertificates)})</td></tr>
-  <tr class="due"><td>8.</td><td>CURRENT PAYMENT DUE</td><td>${fmtSigned(currentPaymentDue)}</td></tr>
-  <tr><td>9.</td><td>Balance to Finish, Including Retainage (Line 3 less 4)</td><td>${fmtSigned(balanceToFinish)}</td></tr>
+<table class="g702-table">
+  <tr><td>1</td><td>Original Contract Sum</td><td>${fmt(origContract)}</td></tr>
+  <tr><td>2</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
+  <tr><td>3</td><td>Contract Sum to Date (Lines 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
+  <tr><td>4</td><td>Total Completed &amp; Stored to Date (Column G of G703)</td><td>${fmt(totalCompleted)}</td></tr>
+  <tr><td>5</td><td>Retainage: ${app.retainage_pct || 10}% of Completed Work (Column I of G703)</td><td>(${fmt(totalRetainage)})</td></tr>
+  <tr><td>6</td><td>Total Earned Less Retainage (Line 4 less Line 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
+  <tr><td>7</td><td>Less Previous Certificates for Payment</td><td>(${fmt(prevCertificates)})</td></tr>
+  <tr class="due"><td>8</td><td>CURRENT PAYMENT DUE</td><td>${fmtSigned(currentPaymentDue)}</td></tr>
+  <tr class="balance"><td>9</td><td>Balance to Finish, Including Retainage (Line 3 less Line 4)</td><td>${fmtSigned(balanceToFinish)}</td></tr>
 </table>
 
-${sovLines.length > 0 ? `
-<div class="page-break">
-<h1>Continuation Sheet</h1>
-<div class="sub">AIA Document G703 &nbsp;·&nbsp; Application No. ${app.app_number} &nbsp;·&nbsp; ${job.project_name} &nbsp;·&nbsp; Contract No. ${job.job_number} &nbsp;·&nbsp; Period to: ${periodDate}</div>
+${overbilledLines.length > 0 ? `
+<div class="warn-box">
+  <strong>Data inconsistency — requires resolution:</strong> ${overbilledLines.length} line item${overbilledLines.length > 1 ? 's have' : ' has'} a completed amount exceeding the scheduled value.
+  Affected item${overbilledLines.length > 1 ? 's' : ''}: ${overbilledLines.map(l => `${esc(l.description || l.cost_code || String(l.idx))} (${fmtSigned(l.balance)} balance, ${l.totalPct.toFixed(1)}% complete)`).join('; ')}.
+  The scheduled value may need to be revised via a change order, or the completed amount corrected. Values are shown as-entered and have not been adjusted.
+</div>` : ''}
+
+<div class="foot">
+  <span>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; LA License # CL 10283</span>
+  <span>App #${app.app_number} &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; Generated ${genDate}</span>
+</div>
+</div>
+
+<!-- G703 Continuation Sheet -->
+${visibleSovLines.length > 0 ? `
+<div class="g703-page">
+<div class="cont-header">
+  <span class="cont-title">G703 &nbsp;·&nbsp; Continuation Sheet &nbsp;·&nbsp; App #${app.app_number}</span>
+  <span class="cont-meta">${esc(job.project_name)} &nbsp;·&nbsp; Contract #${job.job_number} &nbsp;·&nbsp; Period: ${periodFrom} – ${periodTo}</span>
+</div>
+
 <table class="g703">
-  <thead><tr>
-    <th style="width:28px">A<br>No.</th>
-    <th style="width:22px">B<br>Code</th>
-    <th>C — Description of Work</th>
-    <th>D<br>Scheduled<br>Value</th>
-    <th>E<br>Work Completed<br>From Previous<br>Application</th>
-    <th>F<br>Work Completed<br>This Period</th>
-    <th>G<br>Total Completed<br>&amp; Stored to Date</th>
-    <th>%<br>G/C</th>
-    <th>H<br>Balance<br>to Finish</th>
-    <th>I<br>Retainage</th>
-  </tr></thead>
+  <thead>
+    <tr>
+      <th style="width:22px">A<br>No.</th>
+      <th style="width:70px" class="left">B<br>Cost Code</th>
+      <th class="left">C — Description of Work</th>
+      <th>D<br>Scheduled<br>Value</th>
+      <th>E<br>Previous<br>Application</th>
+      <th>F<br>This<br>Period</th>
+      <th>G<br>Total Completed<br>&amp; Stored to Date</th>
+      <th>%<br>G÷D</th>
+      <th>H<br>Balance<br>to Finish</th>
+      <th>I<br>Retainage</th>
+    </tr>
+  </thead>
   <tbody>
-    ${sovLines.filter(l => l.scheduled > 0).map(l => `<tr>
-      <td class="c">${l.idx}</td>
-      <td class="code">${l.cost_code || ''}</td>
-      <td>${l.description}</td>
+    ${visibleSovLines.map(l => `<tr${l.isOverbilled ? ' class="over"' : ''}>
+      <td class="num">${l.idx}</td>
+      <td class="code" title="${esc(l.cost_code || '')}">${esc(l.cost_code || '')}</td>
+      <td class="desc">${esc(l.description || '—')}</td>
       <td class="r">${fmt(l.scheduled)}</td>
       <td class="r">${fmt(l.prevAmt)}</td>
       <td class="r">${fmt(l.thisAmt)}</td>
       <td class="r">${fmt(l.totalAmt)}</td>
-      <td class="c">${l.totalPct.toFixed(0)}%</td>
+      <td class="pct">${l.totalPct.toFixed(1)}%${l.isOverbilled ? ' ▲' : ''}</td>
       <td class="r">${fmtSigned(l.balance)}</td>
       <td class="r">${fmt(l.retainage)}</td>
     </tr>`).join('')}
-    <tr class="tot">
-      <td colspan="3">TOTALS</td>
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="3"><strong>TOTALS</strong></td>
       <td class="r">${fmt(totalScheduled)}</td>
       <td class="r">${fmt(totalPrev)}</td>
       <td class="r">${fmt(totalThis)}</td>
       <td class="r">${fmt(totalCompleted)}</td>
-      <td class="c">${overallPct}%</td>
+      <td class="pct">${overallPct}%</td>
       <td class="r">${fmtSigned(balanceToFinish)}</td>
       <td class="r">${fmt(totalRetainage)}</td>
     </tr>
-  </tbody>
+  </tfoot>
 </table>
+
+${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><strong>▲ Overbilled:</strong> Highlighted rows show completed amounts that exceed the scheduled value. Percentage shown is actual (not capped). Review change orders or correct cost data before submitting.</div>` : ''}
+
+<div class="foot">
+  <span>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; LA License # CL 10283</span>
+  <span>App #${app.app_number} &nbsp;·&nbsp; Job #${job.job_number} &nbsp;·&nbsp; Generated ${genDate}</span>
+</div>
 </div>` : ''}
 
-<div class="foot">Generated ${genDate} &nbsp;·&nbsp; NV Construction &nbsp;·&nbsp; Job #${job.job_number} — ${job.project_name}</div>
+</div>
 </body></html>`)
     w.document.close()
   }

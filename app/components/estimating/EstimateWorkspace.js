@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
 
 const STAGE_OPTS = [
@@ -87,11 +87,62 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const [showConvert, setShowConvert] = useState(false)
   const [cvtForm,     setCvtForm]     = useState({ job_number: '', start_date: '' })
   const [converting,  setConverting]  = useState(false)
+  const [dirty,       setDirty]       = useState(false)
+  const [draftMsg,    setDraftMsg]    = useState('')
+  const [hasDraft,    setHasDraft]    = useState(false)
+  const [draftSnap,   setDraftSnap]   = useState(null)
+
+  const DRAFT_KEY    = `estimate_draft_${estimate.id}`
+  const isFirstRender = useRef(true)
+  const autoSaveTimer = useRef(null)
 
   const canEdit = ['pm', 'apm'].includes(profile?.role)
   const isPM    = profile?.role === 'pm'
 
   useEffect(() => { if (tab === 'docs') loadDocs() }, [tab])
+
+  // Check for a locally-saved draft newer than the DB on first load
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      const dbTime = new Date(estimate.updated_at || 0).getTime()
+      if (draft.savedAt > dbTime + 5000) {
+        setHasDraft(true)
+        setDraftSnap(draft)
+      } else {
+        localStorage.removeItem(DRAFT_KEY)
+      }
+    } catch {}
+  }, [])
+
+  // Mark dirty on any form/lines change after initial mount
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    setDirty(true)
+  }, [form, lines])
+
+  // Write draft to localStorage ~2s after last change
+  useEffect(() => {
+    if (!dirty) return
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines, savedAt: Date.now() }))
+        setDraftMsg('Draft saved locally')
+        setTimeout(() => setDraftMsg(''), 2500)
+      } catch {}
+    }, 1500)
+    return () => clearTimeout(t)
+  }, [form, lines, dirty])
+
+  // Auto-save to DB 30s after last change (resets on each keystroke)
+  useEffect(() => {
+    if (!dirty || !canEdit || isArchived) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => save(true), 30000)
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [dirty, form, lines])
 
   async function loadDocs() {
     setLoadingDocs(true)
@@ -100,9 +151,9 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setLoadingDocs(false)
   }
 
-  async function save() {
-    setSaving(true)
-    setSaveMsg('')
+  async function save(auto = false) {
+    if (!auto) setSaving(true)
+    if (!auto) setSaveMsg('')
     try {
       const fields = {
         project_name:   form.project_name,
@@ -153,13 +204,16 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         setForm({ ...updated })
         setLines(updated.estimate_line_items)
         onUpdated(updated)
-        setSaveMsg('Saved')
+        try { localStorage.removeItem(DRAFT_KEY) } catch {}
+        setDirty(false)
+        setHasDraft(false)
+        setSaveMsg(auto ? 'Auto-saved' : 'Saved')
         setTimeout(() => setSaveMsg(''), 2500)
       }
     } catch (err) {
-      setSaveMsg('Error — ' + (err?.message || 'check connection'))
+      if (!auto) setSaveMsg('Error — ' + (err?.message || 'check connection'))
     }
-    setSaving(false)
+    if (!auto) setSaving(false)
   }
 
   async function uploadDoc(file) {
@@ -239,8 +293,30 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setLines(l => l.map((x, i) => i === idx ? { ...x, [key]: val } : x))
   }
 
+  function restoreDraft() {
+    if (!draftSnap) return
+    setForm(draftSnap.form)
+    setLines(draftSnap.lines || [])
+    setHasDraft(false)
+    setDirty(true)
+  }
+
+  function dismissDraft() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    setHasDraft(false)
+  }
+
   return (
     <div style={s.page}>
+
+      {/* ── Draft restore banner ── */}
+      {hasDraft && (
+        <div style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d', padding: '10px 1.5rem', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: '#92400e' }}>
+          <span style={{ flex: 1 }}>A locally-saved draft from your last session was found. Restore it to pick up where you left off.</span>
+          <button onClick={restoreDraft} style={{ padding: '5px 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Restore draft</button>
+          <button onClick={dismissDraft} style={{ padding: '5px 12px', background: 'none', border: '1px solid #d97706', color: '#92400e', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}>Discard</button>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div style={s.header}>
@@ -256,10 +332,12 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         </div>
         <div style={s.hright}>
           <span style={s.sbadge(form.status)}>{stageCfg.label}</span>
-          {saving  && <span style={{ fontSize: '12px', color: '#6b7280' }}>Saving…</span>}
-          {saveMsg && <span style={{ fontSize: '12px', color: saveMsg === 'Saved' ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{saveMsg}</span>}
+          {saving   && <span style={{ fontSize: '12px', color: '#6b7280' }}>Saving…</span>}
+          {saveMsg  && !saving && <span style={{ fontSize: '12px', color: saveMsg.startsWith('Error') ? '#dc2626' : '#16a34a', fontWeight: '500' }}>{saveMsg}</span>}
+          {draftMsg && !saving && !saveMsg && <span style={{ fontSize: '12px', color: '#6b7280' }}>{draftMsg}</span>}
+          {dirty    && !saving && !saveMsg && !draftMsg && <span style={{ fontSize: '12px', color: '#9ca3af' }}>Unsaved changes</span>}
           {canEdit && !isArchived && (
-            <button style={{ ...s.btn, padding: '6px 14px', fontSize: '13px' }} onClick={save} disabled={saving}>
+            <button style={{ ...s.btn, padding: '6px 14px', fontSize: '13px' }} onClick={() => save()} disabled={saving}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           )}

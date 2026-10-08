@@ -311,13 +311,18 @@ function JobDetailInner() {
   const [rejectingCostId, setRejectingCostId] = useState(null)
   const [costRejectNote, setCostRejectNote] = useState('')
   const [assigningCostId, setAssigningCostId] = useState(null)
+  // Review / Edit panel
+  const [reviewingCostId, setReviewingCostId] = useState(null)
+  const [reviewForm, setReviewForm] = useState({})
+  const [savingReview, setSavingReview] = useState(false)
+  const [reviewMsg, setReviewMsg] = useState('')
   const [movingCostId, setMovingCostId] = useState(null)
   const [moveTargetJobId, setMoveTargetJobId] = useState('')
   const [activeJobs, setActiveJobs] = useState([])
   const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
 
@@ -885,6 +890,7 @@ function JobDetailInner() {
       const rowData = {
         job_id: id, submitted_by: session.user.id,
         cost_date: dcForm.cost_date, description: dcForm.description,
+        vendor: dcForm.vendor || null,
         category: dcForm.category, amount: parseFloat(dcForm.amount),
         reason: dcForm.reason || null,
         notes: dcForm.notes || null, budget_item_id: dcForm.budget_item_id || null,
@@ -904,7 +910,7 @@ function JobDetailInner() {
       }
       json = await res.json()
       if (json.error) { setErrMsg('Failed to save: ' + json.error); setTimeout(() => setErrMsg(''), 6000); setSubmittingDc(false); return }
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -969,28 +975,82 @@ function JobDetailInner() {
     a.click()
   }
 
-  async function updateCostStatus(costId, status, notes) {
+  async function getDcToken() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      return session?.access_token || null
+    } catch { return null }
+  }
+
+  async function callDcReview(action, costId, extraFields = {}) {
+    const token = await getDcToken()
+    if (!token) { alert('Session expired — please reload the page.'); return { error: 'No session' } }
+    const res = await fetch('/api/dc-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ action, id: costId, ...extraFields }),
+    })
+    return res.json()
+  }
+
+  async function approveCost(costId) {
     setUpdatingCostId(costId)
-    if (status === 'rejected') {
-      const cost = directCosts.find(c => c.id === costId)
-      const superEmail = cost?._profile?.email || null
-      if (superEmail) {
-        sendEmail(superEmail, `Cost entry rejected — #${job?.job_number} ${job?.project_name}`,
-          emailWrap(`
-            <h2 style="color:#ff6b6b;margin:0 0 1rem">Cost entry rejected</h2>
-            <p style="color:#aaa">Your direct cost entry <strong style="color:#f1f1f1">${cost.description}</strong> ($${Number(cost.amount).toLocaleString()}) on <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong> has been rejected.</p>
-            ${notes ? `<div style="background:#fef2f2;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${notes}</p></div>` : '<p style="color:#888;font-size:13px;margin:1rem 0 0">Contact NV Construction if you have questions.</p>'}
-          `)
-        )
-      }
-      await fetch('/api/direct-costs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId }) })
-    } else {
-      await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status, notes: notes || null }) })
-    }
-    setRejectingCostId(null)
-    setCostRejectNote('')
+    const result = await callDcReview('approve', costId)
+    if (result.error) alert('Approve failed: ' + result.error)
     await loadDirectCosts()
     setUpdatingCostId(null)
+  }
+
+  async function unapproveCost(costId) {
+    setUpdatingCostId(costId)
+    const result = await callDcReview('unapprove', costId)
+    if (result.error) alert('Unapprove failed: ' + result.error)
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function rejectCost(costId, rejection_reason) {
+    if (!rejection_reason.trim()) { alert('A rejection reason is required.'); return }
+    setUpdatingCostId(costId)
+    const result = await callDcReview('reject', costId, { rejection_reason })
+    if (result.error) alert('Reject failed: ' + result.error)
+    else { setRejectingCostId(null); setCostRejectNote('') }
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function saveReview(costId, andApprove = false) {
+    setSavingReview(true)
+    setReviewMsg('')
+    const editResult = await callDcReview('edit', costId, reviewForm)
+    if (editResult.error) { setReviewMsg('Save failed: ' + editResult.error); setSavingReview(false); return }
+    if (andApprove) {
+      const cost = directCosts.find(c => c.id === costId)
+      if (!cost?.receipt_url && !reviewForm.receipt_url) {
+        setReviewMsg('Attach a receipt before approving.'); setSavingReview(false); return
+      }
+      const approveResult = await callDcReview('approve', costId)
+      if (approveResult.error) { setReviewMsg('Edit saved, but approve failed: ' + approveResult.error); setSavingReview(false); await loadDirectCosts(); return }
+    }
+    await loadDirectCosts()
+    setReviewingCostId(null)
+    setSavingReview(false)
+  }
+
+  function openReviewPanel(c) {
+    setReviewingCostId(c.id)
+    setReviewMsg('')
+    setReviewForm({
+      cost_date: c.cost_date || '',
+      vendor: c.vendor || '',
+      description: c.description || '',
+      amount: String(c.amount || ''),
+      category: c.category || 'Materials',
+      notes: c.notes || '',
+      budget_item_id: c.budget_item_id || '',
+      bill_to_owner: c.bill_to_owner || false,
+      owner_auth_ref: c.owner_auth_ref || '',
+    })
   }
 
   async function assignDcBudgetItem(costId, budgetItemId) {
@@ -9080,11 +9140,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'admin') ? '2fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'admin') ? '2fr 1fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
                       </div>
+                      {(userRole === 'pm' || userRole === 'admin') && (
+                        <div>
+                          <label style={s.label}>Vendor</label>
+                          <input style={s.input} value={dcForm.vendor} onChange={e => setDcForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Home Depot, ABC Supply..." />
+                        </div>
+                      )}
                       {(userRole === 'pm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Budget line</label>
@@ -9204,6 +9270,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   if (dcAmountMax && Number(c.amount) > Number(dcAmountMax)) return false
                   if (!q) return true
                   return c.description?.toLowerCase().includes(q) ||
+                    c.vendor?.toLowerCase().includes(q) ||
                     c.notes?.toLowerCase().includes(q) ||
                     String(c.amount).includes(dcSearch.trim()) ||
                     Number(c.amount).toLocaleString().includes(dcSearch.trim())
@@ -9238,9 +9305,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   )}
                   {visibleCosts.map(c => {
                 const isRejecting = rejectingCostId === c.id
+                const isReviewing = reviewingCostId === c.id
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
                 const isDup = activeDupIds.has(c.id)
+                const canReview = userRole === 'pm' || userRole === 'admin'
                 return (
                   <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#e9d5ff' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
                     <div style={s.billingEntryHeader}>
@@ -9278,37 +9347,47 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ fontSize: '12px', color: '#6b7280' }}>
                           {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
+                          {c.vendor && <span style={{ color: '#374151' }}> · {c.vendor}</span>}
                           {budgetLine && ` · ${budgetLine.description}`}
                           {c.assigned_to && <span style={{ color: '#e8590c' }}> · {c.assigned_to}</span>}
                           {c.reason && ` · ${c.reason}`}
                           {c.notes && ` · ${c.notes}`}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <span style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>${Number(c.amount).toLocaleString()}</span>
                         {c.receipt_url && (
                           <button style={s.btnSmall} onClick={() => openDcReceiptUrl(c.receipt_url)}>View receipt</button>
                         )}
+                        {canReview && !isRejecting && (
+                          <button
+                            style={{ ...s.btnSmall, ...(isReviewing ? { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' } : {}) }}
+                            onClick={() => isReviewing ? setReviewingCostId(null) : openReviewPanel(c)}>
+                            {isReviewing ? 'Close' : 'Review/Edit'}
+                          </button>
+                        )}
                         {c.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            {(userRole === 'pm' || userRole === 'admin') && (
+                            {canReview && (
                               <button
-                                style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.budget_item_id || !c.receipt_url) ? 0.4 : 1, cursor: (!c.budget_item_id || !c.receipt_url) ? 'not-allowed' : 'pointer' }}
-                                disabled={updatingCostId === c.id || !c.budget_item_id || !c.receipt_url}
-                                title={!c.receipt_url ? 'Attach a receipt before approving' : !c.budget_item_id ? 'Assign a budget line item before approving' : ''}
-                                onClick={() => updateCostStatus(c.id, 'approved', c.notes)}>
-                                Approve
+                                style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.receipt_url) ? 0.4 : 1, cursor: !c.receipt_url ? 'not-allowed' : 'pointer' }}
+                                disabled={updatingCostId === c.id || !c.receipt_url}
+                                title={!c.receipt_url ? 'Attach a receipt before approving' : ''}
+                                onClick={() => approveCost(c.id)}>
+                                {updatingCostId === c.id ? '...' : 'Approve'}
                               </button>
                             )}
                             <button
                               style={s.btnSmallRed}
-                              onClick={() => { setRejectingCostId(isRejecting ? null : c.id); setCostRejectNote('') }}>
+                              onClick={() => { setRejectingCostId(isRejecting ? null : c.id); setReviewingCostId(null); setCostRejectNote('') }}>
                               {isRejecting ? 'Cancel' : 'Reject'}
                             </button>
                           </div>
                         )}
-                        {c.status === 'approved' && (userRole === 'pm' || userRole === 'admin') && (
-                          <button style={s.btnSmallRed} onClick={() => updateCostStatus(c.id, 'rejected', c.notes)}>Undo approve</button>
+                        {c.status === 'approved' && canReview && (
+                          <button style={s.btnSmallRed} disabled={updatingCostId === c.id} onClick={() => unapproveCost(c.id)}>
+                            {updatingCostId === c.id ? '...' : 'Undo approve'}
+                          </button>
                         )}
                         <button
                           style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#faf5ff', color: '#7c3aed', border: '1px solid #4a1a6a' } : {}) }}
@@ -9317,31 +9396,113 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     </div>
 
+                    {c.status === 'rejected' && c.rejection_reason && (
+                      <div style={{ background: '#fef2f2', borderTop: '1px solid #fecaca', padding: '10px 16px' }}>
+                        <p style={{ margin: '0 0 3px', fontSize: '11px', color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#7f1d1d', lineHeight: '1.5' }}>{c.rejection_reason}</p>
+                      </div>
+                    )}
+
                     {isRejecting && (
-                      <div style={{ ...s.billingEntryExpanded }}>
-                        <label style={s.label}>Rejection note (optional)</label>
+                      <div style={{ ...s.billingEntryExpanded, background: '#fef2f2', borderTop: '1px solid #fecaca' }}>
+                        <label style={{ ...s.label, color: '#dc2626' }}>Rejection reason <span style={{ color: '#dc2626' }}>*</span></label>
                         <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                          <input style={s.input} value={costRejectNote} onChange={e => setCostRejectNote(e.target.value)} placeholder="Reason for rejection..." />
-                          <button style={{ ...s.btnSmallRed, whiteSpace: 'nowrap', opacity: updatingCostId === c.id ? 0.6 : 1 }} disabled={updatingCostId === c.id} onClick={() => updateCostStatus(c.id, 'rejected', costRejectNote)}>
+                          <input
+                            style={{ ...s.input, borderColor: '#fca5a5' }}
+                            value={costRejectNote}
+                            onChange={e => setCostRejectNote(e.target.value)}
+                            placeholder="Describe specifically what needs to be corrected..."
+                            required
+                          />
+                          <button
+                            style={{ ...s.btnSmallRed, whiteSpace: 'nowrap', opacity: updatingCostId === c.id || !costRejectNote.trim() ? 0.5 : 1 }}
+                            disabled={updatingCostId === c.id || !costRejectNote.trim()}
+                            onClick={() => rejectCost(c.id, costRejectNote)}>
                             {updatingCostId === c.id ? '...' : 'Confirm reject'}
                           </button>
                         </div>
                       </div>
                     )}
 
-                    <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap' }}>Budget line</label>
-                      <select
-                        style={{ ...s.input, flex: 1, opacity: assigningCostId === c.id ? 0.6 : 1 }}
-                        disabled={assigningCostId === c.id}
-                        value={c.budget_item_id || ''}
-                        onChange={e => assignDcBudgetItem(c.id, e.target.value)}>
-                        <option value="">— Unassigned —</option>
-                        {budgetItems.map(b => (
-                          <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {isReviewing && (
+                      <div style={{ ...s.billingEntryExpanded, background: '#eff6ff', borderTop: '1px solid #bfdbfe' }}>
+                        <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#1d4ed8', letterSpacing: '1px', textTransform: 'uppercase' }}>Review / Edit</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div>
+                            <label style={s.label}>Date</label>
+                            <input type="date" style={s.input} value={reviewForm.cost_date} onChange={e => setReviewForm(f => ({ ...f, cost_date: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Amount ($)</label>
+                            <input type="number" step="0.01" min="0" style={s.input} value={reviewForm.amount} onChange={e => setReviewForm(f => ({ ...f, amount: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div>
+                            <label style={s.label}>Vendor</label>
+                            <input style={s.input} value={reviewForm.vendor} onChange={e => setReviewForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Vendor name..." />
+                          </div>
+                          <div>
+                            <label style={s.label}>Category</label>
+                            <select style={s.input} value={reviewForm.category} onChange={e => setReviewForm(f => ({ ...f, category: e.target.value }))}>
+                              {['Materials', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(cat => <option key={cat}>{cat}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                          <label style={s.label}>Description</label>
+                          <input style={s.input} value={reviewForm.description} onChange={e => setReviewForm(f => ({ ...f, description: e.target.value }))} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div>
+                            <label style={s.label}>Budget line</label>
+                            <select style={s.input} value={reviewForm.budget_item_id} onChange={e => setReviewForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                              <option value="">— Unassigned —</option>
+                              {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={s.label}>Notes</label>
+                            <input style={s.input} value={reviewForm.notes} onChange={e => setReviewForm(f => ({ ...f, notes: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input type="checkbox" id={`bto_${c.id}`} checked={reviewForm.bill_to_owner} onChange={e => setReviewForm(f => ({ ...f, bill_to_owner: e.target.checked }))} />
+                          <label htmlFor={`bto_${c.id}`} style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>Bill separately to owner</label>
+                          {reviewForm.bill_to_owner && (
+                            <input style={{ ...s.input, flex: 1 }} value={reviewForm.owner_auth_ref} onChange={e => setReviewForm(f => ({ ...f, owner_auth_ref: e.target.value }))} placeholder="Auth ref / email thread / PO#..." />
+                          )}
+                        </div>
+                        {reviewMsg && <p style={{ color: '#dc2626', fontSize: '12px', margin: '0 0 8px' }}>{reviewMsg}</p>}
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button style={{ ...s.btnSmall, opacity: savingReview ? 0.6 : 1 }} disabled={savingReview} onClick={() => saveReview(c.id, false)}>
+                            {savingReview ? 'Saving...' : 'Save changes'}
+                          </button>
+                          {c.status === 'pending' && (
+                            <button style={{ ...s.btnSmallGreen, opacity: savingReview || !c.receipt_url ? 0.5 : 1 }} disabled={savingReview || !c.receipt_url} title={!c.receipt_url ? 'Attach a receipt first' : ''} onClick={() => saveReview(c.id, true)}>
+                              {savingReview ? '...' : 'Save & Approve'}
+                            </button>
+                          )}
+                          <button style={{ ...s.btnSmall, marginLeft: 'auto' }} onClick={() => setReviewingCostId(null)}>Close</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isReviewing && (
+                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap' }}>Budget line</label>
+                        <select
+                          style={{ ...s.input, flex: 1, opacity: assigningCostId === c.id ? 0.6 : 1 }}
+                          disabled={assigningCostId === c.id}
+                          value={c.budget_item_id || ''}
+                          onChange={e => assignDcBudgetItem(c.id, e.target.value)}>
+                          <option value="">— Unassigned —</option>
+                          {budgetItems.map(b => (
+                            <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {movingCostId === c.id && (
                       <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '10px', background: '#faf5ff', borderTop: '1px solid #e9d5ff' }}>

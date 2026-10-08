@@ -125,8 +125,14 @@ export default function Field() {
   const [contactSuccess, setContactSuccess] = useState(false)
 
   const [directCosts, setDirectCosts] = useState([])
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
   const [dcFile, setDcFile] = useState(null)
+  const [dcFileError, setDcFileError] = useState('')
+  const [resubmitCostId, setResubmitCostId] = useState(null)
+  const [resubmitForm, setResubmitForm] = useState({})
+  const [resubmitFile, setResubmitFile] = useState(null)
+  const [resubmitting, setResubmitting] = useState(false)
+  const [resubmitErr, setResubmitErr] = useState('')
   const [submittingDc, setSubmittingDc] = useState(false)
   const [dcSuccess, setDcSuccess] = useState(false)
   const [dcError, setDcError] = useState('')
@@ -511,36 +517,41 @@ export default function Field() {
 
   async function submitDirectCost(e) {
     e.preventDefault()
+    setDcFileError('')
+    if (!dcFile) {
+      setDcFileError('A receipt photo or PDF is required before submitting.')
+      return
+    }
     setSubmittingDc(true)
     setDcError('')
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
       const rowData = {
         job_id: selectedJobId, submitted_by: user.id,
         cost_date: dcForm.cost_date, description: dcForm.description,
+        vendor: dcForm.vendor || null,
         category: dcForm.category, amount: parseFloat(dcForm.amount),
         reason: dcForm.reason || null,
         notes: dcForm.notes || null,
         assigned_to: profile?.full_name || null,
         status: 'pending',
       }
-      let res, json
-      if (dcFile) {
-        const uploadFile = await toJpegFile(dcFile)
-        const fd = new FormData()
-        fd.append('file', uploadFile)
-        fd.append('data', JSON.stringify(rowData))
-        res = await fetch('/api/direct-costs', { method: 'POST', body: fd })
-      } else {
-        res = await fetch('/api/direct-costs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
-      }
-      json = await res.json()
+      const uploadFile = await toJpegFile(dcFile)
+      const fd = new FormData()
+      fd.append('file', uploadFile)
+      fd.append('data', JSON.stringify(rowData))
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const res = await fetch('/api/direct-costs', { method: 'POST', headers, body: fd })
+      const json = await res.json()
       if (json.error) {
         setDcError('Failed to save cost: ' + json.error)
         return
       }
       setDcSuccess(true)
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', reason: '', notes: '' })
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
       setDcFile(null)
+      setDcFileError('')
       setShowDcForm(false)
       await loadDirectCosts()
       setTimeout(() => setDcSuccess(false), 3000)
@@ -548,6 +559,41 @@ export default function Field() {
       setDcError('Network error. Please try again.')
     } finally {
       setSubmittingDc(false)
+    }
+  }
+
+  async function submitResubmit(costId) {
+    setResubmitting(true)
+    setResubmitErr('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+
+      let res
+      if (resubmitFile) {
+        const uploadFile = await toJpegFile(resubmitFile)
+        const fd = new FormData()
+        fd.append('file', uploadFile)
+        fd.append('data', JSON.stringify({ action: 'resubmit', id: costId, ...resubmitForm }))
+        res = await fetch('/api/dc-review', { method: 'POST', headers: authHeaders, body: fd })
+      } else {
+        res = await fetch('/api/dc-review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ action: 'resubmit', id: costId, ...resubmitForm }),
+        })
+      }
+      const json = await res.json()
+      if (json.error) { setResubmitErr(json.error); return }
+      setResubmitCostId(null)
+      setResubmitFile(null)
+      setResubmitForm({})
+      await loadDirectCosts()
+    } catch {
+      setResubmitErr('Network error. Please try again.')
+    } finally {
+      setResubmitting(false)
     }
   }
 
@@ -1650,9 +1696,15 @@ export default function Field() {
                               <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                             </div>
                           </div>
-                          <div style={{ marginBottom: '1rem' }}>
-                            <label style={s.label}>Description *</label>
-                            <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber for framing, concrete delivery..." />
+                          <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
+                            <div>
+                              <label style={s.label}>Description *</label>
+                              <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber for framing, concrete delivery..." />
+                            </div>
+                            <div>
+                              <label style={s.label}>Vendor</label>
+                              <input style={s.input} value={dcForm.vendor} onChange={e => setDcForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Home Depot, ABC Supply..." />
+                            </div>
                           </div>
                           <div style={{ marginBottom: '1rem' }}>
                             <label style={s.label}>Reason *</label>
@@ -1664,8 +1716,10 @@ export default function Field() {
                               <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
                             </div>
                             <div>
-                              <label style={s.label}>Receipt (photo / PDF)</label>
-                              <input type="file" accept="image/*,application/pdf" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
+                              <label style={{ ...s.label, color: dcFile ? '#16a34a' : '#dc2626' }}>Receipt (photo / PDF) <span style={{ color: '#dc2626' }}>*</span></label>
+                              <input type="file" accept="image/*,application/pdf" capture="environment" style={{ ...s.input, padding: '8px 14px', borderColor: dcFileError ? '#dc2626' : undefined }} onChange={e => { setDcFile(e.target.files[0] || null); setDcFileError('') }} />
+                              {dcFile && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#16a34a' }}>✓ {dcFile.name}</p>}
+                              {dcFileError && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#dc2626' }}>{dcFileError}</p>}
                             </div>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1674,20 +1728,24 @@ export default function Field() {
                         </form>
                       </div>
                     )}
-                    {directCosts.length === 0 && !showDcForm && <div style={s.empty}>No direct costs logged yet.</div>}
-                    {directCosts.map(c => (
-                      <div key={c.id} style={{ ...s.row, border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#5a1a1a' : '#1e1e1e'}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f9fafb', flexWrap: 'wrap', gap: '8px' }}>
+                    {directCosts.filter(c => c.submitted_by === user?.id).length === 0 && !showDcForm && <div style={s.empty}>No direct costs logged yet.</div>}
+                    {directCosts.filter(c => c.submitted_by === user?.id).map(c => {
+                      const isMyRejected = c.status === 'rejected'
+                      const isResubmitting = resubmitCostId === c.id
+                      return (
+                      <div key={c.id} style={{ ...s.row, border: `1px solid ${c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: isMyRejected ? '#fef2f2' : '#f9fafb', flexWrap: 'wrap', gap: '8px' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{c.description}</span>
                               <span style={s.badge((c.category || 'uncategorized').toLowerCase())}>{c.category}</span>
                               <span style={s.badge(c.status)}>{c.status}</span>
+                              {c.status === 'rejected' && <span style={{ fontSize: '11px', fontWeight: '700', color: '#dc2626' }}>Needs correction</span>}
                             </div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>
                               {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
-                              {c.reason && ` Â· ${c.reason}`}
-                              {c.status !== 'rejected' && c.notes && ` Â· ${c.notes}`}
+                              {c.vendor && ` · ${c.vendor}`}
+                              {c.reason && ` · ${c.reason}`}
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1695,16 +1753,78 @@ export default function Field() {
                             {c.receipt_url && (
                               <button style={s.btnSm('orange')} onClick={() => openReceiptUrl(c.receipt_url)}>View receipt</button>
                             )}
+                            {isMyRejected && (
+                              <button style={s.btnSm('orange')} onClick={() => {
+                                if (isResubmitting) { setResubmitCostId(null); return }
+                                setResubmitCostId(c.id)
+                                setResubmitErr('')
+                                setResubmitFile(null)
+                                setResubmitForm({ cost_date: c.cost_date, description: c.description, vendor: c.vendor || '', amount: String(c.amount), category: c.category, reason: c.reason || '', notes: c.notes || '' })
+                              }}>
+                                {isResubmitting ? 'Cancel' : 'Fix & Resubmit'}
+                              </button>
+                            )}
                           </div>
                         </div>
-                        {c.status === 'rejected' && c.notes && (
-                          <div style={{ background: '#1a0a0a', borderTop: '1px solid #3a1a1a', padding: '10px 16px' }}>
-                            <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason</p>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{c.notes}</p>
+                        {isMyRejected && c.rejection_reason && (
+                          <div style={{ background: '#fef2f2', borderTop: '1px solid #fecaca', padding: '10px 16px' }}>
+                            <p style={{ margin: '0 0 3px', fontSize: '11px', color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason — please correct and resubmit</p>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#7f1d1d', lineHeight: '1.5' }}>{c.rejection_reason}</p>
+                          </div>
+                        )}
+                        {isResubmitting && (
+                          <div style={{ padding: '14px 16px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
+                            <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase' }}>Correct & Resubmit</p>
+                            <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                              <div>
+                                <label style={s.label}>Date</label>
+                                <input type="date" style={s.input} value={resubmitForm.cost_date || ''} onChange={e => setResubmitForm(f => ({ ...f, cost_date: e.target.value }))} />
+                              </div>
+                              <div>
+                                <label style={s.label}>Amount ($)</label>
+                                <input type="number" step="0.01" min="0" style={s.input} value={resubmitForm.amount || ''} onChange={e => setResubmitForm(f => ({ ...f, amount: e.target.value }))} />
+                              </div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                              <div>
+                                <label style={s.label}>Description</label>
+                                <input style={s.input} value={resubmitForm.description || ''} onChange={e => setResubmitForm(f => ({ ...f, description: e.target.value }))} />
+                              </div>
+                              <div>
+                                <label style={s.label}>Vendor</label>
+                                <input style={s.input} value={resubmitForm.vendor || ''} onChange={e => setResubmitForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Home Depot, ABC Supply..." />
+                              </div>
+                            </div>
+                            <div style={{ ...s.grid2, marginBottom: '10px' }} className="rx-grid-2">
+                              <div>
+                                <label style={s.label}>Category</label>
+                                <select style={s.input} value={resubmitForm.category || 'Materials'} onChange={e => setResubmitForm(f => ({ ...f, category: e.target.value }))}>
+                                  {['Materials', 'Tools', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(cat => <option key={cat}>{cat}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label style={s.label}>Notes</label>
+                                <input style={s.input} value={resubmitForm.notes || ''} onChange={e => setResubmitForm(f => ({ ...f, notes: e.target.value }))} />
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={s.label}>Replace receipt (optional — keeps existing if not changed)</label>
+                              <input type="file" accept="image/*,application/pdf" capture="environment" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setResubmitFile(e.target.files[0] || null)} />
+                              {resubmitFile && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#16a34a' }}>✓ {resubmitFile.name}</p>}
+                              {!c.receipt_url && !resubmitFile && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#dc2626' }}>This entry has no receipt — please attach one.</p>}
+                            </div>
+                            {resubmitErr && <p style={{ color: '#dc2626', fontSize: '12px', marginBottom: '8px' }}>{resubmitErr}</p>}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button style={{ ...s.btn, opacity: resubmitting || (!c.receipt_url && !resubmitFile) ? 0.5 : 1 }} disabled={resubmitting || (!c.receipt_url && !resubmitFile)} onClick={() => submitResubmit(c.id)}>
+                                {resubmitting ? 'Resubmitting...' : 'Submit for review'}
+                              </button>
+                              <button style={{ ...s.btnSm(''), borderColor: '#d1d5db' }} onClick={() => setResubmitCostId(null)}>Cancel</button>
+                            </div>
                           </div>
                         )}
                       </div>
-                    ))}
+                    )})}
+
                   </>
                 )}
 

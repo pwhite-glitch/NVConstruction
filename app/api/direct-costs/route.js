@@ -5,9 +5,33 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-// GET: fetch all direct costs for a job, or generate a signed receipt URL
+// Lightly check auth if a Bearer token is present; returns role or null.
+// Does not reject requests without auth — used for per-role enforcement only.
+async function tryGetRole(request) {
+  const header = request.headers.get('authorization') || ''
+  if (!header.startsWith('Bearer ')) return null
+  const token = header.slice(7).trim()
+  try {
+    const anonClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    )
+    const { data: { user } } = await anonClient.auth.getUser(token)
+    if (!user) return null
+    const { data: profile } = await adminSupabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    return profile?.role ?? null
+  } catch {
+    return null
+  }
+}
+
+// GET: fetch direct costs for a job, or generate a signed receipt URL
 // ?job_id=uuid  → list of costs
-// ?receipt_path=...  → { url } signed URL for the receipt (uses service role so super role works)
+// ?receipt_path=... → { url } signed URL (valid 5 min)
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -19,7 +43,11 @@ export async function GET(request) {
     }
     const job_id = searchParams.get('job_id')
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
-    const { data, error } = await adminSupabase.from('direct_costs').select('*').eq('job_id', job_id).order('cost_date', { ascending: false })
+    const { data, error } = await adminSupabase
+      .from('direct_costs')
+      .select('*')
+      .eq('job_id', job_id)
+      .order('cost_date', { ascending: false })
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ data })
   } catch (e) {
@@ -30,11 +58,16 @@ export async function GET(request) {
 // POST: insert a direct cost, optionally uploading a receipt file
 // Accepts multipart FormData: file (optional) + "data" JSON string
 // OR plain JSON body (no file)
+// If caller is authenticated as 'super', a receipt file is required.
 export async function POST(request) {
   try {
     const contentType = request.headers.get('content-type') || ''
     let row = {}
     let receipt_url = null
+    let fileAttached = false
+
+    // Soft auth — enforce receipt for field workers (super role)
+    const authRole = await tryGetRole(request)
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
@@ -42,6 +75,7 @@ export async function POST(request) {
       row = JSON.parse(formData.get('data') || '{}')
 
       if (file && file.size > 0) {
+        fileAttached = true
         const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')
         const safeExt = isPdf ? 'pdf' : 'jpg'
         const safeMime = isPdf ? 'application/pdf' : 'image/jpeg'
@@ -57,6 +91,18 @@ export async function POST(request) {
       row = await request.json()
     }
 
+    // Enforce receipt for field submissions (super role, status=pending)
+    if (authRole === 'super' && !fileAttached && row.status === 'pending') {
+      return Response.json({ error: 'A receipt photo or PDF is required before submitting.' }, { status: 400 })
+    }
+
+    // Strip fields that field workers (super) should not set
+    if (authRole === 'super') {
+      delete row.bill_to_owner
+      delete row.owner_auth_ref
+      delete row.billing_route
+    }
+
     const { error } = await adminSupabase.from('direct_costs').insert({ ...row, receipt_url })
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
@@ -66,6 +112,8 @@ export async function POST(request) {
 }
 
 // PUT: update a direct cost by id
+// Used for budget line assignment, job moves, and draw application linkage.
+// Status transitions (approve/reject/resubmit) should go through /api/dc-review.
 export async function PUT(request) {
   try {
     const { id, ...fields } = await request.json()
@@ -78,7 +126,8 @@ export async function PUT(request) {
   }
 }
 
-// DELETE: delete a direct cost by id
+// DELETE: permanently delete a direct cost by id
+// For actual deletions only — rejection now goes through /api/dc-review.
 export async function DELETE(request) {
   try {
     const { id } = await request.json()

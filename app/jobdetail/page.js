@@ -4502,7 +4502,7 @@ ${(budgets || []).length > 0 ? `
   async function saveJob(e) {
     e.preventDefault()
     setSaving(true)
-    const { error } = await supabase.from('jobs').update({
+    const fields = {
       job_number: form.job_number, project_name: form.project_name, location: form.location,
       contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
       markup_pct: form.markup_pct ? parseFloat(form.markup_pct) : null,
@@ -4526,8 +4526,10 @@ ${(budgets || []).length > 0 ? `
       pm_email: form.pm_email || null,
       billing_type: form.billing_type || 'aia',
       nv_role: form.nv_role || 'gc',
-    }).eq('id', id)
-    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000) }
+    }
+    const saveRes = await authFetch('/api/job-save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
+    const saveJson = await saveRes.json()
+    if (saveJson.error) { setErrMsg('Save failed: ' + saveJson.error); setTimeout(() => setErrMsg(''), 8000); setSaving(false); return }
     else {
       // Log high-value field changes
       const logCalls = []

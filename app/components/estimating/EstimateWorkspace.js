@@ -128,12 +128,17 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         markup_pct:  l.markup_pct  !== '' && l.markup_pct  != null ? Number(l.markup_pct)  : null,
         markup_flat: l.markup_flat !== '' && l.markup_flat != null ? Number(l.markup_flat) : null,
       }))
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/estimates', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
         body: JSON.stringify({ action: 'update', id: estimate.id, fields, line_items: lineItems }),
       })
-      if (!res.ok) throw new Error('Save failed')
+      if (!res.ok) {
+        let msg = 'Save failed'
+        try { const j = await res.json(); if (j?.error) msg = j.error } catch {}
+        throw new Error(msg)
+      }
       const { data: fresh } = await supabase
         .from('estimates').select('*, estimate_line_items(*)').eq('id', estimate.id).single()
       if (fresh) {
@@ -144,8 +149,8 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         setSaveMsg('Saved')
         setTimeout(() => setSaveMsg(''), 2500)
       }
-    } catch {
-      setSaveMsg('Error — check connection')
+    } catch (err) {
+      setSaveMsg('Error — ' + (err?.message || 'check connection'))
     }
     setSaving(false)
   }

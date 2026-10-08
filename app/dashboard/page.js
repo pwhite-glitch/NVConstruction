@@ -1820,9 +1820,10 @@ export default function Dashboard() {
   async function saveEstimateEdit() {
     setSavingEstimateEdit(true)
     const validLines = editEstimateLines.filter(l => l.description)
+    const { data: { session: eSess } } = await supabase.auth.getSession()
     const res = await fetch('/api/estimates', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(eSess?.access_token ? { Authorization: `Bearer ${eSess.access_token}` } : {}) },
       body: JSON.stringify({
         action: 'update',
         id: editingEstimate,

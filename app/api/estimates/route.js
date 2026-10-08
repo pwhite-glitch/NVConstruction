@@ -75,8 +75,11 @@ export async function POST(request) {
 
       if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
 
-      await adminSupabase.from('estimate_line_items').delete().eq('estimate_id', id)
+      // Only replace line items when the caller sends at least one. An empty
+      // array most likely means the client loaded before items were fetched —
+      // skipping the delete prevents accidental wipeout.
       if (line_items?.length > 0) {
+        await adminSupabase.from('estimate_line_items').delete().eq('estimate_id', id)
         const { error: liErr } = await adminSupabase.from('estimate_line_items').insert(line_items)
         if (liErr) {
           if (liErr.message?.includes('apply_markup')) {

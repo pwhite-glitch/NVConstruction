@@ -120,7 +120,8 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         status:         form.status,
         updated_at:     new Date().toISOString(),
       }
-      const lineItems = lines.map((l, i) => ({
+      const validLines = lines.filter(l => l.description)
+      const lineItems = validLines.map((l, i) => ({
         description: l.description || '',
         amount:      l.amount !== '' ? Number(l.amount) : 0,
         scope:       l.scope || null,
@@ -128,6 +129,12 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         markup_pct:  l.markup_pct  !== '' && l.markup_pct  != null ? Number(l.markup_pct)  : null,
         markup_flat: l.markup_flat !== '' && l.markup_flat != null ? Number(l.markup_flat) : null,
       }))
+      // Guard: if we have no lines now but the DB had some, confirm before wiping
+      const dbItemCount = (estimate.estimate_line_items || []).length
+      if (lineItems.length === 0 && dbItemCount > 0) {
+        const ok = window.confirm(`This will remove all ${dbItemCount} line item(s) from the estimate. Continue?`)
+        if (!ok) { setSaving(false); return }
+      }
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/estimates', {
         method: 'POST',

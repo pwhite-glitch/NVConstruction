@@ -645,9 +645,477 @@ function RFIsSection({ bidId, rfis, rfiTableExists, reload, canEdit, profile }) 
   )
 }
 
+// ── ITB HTML builder ──────────────────────────────────────────────────────────
+
+function buildItbHtml(form, scopes, plans, logoSrc) {
+  const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+
+  const byTrade = {}
+  scopes.forEach(item => {
+    const t = item.trade || 'General'
+    if (!byTrade[t]) byTrade[t] = []
+    byTrade[t].push(item)
+  })
+
+  const deadlineStr = form.deadlineDate
+    ? new Date(form.deadlineDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    : '—'
+  const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+
+  const docRows = plans.map((p, i) => `
+    <tr>
+      <td class="center" style="color:#bbb;font-size:10px">${String(i + 1).padStart(2, '0')}</td>
+      <td>${esc(p.file_name)}</td>
+      <td>${p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString('en-US') : '—'}</td>
+      <td class="center" style="color:#16a34a;font-weight:700">✓</td>
+    </tr>`).join('')
+
+  const scopeHtml = Object.entries(byTrade).map(([trade, items]) => `
+    <div class="scope-trade">
+      <div class="trade-label">${esc(trade)}</div>
+      ${items.map(item => `
+        <div class="scope-item">
+          <div class="scope-text">${esc(item.description || '')}</div>
+          ${item.scope_review?.notes ? `<div class="scope-note">${esc(item.scope_review.notes)}</div>` : ''}
+        </div>`).join('')}
+    </div>`).join('')
+
+  return `<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>Invitation to Bid — ${esc(form.projectName)}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@media print { .no-print { display: none !important; } }
+.no-print { padding: 12px 40px; background: #1a1a1a; display: flex; gap: 10px; align-items: center; }
+.btn { padding: 8px 22px; background: #e8590c; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.btn-outline { padding: 8px 18px; background: transparent; color: #888; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.page { max-width: 860px; margin: 0 auto; }
+.header-band { background: #111; padding: 32px 52px 28px; display: flex; justify-content: space-between; align-items: flex-start; }
+.brand { display: flex; align-items: center; gap: 16px; }
+.brand-logo { width: 52px; height: 52px; object-fit: contain; filter: brightness(0) invert(1); }
+.brand-divider { width: 1px; height: 44px; background: #333; }
+.co-name { font-size: 16px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #fff; }
+.co-tagline { font-size: 9px; color: #555; letter-spacing: 3px; text-transform: uppercase; margin-top: 3px; }
+.co-contact { font-size: 10px; color: #666; margin-top: 8px; line-height: 1.9; }
+.doc-block { text-align: right; }
+.doc-type { font-size: 9px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; color: #e8590c; }
+.doc-project { font-size: 16px; font-weight: 800; color: #fff; margin-top: 6px; max-width: 280px; line-height: 1.25; text-align: right; }
+.doc-meta { font-size: 10px; color: #555; margin-top: 8px; line-height: 1.8; }
+.rule { height: 3px; background: #e8590c; }
+.body { padding: 40px 52px; }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 28px; border: 1px solid #e8e8e8; }
+.info-block { padding: 18px 22px; }
+.info-block + .info-block { border-left: 1px solid #e8e8e8; }
+.eyebrow { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; margin-bottom: 6px; }
+.info-value { font-size: 13px; font-weight: 700; color: #111; margin-bottom: 2px; }
+.info-detail { font-size: 11px; color: #666; line-height: 1.7; }
+.section-head { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; margin-bottom: 8px; }
+.box { border: 1px solid #e8e8e8; border-left: 3px solid #e8590c; padding: 14px 18px; font-size: 12px; color: #444; line-height: 1.8; white-space: pre-wrap; margin-bottom: 28px; }
+.scopes-wrap { border: 1px solid #e8e8e8; padding: 16px 20px; margin-bottom: 28px; }
+.scope-trade { margin-bottom: 16px; }
+.scope-trade:last-child { margin-bottom: 0; }
+.trade-label { font-size: 8px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: #e8590c; border-bottom: 1px solid #f0f0f0; padding-bottom: 4px; margin-bottom: 6px; }
+.scope-item { padding: 6px 0; border-bottom: 1px solid #f8f8f8; }
+.scope-item:last-child { border-bottom: none; }
+.scope-text { font-size: 12px; color: #333; line-height: 1.7; }
+.scope-note { font-size: 10px; color: #888; margin-top: 2px; font-style: italic; }
+table { width: 100%; border-collapse: collapse; }
+thead tr { border-bottom: 2px solid #111; }
+thead th { padding: 7px 12px; font-size: 8px; text-transform: uppercase; letter-spacing: 2px; color: #111; font-weight: 800; text-align: left; }
+.center { text-align: center; }
+tbody tr { border-bottom: 1px solid #efefef; }
+tbody tr:last-child { border-bottom: none; }
+tbody td { padding: 9px 12px; font-size: 11px; color: #333; }
+.doc-note { font-size: 9px; color: #bbb; margin-top: 8px; letter-spacing: 0.3px; font-style: italic; }
+.footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #efefef; display: flex; justify-content: space-between; }
+.footer div { font-size: 9px; color: #bbb; line-height: 1.7; }
+.footer div:last-child { text-align: right; }
+</style></head><body>
+
+<div class="no-print">
+  <button class="btn" onclick="window.print()">Print / Save PDF</button>
+  <button class="btn-outline" onclick="window.close()">Close</button>
+</div>
+
+<div class="page">
+<div class="header-band">
+  <div class="brand">
+    ${logoSrc ? `<img src="${logoSrc}" class="brand-logo" alt="NV" /><div class="brand-divider"></div>` : ''}
+    <div>
+      <div class="co-name">NV Construction</div>
+      <div class="co-tagline">General Contractor</div>
+      <div class="co-contact">management@nvim.co<br>nvim.co<br>LA License #&nbsp;CL 10283</div>
+    </div>
+  </div>
+  <div class="doc-block">
+    <div class="doc-type">Invitation to Bid</div>
+    <div class="doc-project">${esc(form.projectName)}</div>
+    <div class="doc-meta">Issued: ${genDate}<br>${esc(form.projectType || 'Commercial')}</div>
+  </div>
+</div>
+<div class="rule"></div>
+
+<div class="body">
+<div class="info-grid">
+  <div class="info-block">
+    <div class="eyebrow">Project</div>
+    <div class="info-value">${esc(form.projectName)}</div>
+    ${form.projectAddress ? `<div class="info-detail">${esc(form.projectAddress)}</div>` : ''}
+    ${form.projectDesc ? `<div class="info-detail" style="margin-top:8px">${esc(form.projectDesc)}</div>` : ''}
+  </div>
+  <div class="info-block">
+    <div class="eyebrow">Bid Deadline</div>
+    <div class="info-value">${deadlineStr}</div>
+    ${form.deadlineTime ? `<div class="info-detail">${esc(form.deadlineTime)} ${esc(form.timezone)}</div>` : ''}
+    <div class="eyebrow" style="margin-top:16px">Estimator Contact</div>
+    ${form.contactName ? `<div class="info-value">${esc(form.contactName)}</div>` : ''}
+    <div class="info-detail">${[form.contactEmail, form.contactPhone].filter(Boolean).map(esc).join('<br>')}</div>
+  </div>
+</div>
+
+${form.submissionInstructions ? `<div class="section-head">Submission Instructions</div><div class="box">${esc(form.submissionInstructions)}</div>` : ''}
+${form.siteVisitInfo ? `<div class="section-head">Site Visit</div><div class="box">${esc(form.siteVisitInfo)}</div>` : ''}
+
+${scopes.length > 0 ? `
+<div class="section-head" style="margin-bottom:12px">Scope of Work — Trade Requirements</div>
+<div class="scopes-wrap">${scopeHtml}</div>` : ''}
+
+${plans.length > 0 ? `
+<div class="section-head" style="margin-bottom:12px">Document Register</div>
+<table>
+  <thead><tr>
+    <th class="center" style="width:36px">#</th>
+    <th>Document</th>
+    <th style="width:110px">Date</th>
+    <th class="center" style="width:56px">Incl.</th>
+  </tr></thead>
+  <tbody>${docRows}</tbody>
+</table>
+<div class="doc-note">Original files are included in the complete ZIP package — this document is the invitation letter and register only.</div>` : ''}
+
+<div class="footer">
+  <div>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; LA License # CL 10283<br>management@nvim.co &nbsp;·&nbsp; nvim.co</div>
+  <div>${esc(form.projectName)}<br>Issued ${genDate}</div>
+</div>
+</div></div>
+</body></html>`
+}
+
+// ── ITB Preparation Screen ────────────────────────────────────────────────────
+
+function ItbPrepScreen({ pkg, plans, scopeItems, profile, onClose }) {
+  const [tab, setTab] = useState('prepare')
+  const [form, setForm] = useState({
+    projectName:             pkg.title || '',
+    projectAddress:          pkg.project_address || '',
+    projectType:             'Commercial',
+    projectDesc:             pkg.description || pkg.scope_of_work || '',
+    deadlineDate:            pkg.due_date || '',
+    deadlineTime:            '2:00 PM',
+    timezone:                'PT',
+    contactName:             profile?.full_name || '',
+    contactEmail:            profile?.email || '',
+    contactPhone:            '',
+    submissionInstructions:  pkg.bid_instructions || 'Submit your proposal by email to the estimator listed above. Include a completed scope acknowledgment and your lump-sum base bid. Itemize any unit prices or alternates requested.',
+    siteVisitInfo:           '',
+  })
+  const [selectedScopeIds, setSelectedScopeIds] = useState(() =>
+    new Set(scopeItems.filter(i => i.scope_review?.status === 'accepted').map(i => i.id))
+  )
+  const [selectedPlanIds, setSelectedPlanIds] = useState(() => new Set(plans.map(p => p.id)))
+  const [exporting, setExporting] = useState(false)
+  const [exportErr, setExportErr] = useState('')
+
+  const f = (key, val) => setForm(p => ({ ...p, [key]: val }))
+  const selectedScopes = scopeItems.filter(i => selectedScopeIds.has(i.id))
+  const selectedPlans  = plans.filter(p => selectedPlanIds.has(p.id))
+
+  async function getLogo() {
+    try {
+      const res  = await fetch('/logo.png')
+      const blob = await res.blob()
+      return await new Promise(resolve => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.readAsDataURL(blob)
+      })
+    } catch { return '' }
+  }
+
+  async function exportPDF() {
+    const logo = await getLogo()
+    const html = buildItbHtml(form, selectedScopes, selectedPlans, logo)
+    const w = window.open('', '_blank')
+    w.document.write(html)
+    w.document.close()
+  }
+
+  async function exportZip() {
+    if (selectedPlanIds.size === 0) {
+      setExportErr('Select at least one document to include in the ZIP.')
+      return
+    }
+    setExporting(true); setExportErr('')
+    try {
+      const logo = await getLogo()
+      const itbHtml = buildItbHtml(form, selectedScopes, selectedPlans, logo)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/itb-export', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bidPackageId: pkg.id, selectedPlanIds: [...selectedPlanIds], itbHtml, projectName: form.projectName }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a   = document.createElement('a')
+      a.href     = url
+      a.download = `ITB_${(form.projectName || 'bid').replace(/[^a-zA-Z0-9]+/g, '_')}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { setExportErr(e.message) }
+    setExporting(false)
+  }
+
+  const iSec = { padding: '10px 10px 10px 0', border: 'none', background: '#f9fafb', borderRadius: '6px', width: '100%', fontSize: '14px', color: '#111827', outline: 'none', boxSizing: 'border-box' }
+  const label = { fontSize: '11px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: '#f4f6f8', overflowY: 'auto', fontFamily: "'Inter', system-ui, sans-serif", color: '#111827' }}>
+      {/* Sticky top bar */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem', height: '56px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <button onClick={onClose} style={s.back}>← Back</button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: '15px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Invitation to Bid — {form.projectName || 'Untitled'}
+          </h1>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+          {exportErr && <span style={{ fontSize: '12px', color: '#dc2626', maxWidth: '300px' }}>{exportErr}</span>}
+          <button style={s.btnSec} onClick={exportPDF}>Export PDF</button>
+          <button style={s.btnPri} onClick={exportZip} disabled={exporting}>
+            {exporting ? 'Preparing ZIP…' : `Export ZIP (${selectedPlanIds.size} doc${selectedPlanIds.size !== 1 ? 's' : ''})`}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+        {/* Tab selector */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '1.5rem', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '4px', width: 'fit-content' }}>
+          {[['prepare', 'Edit'], ['preview', 'Preview']].map(([key, lbl]) => (
+            <button key={key} onClick={() => setTab(key)} style={{ padding: '6px 18px', borderRadius: '5px', border: 'none', fontSize: '13px', fontWeight: tab === key ? '600' : '400', background: tab === key ? '#111827' : 'transparent', color: tab === key ? '#fff' : '#6b7280', cursor: 'pointer' }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'prepare' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+            {/* Project info */}
+            <div style={s.card}>
+              <h3 style={s.cardH}>Project Information</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={label}>Project Name</label>
+                  <input value={form.projectName} onChange={e => f('projectName', e.target.value)} style={s.input} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={label}>Project Address</label>
+                  <input value={form.projectAddress} onChange={e => f('projectAddress', e.target.value)} style={s.input} />
+                </div>
+                <div>
+                  <label style={label}>Project Type</label>
+                  <select value={form.projectType} onChange={e => f('projectType', e.target.value)} style={s.input}>
+                    {['Commercial','Residential','Industrial','Civil'].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={label}>Project Description</label>
+                  <textarea value={form.projectDesc} onChange={e => f('projectDesc', e.target.value)} style={{ ...s.textarea, minHeight: '72px' }} placeholder="Brief scope summary visible to subcontractors" />
+                </div>
+              </div>
+            </div>
+
+            {/* Deadline & Contact */}
+            <div style={s.card}>
+              <h3 style={s.cardH}>Bid Deadline & Estimator Contact</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div>
+                  <label style={label}>Deadline Date</label>
+                  <input type="date" value={form.deadlineDate} onChange={e => f('deadlineDate', e.target.value)} style={s.input} />
+                </div>
+                <div>
+                  <label style={label}>Deadline Time</label>
+                  <input value={form.deadlineTime} onChange={e => f('deadlineTime', e.target.value)} style={s.input} placeholder="2:00 PM" />
+                </div>
+                <div>
+                  <label style={label}>Timezone</label>
+                  <select value={form.timezone} onChange={e => f('timezone', e.target.value)} style={s.input}>
+                    {[['PT','PT — Pacific'],['MT','MT — Mountain'],['CT','CT — Central'],['ET','ET — Eastern']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={label}>Estimator Name</label>
+                  <input value={form.contactName} onChange={e => f('contactName', e.target.value)} style={s.input} placeholder="Your name" />
+                </div>
+                <div>
+                  <label style={label}>Email</label>
+                  <input type="email" value={form.contactEmail} onChange={e => f('contactEmail', e.target.value)} style={s.input} />
+                </div>
+                <div>
+                  <label style={label}>Phone</label>
+                  <input type="tel" value={form.contactPhone} onChange={e => f('contactPhone', e.target.value)} style={s.input} placeholder="(555) 000-0000" />
+                </div>
+              </div>
+            </div>
+
+            {/* Instructions */}
+            <div style={s.card}>
+              <h3 style={s.cardH}>Submission Instructions</h3>
+              <textarea value={form.submissionInstructions} onChange={e => f('submissionInstructions', e.target.value)} style={{ ...s.textarea, minHeight: '100px' }} />
+            </div>
+
+            {/* Site visit */}
+            <div style={s.card}>
+              <h3 style={s.cardH}>Site Visit <span style={{ fontWeight: '400', color: '#9ca3af', fontSize: '13px' }}>— optional</span></h3>
+              <textarea value={form.siteVisitInfo} onChange={e => f('siteVisitInfo', e.target.value)} style={s.textarea} placeholder="E.g. Site walk scheduled Thursday Jan 30 at 10:00 AM — meet at main entrance. RSVP by Jan 28." />
+            </div>
+
+            {/* Scope checklist */}
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ ...s.cardH, margin: 0 }}>Trade Scopes <span style={{ fontWeight: '400', color: '#6b7280', fontSize: '13px' }}>({selectedScopeIds.size} of {scopeItems.length} selected)</span></h3>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => setSelectedScopeIds(new Set(scopeItems.map(i => i.id)))}>All</button>
+                  <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => setSelectedScopeIds(new Set())}>None</button>
+                </div>
+              </div>
+              {scopeItems.length === 0 ? (
+                <p style={{ color: '#9ca3af', fontSize: '13px', margin: 0 }}>No scope items yet — add them in Trade Scopes.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {scopeItems.map(item => {
+                    const checked = selectedScopeIds.has(item.id)
+                    const st = item.scope_review?.status || 'draft'
+                    return (
+                      <label key={item.id} style={{ display: 'flex', gap: '10px', cursor: 'pointer', padding: '10px', borderRadius: '6px', background: checked ? '#fef3ee' : '#f9fafb', border: `1px solid ${checked ? '#fed7aa' : '#f3f4f6'}`, alignItems: 'flex-start' }}>
+                        <input type="checkbox" checked={checked} onChange={e => {
+                          const next = new Set(selectedScopeIds)
+                          if (e.target.checked) next.add(item.id); else next.delete(item.id)
+                          setSelectedScopeIds(next)
+                        }} style={{ marginTop: '2px', flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{item.trade || 'General'}</span>
+                            {st !== 'accepted' && (
+                              <span style={{ padding: '1px 6px', borderRadius: '3px', fontSize: '10px', fontWeight: '600', background: st === 'question' ? '#fefce8' : '#f3f4f6', color: st === 'question' ? '#a16207' : '#6b7280' }}>
+                                {st === 'question' ? 'Open question' : 'Not reviewed'}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ margin: 0, fontSize: '13px', color: checked ? '#374151' : '#9ca3af' }}>{item.description || 'No description'}</p>
+                          {item.scope_review?.notes && checked && (
+                            <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>{item.scope_review.notes}</p>
+                          )}
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Document checklist */}
+            <div style={s.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ ...s.cardH, margin: 0 }}>Documents <span style={{ fontWeight: '400', color: '#6b7280', fontSize: '13px' }}>({selectedPlanIds.size} of {plans.length} selected)</span></h3>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => setSelectedPlanIds(new Set(plans.map(p => p.id)))}>All</button>
+                  <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => setSelectedPlanIds(new Set())}>None</button>
+                </div>
+              </div>
+              {plans.length === 0 ? (
+                <p style={{ color: '#9ca3af', fontSize: '13px', margin: 0 }}>No documents uploaded — upload drawings and specs in the Documents section first.</p>
+              ) : (
+                <>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '32px' }}></th>
+                        {['Filename','Uploaded','Status'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plans.map(p => {
+                        const inc = selectedPlanIds.has(p.id)
+                        return (
+                          <tr key={p.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '8px 8px 8px 0' }}>
+                              <input type="checkbox" checked={inc} onChange={e => {
+                                const next = new Set(selectedPlanIds)
+                                if (e.target.checked) next.add(p.id); else next.delete(p.id)
+                                setSelectedPlanIds(next)
+                              }} />
+                            </td>
+                            <td style={{ padding: '8px 12px 8px 0', fontWeight: '500', color: inc ? '#111827' : '#9ca3af' }}>{p.file_name}</td>
+                            <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '—'}</td>
+                            <td style={{ padding: '8px 0' }}>
+                              <span style={{ padding: '2px 8px', borderRadius: '3px', fontSize: '11px', fontWeight: '600', background: inc ? '#dcfce7' : '#f3f4f6', color: inc ? '#16a34a' : '#9ca3af' }}>
+                                {inc ? 'In ZIP' : 'Excluded'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                    Selected files are listed by filename in the PDF and included as original files in the ZIP.
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* Export note */}
+            <div style={{ ...s.card, background: '#fffbeb', border: '1px solid #fde68a' }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#92400e', lineHeight: '1.7' }}>
+                <strong>Export PDF</strong> — Opens a printable NV-branded invitation. The document register lists included filenames only; no source files are embedded in the PDF.<br/>
+                <strong>Export ZIP</strong> — Downloads the ITB invitation plus the {selectedPlanIds.size} selected original file{selectedPlanIds.size !== 1 ? 's' : ''} in a Documents/ folder. Use this when distributing the full drawing set to bidders.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {tab === 'preview' && (
+          <div style={s.card}>
+            <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1rem' }}>
+              Preview of what the subcontractor will see. Click <strong>Export PDF</strong> above for the full printable version with your logo embedded.
+            </p>
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflow: 'hidden' }}>
+              <iframe
+                srcDoc={buildItbHtml(form, selectedScopes, selectedPlans, '')}
+                style={{ width: '100%', height: '720px', border: 'none' }}
+                title="ITB Preview"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Invitations & Quotes ──────────────────────────────────────────────────────
 
-function InvitationsSection({ bidId, invitations, submissions, scopeItems, reload, canEdit }) {
+function InvitationsSection({ bidId, pkg, plans, invitations, submissions, scopeItems, profile, reload, canEdit }) {
+  const [itbOpen, setItbOpen] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newCompany, setNewCompany] = useState('')
   const [newTrade, setNewTrade] = useState('')
@@ -702,6 +1170,29 @@ function InvitationsSection({ bidId, invitations, submissions, scopeItems, reloa
 
   return (
     <div>
+      {itbOpen && (
+        <ItbPrepScreen
+          pkg={pkg}
+          plans={plans}
+          scopeItems={scopeItems}
+          profile={profile}
+          onClose={() => setItbOpen(false)}
+        />
+      )}
+
+      {/* ITB Prep card — always visible so PM can prepare the package */}
+      <div style={{ ...s.card, marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h3 style={{ ...s.cardH, margin: '0 0 4px' }}>Invitation to Bid Package</h3>
+          <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+            Prepare the ITB document with scope, deadline, and contacts. Export as PDF or ZIP with the full drawing set.
+          </p>
+        </div>
+        <button style={{ ...s.btnPri, whiteSpace: 'nowrap', flexShrink: 0, marginLeft: '16px' }} onClick={() => setItbOpen(true)}>
+          Prepare ITB
+        </button>
+      </div>
+
       {canEdit && (
         <div style={{ ...s.card, marginBottom: '1rem' }}>
           <h3 style={{ ...s.cardH, marginBottom: '1rem' }}>Send Invitation to Bid</h3>
@@ -1298,7 +1789,7 @@ export default function BidWorkspacePage() {
               <RFIsSection bidId={id} rfis={rfis} rfiTableExists={rfiTableExists} reload={loadAll} canEdit={canEdit} profile={profile} />
             )}
             {section === 'invitations' && (
-              <InvitationsSection bidId={id} invitations={invitations} submissions={submissions} scopeItems={scopeItems} reload={loadAll} canEdit={canEdit} />
+              <InvitationsSection bidId={id} pkg={pkg} plans={plans} invitations={invitations} submissions={submissions} scopeItems={scopeItems} profile={profile} reload={loadAll} canEdit={canEdit} />
             )}
             {section === 'leveling' && (
               <LevelingSection bidId={id} scopeItems={scopeItems} submissions={submissions} levelingEntries={levelingEntries} reload={loadAll} />

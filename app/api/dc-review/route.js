@@ -196,9 +196,13 @@ export async function POST(request) {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
     const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes', 'budget_item_id', 'bill_to_owner', 'owner_auth_ref']
+    const UUID_FIELDS = new Set(['budget_item_id'])
     const updates = { reviewed_by: auth.userId, reviewed_at: now }
     for (const f of EDITABLE) {
-      if (fields[f] !== undefined) updates[f] = fields[f]
+      if (fields[f] !== undefined) {
+        // Convert empty strings to null for UUID columns (Postgres rejects "")
+        updates[f] = (UUID_FIELDS.has(f) && fields[f] === '') ? null : fields[f]
+      }
     }
     if (updates.amount !== undefined) {
       const parsed = parseFloat(updates.amount)

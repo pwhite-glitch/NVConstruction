@@ -45,7 +45,7 @@ const s = {
     padding: active ? '9px 1rem 9px calc(1rem - 3px)' : '9px 1rem',
     cursor: 'pointer',
     background: active ? 'rgba(232,89,12,0.14)' : 'transparent',
-    color: active ? '#e8590c' : 'rgba(255,255,255,0.58)',
+    color: active ? '#e8590c' : 'rgba(255,255,255,0.72)',
     fontSize: '13px', fontWeight: active ? '600' : '400',
     border: 'none',
     borderLeft: active ? '3px solid #e8590c' : '3px solid transparent',
@@ -607,11 +607,13 @@ export default function Dashboard() {
 
   async function loadPmNotifications() {
     try {
-      const data = await authFetch('/api/notifications')
-      setPmNotifications(data.notifications || [])
-      setPmNotifUnread(data.unread || 0)
+      const res = await authFetch('/api/notifications')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setPmNotifications(Array.isArray(data?.notifications) ? data.notifications : [])
+      setPmNotifUnread(data?.unread || 0)
       setPmNotifLoaded(true)
-    } catch {}
+    } catch { setPmNotifLoaded(true) }
   }
 
   async function markPmNotifRead(id) {
@@ -629,10 +631,17 @@ export default function Dashboard() {
   async function loadMyWork() {
     setMyWorkLoading(true)
     try {
-      const data = await authFetch('/api/my-work')
-      setMyWork(data)
+      const res = await authFetch('/api/my-work')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setMyWork({
+        rfis:        Array.isArray(data?.rfis)        ? data.rfis        : [],
+        billing:     Array.isArray(data?.billing)     ? data.billing     : [],
+        actionItems: Array.isArray(data?.actionItems) ? data.actionItems : [],
+        milestones:  Array.isArray(data?.milestones)  ? data.milestones  : [],
+      })
     } catch (e) {
-      setMyWork({ rfis: [], billing: [], actionItems: [], milestones: [] })
+      setMyWork({ error: e.message, rfis: [], billing: [], actionItems: [], milestones: [] })
     } finally {
       setMyWorkLoading(false)
     }
@@ -3159,7 +3168,7 @@ ${estimate.notes ? `
   const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
   const billingBadge = pending.length || null
   const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
-  const myWorkTotal = myWork ? (myWork.rfis.length + myWork.billing.length + myWork.actionItems.length + myWork.milestones.length) : null
+  const myWorkTotal = myWork ? ((myWork.rfis?.length || 0) + (myWork.billing?.length || 0) + (myWork.actionItems?.length || 0) + (myWork.milestones?.length || 0)) : null
   const myWorkBadge = myWorkTotal || null
   const notifBadge = pmNotifUnread || null
 
@@ -3350,7 +3359,7 @@ ${estimate.notes ? `
           {navGroups.map((group, gi) => (
             <div key={gi}>
               {group.label && (
-                <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.22)', letterSpacing: '1px', textTransform: 'uppercase', padding: gi === 0 ? '10px 1rem 4px' : '14px 1rem 4px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.42)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: gi === 0 ? '10px 1rem 4px' : '14px 1rem 4px' }}>
                   {group.label}
                 </div>
               )}
@@ -3363,7 +3372,7 @@ ${estimate.notes ? `
               ))}
             </div>
           ))}
-          <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.22)', letterSpacing: '1px', textTransform: 'uppercase', padding: '14px 1rem 4px' }}>Divisions</div>
+          <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.42)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '14px 1rem 4px' }}>Divisions</div>
           <a href="/roofing" style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 1rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
             Commercial Roofing
@@ -3498,13 +3507,20 @@ ${estimate.notes ? `
 
                   {myWorkLoading && <p style={{ color: '#6b7280', fontSize: '14px' }}>Loading…</p>}
 
-                  {myWork && myWorkTotal === 0 && (
+                  {myWork?.error && !myWorkLoading && (
+                    <div style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: '8px', padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                      <p style={{ margin: 0, color: '#dc2626', fontSize: '14px' }}>Could not load your work items. Check your connection and try again.</p>
+                      <button onClick={loadMyWork} style={{ padding: '6px 14px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', flexShrink: 0 }}>Retry</button>
+                    </div>
+                  )}
+
+                  {myWork && !myWork.error && myWorkTotal === 0 && (
                     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center' }}>
                       <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>All caught up — nothing pending.</p>
                     </div>
                   )}
 
-                  {myWork && mwSection('Pending billing review', myWork.billing, '#e8590c', (item) => (
+                  {myWork && !myWork.error && mwSection('Pending billing review', myWork.billing, '#e8590c', (item) => (
                     <>
                       <div>
                         <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.company_name}</p>
@@ -3518,7 +3534,7 @@ ${estimate.notes ? `
                     </>
                   ))}
 
-                  {myWork && mwSection('Open RFIs', myWork.rfis, '#2563eb', (item) => (
+                  {myWork && !myWork.error && mwSection('Open RFIs', myWork.rfis, '#2563eb', (item) => (
                     <>
                       <div>
                         <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title || item.question || 'Untitled RFI'}</p>
@@ -3531,7 +3547,7 @@ ${estimate.notes ? `
                     </>
                   ))}
 
-                  {myWork && mwSection('My action items', myWork.actionItems, '#d97706', (item) => (
+                  {myWork && !myWork.error && mwSection('My action items', myWork.actionItems, '#d97706', (item) => (
                     <>
                       <div>
                         <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.description}</p>
@@ -3544,7 +3560,7 @@ ${estimate.notes ? `
                     </>
                   ))}
 
-                  {myWork && mwSection('Upcoming milestones', myWork.milestones, '#16a34a', (item) => (
+                  {myWork && !myWork.error && mwSection('Upcoming milestones', myWork.milestones, '#16a34a', (item) => (
                     <>
                       <div>
                         <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title}</p>
@@ -4852,7 +4868,7 @@ ${estimate.notes ? `
                                 contract > 0 && (
                                   <div style={{ textAlign: 'right' }}>
                                     <div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#dc2626' : '#111827', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}</div>
-                                    <div style={{ fontSize: '11px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% billed</div>
+                                    <div style={{ fontSize: '11px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% sub-billed (approved)</div>
                                   </div>
                                 )
                               )}
@@ -8086,7 +8102,7 @@ ${estimate.notes ? `
                 <div style={{ marginBottom: '1.5rem' }}>
                   <h2 style={s.sectionTitle}>Role Permissions</h2>
                   <p style={{ fontSize: '13px', color: '#6b7280', margin: '4px 0 0' }}>
-                    Toggle what each role can see and do. Database security enforces access independently — these control what people see in the interface.
+                    Controls interface visibility only — shows or hides tabs and actions in the portal. Server-side authorization enforces the actual access rules independently; hiding a UI element does not remove the underlying permission, and showing one does not grant it.
                   </p>
                 </div>
                 {permsLoading ? (

@@ -7511,7 +7511,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <div style={s.statRow} className="rx-stats">
               <div style={s.statCard}><div style={s.statLabel}>Total submissions</div><div style={s.statValue()}>{billingSubmissions.length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Pending review</div><div style={s.statValue(pendingBillingCount > 0 ? '#e8590c' : undefined)}>{pendingBillingCount}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Approved total</div><div style={s.statValue('#16a34a')}>${approvedBillingTotal.toLocaleString()}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Total approved (all subs)</div><div style={s.statValue('#16a34a')}>${approvedBillingTotal.toLocaleString()}</div></div>
             </div>
 
             {/* ── DRAW REQUESTS ── */}

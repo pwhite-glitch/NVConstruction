@@ -4663,6 +4663,114 @@ ${estimate.notes ? `
               </>
             )}
 
+            {/* ── UNMATCHED PORTAL USERS ── */}
+            {activeTab === 'directory' && (() => {
+              const matchedIds = new Set()
+              directory.forEach(sub => {
+                const co = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+                const nameKey = sub.company_name?.toLowerCase().trim()
+                subProfiles.forEach(p => {
+                  if ((co && p.company_id === co.id) || (nameKey && p.company_name?.toLowerCase().trim() === nameKey)) matchedIds.add(p.id)
+                })
+              })
+              const unmatched = subProfiles.filter(p => !matchedIds.has(p.id))
+              if (unmatched.length === 0) return null
+              return (
+                <div style={{ margin: '2rem 0', background: '#fefce8', border: '1px solid #fbbf24', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ padding: '14px 18px', borderBottom: '1px solid #fbbf24', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '16px' }}>⚠</span>
+                    <div>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#92400e' }}>
+                        {unmatched.length} portal user{unmatched.length > 1 ? 's' : ''} not linked to any company
+                      </p>
+                      <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#78350f' }}>
+                        These accounts exist but won't appear under any company until reassigned. Edit each one and pick the correct company.
+                      </p>
+                    </div>
+                  </div>
+                  {unmatched.map((m, idx) => {
+                    const isEditing = editingSubUser?.id === m.id
+                    const isActioning = subUserActionLoading === m.id
+                    const isRegistered = !!m.last_sign_in_at
+                    const isLast = idx === unmatched.length - 1
+                    if (isEditing) {
+                      return (
+                        <div key={m.id} style={{ padding: '16px 18px', borderBottom: isLast ? 'none' : '1px solid #fbbf24', background: '#fffbeb' }}>
+                          <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: '700', color: '#92400e', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Edit User — assign to a company to restore visibility</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                            <div>
+                              <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Full Name</p>
+                              <input style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                                value={editingSubUser.full_name || ''}
+                                onChange={e => setEditingSubUser(prev => ({ ...prev, full_name: e.target.value }))} />
+                            </div>
+                            <div>
+                              <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '600', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Role</p>
+                              <select style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box' }}
+                                value={editingSubUser.role || 'subcontractor'}
+                                onChange={e => setEditingSubUser(prev => ({ ...prev, role: e.target.value }))}>
+                                <option value="sub_estimator">Estimator</option>
+                                <option value="sub_pm">Project Manager</option>
+                                <option value="sub_admin">Admin</option>
+                                <option value="subcontractor">Subcontractor</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: '14px' }}>
+                            <p style={{ margin: '0 0 5px', fontSize: '10px', fontWeight: '800', color: '#c2410c', letterSpacing: '1px', textTransform: 'uppercase' }}>Company ⚠ not linked — select to fix</p>
+                            <select style={{ ...s.input, width: '100%', padding: '8px 10px', fontSize: '13px', boxSizing: 'border-box', borderColor: '#fbbf24' }}
+                              value={editingSubUser.company_id || ''}
+                              onChange={e => {
+                                const co = companiesData.find(c => c.id === e.target.value)
+                                setEditingSubUser(prev => ({ ...prev, company_id: e.target.value || null, company_name: co?.name || prev.company_name }))
+                              }}>
+                              <option value="">— No company assigned —</option>
+                              {companiesData.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button style={{ ...s.btnSm('orange'), opacity: isActioning ? 0.6 : 1 }} disabled={isActioning} onClick={saveSubUserEdit}>
+                              {isActioning ? 'Saving…' : 'Save & Restore'}
+                            </button>
+                            <button style={s.btnSm('gray')} onClick={() => setEditingSubUser(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 18px', borderBottom: isLast ? 'none' : '1px solid #fbbf24', opacity: isActioning ? 0.5 : 1 }}>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', background: '#fef3c7', border: '2px solid #fbbf24', color: '#92400e' }}>
+                          {(m.full_name || m.invite_email || '?').split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '2px' }}>{m.full_name || m.invite_email}</div>
+                          <div style={{ fontSize: '12px', color: '#78350f' }}>
+                            {m.invite_email}{m.company_name ? ` · ${m.company_name} (unlinked)` : ' · no company assigned'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#92400e', marginTop: '2px' }}>
+                            {isRegistered ? `Last seen ${new Date(m.last_sign_in_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Never logged in'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          <button title={isRegistered ? 'Send password reset' : 'Resend invite'}
+                            style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #fbbf24', borderRadius: '6px', color: '#92400e', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                            disabled={isActioning}
+                            onClick={() => resendSubInvite(m.id, m.invite_email, m.company_id, m.company_name)}>
+                            {isRegistered ? '↩ Reset PW' : '↩ Resend'}
+                          </button>
+                          <button title="Edit and reassign company" disabled={isActioning}
+                            style={{ padding: '5px 9px', background: '#e8590c', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}
+                            onClick={() => setEditingSubUser({ id: m.id, full_name: m.full_name || '', phone: m.phone || '', invite_email: m.invite_email || '', role: m.role || 'subcontractor', company_name: m.company_name || '', company_id: m.company_id || null })}>
+                            Fix →
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
             {/* ── MERGE ACCOUNTS ── */}
             {activeTab === 'directory' && (() => {
               const doMerge = async () => {

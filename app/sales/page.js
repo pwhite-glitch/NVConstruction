@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
@@ -109,7 +109,7 @@ const s = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function SalesPage() {
+function SalesPageInner() {
   const router = useRouter()
   const qp = useSearchParams()
 
@@ -589,5 +589,13 @@ export default function SalesPage() {
       )}
 
     </div>
+  )
+}
+
+export default function SalesPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#f4f6f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui', color: '#9ca3af' }}>Loading…</div>}>
+      <SalesPageInner />
+    </Suspense>
   )
 }

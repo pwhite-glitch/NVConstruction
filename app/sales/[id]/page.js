@@ -159,6 +159,13 @@ export default function SalesOrderDetailPage() {
   const [modalErr,        setModalErr]        = useState('')
   const [modalOk,         setModalOk]         = useState('')
 
+  // Supplier order modal (Purchasing tab)
+  const BLANK_SO = { vendor_name: '', po_number: '', confirmation_number: '', amount: '', expected_delivery_date: '', status: 'pending', notes: '' }
+  const [showSOModal,     setShowSOModal]     = useState(false)
+  const [editingSO,       setEditingSO]       = useState(null) // null = create, id = edit
+  const [soForm,          setSOForm]          = useState(BLANK_SO)
+  const [soSaving,        setSOSaving]        = useState(false)
+
   // Products / line items (scope tab)
   const [products, setProducts] = useState([])
 
@@ -245,6 +252,7 @@ export default function SalesOrderDetailPage() {
       setSupplierOrders(data.supplier_orders || [])
       setReadiness(data.readiness_checks || [])
       setAttribution(data.attribution || [])
+      setPortalAccess(data.portal_access || [])
       setDirty(false)
     } catch {}
     setLoading(false)
@@ -386,7 +394,23 @@ export default function SalesOrderDetailPage() {
     if (res.ok) { const j = await res.json(); setPortalAccess(j.accesses || []) }
   }
 
-  useEffect(() => { if (tab === 'portal' && profile) loadPortalAccess() }, [tab, profile])
+  useEffect(() => { if (tab === 'portal' && profile && portalAccess.length === 0) loadPortalAccess() }, [tab, profile])
+
+  async function saveSupplierOrder() {
+    setSOSaving(true)
+    const headers = await authHeader()
+    const fields = {
+      ...soForm,
+      amount: soForm.amount ? Number(soForm.amount) : null,
+      expected_delivery_date: soForm.expected_delivery_date || null,
+    }
+    const body = editingSO
+      ? { action: 'update_supplier_order', supplier_order_id: editingSO, fields }
+      : { action: 'create_supplier_order', id, fields, actor_name: profile?.full_name }
+    const res = await fetch('/api/sales-orders', { method: 'POST', headers, body: JSON.stringify(body) })
+    if (!res.ok) { const j = await res.json(); setModalErr(j.error || 'Failed') } else { setShowSOModal(false); loadOrder() }
+    setSOSaving(false)
+  }
 
   async function revokeAccess(accessId) {
     if (!window.confirm('Revoke this customer\'s portal access?')) return
@@ -487,9 +511,9 @@ export default function SalesOrderDetailPage() {
 
       {/* ── Tab nav ── */}
       <nav style={s.tabNav}>
-        {['overview','scope','documents','schedule','tasks','updates','portal','history'].map(t => (
+        {['overview','scope','documents','schedule','tasks','purchasing','updates','portal','history'].map(t => (
           <button key={t} style={s.tab(tab === t)} onClick={() => setTab(t)}>
-            {t === 'overview' ? 'Overview' : t === 'scope' ? 'Scope & Products' : t === 'documents' ? 'Documents' : t === 'schedule' ? 'Schedule' : t === 'tasks' ? `Tasks${overdueTasks.length ? ` (${overdueTasks.length})` : ''}` : t === 'updates' ? 'Updates' : t === 'portal' ? 'Customer Portal' : 'History'}
+            {t === 'overview' ? 'Overview' : t === 'scope' ? 'Scope & Products' : t === 'documents' ? 'Documents' : t === 'schedule' ? 'Schedule' : t === 'tasks' ? `Tasks${overdueTasks.length ? ` (${overdueTasks.length})` : ''}` : t === 'purchasing' ? `Purchasing${supplierOrders.length ? ` (${supplierOrders.length})` : ''}` : t === 'updates' ? 'Updates' : t === 'portal' ? 'Customer Portal' : 'History'}
           </button>
         ))}
       </nav>
@@ -935,6 +959,45 @@ export default function SalesOrderDetailPage() {
           </>
         )}
 
+        {/* ══ PURCHASING ═══════════════════════════════════════════════════ */}
+        {tab === 'purchasing' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Supplier purchase orders for this sales order. Separate from construction-job purchasing.</p>
+              </div>
+              {canEdit && <button style={s.btn} onClick={() => { setEditingSO(null); setSOForm(BLANK_SO); setModalErr(''); setShowSOModal(true) }}>+ Add Supplier Order</button>}
+            </div>
+
+            {supplierOrders.length === 0 && <p style={s.empty}>No supplier orders yet. Add one when materials are ordered from a vendor.</p>}
+
+            {supplierOrders.map(so => {
+              const statusColor = { pending: '#6b7280', ordered: '#2563eb', confirmed: '#0369a1', received: '#15803d', cancelled: '#dc2626' }[so.status] || '#6b7280'
+              return (
+                <div key={so.id} style={{ ...s.card, marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '14px', color: '#111827' }}>{so.vendor_name || 'Unnamed vendor'}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                        {so.po_number && `PO# ${so.po_number}`}
+                        {so.po_number && so.confirmation_number && ' · '}
+                        {so.confirmation_number && `Conf# ${so.confirmation_number}`}
+                      </div>
+                      {so.expected_delivery_date && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>Expected delivery: {fmtDate(so.expected_delivery_date)}</div>}
+                      {so.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', fontStyle: 'italic' }}>{so.notes}</div>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                      {so.amount != null && <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>${Number(so.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
+                      <span style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', padding: '2px 8px', borderRadius: '4px', background: statusColor + '18', color: statusColor, border: `1px solid ${statusColor}40` }}>{so.status}</span>
+                      {canEdit && <button style={s.btnSm()} onClick={() => { setEditingSO(so.id); setSOForm({ vendor_name: so.vendor_name || '', po_number: so.po_number || '', confirmation_number: so.confirmation_number || '', amount: so.amount || '', expected_delivery_date: so.expected_delivery_date || '', status: so.status || 'pending', notes: so.notes || '' }); setModalErr(''); setShowSOModal(true) }}>Edit</button>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )}
+
         {/* ══ UPDATES ══════════════════════════════════════════════════════ */}
         {tab === 'updates' && (
           <>
@@ -1015,7 +1078,11 @@ export default function SalesOrderDetailPage() {
                    h.action === 'customer_access_revoked' ? `Portal access revoked: ${h.details?.email || ''}` :
                    h.action === 'customer_update_posted' ? 'Customer update posted' :
                    h.action === 'internal_note_posted' ? 'Internal note posted' :
-                   h.action === 'updated' ? `Fields updated: ${(h.details?.fields || []).join(', ')}` :
+                   h.action === 'updated' ? (
+                     h.details?.changed
+                       ? `Updated: ${Object.entries(h.details.changed).map(([k, v]) => `${k}: ${v?.from ?? '—'} → ${v?.to ?? '—'}`).join('; ')}`
+                       : h.details?.fields?.length ? `Fields updated: ${h.details.fields.join(', ')}` : 'Updated'
+                   ) :
                    h.action}
                 </span>
               </div>
@@ -1177,6 +1244,37 @@ export default function SalesOrderDetailPage() {
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button style={s.btnGray} onClick={() => setShowUploadModal(false)}>Cancel</button>
               <button style={{ ...s.btn, opacity: uploading ? 0.6 : 1 }} onClick={uploadDoc} disabled={uploading}>{uploading ? 'Uploading…' : 'Upload'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supplier order create / edit */}
+      {showSOModal && (
+        <div style={s.overlay} onClick={e => e.target === e.currentTarget && setShowSOModal(false)}>
+          <div style={s.modal}>
+            <h2 style={s.mTitle}>{editingSO ? 'Edit Supplier Order' : 'Add Supplier Order'}</h2>
+            <div style={s.g2}>
+              <div><label style={s.lbl}>Vendor name</label><input style={s.inp} value={soForm.vendor_name} onChange={e => setSOForm(f => ({ ...f, vendor_name: e.target.value }))} placeholder="e.g. Steel Supply Co." /></div>
+              <div><label style={s.lbl}>Status</label>
+                <select style={s.sel} value={soForm.status} onChange={e => setSOForm(f => ({ ...f, status: e.target.value }))}>
+                  {['pending','ordered','confirmed','received','cancelled'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={s.g2}>
+              <div><label style={s.lbl}>PO number</label><input style={s.inp} value={soForm.po_number} onChange={e => setSOForm(f => ({ ...f, po_number: e.target.value }))} placeholder="PO-001" /></div>
+              <div><label style={s.lbl}>Confirmation #</label><input style={s.inp} value={soForm.confirmation_number} onChange={e => setSOForm(f => ({ ...f, confirmation_number: e.target.value }))} placeholder="Supplier's confirmation" /></div>
+            </div>
+            <div style={s.g2}>
+              <div><label style={s.lbl}>Amount</label><input type="number" style={s.inp} value={soForm.amount} onChange={e => setSOForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" /></div>
+              <div><label style={s.lbl}>Expected delivery</label><input type="date" style={s.inp} value={soForm.expected_delivery_date} onChange={e => setSOForm(f => ({ ...f, expected_delivery_date: e.target.value }))} /></div>
+            </div>
+            <div style={s.fRow}><label style={s.lbl}>Notes</label><textarea style={s.textarea} value={soForm.notes} onChange={e => setSOForm(f => ({ ...f, notes: e.target.value }))} placeholder="Delivery instructions, material specs, etc." /></div>
+            {modalErr && <p style={s.err}>{modalErr}</p>}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button style={s.btnGray} onClick={() => setShowSOModal(false)}>Cancel</button>
+              <button style={{ ...s.btn, opacity: soSaving ? 0.6 : 1 }} onClick={saveSupplierOrder} disabled={soSaving}>{soSaving ? 'Saving…' : editingSO ? 'Save Changes' : 'Add Order'}</button>
             </div>
           </div>
         </div>

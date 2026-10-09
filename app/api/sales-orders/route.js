@@ -173,6 +173,7 @@ export async function GET(request) {
         { data: supplierOrders },
         { data: readinessChecks },
         { data: attribution },
+        { data: portalAccess },
       ] = await Promise.all([
         adminSupabase.from('sales_order_docs').select('*').eq('order_id', id).order('created_at', { ascending: false }),
         adminSupabase.from('sales_order_tasks').select('*').eq('order_id', id).order('due_date', { ascending: true, nullsFirst: false }),
@@ -183,6 +184,7 @@ export async function GET(request) {
         adminSupabase.from('sales_supplier_orders').select('*').eq('order_id', id).order('created_at', { ascending: true }),
         adminSupabase.from('sales_order_readiness_checks').select('*').eq('order_id', id).order('created_at'),
         adminSupabase.from('sales_attribution').select('*').eq('order_id', id),
+        adminSupabase.from('customer_portal_access').select('id,email,name,invited_at,last_accessed_at,revoked_at,invited_by_name').eq('order_id', id).order('invited_at', { ascending: false }),
       ])
 
       return Response.json({
@@ -197,15 +199,19 @@ export async function GET(request) {
           supplier_orders:  supplierOrders  || [],
           readiness_checks: readinessChecks || [],
           attribution:      attribution     || [],
+          portal_access:    portalAccess    || [],
         }
       })
     }
 
     // List orders with filters
-    const division  = searchParams.get('division')
     const stage     = searchParams.get('stage')
     const salesId   = searchParams.get('salesperson_id')
     const search    = searchParams.get('search')
+
+    // Division reps are scoped to their own division regardless of query param
+    const roleDivision = auth.role === 'metal_rep' ? 'metal_buildings' : auth.role === 'roofing_rep' ? 'commercial_roofing' : null
+    const division = roleDivision || searchParams.get('division')
 
     let q = adminSupabase
       .from('sales_orders')
@@ -243,6 +249,10 @@ export async function POST(request) {
       if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
       const { fields } = body
       if (!fields?.division) return Response.json({ error: 'division required' }, { status: 400 })
+
+      // Normalize optional UUID fields — empty string is invalid for uuid columns
+      if (fields.ops_owner_id === '') fields.ops_owner_id = null
+      if (fields.salesperson_id === '') fields.salesperson_id = null
 
       // Look up salesperson name from profiles if id given but no name
       let salesperson_name = fields.salesperson_name || null
@@ -322,6 +332,12 @@ export async function POST(request) {
       // Convert empty-string date fields to null — Postgres rejects "" for date columns
       const DATE_FIELDS = ['expected_delivery_date','confirmed_delivery_date','deposit_received_date','expected_install_date','confirmed_install_date']
       for (const f of DATE_FIELDS) {
+        if (f in fields && (fields[f] === '' || fields[f] === undefined)) fields[f] = null
+      }
+
+      // Convert empty-string UUID fields to null — Postgres rejects "" for uuid columns
+      const UUID_FIELDS = ['salesperson_id', 'ops_owner_id']
+      for (const f of UUID_FIELDS) {
         if (f in fields && (fields[f] === '' || fields[f] === undefined)) fields[f] = null
       }
 

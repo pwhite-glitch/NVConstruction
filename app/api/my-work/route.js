@@ -25,12 +25,13 @@ export async function GET(request) {
   const in14 = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   const promises = [
-    // Sales tasks assigned to this user
+    // Sales tasks assigned to this user — exclude tasks on preview/test orders
     adminSupabase
       .from('sales_order_tasks')
-      .select('id, title, due_date, status, priority, order_id, order_number')
+      .select('id, title, due_date, status, priority, order_id, order_number, sales_orders!inner(division, is_preview_data)')
       .eq('assignee_id', auth.userId)
       .in('status', ['open', 'in_progress'])
+      .eq('sales_orders.is_preview_data', false)
       .order('due_date', { ascending: true, nullsFirst: false })
       .limit(50),
   ]
@@ -75,7 +76,7 @@ export async function GET(request) {
   const salesTasksRes = results[0]
 
   return Response.json({
-    salesTasks:  salesTasksRes.data || [],
+    salesTasks:  (salesTasksRes.data || []).map(t => ({ ...t, division: t.sales_orders?.division || null, sales_orders: undefined })),
     rfis:        isPM ? (results[1]?.data || []) : [],
     billing:     isPM ? (results[2]?.data || []) : [],
     actionItems: isPM ? (results[3]?.data || []) : [],

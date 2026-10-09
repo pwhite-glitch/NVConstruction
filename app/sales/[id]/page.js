@@ -461,7 +461,7 @@ export default function SalesOrderDetailPage() {
 
       {/* ── Header ── */}
       <header style={s.header}>
-        <button style={s.backBtn} onClick={() => router.push('/sales')}>← Orders</button>
+        <button style={s.backBtn} onClick={() => router.push('/sales' + (order.division ? '?division=' + order.division : ''))}>← Orders</button>
         <div style={s.hdivider} />
         <div>
           <p style={s.htitle}>{order.order_number} · {order.customer_name || order.customer_company || 'No customer'}</p>

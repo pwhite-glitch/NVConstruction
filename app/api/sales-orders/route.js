@@ -319,6 +319,12 @@ export async function POST(request) {
         delete fields.estimated_profit
       }
 
+      // Convert empty-string date fields to null — Postgres rejects "" for date columns
+      const DATE_FIELDS = ['expected_delivery_date','confirmed_delivery_date','deposit_received_date','expected_install_date','confirmed_install_date']
+      for (const f of DATE_FIELDS) {
+        if (f in fields && (fields[f] === '' || fields[f] === undefined)) fields[f] = null
+      }
+
       // If salesperson_id changed, look up the name
       if (fields.salesperson_id && !fields.salesperson_name) {
         const { data: prof } = await adminSupabase.from('profiles').select('full_name').eq('id', fields.salesperson_id).maybeSingle()

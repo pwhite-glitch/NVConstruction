@@ -112,6 +112,7 @@ const s = {
 function SalesPageInner() {
   const router = useRouter()
   const qp = useSearchParams()
+  const divisionParam = qp.get('division') || ''
 
   const [profile,  setProfile]  = useState(null)
   const [orders,   setOrders]   = useState([])
@@ -119,16 +120,16 @@ function SalesPageInner() {
   const [view,     setView]     = useState('list')   // 'list' | 'pipeline'
   const [tab,      setTab]      = useState('orders') // 'orders' | 'leaderboard'
 
-  // Filters
+  // Filters — initialized from URL param so division links deep-link correctly
   const [search,   setSearch]   = useState('')
-  const [division, setDivision] = useState('')
+  const [division, setDivision] = useState(divisionParam)
   const [stage,    setStage]    = useState('')
   const [hoveredRow, setHoveredRow] = useState(null)
   const [hoveredCard, setHoveredCard] = useState(null)
 
   // New order modal
   const [showNew,   setShowNew]   = useState(false)
-  const [newForm,   setNewForm]   = useState({ division: 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_id: '', salesperson_name: '' })
+  const [newForm,   setNewForm]   = useState({ division: divisionParam || 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_id: '', salesperson_name: '' })
   const [saving,    setSaving]    = useState(false)
   const [saveErr,   setSaveErr]   = useState('')
   const [staffList, setStaffList] = useState([])
@@ -265,7 +266,11 @@ function SalesPageInner() {
       <aside style={s.sidebar}>
         <div style={s.sidebarTop}>
           <p style={s.brand}>NV Construction</p>
-          <p style={s.divLabel}>Sales & Orders</p>
+          <p style={s.divLabel}>
+            {divisionParam === 'metal_buildings' ? 'Metal Buildings'
+             : divisionParam === 'commercial_roofing' ? 'Commercial Roofing'
+             : 'Sales & Orders'}
+          </p>
           <p style={s.userLabel}>{profile?.full_name || profile?.email}</p>
         </div>
         <nav style={s.nav}>
@@ -273,8 +278,8 @@ function SalesPageInner() {
           <button style={s.navItem(tab === 'leaderboard')} onClick={() => setTab('leaderboard')}>🏆 Leaderboard</button>
           <div style={s.navDivider}>Navigate</div>
           <button style={s.navItem(false)} onClick={() => router.push('/dashboard')}>← Dashboard</button>
-          <button style={s.navItem(false)} onClick={() => router.push('/metal-buildings')}>Metal Buildings</button>
-          <button style={s.navItem(false)} onClick={() => router.push('/roofing')}>Commercial Roofing</button>
+          <button style={s.navItem(divisionParam === 'metal_buildings')} onClick={() => router.push('/sales?division=metal_buildings')}>Metal Buildings</button>
+          <button style={s.navItem(divisionParam === 'commercial_roofing')} onClick={() => router.push('/sales?division=commercial_roofing')}>Commercial Roofing</button>
         </nav>
         <div style={s.sidebarBot}>
           <button style={s.signOutBtn} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>

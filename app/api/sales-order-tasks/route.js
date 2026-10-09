@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
+import { notify } from '../../../lib/notify'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -77,6 +78,20 @@ export async function POST(request) {
         action:     'task_created',
         details:    { task_id: data.id, title, assignee_name: assignee_name || null },
       })
+
+      // Notify assignee
+      if (assignee_id && assignee_id !== auth.userId) {
+        await notify({
+          recipient_id: assignee_id,
+          type:         'sales_task',
+          title:        `Task assigned to you: ${title}`,
+          body:         order?.order_number ? `Order ${order.order_number}` : null,
+          link:         `/sales/${order_id}?tab=tasks`,
+          entity_type:  'sales_order',
+          entity_id:    order_id,
+          dedup_key:    `task_assigned_${data.id}`,
+        })
+      }
 
       return Response.json({ ok: true, id: data.id })
     }

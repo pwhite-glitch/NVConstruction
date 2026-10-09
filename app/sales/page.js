@@ -127,10 +127,11 @@ function SalesPageInner() {
   const [hoveredCard, setHoveredCard] = useState(null)
 
   // New order modal
-  const [showNew,  setShowNew]  = useState(false)
-  const [newForm,  setNewForm]  = useState({ division: 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_name: '' })
-  const [saving,   setSaving]   = useState(false)
-  const [saveErr,  setSaveErr]  = useState('')
+  const [showNew,   setShowNew]   = useState(false)
+  const [newForm,   setNewForm]   = useState({ division: 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_id: '', salesperson_name: '' })
+  const [saving,    setSaving]    = useState(false)
+  const [saveErr,   setSaveErr]   = useState('')
+  const [staffList, setStaffList] = useState([])
 
   // Leaderboard
   const [lbData,    setLbData]    = useState([])
@@ -153,6 +154,12 @@ function SalesPageInner() {
       const allowed = ['pm','apm','admin','super','metal_rep','roofing_rep']
       if (!allowed.includes(role)) { router.push('/dashboard'); return }
       setProfile({ ...prof, id: session.user.id, email: session.user.email })
+
+      // Load staff list for salesperson dropdown
+      const staffRes = await fetch('/api/sales-orders?list=staff', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (staffRes.ok) { const j = await staffRes.json(); setStaffList(j.data || []) }
     }
     init()
   }, [])
@@ -211,8 +218,8 @@ function SalesPageInner() {
           fields: {
             ...newForm,
             quoted_amount: newForm.quoted_amount ? Number(newForm.quoted_amount) : null,
+            salesperson_id:   newForm.salesperson_id   || profile?.id,
             salesperson_name: newForm.salesperson_name || profile?.full_name || profile?.email,
-            salesperson_id: profile?.id,
           },
           actor_name: profile?.full_name || profile?.email,
         }),
@@ -220,7 +227,7 @@ function SalesPageInner() {
       const json = await res.json()
       if (!res.ok) { setSaveErr(json.error || 'Failed'); setSaving(false); return }
       setShowNew(false)
-      setNewForm({ division: 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_name: '' })
+      setNewForm({ division: 'metal_buildings', customer_name: '', customer_company: '', customer_email: '', customer_phone: '', site_address: '', scope_description: '', quoted_amount: '', salesperson_id: '', salesperson_name: '' })
       router.push(`/sales/${json.id}`)
     } catch (e) { setSaveErr(e.message) }
     setSaving(false)
@@ -450,7 +457,7 @@ function SalesPageInner() {
 
             {/* Counting rules note */}
             <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '10px 14px', marginBottom: '1.25rem', fontSize: '12px', color: '#92400e' }}>
-              <strong>Counting rules:</strong> Only orders at stage Contract Signed or later (not Lead, Quoted, or Cancelled) count. Attributed to the assigned salesperson at the time of signing. Split sales are not yet tracked separately.
+              <strong>Counting rules:</strong> Only orders at Contract Signed or later (not Lead, Quoted, or Cancelled) count. Attribution is locked at the time of signing and does not change if the order is later reassigned. Split-sale credits are supported — each rep's share is recorded as a percentage, and totals reflect their portion of split deals. An order with splits counts once toward overall totals.
             </div>
 
             {/* Leaderboard filters */}
@@ -567,7 +574,15 @@ function SalesPageInner() {
               </div>
               <div>
                 <label style={s.label}>Salesperson</label>
-                <input style={s.input} value={newForm.salesperson_name} onChange={e => setNewForm(f => ({ ...f, salesperson_name: e.target.value }))} placeholder={profile?.full_name || ''} />
+                <select style={s.input} value={newForm.salesperson_id} onChange={e => {
+                  const sel = staffList.find(s => s.id === e.target.value)
+                  setNewForm(f => ({ ...f, salesperson_id: e.target.value, salesperson_name: sel?.full_name || '' }))
+                }}>
+                  <option value="">— Me ({profile?.full_name || 'Staff'}) —</option>
+                  {staffList.filter(s => s.id !== profile?.id).map(s => (
+                    <option key={s.id} value={s.id}>{s.full_name} ({s.role})</option>
+                  ))}
+                </select>
               </div>
             </div>
 

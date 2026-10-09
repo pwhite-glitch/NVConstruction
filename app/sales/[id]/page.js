@@ -128,17 +128,24 @@ export default function SalesOrderDetailPage() {
   const [form, setForm] = useState({})
 
   // Data from related tables
-  const [docs,         setDocs]         = useState([])
-  const [tasks,        setTasks]        = useState([])
-  const [updates,      setUpdates]      = useState([])
-  const [history,      setHistory]      = useState([])
-  const [sigRequests,  setSigRequests]  = useState([])
-  const [portalAccess, setPortalAccess] = useState([])
+  const [docs,            setDocs]            = useState([])
+  const [tasks,           setTasks]           = useState([])
+  const [updates,         setUpdates]         = useState([])
+  const [history,         setHistory]         = useState([])
+  const [sigRequests,     setSigRequests]     = useState([])
+  const [portalAccess,    setPortalAccess]    = useState([])
+  const [payments,        setPayments]        = useState([])
+  const [supplierOrders,  setSupplierOrders]  = useState([])
+  const [readiness,       setReadiness]       = useState([])
+  const [attribution,     setAttribution]     = useState([])
+  const [staffList,       setStaffList]       = useState([])
 
   // Modals
   const [showStage,       setShowStage]       = useState(false)
   const [newStage,        setNewStage]        = useState('')
   const [stageSaving,     setStageSaving]     = useState(false)
+  const [stageBlockers,   setStageBlockers]   = useState([])
+  const [overrideReason,  setOverrideReason]  = useState('')
   const [showTaskModal,   setShowTaskModal]   = useState(false)
   const [taskForm,        setTaskForm]        = useState({ title: '', assignee_name: '', due_date: '', priority: 'normal' })
   const [showUpdateModal, setShowUpdateModal] = useState(false)
@@ -170,6 +177,11 @@ export default function SalesOrderDetailPage() {
       const allowed = ['pm','apm','admin','super','metal_rep','roofing_rep']
       if (!allowed.includes(prof?.role)) { router.push('/dashboard'); return }
       setProfile({ ...prof, id: session.user.id, email: session.user.email })
+
+      const staffRes = await fetch('/api/sales-orders?list=staff', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (staffRes.ok) { const j = await staffRes.json(); setStaffList(j.data || []) }
     }
     init()
   }, [])
@@ -192,7 +204,9 @@ export default function SalesOrderDetailPage() {
         city: data.city || '',
         state: data.state || '',
         zip: data.zip || '',
+        salesperson_id: data.salesperson_id || '',
         salesperson_name: data.salesperson_name || '',
+        ops_owner_id: data.ops_owner_id || '',
         ops_owner_name: data.ops_owner_name || '',
         scope_description: data.scope_description || '',
         exclusions: data.exclusions || '',
@@ -227,6 +241,10 @@ export default function SalesOrderDetailPage() {
       setUpdates(data.updates || [])
       setHistory(data.history || [])
       setSigRequests(data.signature_requests || [])
+      setPayments(data.payments || [])
+      setSupplierOrders(data.supplier_orders || [])
+      setReadiness(data.readiness_checks || [])
+      setAttribution(data.attribution || [])
       setDirty(false)
     } catch {}
     setLoading(false)
@@ -274,16 +292,31 @@ export default function SalesOrderDetailPage() {
     setSaving(false)
   }
 
-  async function setStage(stage) {
+  async function setStage(stage, overrideReason) {
     setStageSaving(true)
+    setStageBlockers([])
     const headers = await authHeader()
-    await fetch('/api/sales-orders', {
+    const res = await fetch('/api/sales-orders', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ action: 'set_stage', id, stage, actor_name: profile?.full_name || profile?.email }),
+      body: JSON.stringify({
+        action: 'set_stage', id, stage,
+        actor_name: profile?.full_name || profile?.email,
+        override_reason: overrideReason || undefined,
+      }),
     })
+    const j = await res.json()
+    if (res.status === 422 && j.blocked) {
+      setStageBlockers(j.blockers || [])
+      setStageSaving(false)
+      return
+    }
     setStageSaving(false)
-    setShowStage(false)
+    if (res.ok) {
+      setShowStage(false)
+      setStageBlockers([])
+      setOverrideReason('')
+    }
     loadOrder()
   }
 
@@ -493,16 +526,33 @@ export default function SalesOrderDetailPage() {
               <div style={s.warning}>⚠ {overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''}</div>
             )}
 
+            {/* Status dimensions bar */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '1.25rem' }}>
+              {[
+                { label: 'Payment', value: order.payment_status || 'none', colors: { none: '#9ca3af', deposit_pending: '#c2410c', deposit_received: '#0369a1', partial: '#7c3aed', paid: '#16a34a', refunded: '#dc2626' } },
+                { label: 'Delivery', value: order.delivery_status || 'not_ordered', colors: { not_ordered: '#9ca3af', ordered: '#7c3aed', partially_delivered: '#0f766e', delivered: '#16a34a', exception: '#dc2626' } },
+                { label: 'Installation', value: order.installation_status || 'not_scheduled', colors: { not_scheduled: '#9ca3af', scheduled: '#0369a1', in_progress: '#c2410c', installed: '#15803d', corrections_outstanding: '#dc2626' } },
+              ].map(dim => {
+                const color = dim.colors[dim.value] || '#9ca3af'
+                return (
+                  <div key={dim.label} style={{ background: '#fff', border: `1px solid #e5e7eb`, borderRadius: '8px', padding: '10px 14px', borderTop: `3px solid ${color}` }}>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>{dim.label}</div>
+                    <div style={{ fontSize: '12px', fontWeight: '600', color, textTransform: 'capitalize' }}>{dim.value.replace(/_/g, ' ')}</div>
+                  </div>
+                )
+              })}
+            </div>
+
             {/* Key info grid */}
             <div style={s.card}>
               <p style={s.sec}>Order Info</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
                 <div style={s.kv}><span style={s.kvLabel}>Division</span><span style={s.kvValue}><span style={s.divBadge(order.division)}>{order.division === 'metal_buildings' ? 'Metal Buildings' : 'Commercial Roofing'}</span></span></div>
                 <div style={s.kv}><span style={s.kvLabel}>Stage</span><span style={s.kvValue}><span style={s.badge(order.stage)}>{cfg.label}</span></span></div>
-                <div style={s.kv}><span style={s.kvLabel}>Salesperson</span><span style={s.kvValue}>{order.salesperson_name || '—'}</span></div>
+                <div style={s.kv}><span style={s.kvLabel}>Salesperson</span><span style={s.kvValue}>{order.salesperson_name || '—'}{order.signed_salesperson_name && order.signed_salesperson_name !== order.salesperson_name ? <span style={{ fontSize: '10px', color: '#9ca3af', display: 'block' }}>Signed by: {order.signed_salesperson_name}</span> : null}</span></div>
                 <div style={s.kv}><span style={s.kvLabel}>Ops Owner</span><span style={s.kvValue}>{order.ops_owner_name || '—'}</span></div>
                 <div style={s.kv}><span style={s.kvLabel}>Quoted</span><span style={s.kvValue}>{fmt$(order.quoted_amount)}</span></div>
-                <div style={s.kv}><span style={s.kvLabel}>Contract Value</span><span style={{ ...s.kvValue, color: order.contract_value ? '#111827' : '#9ca3af' }}>{fmt$(order.contract_value)}</span></div>
+                <div style={s.kv}><span style={s.kvLabel}>Contract Value</span><span style={{ ...s.kvValue, color: order.contract_value ? '#111827' : '#9ca3af' }}>{fmt$(order.signed_contract_value || order.contract_value)}{order.signed_contract_value ? <span style={{ fontSize: '10px', color: '#9ca3af', display: 'block' }}>Locked at signing</span> : null}</span></div>
                 {showFinancials && <div style={s.kv}><span style={s.kvLabel}>Internal Cost</span><span style={s.kvValue}>{fmt$(order.internal_cost)}</span></div>}
                 {showFinancials && <div style={s.kv}><span style={s.kvLabel}>Est. GP</span><span style={{ ...s.kvValue, color: '#16a34a' }}>{fmt$(order.estimated_profit)}</span></div>}
               </div>
@@ -674,8 +724,37 @@ export default function SalesOrderDetailPage() {
             <div style={s.card}>
               <p style={s.sec}>Assignments & Notes</p>
               <div style={s.g2}>
-                <div><label style={s.lbl}>Salesperson</label><input style={s.inp} value={form.salesperson_name} onChange={e => formSet('salesperson_name', e.target.value)} disabled={!canEdit} /></div>
-                <div><label style={s.lbl}>Ops Owner</label><input style={s.inp} value={form.ops_owner_name} onChange={e => formSet('ops_owner_name', e.target.value)} disabled={!canEdit} /></div>
+                <div>
+                  <label style={s.lbl}>Salesperson</label>
+                  {canEdit && staffList.length > 0 ? (
+                    <select style={s.sel} value={form.salesperson_id || ''} onChange={e => {
+                      const sel = staffList.find(st => st.id === e.target.value)
+                      formSet('salesperson_id', e.target.value)
+                      formSet('salesperson_name', sel?.full_name || form.salesperson_name)
+                    }}>
+                      <option value="">— {form.salesperson_name || 'Unassigned'} —</option>
+                      {staffList.map(st => <option key={st.id} value={st.id}>{st.full_name} ({st.role})</option>)}
+                    </select>
+                  ) : (
+                    <input style={s.inp} value={form.salesperson_name} onChange={e => formSet('salesperson_name', e.target.value)} disabled={!canEdit} />
+                  )}
+                  {order.signed_salesperson_name && <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '3px' }}>Attribution locked at signing: {order.signed_salesperson_name}</div>}
+                </div>
+                <div>
+                  <label style={s.lbl}>Ops Owner</label>
+                  {canEdit && staffList.length > 0 ? (
+                    <select style={s.sel} value={form.ops_owner_id || ''} onChange={e => {
+                      const sel = staffList.find(st => st.id === e.target.value)
+                      formSet('ops_owner_id', e.target.value)
+                      formSet('ops_owner_name', sel?.full_name || form.ops_owner_name)
+                    }}>
+                      <option value="">— {form.ops_owner_name || 'Unassigned'} —</option>
+                      {staffList.map(st => <option key={st.id} value={st.id}>{st.full_name} ({st.role})</option>)}
+                    </select>
+                  ) : (
+                    <input style={s.inp} value={form.ops_owner_name} onChange={e => formSet('ops_owner_name', e.target.value)} disabled={!canEdit} />
+                  )}
+                </div>
               </div>
               {canEdit && <div style={s.fRow}><label style={s.lbl}>Internal Notes</label><textarea style={s.ta} rows={3} value={form.internal_notes} onChange={e => formSet('internal_notes', e.target.value)} /></div>}
             </div>
@@ -779,6 +858,44 @@ export default function SalesOrderDetailPage() {
                 <div><label style={s.lbl}>Confirmation #</label><input style={s.inp} value={form.supplier_order_confirmation} onChange={e => formSet('supplier_order_confirmation', e.target.value)} disabled={!canEdit} /></div>
               </div>
             </div>
+
+            {/* Readiness checks */}
+            {readiness.length > 0 && (
+              <div style={s.card}>
+                <p style={s.sec}>Installation Readiness Checks</p>
+                {readiness.map(chk => (
+                  <div key={chk.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+                    <div style={{ marginTop: '2px' }}>
+                      {['complete','na'].includes(chk.status)
+                        ? <span style={{ color: '#16a34a', fontSize: '16px' }}>✓</span>
+                        : chk.status === 'blocked'
+                          ? <span style={{ color: '#dc2626', fontSize: '16px' }}>✗</span>
+                          : <span style={{ color: '#9ca3af', fontSize: '16px' }}>○</span>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500', color: '#111827' }}>{chk.label}{chk.required_for_scheduling && <span style={{ fontSize: '10px', color: '#dc2626', marginLeft: '6px' }}>required</span>}</div>
+                      {chk.responsible_name && <div style={{ fontSize: '11px', color: '#6b7280' }}>{chk.responsible_name}</div>}
+                      {chk.notes && <div style={{ fontSize: '11px', color: '#9ca3af' }}>{chk.notes}</div>}
+                    </div>
+                    {canEdit && !['complete','na'].includes(chk.status) && (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button style={s.btnSm('green')} onClick={async () => {
+                          const headers = await authHeader()
+                          await fetch('/api/sales-orders', { method: 'POST', headers, body: JSON.stringify({ action: 'update_readiness', check_id: chk.id, status: 'complete', actor_name: profile?.full_name }) })
+                          loadOrder()
+                        }}>Done</button>
+                        <button style={s.btnSm()} onClick={async () => {
+                          const headers = await authHeader()
+                          await fetch('/api/sales-orders', { method: 'POST', headers, body: JSON.stringify({ action: 'update_readiness', check_id: chk.id, status: 'na', actor_name: profile?.full_name }) })
+                          loadOrder()
+                        }}>N/A</button>
+                      </div>
+                    )}
+                    {['complete','na'].includes(chk.status) && <span style={s.statusPill('done')}>{chk.status}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {canEdit && <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button style={{ ...s.btn, opacity: dirty ? 1 : 0.55 }} onClick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save'}</button>
@@ -912,22 +1029,52 @@ export default function SalesOrderDetailPage() {
 
       {/* Stage change confirmation */}
       {showStage && (
-        <div style={s.overlay} onClick={e => e.target === e.currentTarget && setShowStage(false)}>
+        <div style={s.overlay} onClick={e => e.target === e.currentTarget && (setShowStage(false), setStageBlockers([]), setOverrideReason(''))}>
           <div style={s.modal}>
             <h2 style={s.mTitle}>Advance Stage</h2>
             <p style={{ fontSize: '14px', color: '#374151', marginBottom: '1.25rem' }}>
               Change stage from <strong>{stageCfg(order.stage).label}</strong> to <strong>{stageCfg(newStage).label}</strong>?
             </p>
-            {newStage === 'contract_signed' && (
+            {newStage === 'contract_signed' && !stageBlockers.length && (
               <div style={{ background: '#eff6ff', border: '1px solid #bae6fd', borderRadius: '6px', padding: '10px 14px', marginBottom: '12px', fontSize: '12px', color: '#0369a1' }}>
-                This will set contract signed and won dates to today.
+                This will lock the contract value and salesperson attribution at today's date.
               </div>
             )}
+
+            {/* Blockers */}
+            {stageBlockers.length > 0 && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '12px 14px', marginBottom: '12px' }}>
+                <div style={{ fontWeight: '600', fontSize: '13px', color: '#dc2626', marginBottom: '8px' }}>Requirements not met:</div>
+                <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                  {stageBlockers.map((b, i) => <li key={i} style={{ fontSize: '12px', color: '#7f1d1d', marginBottom: '4px' }}>{b}</li>)}
+                </ul>
+                {isAdmin && (
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Admin override — provide a reason:</div>
+                    <textarea
+                      style={{ ...s.ta, minHeight: '56px', background: '#fff', borderColor: '#fca5a5' }}
+                      value={overrideReason}
+                      onChange={e => setOverrideReason(e.target.value)}
+                      placeholder="Mandatory override reason…"
+                    />
+                  </div>
+                )}
+                {!isAdmin && <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px', marginBottom: 0 }}>Complete the requirements above to advance this stage.</p>}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button style={s.btnGray} onClick={() => setShowStage(false)}>Cancel</button>
-              <button style={{ ...s.btn, opacity: stageSaving ? 0.6 : 1 }} onClick={() => setStage(newStage)} disabled={stageSaving}>
-                {stageSaving ? 'Saving…' : 'Confirm'}
-              </button>
+              <button style={s.btnGray} onClick={() => { setShowStage(false); setStageBlockers([]); setOverrideReason('') }}>Cancel</button>
+              {stageBlockers.length === 0 && (
+                <button style={{ ...s.btn, opacity: stageSaving ? 0.6 : 1 }} onClick={() => setStage(newStage)} disabled={stageSaving}>
+                  {stageSaving ? 'Saving…' : 'Confirm'}
+                </button>
+              )}
+              {stageBlockers.length > 0 && isAdmin && (
+                <button style={{ ...s.btn, opacity: (!overrideReason.trim() || stageSaving) ? 0.4 : 1, background: '#dc2626' }} onClick={() => setStage(newStage, overrideReason)} disabled={!overrideReason.trim() || stageSaving}>
+                  {stageSaving ? 'Saving…' : 'Override & Advance'}
+                </button>
+              )}
             </div>
           </div>
         </div>

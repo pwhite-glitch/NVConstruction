@@ -4395,13 +4395,11 @@ ${estimate.notes ? `
                                       <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '99px', fontWeight: '700', background: isRegistered ? '#dcfce7' : '#181800', color: isRegistered ? '#16a34a' : '#d4a017', border: `1px solid ${isRegistered ? '#bbf7d0' : '#3a3000'}` }}>
                                         {isRegistered ? '● Active' : '○ Pending'}
                                       </span>
-                                      {!isRegistered && (
-                                        <button title="Resend invite email" disabled={isActioning}
-                                          style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#4a4a4a', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
-                                          onClick={() => resendSubInvite(m.id, m.invite_email, company?.id, sub.company_name)}>
-                                          ↩ Resend
-                                        </button>
-                                      )}
+                                      <button title={isRegistered ? 'Send password reset email' : 'Resend invite email'} disabled={isActioning}
+                                        style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#4a4a4a', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
+                                        onClick={() => resendSubInvite(m.id, m.invite_email, m.company_id || company?.id, sub.company_name)}>
+                                        {isRegistered ? '↩ Reset PW' : '↩ Resend'}
+                                      </button>
                                       <button title="Edit user" disabled={isActioning}
                                         style={{ padding: '5px 9px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#4a4a4a', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}
                                         onClick={() => setEditingSubUser({ id: m.id, full_name: m.full_name || '', phone: m.phone || '', invite_email: m.invite_email || '', role: m.role || 'subcontractor', company_name: m.company_name || sub.company_name || '', company_id: m.company_id || company?.id || null })}>

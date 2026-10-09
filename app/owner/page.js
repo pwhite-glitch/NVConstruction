@@ -10,13 +10,13 @@ const s = {
   sidebar: { width: '240px', flexShrink: 0, background: '#1a2332', borderRight: '1px solid rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', padding: '0 0 1.5rem', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' },
   devBanner: { background: 'rgba(124,58,237,0.15)', borderBottom: '1px solid rgba(124,58,237,0.3)', color: '#7c3aed', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textAlign: 'center', padding: '6px', textTransform: 'uppercase' },
   logoWrap: { padding: '1.25rem 1rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-  sidebarLabel: { fontSize: '10px', fontWeight: '600', letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.2)', padding: '1.25rem 1rem 0.5rem' },
+  sidebarLabel: { fontSize: '11px', fontWeight: '600', letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', padding: '1.25rem 1rem 0.5rem' },
   jobBtn: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', width: '100%', padding: '9px 1rem', background: 'transparent', border: 'none', borderLeft: '3px solid transparent', cursor: 'pointer', textAlign: 'left' },
   jobBtnActive: { background: 'rgba(232,89,12,0.12)', borderLeftColor: '#e8590c' },
   jobBtnName: { fontSize: '13px', fontWeight: '600', color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 },
-  jobBtnNum: { fontSize: '11px', color: '#64748b' },
-  noJobs: { fontSize: '13px', color: '#64748b', padding: '1rem', fontStyle: 'italic' },
-  logoutBtn: { margin: '0 1rem', padding: '7px 0', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#64748b', fontSize: '12px', fontWeight: '500', cursor: 'pointer' },
+  jobBtnNum: { fontSize: '11px', color: 'rgba(255,255,255,0.65)' },
+  noJobs: { fontSize: '13px', color: 'rgba(255,255,255,0.65)', padding: '1rem', fontStyle: 'italic' },
+  logoutBtn: { margin: '0 1rem', padding: '7px 0', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: 'rgba(255,255,255,0.65)', fontSize: '12px', fontWeight: '500', cursor: 'pointer' },
 
   // ── Main content ──
   main: { flex: 1, minWidth: 0, padding: '2rem 2rem 4rem' },
@@ -25,7 +25,7 @@ const s = {
   jobMeta: { fontSize: '13px', color: '#6b7280', marginTop: '4px' },
   tabNav: { display: 'flex', gap: 0, borderBottom: '1px solid #e5e7eb', marginBottom: '1.5rem', overflowX: 'auto' },
   tabBtn: { padding: '9px 16px', background: 'transparent', border: 'none', borderBottom: '2px solid transparent', color: '#6b7280', fontSize: '13px', fontWeight: '500', cursor: 'pointer', whiteSpace: 'nowrap' },
-  tabBtnActive: { color: '#e8590c', borderBottomColor: '#e8590c', fontWeight: '600' },
+  tabBtnActive: { color: '#111827', borderBottomColor: '#e8590c', fontWeight: '600' },
 
   // ── Cards ──
   card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem 1.5rem', marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
@@ -36,7 +36,7 @@ const s = {
   statCard: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1rem 1.25rem', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },
   statLabel: { fontSize: '11px', fontWeight: '600', letterSpacing: '0.5px', textTransform: 'uppercase', color: '#6b7280', marginBottom: '4px' },
   statValue: { fontSize: '1.25rem', fontWeight: '700', color: '#111827', fontVariantNumeric: 'tabular-nums' },
-  statSub: { fontSize: '11px', color: '#9ca3af', marginTop: '3px' },
+  statSub: { fontSize: '11px', color: '#6b7280', marginTop: '3px' },
 
   // ── Detail grid ──
   detailGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' },
@@ -55,8 +55,8 @@ const s = {
   td: { padding: '10px 12px', borderBottom: '1px solid #f3f4f6', color: '#374151', verticalAlign: 'middle' },
 
   // ── Empty states ──
-  emptyMsg: { fontSize: '13px', color: '#9ca3af', padding: '2rem 0', textAlign: 'center' },
-  emptyState: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#9ca3af', fontSize: '14px' },
+  emptyMsg: { fontSize: '13px', color: '#6b7280', padding: '2rem 0', textAlign: 'center' },
+  emptyState: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#6b7280', fontSize: '14px' },
 
   // ── RFI rows ──
   rfiRow: { borderBottom: '1px solid #f3f4f6' },
@@ -67,7 +67,7 @@ const s = {
   commentBubble: { background: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '6px', padding: '8px 12px', marginTop: '6px' },
   commentMeta: { display: 'flex', gap: '8px', marginBottom: '4px', alignItems: 'baseline' },
   commentAuthor: { fontSize: '11px', fontWeight: '700', color: '#e8590c', textTransform: 'uppercase', letterSpacing: '.04em' },
-  commentDate: { fontSize: '11px', color: '#9ca3af' },
+  commentDate: { fontSize: '11px', color: '#6b7280' },
   commentText: { fontSize: '13px', color: '#374151', lineHeight: 1.5 },
   textarea: { width: '100%', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', color: '#111827', padding: '8px 10px', fontSize: '13px', resize: 'vertical', minHeight: '70px', outline: 'none', marginTop: '6px', boxSizing: 'border-box' },
   btn: { padding: '7px 16px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
@@ -88,7 +88,7 @@ function statusBadge(status) {
     answered:  { background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' },
   }
   const style = map[status?.toLowerCase()] || { background: '#f9fafb', color: '#6b7280', border: '1px solid #e5e7eb' }
-  return { ...style, fontSize: '10px', fontWeight: '600', letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 7px', borderRadius: '4px', whiteSpace: 'nowrap' }
+  return { ...style, fontSize: '12px', fontWeight: '600', letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 7px', borderRadius: '4px', whiteSpace: 'nowrap' }
 }
 
 function fmt(n) {

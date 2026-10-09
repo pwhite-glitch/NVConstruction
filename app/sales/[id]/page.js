@@ -14,7 +14,7 @@ const STAGES = [
   { key: 'installed',       label: 'Installed',        color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
   { key: 'completed',       label: 'Completed',        color: '#16a34a', bg: '#dcfce7', border: '#86efac' },
   { key: 'cancelled',       label: 'Cancelled',        color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
-  { key: 'on_hold',         label: 'On Hold',          color: '#9ca3af', bg: '#f9fafb', border: '#e5e7eb' },
+  { key: 'on_hold',         label: 'On Hold',          color: '#374151', bg: '#f9fafb', border: '#e5e7eb' },
 ]
 
 const PROGRESSION = ['lead','quoted','contract_signed','order_placed','scheduled','installed','completed']
@@ -56,13 +56,13 @@ const s = {
   backBtn:  { background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 0', fontWeight: '500', flexShrink: 0 },
   hdivider: { width: '1px', height: '20px', background: '#e5e7eb', flexShrink: 0 },
   htitle:   { margin: 0, fontSize: '15px', fontWeight: '700', color: '#111827' },
-  hmeta:    { margin: '2px 0 0', fontSize: '11px', color: '#9ca3af' },
+  hmeta:    { margin: '2px 0 0', fontSize: '11px', color: '#6b7280' },
   hright:   { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingTop: '8px', paddingBottom: '8px' },
   badge:    k => { const c = stageCfg(k); return { display: 'inline-block', padding: '3px 9px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.3px', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` } },
   divBadge: div => ({ display: 'inline-block', padding: '2px 7px', borderRadius: '3px', fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', background: div === 'metal_buildings' ? '#f0f9ff' : '#fdf4ff', color: div === 'metal_buildings' ? '#0369a1' : '#7e22ce', border: `1px solid ${div === 'metal_buildings' ? '#bae6fd' : '#e9d5ff'}` }),
 
   tabNav:   { display: 'flex', borderBottom: '1px solid #e5e7eb', background: '#fff', padding: '0 1.5rem', overflowX: 'auto' },
-  tab:      a => ({ padding: '11px 16px', borderBottom: a ? '2px solid #e8590c' : '2px solid transparent', color: a ? '#e8590c' : '#6b7280', fontSize: '13px', fontWeight: a ? '600' : '400', background: 'none', border: 'none', borderBottom: a ? '2px solid #e8590c' : '2px solid transparent', cursor: 'pointer', whiteSpace: 'nowrap' }),
+  tab:      a => ({ padding: '11px 16px', borderBottom: a ? '2px solid #e8590c' : '2px solid transparent', color: a ? '#111827' : '#6b7280', fontSize: '13px', fontWeight: a ? '600' : '400', background: 'none', border: 'none', borderBottom: a ? '2px solid #e8590c' : '2px solid transparent', cursor: 'pointer', whiteSpace: 'nowrap' }),
 
   body:     { maxWidth: '960px', margin: '0 auto', padding: '1.5rem' },
   card:     { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.25rem' },
@@ -81,7 +81,7 @@ const s = {
   btnBlue:  { padding: '7px 14px', background: '#eff6ff', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
 
   kv:       { fontSize: '13px', color: '#111827', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '2px' },
-  kvLabel:  { fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  kvLabel:  { fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' },
   kvValue:  { fontWeight: '500' },
 
   row:      { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f3f4f6', gap: '10px' },
@@ -101,7 +101,7 @@ const s = {
 
   err:      { color: '#dc2626', fontSize: '12px', marginTop: '4px' },
   ok:       { color: '#16a34a', fontSize: '12px', marginTop: '4px' },
-  empty:    { color: '#9ca3af', fontSize: '13px', padding: '1.5rem 0', textAlign: 'center' },
+  empty:    { color: '#6b7280', fontSize: '13px', padding: '1.5rem 0', textAlign: 'center' },
 
   updateCard: vis => ({ background: vis ? '#fff' : '#f9fafb', border: `1px solid ${vis ? '#e5e7eb' : '#f3f4f6'}`, borderRadius: '6px', padding: '10px 14px', marginBottom: '8px' }),
   histEntry:  { display: 'flex', gap: '10px', padding: '7px 0', borderBottom: '1px solid #f9fafb', fontSize: '12px', color: '#374151' },

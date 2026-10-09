@@ -1153,7 +1153,7 @@ export default function Field() {
                         {item.successLabel ? (
                           <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>{item.successLabel}</span>
                         ) : (item.count || item.alert) ? (
-                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#555', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: item.alert ? '#2a1200' : '#1a1a1a', color: item.alert ? '#e8590c' : '#c0c0c0', border: `1px solid ${item.alert ? '#4a2200' : '#2a2a2a'}` }}>
                             {item.alert && item.alertLabel ? item.alertLabel : item.count}
                           </span>
                         ) : <span style={{ fontSize: '11px', color: '#374151' }}>Tap to open</span>}
@@ -1166,19 +1166,19 @@ export default function Field() {
                   <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.75rem 1rem', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', marginBottom: '1rem' }}>
                     {selectedJob.location && (
                       <div>
-                        <div style={{ fontSize: '9px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Location</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Location</div>
                         <div style={{ fontSize: '12px', color: '#6b7280' }}>{selectedJob.location}</div>
                       </div>
                     )}
                     {selectedJob.start_date && (
                       <div>
-                        <div style={{ fontSize: '9px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Day on Project</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Day on Project</div>
                         <div style={{ fontSize: '12px', color: '#6b7280' }}>Day {Math.max(1, Math.floor((Date.now() - new Date(selectedJob.start_date)) / 86400000) + 1)}</div>
                       </div>
                     )}
                     <div>
-                      <div style={{ fontSize: '9px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Status</div>
-                      <div style={{ fontSize: '12px', color: selectedJob.status === 'active' ? '#4ade80' : '#888', textTransform: 'capitalize' }}>{selectedJob.status || 'Active'}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Status</div>
+                      <div style={{ fontSize: '12px', color: selectedJob.status === 'active' ? '#15803d' : '#6b7280', textTransform: 'capitalize' }}>{selectedJob.status || 'Active'}</div>
                     </div>
                   </div>
                 )}
@@ -2269,7 +2269,7 @@ export default function Field() {
                                   </div>
                                 )}
                                 {p.caption && (
-                                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 6px 4px', fontSize: '9px', color: '#ddd', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 6px 4px', fontSize: '11px', color: '#ddd', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {p.caption}
                                   </div>
                                 )}

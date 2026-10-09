@@ -39,7 +39,7 @@ const s = {
   sidebarTop: { padding: '1.25rem 1rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' },
   sidebarLogo: { width: '28px', height: '28px', objectFit: 'contain', display: 'block', marginBottom: '8px', filter: 'brightness(0) invert(1)' },
   sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#fff', letterSpacing: '0.5px', margin: '0 0 1px' },
-  sidebarRole: { fontSize: '10px', color: '#64748b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 },
+  sidebarRole: { fontSize: '11px', color: 'rgba(255,255,255,0.65)', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 },
   sidebarUser: { fontSize: '12px', color: '#94a3b8', margin: '8px 0 0' },
   sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
   navItem: (active) => ({
@@ -55,7 +55,7 @@ const s = {
   }),
   navBadge: { background: '#e8590c', color: '#fff', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 6px', marginLeft: 'auto', flexShrink: 0 },
   sidebarBottom: { padding: '0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.06)' },
-  sidebarSignOut: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#64748b', cursor: 'pointer', fontSize: '12px', fontWeight: '500', textAlign: 'left' },
+  sidebarSignOut: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', fontSize: '12px', fontWeight: '500', textAlign: 'left' },
 
   // ── Content area ──
   content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
@@ -111,7 +111,7 @@ const s = {
   detailValue: { fontSize: '14px', color: '#111827' },
 
   // ── Empty state ──
-  emptyMsg: { textAlign: 'center', color: '#9ca3af', fontSize: '14px', padding: '3rem 0' },
+  emptyMsg: { textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' },
 
   // ── Status badges ──
   badge: (status) => ({
@@ -3467,7 +3467,7 @@ ${estimate.notes ? `
                   <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={subcontractForm.special_terms} onChange={e => setSubcontractForm(f => ({ ...f, special_terms: e.target.value }))} placeholder="Any project-specific terms, payment schedule details, or notes…" />
                 </div>
                 {!subcontractModal.pkg.job_id && (
-                  <div style={{ background: '#fefce8', border: '1px solid #3a3000', borderRadius: '6px', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: '#888' }}>
+                  <div style={{ background: '#fefce8', border: '1px solid #3a3000', borderRadius: '6px', padding: '10px 14px', marginBottom: '16px', fontSize: '12px', color: '#6b7280' }}>
                     ⚠ This bid package hasn't been converted to a job yet. Save will store the subcontract, but it won't appear in the sub portal until a job is linked.
                   </div>
                 )}
@@ -3516,7 +3516,7 @@ ${estimate.notes ? `
           {navGroups.map((group, gi) => (
             <div key={gi}>
               {group.label && (
-                <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.42)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: gi === 0 ? '10px 1rem 4px' : '14px 1rem 4px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: 'rgba(255,255,255,0.55)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: gi === 0 ? '10px 1rem 4px' : '14px 1rem 4px' }}>
                   {group.label}
                 </div>
               )}
@@ -3529,7 +3529,7 @@ ${estimate.notes ? `
               ))}
             </div>
           ))}
-          <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.42)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '14px 1rem 4px' }}>Divisions</div>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: 'rgba(255,255,255,0.55)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '14px 1rem 4px' }}>Divisions</div>
           <a href="/sales?division=metal_buildings" style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 1rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
             Metal Buildings
@@ -3858,7 +3858,7 @@ ${estimate.notes ? `
                             </div>
                             <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                               <div><label style={s.label}>Contact info</label><input style={s.input} value={editBillingForm.contact_info} onChange={e => setEditBillingForm(f => ({ ...f, contact_info: e.target.value }))} /></div>
-                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" style={{ ...s.input, color: '#888', cursor: 'default' }} value={editBillingForm.amount_billed} readOnly tabIndex={-1} /></div>
+                              <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" style={{ ...s.input, color: '#6b7280', cursor: 'default' }} value={editBillingForm.amount_billed} readOnly tabIndex={-1} /></div>
                               <div><label style={s.label}>% complete</label><input type="number" min="0" max="100" style={s.input} value={editBillingForm.pct_complete} onChange={e => setEditBillingForm(f => ({ ...f, pct_complete: e.target.value }))} /></div>
                             </div>
                             <div style={{ marginBottom: '12px' }}>
@@ -3868,7 +3868,7 @@ ${estimate.notes ? `
                             <div style={{ marginBottom: '12px' }}>
                               <label style={s.label}>Attachment (PDF, image, etc.)</label>
                               <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#374151' }} onChange={e => setEditBillingFile(e.target.files[0] || null)} />
-                              {editBillingFile && <p style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>{editBillingFile.name}</p>}
+                              {editBillingFile && <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{editBillingFile.name}</p>}
                             </div>
                             <div style={{ marginBottom: '1rem' }}>
                               <label style={s.label}>Status</label>
@@ -4599,7 +4599,7 @@ ${estimate.notes ? `
                                 <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Currently assigned to</div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                   {assignments.filter(a => a.sub_email === sub.email).map(a => (
-                                    <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#888', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px' }}>
+                                    <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px' }}>
                                       #{a.jobs?.job_number} — {a.jobs?.project_name}
                                       <button
                                         title="Remove from job"
@@ -4836,9 +4836,9 @@ ${estimate.notes ? `
                     <button style={s.btnSm('gray')} onClick={() => setCalMonth(m => { const d = new Date(m.year, m.month + 1, 1); return { year: d.getFullYear(), month: d.getMonth() } })}>Next ›</button>
                   </div>
                   <div style={{ display: 'flex', gap: '16px', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#eff6ff' }} /><span style={{ fontSize: '12px', color: '#888' }}>Sub billing due</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#f0fdf4' }} /><span style={{ fontSize: '12px', color: '#888' }}>Owner billing due</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#2a1a4a' }} /><span style={{ fontSize: '12px', color: '#888' }}>Bid deadline</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#eff6ff' }} /><span style={{ fontSize: '12px', color: '#6b7280' }}>Sub billing due</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#f0fdf4' }} /><span style={{ fontSize: '12px', color: '#6b7280' }}>Owner billing due</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#2a1a4a' }} /><span style={{ fontSize: '12px', color: '#6b7280' }}>Bid deadline</span></div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
                     {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
@@ -5392,7 +5392,7 @@ ${estimate.notes ? `
                         <div className="est-package-workspace">
                           <BidWorkspaceNav step={bidWorkspaceStep} pkg={pkg} plans={plans} items={scopeItems[pkg.id] || []} submissions={submissions} loading={bidWorkspaceLoading[pkg.id]} error={bidWorkspaceErrors[pkg.id]} onRetry={() => { loadBidDetail(pkg.id); loadScopeItems(pkg.id) }} onBack={() => { if (!leaveScope()) return; setExpandedBid(null); setShowCreateBid(false) }} onChange={step => { if (step !== bidWorkspaceStep && !leaveScope()) return; setBidWorkspaceStep(step); if (step === 'compare') { loadLevelingEntries(pkg.id) } }} />
                           <div className="est-step-panel" hidden={bidWorkspaceStep !== 'proposal'}>
-                          {pkg.description && <p style={{ fontSize: '13px', color: '#888', margin: '0 0 1rem' }}>{pkg.description}</p>}
+                          {pkg.description && <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1rem' }}>{pkg.description}</p>}
                           {pkg.scope_of_work && (
                             <div style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '6px', padding: '1rem', marginBottom: '1.25rem' }}>
                               <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>Scope of work</div>
@@ -5446,7 +5446,7 @@ ${estimate.notes ? `
                                 const awardedSub = (det.submissions || []).find(s => s.status === 'awarded')
                                 return (
                                   <>
-                                    {awardedSub && <p style={{ fontSize: '12px', color: '#888', margin: '0 0 1rem' }}>Awarded to: <strong style={{ color: '#16a34a' }}>{awardedSub.company_name}</strong> — a subcontract will be auto-created for their scope.</p>}
+                                    {awardedSub && <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>Awarded to: <strong style={{ color: '#16a34a' }}>{awardedSub.company_name}</strong> — a subcontract will be auto-created for their scope.</p>}
                                     <div style={{ ...s.grid3, marginBottom: '12px' }} className="rx-grid-3">
                                       <div>
                                         <label style={s.label}>Job number *</label>
@@ -5723,7 +5723,7 @@ ${estimate.notes ? `
                                 </div>
                                 <div style={{ marginBottom: '12px' }}>
                                   <label style={s.label}>Attach estimate (PDF/image)</label>
-                                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setManualBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#888' }} />
+                                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setManualBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#6b7280' }} />
                                 </div>
                                 <button style={{ ...s.btn, opacity: submittingManualBid || !manualBidForm.company_name || !manualBidForm.amount ? 0.6 : 1 }} disabled={submittingManualBid || !manualBidForm.company_name || !manualBidForm.amount} onClick={() => submitManualBid(pkg.id)}>
                                   {submittingManualBid ? 'Saving...' : 'Save bid'}
@@ -5766,7 +5766,7 @@ ${estimate.notes ? `
                                             <td style={{ padding: '10px 12px', textAlign: 'right', color: isLow ? '#555' : '#e8590c', fontSize: '13px', fontWeight: '600' }}>
                                               {isLow ? '—' : `+$${diff.toLocaleString()}`}
                                             </td>
-                                            <td style={{ padding: '10px 12px', color: '#888', fontSize: '12px', maxWidth: '180px' }}>{sub.notes || '—'}</td>
+                                            <td style={{ padding: '10px 12px', color: '#6b7280', fontSize: '12px', maxWidth: '180px' }}>{sub.notes || '—'}</td>
                                             <td style={{ padding: '10px 12px' }}>
                                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                                 {sub.doc_url && <button style={s.btnSm('gray')} onClick={() => openBidDoc(sub.doc_url)}>📎</button>}
@@ -5794,7 +5794,7 @@ ${estimate.notes ? `
                                     <span style={s.badge(sub.status === 'awarded' ? 'approved' : sub.status === 'rejected' ? 'rejected' : 'pending')}>{sub.status}</span>
                                     {!sub.sub_id && <span style={{ fontSize: '10px', color: '#666', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '4px', padding: '2px 6px', letterSpacing: '0.5px' }}>manual entry</span>}
                                   </div>
-                                  {sub.notes && <p style={{ fontSize: '12px', color: '#888', margin: '0', lineHeight: '1.5' }}>{sub.notes}</p>}
+                                  {sub.notes && <p style={{ fontSize: '12px', color: '#6b7280', margin: '0', lineHeight: '1.5' }}>{sub.notes}</p>}
                                   <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(sub.submitted_at).toLocaleDateString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -6057,7 +6057,7 @@ ${estimate.notes ? `
                                           </>
                                         ))}
                                         <tr style={{ borderTop: '2px solid #2a2a2a', background: '#f9fafb' }}>
-                                          <td style={{ padding: '10px 10px', fontSize: '11px', fontWeight: '800', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
+                                          <td style={{ padding: '10px 10px', fontSize: '11px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
                                           <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '700', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : '—'}</td>
                                           {subs.map(sub => {
                                             const levTotal = subLeveledTotal(sub)
@@ -6131,7 +6131,7 @@ ${estimate.notes ? `
                   </div>
                 )}
                 <div style={{ marginBottom: '1.25rem', padding: '12px 14px', background: '#f9fafb', border: '1px solid #2a1a00', borderRadius: '8px' }}>
-                  <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#888', letterSpacing: '1px', textTransform: 'uppercase' }}>Fix existing user access</p>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>Fix existing user access</p>
                   <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#6b7280' }}>If a team member can log in but doesn't appear in the list above, use this to repair their profile.</p>
                   {fixProfileMsg && <p style={{ fontSize: '13px', color: fixProfileMsg.ok ? '#16a34a' : '#dc2626', margin: '0 0 10px' }}>{fixProfileMsg.text}</p>}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -6579,7 +6579,7 @@ ${estimate.notes ? `
                             <div style={{ padding: '10px 12px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: hasExtra ? '4px' : 0 }}>
                                 <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textAlign: 'right' }}>Cost subtotal:</div>
-                                <div style={{ textAlign: 'right', fontWeight: '700', color: '#888', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(rawTotal)}</div>
+                                <div style={{ textAlign: 'right', fontWeight: '700', color: '#6b7280', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(rawTotal)}</div>
                                 <div></div>
                               </div>
                               {taxAmt > 0 && (
@@ -6656,7 +6656,7 @@ ${estimate.notes ? `
                   const total = Math.round((billedTotal + estMarkupFlat + estTaxAmt) * 100) / 100
                   const psf = est.square_footage > 0 ? Math.round(total / est.square_footage) : null
                   const stageLabels = { lead: { label: 'Lead', color: '#9ca3af', bg: '#111', border: '#d1d5db' }, estimating: { label: 'Estimating', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' }, bid_out: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, negotiating: { label: 'Negotiating', color: '#a16207', bg: '#1a1400', border: '#3a2a00' }, sent: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, draft: { label: 'Estimating', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' } }
-                  const stageCfg = stageLabels[est.status] || { label: est.status, color: '#888', bg: '#f0f0f0', border: '#d1d5db' }
+                  const stageCfg = stageLabels[est.status] || { label: est.status, color: '#6b7280', bg: '#f0f0f0', border: '#d1d5db' }
                   const isEditingEst = editingEstimate === est.id
                   return (
                     <div key={est.id} style={s.rowBorder}>
@@ -6763,7 +6763,7 @@ ${estimate.notes ? `
                                       <div style={{ padding: '10px 12px', background: '#f9fafb', borderTop: '1px solid #e5e7eb' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: editHasExtra ? '4px' : 0 }}>
                                           <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textAlign: 'right' }}>Cost subtotal:</div>
-                                          <div style={{ textAlign: 'right', fontWeight: '700', color: '#888', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(editRaw)}</div>
+                                          <div style={{ textAlign: 'right', fontWeight: '700', color: '#6b7280', fontSize: '13px', fontFamily: 'monospace' }}>{fmt2(editRaw)}</div>
                                           <div></div>
                                         </div>
                                         {editTaxAmt > 0 && (
@@ -6829,7 +6829,7 @@ ${estimate.notes ? `
                               {est.notes && (
                                 <div style={{ marginBottom: '1rem' }}>
                                   <div style={s.detailLabel}>Scope / notes</div>
-                                  <div style={{ fontSize: '13px', color: '#888', whiteSpace: 'pre-wrap', marginTop: '4px', lineHeight: 1.6 }}>{est.notes}</div>
+                                  <div style={{ fontSize: '13px', color: '#6b7280', whiteSpace: 'pre-wrap', marginTop: '4px', lineHeight: 1.6 }}>{est.notes}</div>
                                 </div>
                               )}
                               {lines.length > 0 && (
@@ -6865,7 +6865,7 @@ ${estimate.notes ? `
                                       </div>
                                     )}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#f9fafb', borderTop: '2px solid #1e1e1e', fontWeight: '800' }}>
-                                      <span style={{ color: '#888', fontSize: '12px' }}>{(est.taxable || globalPct > 0) ? 'Owner total' : 'Total'}</span>
+                                      <span style={{ color: '#6b7280', fontSize: '12px' }}>{(est.taxable || globalPct > 0) ? 'Owner total' : 'Total'}</span>
                                       <span style={{ color: '#e8590c', fontFamily: 'monospace', fontSize: '15px' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                     </div>
                                   </div>
@@ -6936,7 +6936,7 @@ ${estimate.notes ? `
                                       <input type="date" style={s.input} value={convertJobForm.start_date} onChange={e => setConvertJobForm(f => ({ ...f, start_date: e.target.value }))} />
                                     </div>
                                   </div>
-                                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 0.75rem', lineHeight: '1.5' }}>
+                                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 0.75rem', lineHeight: '1.5' }}>
                                     Creates job "{est.project_name}" with {lines.length} budget line{lines.length !== 1 ? 's' : ''} totaling ${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}. Estimate will be marked won.
                                   </p>
                                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -7215,7 +7215,7 @@ ${estimate.notes ? `
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     {['all', 'bidding', 'active', 'complete', 'prospect', 'won', 'lost'].map(st => {
                       const isActive = bdFilterStage === st
-                      const c = stageCfg[st] || { color: '#888', bg: '#f0f0f0', border: '#d1d5db' }
+                      const c = stageCfg[st] || { color: '#6b7280', bg: '#f0f0f0', border: '#d1d5db' }
                       const label = st === 'all' ? `All (${stageCounts.all})` : `${stageCfg[st]?.label || st} (${stageCounts[st] ?? 0})`
                       return (
                         <button key={st} onClick={() => setBdFilterStage(st)} style={{ padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${isActive ? c.border : '#d1d5db'}`, background: isActive ? c.bg : '#111', color: isActive ? c.color : '#555', letterSpacing: '0.5px' }}>
@@ -7393,7 +7393,7 @@ ${estimate.notes ? `
                         <div><label style={s.label}>Weekly taxes</label><input type="number" step="0.01" style={s.input} value={empForm.weekly_taxes} onChange={e => setEmpForm(f => ({ ...f, weekly_taxes: e.target.value }))} placeholder="optional" /></div>
                       </div>
                       {empForm.weekly_salary && (
-                        <div style={{ marginBottom: '12px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', fontSize: '12px', color: '#888' }}>
+                        <div style={{ marginBottom: '12px', padding: '10px 14px', background: '#f9fafb', borderRadius: '6px', fontSize: '12px', color: '#6b7280' }}>
                           Weekly total: <strong style={{ color: '#111827' }}>{fmtW(
                             Number(empForm.weekly_salary || 0) + Number(empForm.weekly_truck || 0) + Number(empForm.weekly_healthcare || 0) + Number(empForm.weekly_taxes || 0)
                           )}</strong>
@@ -7463,7 +7463,7 @@ ${estimate.notes ? `
                                   <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>
                                     {e.name}
                                   </td>
-                                  <td style={{ padding: '10px 12px', color: '#888' }}>{e.title || '—'}</td>
+                                  <td style={{ padding: '10px 12px', color: '#6b7280' }}>{e.title || '—'}</td>
                                   <td style={{ padding: '10px 12px' }}>
                                     <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: e.type === 'w2' ? '#eff6ff' : '#fefce8', color: e.type === 'w2' ? '#2563eb' : '#d97706', border: `1px solid ${e.type === 'w2' ? '#bfdbfe' : '#fde68a'}` }}>{e.type === 'w2' ? 'W-2' : '1099'}</span>
                                   </td>
@@ -7473,7 +7473,7 @@ ${estimate.notes ? `
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: e.weekly_taxes ? '#111827' : '#333' }}>{e.weekly_taxes ? fmtW(e.weekly_taxes) : '—'}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111827', fontWeight: '700' }}>{fmtW(wk)}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmtW(daily)}</td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888' }}>{fmtW(wk * 52)}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', color: '#6b7280' }}>{fmtW(wk * 52)}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                                     <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                                       <button style={s.btnSm('gray')} onClick={() => { setEditingEmpId(e.id); setEditEmpForm({ name: e.name, title: e.title || '', type: e.type, weekly_salary: e.weekly_salary, weekly_truck: e.weekly_truck || '', weekly_healthcare: e.weekly_healthcare || '', weekly_taxes: e.weekly_taxes || '' }) }}>Edit</button>
@@ -7732,7 +7732,7 @@ ${estimate.notes ? `
                               <td colSpan={7} style={{ padding: '10px 12px', color: '#6b7280', fontSize: '12px' }}>Total ({activeEmps.length} employees)</td>
                               <td style={{ padding: '10px 12px', textAlign: 'right', color: '#111827', fontWeight: '700' }}>{fmtW(activeEmps.reduce((a, e) => a + weeklyTotal(e), 0))}</td>
                               <td style={{ padding: '10px 12px' }}></td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#888', fontWeight: '700' }}>{fmtW(activeEmps.reduce((a, e) => a + weeklyTotal(e) * 52, 0))}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', color: '#6b7280', fontWeight: '700' }}>{fmtW(activeEmps.reduce((a, e) => a + weeklyTotal(e) * 52, 0))}</td>
                               <td></td>
                             </tr>
                           </tfoot>
@@ -7779,7 +7779,7 @@ ${estimate.notes ? `
                             {myVehicle.year && <span style={{ fontSize: '13px', color: '#6b7280' }}>{myVehicle.year}</span>}
                             {(myVehicle.make || myVehicle.model) && <span style={{ fontSize: '13px', color: '#6b7280' }}>{[myVehicle.make, myVehicle.model].filter(Boolean).join(' ')}</span>}
                             {myVehicle.color && <span style={{ fontSize: '13px', color: '#6b7280' }}>{myVehicle.color}</span>}
-                            {myVehicle.license_plate && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: '#888', border: '1px solid #d1d5db', fontFamily: 'monospace' }}>{myVehicle.license_plate}</span>}
+                            {myVehicle.license_plate && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db', fontFamily: 'monospace' }}>{myVehicle.license_plate}</span>}
                           </div>
                           {myVehicle.vin && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280' }}>VIN: {myVehicle.vin}</p>}
                           {myVehicle.notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280' }}>{myVehicle.notes}</p>}
@@ -7814,7 +7814,7 @@ ${estimate.notes ? `
                         </div>
 
                         <div style={{ marginTop: '1.5rem' }}>
-                          <p style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600', color: '#888' }}>Recent Logs</p>
+                          <p style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600', color: '#6b7280' }}>Recent Logs</p>
                           {!vehicleLogs[myVehicle.id] ? (
                             <button style={{ ...s.btnSm('gray'), fontSize: '12px' }} onClick={() => loadVehicleLogs(myVehicle.id)}>Load logs</button>
                           ) : vehicleLogs[myVehicle.id].length === 0 ? (
@@ -7825,7 +7825,7 @@ ${estimate.notes ? `
                                 <div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
                                     <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
-                                    {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
+                                    {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
                                   </div>
                                   <div style={{ fontSize: '12px', color: '#6b7280' }}>
                                     {new Date(l.log_date + 'T12:00:00').toLocaleDateString()}
@@ -7936,7 +7936,7 @@ ${estimate.notes ? `
                                   {v.year && <span style={{ fontSize: '12px', color: '#6b7280' }}>{v.year}</span>}
                                   {(v.make || v.model) && <span style={{ fontSize: '12px', color: '#6b7280' }}>{[v.make, v.model].filter(Boolean).join(' ')}</span>}
                                   {v.color && <span style={{ fontSize: '12px', color: '#6b7280' }}>{v.color}</span>}
-                                  {v.license_plate && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: '#888', border: '1px solid #d1d5db', fontFamily: 'monospace' }}>{v.license_plate}</span>}
+                                  {v.license_plate && <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db', fontFamily: 'monospace' }}>{v.license_plate}</span>}
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
                                   {v.assigned_profile ? <span style={{ color: '#e8590c' }}>{v.assigned_profile.full_name}</span> : <span>Unassigned</span>}
@@ -7961,8 +7961,8 @@ ${estimate.notes ? `
                                       <div style={{ flex: 1 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
                                           <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
-                                          {l.mileage && <span style={{ fontSize: '12px', color: '#888' }}>{Number(l.mileage).toLocaleString()} mi</span>}
-                                          {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#888' }}>{l.fuel_gallons} gal{l.fuel_cost ? ` · $${Number(l.fuel_cost).toFixed(2)}` : ''}</span>}
+                                          {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
+                                          {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#6b7280' }}>{l.fuel_gallons} gal{l.fuel_cost ? ` · $${Number(l.fuel_cost).toFixed(2)}` : ''}</span>}
                                         </div>
                                         <div style={{ fontSize: '12px', color: '#6b7280' }}>
                                           {new Date(l.log_date + 'T12:00:00').toLocaleDateString()}
@@ -8221,7 +8221,7 @@ ${estimate.notes ? `
                   {/* New Order Form */}
                   {showNewOrder && (
                     <form onSubmit={saveOrder} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' }}>
-                      <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase' }}>New Order</p>
+                      <p style={{ margin: '0 0 1rem', fontSize: '13px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>New Order</p>
                       <div style={s.grid2}>
                         <div>
                           <label style={s.label}>Job *</label>
@@ -8333,7 +8333,7 @@ ${estimate.notes ? `
 
                   {/* Templates Section */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#888', letterSpacing: '2px', textTransform: 'uppercase' }}>Order Templates</h3>
+                    <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>Order Templates</h3>
                     <button style={s.btnSm('orange')} onClick={() => setShowNewTemplate(v => !v)}>{showNewTemplate ? 'Cancel' : '+ New Template'}</button>
                   </div>
 

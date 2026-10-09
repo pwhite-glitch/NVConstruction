@@ -16,7 +16,7 @@ const s = {
   logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
   logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
   logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
-  logoSub: { fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' },
+  logoSub: { fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' },
   signOut: { padding: '6px 14px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' },
   main: { maxWidth: '760px', margin: '0 auto', padding: '2rem 1.5rem' },
 
@@ -34,7 +34,7 @@ const s = {
 
   // ── Alerts ──
   success: { background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '12px 16px', borderRadius: '6px', fontSize: '14px', marginBottom: '1.25rem' },
-  empty: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center', color: '#9ca3af', fontSize: '14px' },
+  empty: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' },
 
   // ── Status badges ──
   badge: (status) => ({
@@ -75,7 +75,7 @@ const s = {
   sidebarTop: { padding: '1.25rem 1rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' },
   sidebarLogo: { width: '28px', height: '28px', objectFit: 'contain', display: 'block', marginBottom: '8px', filter: 'brightness(0) invert(1)' },
   sidebarBrand: { fontSize: '13px', fontWeight: '700', color: '#fff', letterSpacing: '0.5px', margin: '0 0 1px' },
-  sidebarRole: { fontSize: '10px', color: '#64748b', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 },
+  sidebarRole: { fontSize: '11px', color: 'rgba(255,255,255,0.65)', letterSpacing: '1.5px', textTransform: 'uppercase', margin: 0 },
   sidebarUser: { fontSize: '12px', color: '#94a3b8', margin: '8px 0 0' },
   sidebarNav: { flex: 1, padding: '0.5rem 0', overflowY: 'auto' },
   navItem: (active) => ({
@@ -91,7 +91,7 @@ const s = {
   }),
   navBadge: { background: '#e8590c', color: '#fff', fontSize: '10px', fontWeight: '700', borderRadius: '99px', padding: '1px 6px', marginLeft: 'auto', flexShrink: 0 },
   sidebarBottom: { padding: '0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.06)' },
-  sidebarSignOut: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#64748b', cursor: 'pointer', fontSize: '12px', textAlign: 'left' },
+  sidebarSignOut: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', fontSize: '12px', textAlign: 'left' },
   content: { flex: 1, minHeight: '100vh', padding: '2rem', overflowX: 'hidden' },
 }
 
@@ -1280,17 +1280,17 @@ export default function Submit() {
                           <>
                             <div style={{ fontSize: '12px', fontWeight: isToday ? '800' : '500', color: isToday ? '#e8590c' : '#555', marginBottom: '4px' }}>{day}</div>
                             {dues.map((j, idx) => (
-                              <div key={`due-${idx}`} style={{ background: '#0a2a14', border: '1px solid #1a4a2a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#16a34a', lineHeight: '1.3', fontWeight: '600' }}>
+                              <div key={`due-${idx}`} style={{ background: '#0a2a14', border: '1px solid #1a4a2a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '12px', color: '#4ade80', lineHeight: '1.3', fontWeight: '600' }}>
                                 #{j.job_number} due
                               </div>
                             ))}
                             {subs.map((sub, idx) => (
-                              <div key={`sub-${idx}`} style={{ background: '#0a1a3a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#93c5fd', lineHeight: '1.3', fontWeight: '600' }}>
+                              <div key={`sub-${idx}`} style={{ background: '#0a1a3a', border: '1px solid #1a3a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '12px', color: '#93c5fd', lineHeight: '1.3', fontWeight: '600' }}>
                                 #{sub.jobs?.job_number} submitted
                               </div>
                             ))}
                             {bids.map((inv, idx) => (
-                              <div key={`bid-${idx}`} onClick={() => setActiveTab('bids')} style={{ background: '#1a0a3a', border: '1px solid #3a1a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '10px', color: '#c084fc', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
+                              <div key={`bid-${idx}`} onClick={() => setActiveTab('bids')} style={{ background: '#1a0a3a', border: '1px solid #3a1a5a', borderRadius: '4px', padding: '2px 6px', marginBottom: '3px', fontSize: '12px', color: '#c084fc', lineHeight: '1.3', fontWeight: '600', cursor: 'pointer' }}>
                                 Bid due
                               </div>
                             ))}

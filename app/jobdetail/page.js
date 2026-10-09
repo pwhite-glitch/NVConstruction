@@ -17,7 +17,7 @@ const s = {
   logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
   logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
   logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
-  logoSub: { fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' },
+  logoSub: { fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' },
   main: { maxWidth: '1320px', margin: '0 auto', padding: '2rem 1.5rem' },
   backBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#6b7280', fontSize: '13px', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.5rem' },
 
@@ -107,7 +107,7 @@ const s = {
   budgetTableRow: { display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 60px 80px', gap: '12px', padding: '12px', borderBottom: '1px solid #f3f4f6', alignItems: 'center' },
 
   // ── Misc ──
-  emptyMsg: { fontSize: '13px', color: '#9ca3af', textAlign: 'center', padding: '2rem 1rem' },
+  emptyMsg: { fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '2rem 1rem' },
 }
 
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10', budget_allocations: [] }
@@ -5174,7 +5174,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {ovSec('Upcoming Milestones')}
                     {overviewLoading && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Loading…</p>}
                     {!overviewLoading && upcomingMilestones.length === 0 && (
-                      <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>No open milestones.</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>No open milestones.</p>
                     )}
                     {upcomingMilestones.map((m, i) => (
                       <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: i < upcomingMilestones.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
@@ -5194,7 +5194,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f9fafb' }}>
                         <div>
                           <span style={{ fontSize: '13px', fontWeight: '500', color: '#111827' }}>{c.name}</span>
-                          <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '8px', textTransform: 'capitalize' }}>{c.role?.replace('_', ' ')}</span>
+                          <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px', textTransform: 'capitalize' }}>{c.role?.replace('_', ' ')}</span>
                         </div>
                         {c.phone && <a href={`tel:${c.phone}`} style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none' }}>{c.phone}</a>}
                       </div>
@@ -5239,7 +5239,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )}
                         {approvedTotal === 0 && pendingTotal === 0 && contractVal === 0 && (
-                          <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>No financial data yet.</p>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>No financial data yet.</p>
                         )}
                       </div>
                     )}
@@ -5253,7 +5253,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {ovSec('Recent Activity')}
                     {overviewLoading && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Loading…</p>}
                     {!overviewLoading && recentActivity.length === 0 && (
-                      <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>No activity recorded yet.</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>No activity recorded yet.</p>
                     )}
                     {recentActivity.map((entry, i) => {
                       const ago = (() => {
@@ -5268,9 +5268,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <div key={entry.id} style={{ padding: '7px 0', borderBottom: i < recentActivity.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                             <span style={{ fontSize: '13px', color: '#374151', flex: 1 }}>{entry.action}</span>
-                            <span style={{ fontSize: '11px', color: '#9ca3af', flexShrink: 0 }}>{ago}</span>
+                            <span style={{ fontSize: '11px', color: '#6b7280', flexShrink: 0 }}>{ago}</span>
                           </div>
-                          {entry.user_email && <span style={{ fontSize: '11px', color: '#9ca3af' }}>{entry.user_email}</span>}
+                          {entry.user_email && <span style={{ fontSize: '11px', color: '#6b7280' }}>{entry.user_email}</span>}
                         </div>
                       )
                     })}
@@ -12873,16 +12873,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#f9fafb', border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: hi === history.length - 1 ? '0 0 8px 8px' : '0', padding: '8px 14px 8px 42px' }}>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '11px', color: '#9ca3af' }}>Superseded</span>
+                                    <span style={{ fontSize: '11px', color: '#6b7280' }}>Superseded</span>
                                     <span style={{ fontSize: '12px', color: '#6b7280' }}>{h.sheet_name || h.file_name}</span>
-                                    {h.revision && h.revision !== '0' && <span style={{ fontSize: '10px', color: '#9ca3af', background: '#f0f0f0', border: '1px solid #e5e7eb', borderRadius: '4px', padding: '1px 6px' }}>Rev {h.revision}</span>}
+                                    {h.revision && h.revision !== '0' && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f0f0f0', border: '1px solid #e5e7eb', borderRadius: '4px', padding: '1px 6px' }}>Rev {h.revision}</span>}
                                   </div>
-                                  <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                                  <div style={{ fontSize: '11px', color: '#6b7280' }}>
                                     {new Date(h.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                     {h.notes && <span> · {h.notes}</span>}
                                   </div>
                                 </div>
-                                <button onClick={() => openDrawing(h.storage_path)} style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#9ca3af', fontSize: '11px', cursor: 'pointer' }}>View</button>
+                                <button onClick={() => openDrawing(h.storage_path)} style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', cursor: 'pointer' }}>View</button>
                               </div>
                             ))}
                           </div>
@@ -12909,14 +12909,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {changeLog.map(entry => {
-                  const dotColor = { billing: '#2563eb', subcontract: '#16a34a', change_order: '#d97706', job: '#e8590c', coi: '#7c3aed' }[entry.entity_type] || '#9ca3af'
+                  const dotColor = { billing: '#2563eb', subcontract: '#16a34a', change_order: '#d97706', job: '#e8590c', coi: '#7c3aed' }[entry.entity_type] || '#6b7280'
                   return (
                     <div key={entry.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                       <div style={{ flexShrink: 0, width: '10px', height: '10px', borderRadius: '50%', background: dotColor, marginTop: '4px' }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '2px' }}>
                           <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{entry.note || `${entry.entity_type} ${entry.field_name || ''} changed`}</span>
-                          <span style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          <span style={{ fontSize: '11px', color: '#6b7280', whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} {new Date(entry.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
@@ -12927,7 +12927,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )}
                         {entry.changed_by_name && (
-                          <div style={{ fontSize: '11px', color: '#9ca3af' }}>by {entry.changed_by_name}</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280' }}>by {entry.changed_by_name}</div>
                         )}
                       </div>
                     </div>
@@ -12958,7 +12958,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             partially_paid: { bg: '#fef3c7', color: '#92400e' },
             paid: { bg: '#dcfce7', color: '#166534' },
             overdue: { bg: '#fee2e2', color: '#991b1b' },
-            voided: { bg: '#f3f4f6', color: '#9ca3af' },
+            voided: { bg: '#f3f4f6', color: '#6b7280' },
           }
 
           async function createInvoice(e) {
@@ -13286,7 +13286,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                         <span style={{ fontSize: '10px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: sc.bg, color: sc.color, border: `1px solid ${sc.color}30`, whiteSpace: 'nowrap' }}>
                           {inv.status.replace('_', ' ').toUpperCase()}
                         </span>
-                        <span style={{ color: '#9ca3af', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
+                        <span style={{ color: '#6b7280', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
                       </button>
 
                       {/* Expanded detail */}
@@ -13294,9 +13294,9 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                         <div style={{ padding: '14px 16px', borderTop: '1px solid #e5e7eb', background: '#fafafa' }}>
                           {/* Bill-to info */}
                           <div style={{ display: 'flex', gap: '20px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                            <div><span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Bill To</span><div style={{ fontSize: '13px', fontWeight: '600' }}>{inv.bill_to_name}</div>{inv.bill_to_address && <div style={{ fontSize: '11px', color: '#6b7280' }}>{inv.bill_to_address}</div>}</div>
-                            <div><span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Outstanding</span><div style={{ fontSize: '13px', fontWeight: '700', color: inv.outstanding > 0 ? '#e8590c' : '#16a34a' }}>{fmtC(inv.outstanding)}</div></div>
-                            {inv.notes && <div style={{ flex: 1, minWidth: '160px' }}><span style={{ fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Notes</span><div style={{ fontSize: '12px', color: '#4b5563' }}>{inv.notes}</div></div>}
+                            <div><span style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Bill To</span><div style={{ fontSize: '13px', fontWeight: '600' }}>{inv.bill_to_name}</div>{inv.bill_to_address && <div style={{ fontSize: '11px', color: '#6b7280' }}>{inv.bill_to_address}</div>}</div>
+                            <div><span style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Outstanding</span><div style={{ fontSize: '13px', fontWeight: '700', color: inv.outstanding > 0 ? '#e8590c' : '#16a34a' }}>{fmtC(inv.outstanding)}</div></div>
+                            {inv.notes && <div style={{ flex: 1, minWidth: '160px' }}><span style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Notes</span><div style={{ fontSize: '12px', color: '#4b5563' }}>{inv.notes}</div></div>}
                           </div>
 
                           {/* Lines table */}
@@ -13338,7 +13338,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                                     <span style={{ color: '#6b7280' }}>{fmtD(p.received_date)}</span>
                                     {p.payment_method && <span style={{ color: '#6b7280' }}>{p.payment_method}</span>}
                                     {p.reference && <span style={{ color: '#6b7280' }}>Ref: {p.reference}</span>}
-                                    {p.notes && <span style={{ color: '#9ca3af' }}>{p.notes}</span>}
+                                    {p.notes && <span style={{ color: '#6b7280' }}>{p.notes}</span>}
                                   </div>
                                 ))}
                               </div>
@@ -13383,7 +13383,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                           </div>
 
                           {inv.status === 'voided' && inv.void_reason && (
-                            <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>Voided: {inv.void_reason}</p>
+                            <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>Voided: {inv.void_reason}</p>
                           )}
                         </div>
                       )}

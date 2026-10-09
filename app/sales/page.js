@@ -14,7 +14,7 @@ const STAGES = [
   { key: 'installed',        label: 'Installed',         color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
   { key: 'completed',        label: 'Completed',         color: '#16a34a', bg: '#dcfce7', border: '#86efac' },
   { key: 'cancelled',        label: 'Cancelled',         color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
-  { key: 'on_hold',          label: 'On Hold',           color: '#9ca3af', bg: '#f9fafb', border: '#e5e7eb' },
+  { key: 'on_hold',          label: 'On Hold',           color: '#374151', bg: '#f9fafb', border: '#e5e7eb' },
 ]
 
 const PIPELINE_STAGES = ['lead','quoted','contract_signed','order_placed','scheduled','installed','completed']
@@ -35,13 +35,13 @@ const s = {
   sidebar:    { width: '224px', flexShrink: 0, background: '#1a2332', borderRight: '1px solid rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' },
   sidebarTop: { padding: '1.25rem 1rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)' },
   brand:      { margin: 0, fontWeight: '700', fontSize: '13px', color: '#fff', letterSpacing: '0.5px' },
-  divLabel:   { margin: '2px 0 0', fontSize: '10px', color: '#64748b', letterSpacing: '1.5px', textTransform: 'uppercase' },
+  divLabel:   { margin: '2px 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.65)', letterSpacing: '1.5px', textTransform: 'uppercase' },
   userLabel:  { margin: '8px 0 0', fontSize: '12px', color: '#94a3b8' },
   nav:        { flex: 1, padding: '0.5rem 0' },
   navItem:    (a) => ({ display: 'flex', alignItems: 'center', gap: '9px', padding: a ? '9px 1rem 9px calc(1rem - 3px)' : '9px 1rem', cursor: 'pointer', background: a ? 'rgba(232,89,12,0.14)' : 'transparent', color: a ? '#e8590c' : 'rgba(255,255,255,0.72)', fontSize: '13px', fontWeight: a ? '600' : '400', border: 'none', borderLeft: a ? '3px solid #e8590c' : '3px solid transparent', width: '100%', textAlign: 'left', outline: 'none' }),
-  navDivider: { fontSize: '10px', color: '#334155', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '12px 1rem 4px', fontWeight: '600' },
+  navDivider: { fontSize: '11px', color: 'rgba(255,255,255,0.55)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '12px 1rem 4px', fontWeight: '600' },
   sidebarBot: { padding: '0.875rem 1rem', borderTop: '1px solid rgba(255,255,255,0.06)' },
-  signOutBtn: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#64748b', cursor: 'pointer', fontSize: '12px', textAlign: 'left' },
+  signOutBtn: { width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', fontSize: '12px', textAlign: 'left' },
 
   main:       { flex: 1, minWidth: 0, padding: '1.5rem 2rem', overflowX: 'hidden' },
   topBar:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '12px' },
@@ -66,7 +66,7 @@ const s = {
   th:         { padding: '9px 14px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '0.8px', textTransform: 'uppercase', textAlign: 'left', whiteSpace: 'nowrap' },
   tr:         (h) => ({ background: h ? '#fafafa' : '#fff', cursor: 'pointer', borderBottom: '1px solid #f3f4f6', transition: 'background 0.1s' }),
   td:         { padding: '11px 14px', fontSize: '13px', color: '#111827', verticalAlign: 'middle' },
-  tdSub:      { fontSize: '11px', color: '#9ca3af', marginTop: '2px' },
+  tdSub:      { fontSize: '11px', color: '#6b7280', marginTop: '2px' },
 
   // Pipeline (kanban) view
   pipeline:   { display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '1rem', alignItems: 'flex-start' },
@@ -74,7 +74,7 @@ const s = {
   pipeHdr:    { marginBottom: '8px' },
   pipeCard:   (hover) => ({ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '8px', cursor: 'pointer', boxShadow: hover ? '0 2px 8px rgba(0,0,0,0.08)' : 'none', transition: 'box-shadow 0.15s' }),
   pipeAmt:    { fontSize: '14px', fontWeight: '700', color: '#111827', margin: '4px 0 0' },
-  pipeDate:   { fontSize: '11px', color: '#9ca3af', margin: '4px 0 0' },
+  pipeDate:   { fontSize: '11px', color: '#6b7280', margin: '4px 0 0' },
 
   // Buttons
   btn:        { padding: '9px 18px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
@@ -104,7 +104,7 @@ const s = {
     color:      div === 'metal_buildings' ? '#0369a1' : '#7e22ce',
     border:     `1px solid ${div === 'metal_buildings' ? '#bae6fd' : '#e9d5ff'}`,
   }),
-  empty:      { textAlign: 'center', color: '#9ca3af', fontSize: '13px', padding: '3rem 0' },
+  empty:      { textAlign: 'center', color: '#6b7280', fontSize: '13px', padding: '3rem 0' },
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────

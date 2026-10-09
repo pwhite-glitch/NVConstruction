@@ -173,6 +173,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
       }
       const validLines = lines.filter(l => l.description)
       const lineItems = validLines.map((l, i) => ({
+        estimate_id: estimate.id,
         description: l.description || '',
         amount:      l.amount !== '' ? Number(l.amount) : 0,
         scope:       l.scope || null,

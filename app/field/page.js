@@ -34,6 +34,11 @@ const IC = {
   photos:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
   camera:    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
   lookahead: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>,
+  arrowL:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>,
+  arrowR:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
+  chevD:    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>,
+  chevU:    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>,
+  dnload:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
 }
 
 const s = {
@@ -139,6 +144,10 @@ export default function Field() {
   const [dcSuccess, setDcSuccess] = useState(false)
   const [dcError, setDcError] = useState('')
   const [showDcForm, setShowDcForm] = useState(false)
+  const [costsSearch, setCostsSearch] = useState('')
+  const [costsStatusFilter, setCostsStatusFilter] = useState('')
+  const [expandedCost, setExpandedCost] = useState(null)
+  const [costsPage, setCostsPage] = useState(1)
 
   // Vehicle log state
   const [assignedVehicles, setAssignedVehicles] = useState([])
@@ -1185,14 +1194,14 @@ export default function Field() {
 
                 {activeTab && (
                   <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#f9fafb', borderBottom: '1px solid #f3f4f6', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
-                    <button style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }} onClick={() => setActiveTab('')}>â† Back</button>
+                    <button style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => setActiveTab('')}>{IC.arrowL} Back</button>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead' }[activeTab]}
                     </span>
                   </div>
                 )}
 
-                {/* â”€â”€ DAILY REPORTS â”€â”€ */}
+                {/* DAILY REPORTS */}
                 {activeTab === 'daily' && (
                   <>
                     {dailySuccess && <div style={s.success}>Daily report submitted successfully.</div>}
@@ -1231,7 +1240,7 @@ export default function Field() {
                               </label>
                             </div>
                           </div>
-                          <button onClick={() => setWizardStep(2)} style={{ ...s.btn, width: '100%' }}>Continue â†’</button>
+                          <button onClick={() => setWizardStep(2)} style={{ ...s.btn, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>Continue {IC.arrowR}</button>
                         </div>
                       )}
 
@@ -1255,8 +1264,8 @@ export default function Field() {
                             <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={dailyForm.safety_observations} onChange={e => setDailyForm(f => ({ ...f, safety_observations: e.target.value }))} placeholder="Near misses, hazards, corrective actions..." />
                           </div>
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => setWizardStep(1)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
-                            <button onClick={() => { if (!dailyForm.work_performed.trim()) { alert('Please describe the work performed.'); return }; setWizardStep(3) }} style={{ ...s.btn, flex: 1 }}>Continue â†’</button>
+                            <button onClick={() => setWizardStep(1)} style={{ ...s.btnSm(), padding: '11px 20px', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.arrowL} Back</button>
+                            <button onClick={() => { if (!dailyForm.work_performed.trim()) { alert('Please describe the work performed.'); return }; setWizardStep(3) }} style={{ ...s.btn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>Continue {IC.arrowR}</button>
                           </div>
                         </div>
                       )}
@@ -1393,8 +1402,8 @@ export default function Field() {
                           </div>
 
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => setWizardStep(2)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
-                            <button onClick={() => setWizardStep(4)} style={{ ...s.btn, flex: 1 }}>Continue â†’</button>
+                            <button onClick={() => setWizardStep(2)} style={{ ...s.btnSm(), padding: '11px 20px', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.arrowL} Back</button>
+                            <button onClick={() => setWizardStep(4)} style={{ ...s.btn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>Continue {IC.arrowR}</button>
                           </div>
                         </div>
                       )}
@@ -1432,7 +1441,7 @@ export default function Field() {
                           </div>
 
                           <div style={{ display: 'flex', gap: '10px' }}>
-                            <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
+                            <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.arrowL} Back</button>
                             <button onClick={submitDailyReport} disabled={submittingDaily} style={{ ...s.btn, flex: 1, opacity: submittingDaily ? 0.6 : 1 }}>
                               {submittingDaily ? 'Submitting...' : 'Submit Report ✓'}
                             </button>
@@ -1462,7 +1471,7 @@ export default function Field() {
                                   {photoCount > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{photoCount} photos</span>}
                                 </div>
                               </div>
-                              <span style={{ color: '#374151', fontSize: '14px', flexShrink: 0 }}>{expandedReport === r.id ? 'â–²' : 'â–¼'}</span>
+                              <span style={{ color: '#374151', fontSize: '14px', flexShrink: 0 }}>{expandedReport === r.id ? IC.chevU : IC.chevD}</span>
                             </div>
                             {expandedReport === r.id && (
                               <div style={s.rowBody}>
@@ -1518,7 +1527,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* â”€â”€ RFIs â”€â”€ */}
+                {/* RFIs */}
                 {activeTab === 'rfi' && (
                   <>
                     {rfiSuccess && <div style={s.success}>RFI submitted. The PM will respond shortly.</div>}
@@ -1551,7 +1560,7 @@ export default function Field() {
                                 </div>
                                 <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
                               </div>
-                              <span style={{ color: '#6b7280' }}>{expandedRfi === rfi.id ? 'â–²' : 'â–¼'}</span>
+                              <span style={{ color: '#6b7280' }}>{expandedRfi === rfi.id ? IC.chevU : IC.chevD}</span>
                             </div>
                             {expandedRfi === rfi.id && (
                               <div style={s.rowBody}>
@@ -1577,7 +1586,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* â”€â”€ DELIVERIES â”€â”€ */}
+                {/* DELIVERIES */}
                 {activeTab === 'deliveries' && (
                   <>
                     {deliverySuccess && <div style={s.success}>Delivery logged.</div>}
@@ -1585,7 +1594,7 @@ export default function Field() {
                     {/* Sub-tabs */}
                     <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: '1rem' }}>
                       {[{ key: 'mine', label: 'My Log' }, { key: 'expected', label: 'Expected (PM)' }].map(t => (
-                        <button key={t.key} onClick={() => setDeliverySubTab(t.key)} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: deliverySubTab === t.key ? '#f1f1f1' : '#555', borderBottom: deliverySubTab === t.key ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap' }}>{t.label}</button>
+                        <button key={t.key} onClick={() => setDeliverySubTab(t.key)} style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', background: 'none', border: 'none', color: deliverySubTab === t.key ? '#111827' : '#6b7280', borderBottom: deliverySubTab === t.key ? '2px solid #e8590c' : '2px solid transparent', letterSpacing: '0.5px', marginBottom: '-1px', whiteSpace: 'nowrap' }}>{t.label}</button>
                       ))}
                     </div>
 
@@ -1678,7 +1687,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* â”€â”€ SCHEDULE â”€â”€ */}
+                {/* SCHEDULE */}
                 {activeTab === 'schedule' && (
                   milestones.length === 0 ? (
                     <div style={s.empty}>No milestones set yet.<br />The PM will add schedule milestones here.</div>
@@ -1706,13 +1715,13 @@ export default function Field() {
                   ))
                 )}
 
-                {/* â”€â”€ DIRECT COSTS â”€â”€ */}
+                {/* DIRECT COSTS */}
                 {activeTab === 'costs' && (
                   <>
                     {dcSuccess && <div style={s.success}>Cost logged successfully.</div>}
                     {dcError && <div style={{ background: '#1a0000', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{dcError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} · Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.filter(c => c.submitted_by === user?.id).length} entr{directCosts.filter(c => c.submitted_by === user?.id).length !== 1 ? 'ies' : 'y'} · Total ${directCosts.filter(c => c.submitted_by === user?.id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
                       <button style={s.btnSm('orange')} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                     </div>
                     {showDcForm && (
@@ -1767,44 +1776,60 @@ export default function Field() {
                         </form>
                       </div>
                     )}
+                    {directCosts.filter(c => c.submitted_by === user?.id).length > 4 && (
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                        <input placeholder="Search description or vendor…" value={costsSearch} onChange={e => { setCostsSearch(e.target.value); setCostsPage(1) }} style={{ ...s.input, flex: 1, minWidth: '180px' }} />
+                        <select value={costsStatusFilter} onChange={e => { setCostsStatusFilter(e.target.value); setCostsPage(1) }} style={{ ...s.input, width: 'auto' }}>
+                          <option value="">All statuses</option>
+                          <option value="pending">Pending</option>
+                          <option value="approved">Approved</option>
+                          <option value="rejected">Rejected</option>
+                        </select>
+                      </div>
+                    )}
                     {directCosts.filter(c => c.submitted_by === user?.id).length === 0 && !showDcForm && <div style={s.empty}>No direct costs logged yet.</div>}
-                    {directCosts.filter(c => c.submitted_by === user?.id).map(c => {
+                    {directCosts.filter(c => c.submitted_by === user?.id).filter(c => (!costsSearch || (c.description || '').toLowerCase().includes(costsSearch.toLowerCase()) || (c.vendor || '').toLowerCase().includes(costsSearch.toLowerCase())) && (!costsStatusFilter || c.status === costsStatusFilter)).slice(0, costsPage * 20).map(c => {
                       const isMyRejected = c.status === 'rejected'
                       const isResubmitting = resubmitCostId === c.id
+                      const isExpanded = expandedCost === c.id
                       return (
-                      <div key={c.id} style={{ ...s.row, border: `1px solid ${c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: isMyRejected ? '#fef2f2' : '#f9fafb', flexWrap: 'wrap', gap: '8px' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                      <div key={c.id} style={{ ...s.row, border: `1px solid ${c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}`, marginBottom: '8px' }}>
+                        <div onClick={() => setExpandedCost(isExpanded ? null : c.id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: isMyRejected ? '#fef2f2' : '#fff', cursor: 'pointer', gap: '10px' }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{c.description}</span>
-                              <span style={s.badge((c.category || 'uncategorized').toLowerCase())}>{c.category}</span>
                               <span style={s.badge(c.status)}>{c.status}</span>
                               {c.status === 'rejected' && <span style={{ fontSize: '11px', fontWeight: '700', color: '#dc2626' }}>Needs correction</span>}
                             </div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>
                               {new Date(c.cost_date + 'T12:00:00').toLocaleDateString()}
+                              {c.category && ` · ${c.category}`}
                               {c.vendor && ` · ${c.vendor}`}
-                              {c.reason && ` · ${c.reason}`}
                             </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                             <span style={{ fontSize: '15px', fontWeight: '800', color: '#111827' }}>${Number(c.amount).toLocaleString()}</span>
-                            {c.receipt_url && (
-                              <button style={s.btnSm('orange')} onClick={() => openReceiptUrl(c.receipt_url)}>View receipt</button>
-                            )}
-                            {isMyRejected && (
-                              <button style={s.btnSm('orange')} onClick={() => {
-                                if (isResubmitting) { setResubmitCostId(null); return }
-                                setResubmitCostId(c.id)
-                                setResubmitErr('')
-                                setResubmitFile(null)
-                                setResubmitForm({ cost_date: c.cost_date, description: c.description, vendor: c.vendor || '', amount: String(c.amount), category: c.category, reason: c.reason || '', notes: c.notes || '' })
-                              }}>
-                                {isResubmitting ? 'Cancel' : 'Fix & Resubmit'}
-                              </button>
-                            )}
+                            <span style={{ color: '#6b7280', display: 'flex' }}>{isExpanded ? IC.chevU : IC.chevD}</span>
                           </div>
                         </div>
+                        {isExpanded && (
+                          <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', background: '#f9fafb' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px 20px', marginBottom: '12px' }}>
+                              {c.reason && <div><p style={{ margin: '0 0 2px', fontSize: '10px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Reason</p><p style={{ margin: 0, fontSize: '13px', color: '#374151' }}>{c.reason}</p></div>}
+                              {c.notes && <div><p style={{ margin: '0 0 2px', fontSize: '10px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Notes</p><p style={{ margin: 0, fontSize: '13px', color: '#374151' }}>{c.notes}</p></div>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              {c.receipt_url && (
+                                <button style={s.btnSm('orange')} onClick={e => { e.stopPropagation(); openReceiptUrl(c.receipt_url) }}>View receipt</button>
+                              )}
+                              {isMyRejected && (
+                                <button style={s.btnSm('orange')} onClick={e => { e.stopPropagation(); if (isResubmitting) { setResubmitCostId(null); return }; setResubmitCostId(c.id); setResubmitErr(''); setResubmitFile(null); setResubmitForm({ cost_date: c.cost_date, description: c.description, vendor: c.vendor || '', amount: String(c.amount), category: c.category, reason: c.reason || '', notes: c.notes || '' }) }}>
+                                  {isResubmitting ? 'Cancel' : 'Fix & Resubmit'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {isMyRejected && c.rejection_reason && (
                           <div style={{ background: '#fef2f2', borderTop: '1px solid #fecaca', padding: '10px 16px' }}>
                             <p style={{ margin: '0 0 3px', fontSize: '11px', color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: '700' }}>Rejection reason — please correct and resubmit</p>
@@ -1863,11 +1888,20 @@ export default function Field() {
                         )}
                       </div>
                     )})}
+                    {(() => {
+                      const myCosts = directCosts.filter(c => c.submitted_by === user?.id)
+                      const filtered = myCosts.filter(c => (!costsSearch || (c.description || '').toLowerCase().includes(costsSearch.toLowerCase()) || (c.vendor || '').toLowerCase().includes(costsSearch.toLowerCase())) && (!costsStatusFilter || c.status === costsStatusFilter))
+                      return filtered.length > costsPage * 20 ? (
+                        <button onClick={() => setCostsPage(p => p + 1)} style={{ ...s.btnSm(''), borderColor: '#d1d5db', width: '100%', marginTop: '8px' }}>
+                          Load more ({filtered.length - costsPage * 20} remaining)
+                        </button>
+                      ) : null
+                    })()}
 
                   </>
                 )}
 
-                {/* â”€â”€ CONTACTS â”€â”€ */}
+                {/* CONTACTS */}
                 {activeTab === 'subs' && (
                   <>
                     {contactSuccess && <div style={s.success}>Contact added successfully.</div>}
@@ -1979,7 +2013,7 @@ export default function Field() {
               </>
             )}
 
-                {/* â”€â”€ DOCUMENTS â”€â”€ */}
+                {/* DOCUMENTS */}
                 {activeTab === 'docs' && (
                   <>
                     <div style={s.card}>
@@ -2052,7 +2086,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* â”€â”€ PUNCH LIST â”€â”€ */}
+                {/* PUNCH LIST */}
                 {activeTab === 'punch' && (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -2169,7 +2203,7 @@ export default function Field() {
                   </>
                 )}
 
-                {/* â”€â”€ SITE PHOTOS â”€â”€ */}
+                {/* SITE PHOTOS */}
                 {activeTab === 'photos' && (() => {
                   const allPhotos = [
                     ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: p.taken_at?.split('T')[0] })),
@@ -2289,7 +2323,7 @@ export default function Field() {
                   )
                 })()}
 
-                {/* â”€â”€ VEHICLES â”€â”€ */}
+                {/* VEHICLES */}
                 {activeTab === 'vehicles' && (() => {
                   const LOG_TYPES = ['Weekly Miles', 'Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
                   const needsPhoto = ['Monthly Photo', 'Damage Report'].includes(vehicleLogForm.log_type)
@@ -2408,7 +2442,7 @@ export default function Field() {
                   )
                 })()}
 
-                {/* â”€â”€ TOOLS â”€â”€ */}
+                {/* TOOLS */}
                 {activeTab === 'tools' && (() => {
                   const LOG_TYPE_LABELS = { checkin: 'Check In', checkout: 'Checked Out', damage: 'Damage Report', lost: 'Report Lost', maintenance: 'Needs Maintenance' }
                   return (
@@ -2575,7 +2609,7 @@ export default function Field() {
                   )
                 })()}
 
-                {/* â”€â”€ 2-WEEK LOOKAHEAD â”€â”€ */}
+                {/* 2-WEEK LOOKAHEAD */}
                 {activeTab === 'lookahead' && (() => {
                   const weekDays = []
                   const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
@@ -2593,13 +2627,13 @@ export default function Field() {
                     <div>
                       {/* Week navigation */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                        <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>â† Prev</button>
+                        <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.arrowL} Prev</button>
                         <span style={{ fontSize: '12px', fontWeight: '700', color: '#666', textAlign: 'center' }}>
                           {wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
                           {' – '}
                           {new Date(wkBase.getTime() + 11 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                         </span>
-                        <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Next â†’</button>
+                        <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>Next {IC.arrowR}</button>
                       </div>
 
                       {!lookahead ? (
@@ -2614,7 +2648,7 @@ export default function Field() {
                               {lookahead.status === 'submitted' ? '✓ Submitted to PM' : 'Draft'}
                             </span>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>â¬‡ Download PDF</button>
+                              <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.dnload} Download PDF</button>
                               <button
                                 onClick={submitLookaheadFromField}
                                 disabled={submittingLA || lookaheadActivities.length === 0}
@@ -2691,7 +2725,7 @@ export default function Field() {
                   )
                 })()}
 
-                {/* â”€â”€ LOOKAHEAD ACTIVITY MODAL â”€â”€ */}
+                {/* LOOKAHEAD ACTIVITY MODAL */}
                 {showLAModal && (
                   <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 9000, display: 'flex', alignItems: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) setShowLAModal(false) }}>
                     <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '760px', margin: '0 auto', padding: '1.75rem', maxHeight: '85vh', overflowY: 'auto' }}>
@@ -2797,7 +2831,7 @@ export default function Field() {
         )}
       </main>
 
-      {/* â”€â”€ FLOATING CAMERA BUTTON â”€â”€ */}
+      {/* FLOATING CAMERA BUTTON */}
       {selectedJobId && !lightbox && (
         <div style={{ position: 'fixed', bottom: '24px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
           {fabOpen && (
@@ -2849,7 +2883,7 @@ export default function Field() {
         </div>
       )}
 
-      {/* â”€â”€ LIGHTBOX â”€â”€ */}
+      {/* LIGHTBOX */}
       {lightbox && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', flexDirection: 'column' }}>
           {/* Top bar */}

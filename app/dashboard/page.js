@@ -3530,6 +3530,10 @@ ${estimate.notes ? `
             </div>
           ))}
           <div style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.42)', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '14px 1rem 4px' }}>Divisions</div>
+          <a href="/sales" style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 1rem', cursor: 'pointer', background: 'rgba(232,89,12,0.10)', color: '#e8590c', fontSize: '13px', fontWeight: '600', border: 'none', borderLeft: '3px solid #e8590c', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Sales &amp; Orders
+          </a>
           <a href="/roofing" style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 1rem', cursor: 'pointer', background: 'transparent', color: 'rgba(255,255,255,0.55)', fontSize: '13px', fontWeight: '400', border: 'none', width: '100%', textAlign: 'left', textDecoration: 'none' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
             Commercial Roofing

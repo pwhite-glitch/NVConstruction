@@ -20,6 +20,17 @@ export async function PATCH(request) {
     if (company_name !== undefined) update.company_name = company_name
     if (company_id !== undefined) update.company_id = company_id
 
+    // Auto-resolve company_id from companies table if name is set but id is missing
+    if (!update.company_id && update.company_name) {
+      const { data: co } = await adminSupabase
+        .from('companies')
+        .select('id')
+        .ilike('name', update.company_name.trim())
+        .limit(1)
+        .maybeSingle()
+      if (co?.id) update.company_id = co.id
+    }
+
     const { error } = await adminSupabase.from('profiles').update(update).eq('id', userId)
     if (error) return Response.json({ error: error.message }, { status: 400 })
 

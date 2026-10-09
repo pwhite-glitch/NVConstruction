@@ -3271,7 +3271,7 @@ ${estimate.notes ? `
   const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
   const billingBadge = pending.length || null
   const dirBadge = (pendingApps + expiredCOIs.length + expiringSoonCOIs.length + missingCOIs.length) || null
-  const myWorkTotal = myWork ? ((myWork.rfis?.length || 0) + (myWork.billing?.length || 0) + (myWork.actionItems?.length || 0) + (myWork.milestones?.length || 0)) : null
+  const myWorkTotal = myWork ? ((myWork.salesTasks?.length || 0) + (myWork.rfis?.length || 0) + (myWork.billing?.length || 0) + (myWork.actionItems?.length || 0) + (myWork.milestones?.length || 0)) : null
   const myWorkBadge = myWorkTotal || null
   const notifBadge = pmNotifUnread || null
 
@@ -3674,6 +3674,30 @@ ${estimate.notes ? `
                   {myWork && !myWork.error && myWorkTotal === 0 && (
                     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center' }}>
                       <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>All caught up — nothing pending.</p>
+                    </div>
+                  )}
+
+                  {myWork && !myWork.error && (myWork.salesTasks?.length > 0) && (
+                    <div style={{ marginBottom: '1.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem' }}>
+                        <p style={{ ...s.ovSectionTitle, margin: 0 }}>My sales tasks</p>
+                        <span style={{ fontSize: '11px', fontWeight: '700', background: '#e8590c18', color: '#e8590c', border: '1px solid #e8590c40', borderRadius: '10px', padding: '1px 8px' }}>{myWork.salesTasks.length}</span>
+                      </div>
+                      <div style={s.sectionCard}>
+                        {myWork.salesTasks.map((task, i) => (
+                          <div key={task.id} className="nv-table-row" style={{ ...s.rowBorder, padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', borderBottom: i < myWork.salesTasks.length - 1 ? '1px solid #f3f4f6' : 'none' }}
+                            onClick={() => router.push(`/sales/${task.order_id}?tab=tasks`)}>
+                            <div>
+                              <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{task.title}</p>
+                              {task.order_number && <span style={{ fontSize: '12px', color: '#6b7280' }}>{task.order_number}</span>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+                              {task.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: new Date(task.due_date + 'T23:59:59') < new Date() ? '#dc2626' : '#374151' }}>Due {new Date(task.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                              <span style={{ fontSize: '12px', color: '#e8590c' }}>Open →</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -6094,6 +6118,8 @@ ${estimate.notes ? `
                           <option value="apm">Assistant PM</option>
                           <option value="super">Superintendent</option>
                           <option value="admin">Office Admin</option>
+                          <option value="metal_rep">Metal Buildings Rep</option>
+                          <option value="roofing_rep">Commercial Roofing Rep</option>
                         </select>
                       </div>
                       <div><label style={s.label}>Phone</label><input style={s.input} value={teamInviteForm.phone} onChange={e => setTeamInviteForm(f => ({ ...f, phone: e.target.value }))} placeholder="555-0100" /></div>

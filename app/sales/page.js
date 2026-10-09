@@ -25,7 +25,7 @@ const DIVISIONS = [
 ]
 
 const fmt$ = v => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'
-const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+const fmtDate = d => d ? new Date(d.length === 10 ? d + 'T12:00:00' : d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 const stageCfg = key => STAGES.find(s => s.key === key) || { label: key, color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ function SalesPageInner() {
   const [lbLoading, setLbLoading] = useState(false)
   const [lbFrom,    setLbFrom]    = useState('')
   const [lbTo,      setLbTo]      = useState('')
-  const [lbDiv,     setLbDiv]     = useState('')
+  const [lbDiv,     setLbDiv]     = useState(divisionParam)
 
   const canEdit = profile && ['pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'].includes(profile.role)
   const showFinancials = profile && ['pm', 'apm', 'admin'].includes(profile.role)
@@ -164,6 +164,14 @@ function SalesPageInner() {
     }
     init()
   }, [])
+
+  // Sync URL division param → filter state when navigating between division workspaces
+  // (useState initializes only once; client-side router.push doesn't re-mount the component)
+  useEffect(() => {
+    setDivision(divisionParam)
+    setLbDiv(divisionParam)
+    setNewForm(f => ({ ...f, division: divisionParam || 'metal_buildings' }))
+  }, [divisionParam])
 
   const loadOrders = useCallback(async () => {
     if (!profile) return
@@ -337,7 +345,7 @@ function SalesPageInner() {
                 <option value="">All Stages</option>
                 {STAGES.map(st => <option key={st.key} value={st.key}>{st.label}</option>)}
               </select>
-              <button style={s.btnSm} onClick={() => { setSearch(''); setDivision(''); setStage('') }}>Clear</button>
+              <button style={s.btnSm} onClick={() => { setSearch(''); setDivision(divisionParam); setStage('') }}>Clear</button>
             </div>
 
             {/* ── LIST VIEW ── */}

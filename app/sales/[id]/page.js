@@ -147,7 +147,7 @@ export default function SalesOrderDetailPage() {
   const [stageBlockers,   setStageBlockers]   = useState([])
   const [overrideReason,  setOverrideReason]  = useState('')
   const [showTaskModal,   setShowTaskModal]   = useState(false)
-  const [taskForm,        setTaskForm]        = useState({ title: '', assignee_name: '', due_date: '', priority: 'normal' })
+  const [taskForm,        setTaskForm]        = useState({ title: '', assignee_id: '', assignee_name: '', due_date: '', priority: 'normal' })
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [updateForm,      setUpdateForm]      = useState({ body: '', visible_to_customer: false })
   const [showPortalModal, setShowPortalModal] = useState(false)
@@ -331,7 +331,7 @@ export default function SalesOrderDetailPage() {
     })
     if (!res.ok) { const j = await res.json(); setModalErr(j.error || 'Failed'); return }
     setShowTaskModal(false)
-    setTaskForm({ title: '', assignee_name: '', due_date: '', priority: 'normal' })
+    setTaskForm({ title: '', assignee_id: '', assignee_name: '', due_date: '', priority: 'normal' })
     loadOrder()
   }
 
@@ -454,7 +454,7 @@ export default function SalesOrderDetailPage() {
   const cfg = stageCfg(order.stage)
   const nextStage = nextStageKey(order.stage)
   const nextAction = NEXT_ACTION_TEXT[order.stage]
-  const overdueTasks = tasks.filter(t => t.status !== 'done' && t.due_date && new Date(t.due_date) < new Date())
+  const overdueTasks = tasks.filter(t => t.status !== 'done' && t.due_date && new Date(t.due_date + 'T23:59:59') < new Date())
 
   return (
     <div style={s.page}>
@@ -919,7 +919,7 @@ export default function SalesOrderDetailPage() {
                   <div style={s.priorityDot(t.priority)} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '13px', fontWeight: '500', color: '#111827', textDecoration: t.status === 'done' ? 'line-through' : 'none' }}>{t.title}</div>
-                    <div style={{ fontSize: '11px', color: t.due_date && new Date(t.due_date) < new Date() && t.status !== 'done' ? '#dc2626' : '#9ca3af' }}>
+                    <div style={{ fontSize: '11px', color: t.due_date && new Date(t.due_date + 'T23:59:59') < new Date() && t.status !== 'done' ? '#dc2626' : '#9ca3af' }}>
                       {t.assignee_name ? t.assignee_name + ' · ' : ''}{t.due_date ? 'Due ' + fmtDate(t.due_date) : 'No due date'}
                     </div>
                   </div>
@@ -1087,7 +1087,15 @@ export default function SalesOrderDetailPage() {
             <h2 style={s.mTitle}>Add Task</h2>
             <div style={s.fRow}><label style={s.lbl}>Title</label><input style={s.inp} value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Confirm site readiness" /></div>
             <div style={s.g2}>
-              <div><label style={s.lbl}>Assignee</label><input style={s.inp} value={taskForm.assignee_name} onChange={e => setTaskForm(f => ({ ...f, assignee_name: e.target.value }))} placeholder="Name" /></div>
+              <div><label style={s.lbl}>Assignee</label>
+                <select style={s.sel} value={taskForm.assignee_id} onChange={e => {
+                  const staff = staffList.find(m => m.id === e.target.value)
+                  setTaskForm(f => ({ ...f, assignee_id: e.target.value, assignee_name: staff?.full_name || staff?.email || '' }))
+                }}>
+                  <option value="">Unassigned</option>
+                  {staffList.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
+                </select>
+              </div>
               <div><label style={s.lbl}>Due Date</label><input type="date" style={s.inp} value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} /></div>
             </div>
             <div style={s.fRow}>

@@ -11,10 +11,12 @@ const adminSupabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 const ROLE_LABELS = {
-  pm: 'Project Manager',
-  apm: 'Assistant Project Manager',
-  super: 'Superintendent',
-  admin: 'Office Admin',
+  pm:          'Project Manager',
+  apm:         'Assistant Project Manager',
+  super:       'Superintendent',
+  admin:       'Office Admin',
+  metal_rep:   'Metal Buildings Rep',
+  roofing_rep: 'Commercial Roofing Rep',
 }
 
 export async function POST(request) {

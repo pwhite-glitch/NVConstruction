@@ -7,7 +7,7 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const ALL_ROLES = ['pm', 'apm', 'super', 'admin', 'subcontractor', 'sub_pm', 'sub_admin', 'sub_estimator']
+const ALL_ROLES = ['pm', 'apm', 'super', 'admin', 'metal_rep', 'roofing_rep', 'subcontractor', 'sub_pm', 'sub_admin', 'sub_estimator']
 
 // GET /api/role-permissions
 //   ?role=<role>  → returns { features: string[] } for that role (requireAuth, own role or PM for any)

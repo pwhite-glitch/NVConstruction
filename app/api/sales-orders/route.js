@@ -331,6 +331,9 @@ export async function POST(request) {
         if (prof?.full_name) fields.salesperson_name = prof.full_name
       }
 
+      // Fetch current values to compute before/after diff for history
+      const { data: before } = await adminSupabase.from('sales_orders').select('*').eq('id', id).maybeSingle()
+
       const { error } = await adminSupabase
         .from('sales_orders')
         .update({ ...fields, updated_at: new Date().toISOString() })
@@ -362,13 +365,25 @@ export async function POST(request) {
         })
       }
 
-      await adminSupabase.from('sales_order_history').insert({
-        order_id:   id,
-        actor_id:   auth.userId,
-        actor_name: actor_name || 'Staff',
-        action:     'updated',
-        details:    { fields: Object.keys(fields) },
-      })
+      // Diff against before-state so history shows what actually changed
+      const OMIT_FROM_HISTORY = new Set(['updated_at','salesperson_name','ops_owner_name'])
+      const changed = {}
+      for (const [key, val] of Object.entries(fields)) {
+        if (OMIT_FROM_HISTORY.has(key)) continue
+        if (!before || String(before[key]) !== String(val ?? '')) {
+          changed[key] = { from: before?.[key] ?? null, to: val ?? null }
+        }
+      }
+
+      if (Object.keys(changed).length > 0) {
+        await adminSupabase.from('sales_order_history').insert({
+          order_id:   id,
+          actor_id:   auth.userId,
+          actor_name: actor_name || 'Staff',
+          action:     'updated',
+          details:    { changed },
+        })
+      }
 
       return Response.json({ ok: true })
     }

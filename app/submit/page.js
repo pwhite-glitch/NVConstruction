@@ -124,6 +124,9 @@ export default function Submit() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [activeTab, setActiveTab] = useState('calendar')
+  const [selectedJob, setSelectedJob] = useState(null)
+  const [coverUrls, setCoverUrls] = useState({})
+  const [jobSearch, setJobSearch] = useState('')
   const [calMonth, setCalMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() })
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -244,17 +247,17 @@ export default function Submit() {
       const companyId = prof?.company_id
       let mergedJobs
       if (devIsSubOverride) {
-        const { data: allJobs } = await supabase.from('jobs').select('id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location').eq('status', 'active').order('project_name')
+        const { data: allJobs } = await supabase.from('jobs').select('id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path').eq('status', 'active').order('project_name')
         mergedJobs = allJobs || []
       } else {
         const jobQueries = [
-          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
-          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('sub_id', session.user.id),
+          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id),
+          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id),
         ]
         if (companyId) {
           jobQueries.push(
-            supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
-            supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location)').eq('company_id', companyId),
+            supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId),
+            supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId),
           )
         }
         const jobResults = await Promise.all(jobQueries)
@@ -263,6 +266,7 @@ export default function Submit() {
         mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
       }
       setJobs(mergedJobs)
+      loadCoverUrls(mergedJobs)
       // Fetch billing for this user AND all teammates in the same company
       let billingQuery = supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').order('submitted_at', { ascending: false })
       if (companyId) {
@@ -367,6 +371,26 @@ export default function Submit() {
     if (!res.ok) { alert('Failed to send message. Please try again.'); return }
     setMessageDraft(prev => ({ ...prev, [jobId]: '' }))
     await loadMessages(jobId)
+  }
+
+  async function loadCoverUrls(jobList) {
+    const withCovers = (jobList || []).filter(j => j.cover_image_path)
+    if (withCovers.length === 0) return
+    const paths = withCovers.map(j => j.cover_image_path)
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(paths, 7200)
+    if (!data) return
+    const urls = {}
+    withCovers.forEach((j, i) => { if (data[i]?.signedUrl) urls[j.id] = data[i].signedUrl })
+    setCoverUrls(urls)
+  }
+
+  function selectJob(j) {
+    setSelectedJob(j)
+    setForm(f => ({ ...f, job_id: j.id }))
+    setRfiForm(f => ({ ...f, job_id: j.id }))
+    setSelectedMessageJob(j.id)
+    setActiveTab('calendar')
+    setJobSearch('')
   }
 
   async function loadMyPunchItems(userId, jobsList) {
@@ -1021,6 +1045,59 @@ export default function Submit() {
     setNotifUnread(0)
   }
 
+  if (!profile) return null
+
+  if (!selectedJob) return (
+    <div style={{ minHeight: '100vh', background: '#f4f6f8' }}>
+      <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem' }}>
+        <div style={{ maxWidth: '960px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img src="/logo.png" alt="NV Construction" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+            <div>
+              <div style={{ fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' }}>NV Construction</div>
+              <div style={{ fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' }}>{profile?.company_name || 'Sub Portal'}</div>
+            </div>
+          </div>
+          <button style={{ padding: '6px 14px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+        </div>
+      </header>
+      <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1.5rem' }}>
+        <div style={{ marginBottom: '1.25rem' }}>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#111827' }}>Your Projects</h2>
+        </div>
+        {jobs.length > 1 && (
+          <input type="search" placeholder="Search projects..." value={jobSearch} onChange={e => setJobSearch(e.target.value)} style={{ width: '100%', padding: '9px 12px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', color: '#111827', boxSizing: 'border-box', outline: 'none', marginBottom: '1rem' }} />
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+          {jobs
+            .filter(j => !jobSearch || j.project_name?.toLowerCase().includes(jobSearch.toLowerCase()) || String(j.job_number || '').includes(jobSearch))
+            .map(j => (
+              <div key={j.id} onClick={() => selectJob(j)} style={{ cursor: 'pointer', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div style={{ position: 'relative', paddingBottom: '52%', background: '#f3f4f6', overflow: 'hidden' }}>
+                  {coverUrls[j.id]
+                    ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: '22px', fontWeight: '800', color: '#9ca3af' }}>#{j.job_number}</span>
+                      </div>
+                  }
+                </div>
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '0.5px', marginBottom: '2px' }}>#{j.job_number}</div>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '4px' }}>{j.project_name}</div>
+                  {j.location && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{j.location}</div>}
+                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'capitalize', background: j.status === 'active' ? '#dcfce7' : '#f3f4f6', color: j.status === 'active' ? '#15803d' : '#6b7280', border: `1px solid ${j.status === 'active' ? '#bbf7d0' : '#e5e7eb'}` }}>{j.status || 'active'}</span>
+                </div>
+              </div>
+            ))
+          }
+          {jobs.length === 0 && (
+            <div style={{ gridColumn: '1/-1', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '3rem', textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>You have not been assigned to any projects yet.<br />Contact NV Construction to get started.</div>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+
   const role = profile?.role || 'subcontractor'
   // sub_admin: billing-focused only
   // sub_pm: all except bids (they don't handle estimating)
@@ -1049,8 +1126,17 @@ export default function Submit() {
         <div style={s.sidebarTop}>
           <img src="/logo.png" alt="NV" style={s.sidebarLogo} />
           <p style={s.sidebarBrand}>NV Construction</p>
-          <p style={s.sidebarRole}>{{ sub_estimator: 'Estimator', sub_pm: 'Project Manager', sub_admin: 'Admin' }[role] || 'Sub Portal'}</p>
+          <p style={s.sidebarRole}>{{ sub_estimator: 'Estimator', sub_pm: 'Sub PM', sub_admin: 'Admin' }[role] || 'Sub Portal'}</p>
           <p style={s.sidebarUser}>{profile?.company_name || profile?.full_name}</p>
+          {jobs.length > 1 && (
+            <button onClick={() => setSelectedJob(null)} style={{ marginTop: '10px', width: '100%', padding: '6px 10px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: 'rgba(255,255,255,0.65)', cursor: 'pointer', fontSize: '12px', textAlign: 'left' }}>← All projects</button>
+          )}
+          {selectedJob && (
+            <div style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(232,89,12,0.1)', border: '1px solid rgba(232,89,12,0.2)', borderRadius: '6px' }}>
+              <div style={{ fontSize: '10px', color: '#e8590c', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Active project</div>
+              <div style={{ fontSize: '12px', color: '#fff', fontWeight: '600', lineHeight: '1.3' }}>#{selectedJob.job_number} {selectedJob.project_name}</div>
+            </div>
+          )}
         </div>
         <div style={s.sidebarNav}>
           {navItems.map(({ tab, label, icon, badge }) => (

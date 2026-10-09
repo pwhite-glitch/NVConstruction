@@ -86,6 +86,8 @@ export default function Field() {
   const [assignedJobs, setAssignedJobs] = useState([])
   const [selectedJobId, setSelectedJobId] = useState('')
   const [activeTab, setActiveTab] = useState('')
+  const [coverUrls, setCoverUrls] = useState({})
+  const [jobSearch, setJobSearch] = useState('')
 
   const [dailyReports, setDailyReports] = useState([])
   const [dailyForm, setDailyForm] = useState({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
@@ -235,7 +237,7 @@ export default function Field() {
         jobs = (assigns || []).map(a => a.jobs).filter(Boolean)
       }
       setAssignedJobs(jobs)
-      if (jobs.length === 1) setSelectedJobId(jobs[0].id)
+      loadCoverUrls(jobs)
       await loadAssignedVehicles(session.user.id)
       await loadMyTools(session.user.id)
     }
@@ -263,6 +265,17 @@ export default function Field() {
     else if (activeTab === 'photos') loadPhotoGallery()
     else if (activeTab === 'lookahead') { loadLookaheadData(); loadLookaheadContracts() }
   }, [selectedJobId, activeTab])
+
+  async function loadCoverUrls(jobList) {
+    const withCovers = (jobList || []).filter(j => j.cover_image_path)
+    if (withCovers.length === 0) return
+    const paths = withCovers.map(j => j.cover_image_path)
+    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(paths, 7200)
+    if (!data) return
+    const urls = {}
+    withCovers.forEach((j, i) => { if (data[i]?.signedUrl) urls[j.id] = data[i].signedUrl })
+    setCoverUrls(urls)
+  }
 
   async function checkTodayReport() {
     const today = new Date().toISOString().split('T')[0]
@@ -508,7 +521,7 @@ export default function Field() {
       }
       img.onerror = () => {
         URL.revokeObjectURL(url)
-        // canvas failed â€” pass file through; server will force-label it image/jpeg
+        // canvas failed — pass file through; server will force-label it image/jpeg
         resolve(file)
       }
       img.src = url
@@ -750,12 +763,12 @@ export default function Field() {
     const jobName = selectedJob?.name || selectedJob?.address || 'Project'
     const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
     const weekEnd = new Date(wkBase.getTime() + 11 * 86400000)
-    const dateRange = wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' â€“ ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    const dateRange = wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
     const weekDays = []
     for (let w = 0; w < 2; w++) for (let d = 0; d < 5; d++) { const day = new Date(wkBase); day.setDate(day.getDate() + w * 7 + d); weekDays.push(day.toISOString().split('T')[0]) }
     const todayStr = new Date().toISOString().split('T')[0]
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead â€” ${jobName}</title><style>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead — ${jobName}</title><style>
       body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:32px;font-size:13px}
       h1{font-size:20px;font-weight:800;margin:0 0 4px}
       .sub{color:#666;font-size:13px;margin:0 0 28px}
@@ -785,20 +798,20 @@ export default function Field() {
       @media print{body{padding:16px}@page{margin:1.5cm}}
     </style></head><body>
     <h1>2-Week Lookahead</h1>
-    <p class="sub">${jobName} Â· ${dateRange}${lookahead.status === 'submitted' ? ' Â· Submitted' : ' Â· Draft'}</p>
+    <p class="sub">${jobName} · ${dateRange}${lookahead.status === 'submitted' ? ' · Submitted' : ' · Draft'}</p>
     ${[0, 1].map(w => {
       const wkStart = new Date(wkBase.getTime() + w * 7 * 86400000)
       const wkDays = weekDays.slice(w * 5, w * 5 + 5)
       const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
       const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
       const inspections = wkActs.filter(a => a.inspection_required).length
-      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + (w + 1) + ' â€” ' + wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' + (totalManpower > 0 ? '<span>' + totalManpower + ' workers</span>' : '') + (inspections > 0 ? '<span>âš ï¸ ' + inspections + ' inspection' + (inspections > 1 ? 's' : '') + '</span>' : '') + (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
+      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + (w + 1) + ' — ' + wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' + (totalManpower > 0 ? '<span>' + totalManpower + ' workers</span>' : '') + (inspections > 0 ? '<span>⚠️ ' + inspections + ' inspection' + (inspections > 1 ? 's' : '') + '</span>' : '') + (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
         dayNames.map((dayName, di) => {
           const dateStr = wkDays[di]
           const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
           const dateLabel = new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
           const isToday = dateStr === todayStr
-          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + '</span><span class="day-date">' + dateLabel + (isToday ? ' Â· TODAY' : '') + '</span></div>' +
+          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + '</span><span class="day-date">' + dateLabel + (isToday ? ' · TODAY' : '') + '</span></div>' +
             (dayActs.length === 0 ? '<div class="empty">No activities scheduled</div>' :
               dayActs.map(act => {
                 const type = act.responsible_type === 'sub' ? 'sub' : act.responsible_type === 'other' ? 'other' : 'own'
@@ -807,14 +820,14 @@ export default function Field() {
                 const addlCos = (act.additional_companies || [])
                 return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + '</div><div class="act-meta"><span class="tag tag-' + type + '">' + responsible + '</span>' +
                   (mp > 0 ? '<span>' + mp + ' workers</span>' : '') +
-                  (act.location ? '<span>ðŸ“ ' + act.location + '</span>' : '') +
-                  (act.equipment ? '<span>âš™ï¸ ' + act.equipment + '</span>' : '') +
+                  (act.location ? '<span>📍 ' + act.location + '</span>' : '') +
+                  (act.equipment ? '<span>⚙️ ' + act.equipment + '</span>' : '') +
                   (act.inspection_required ? '<span class="tag tag-inspect">Inspection Required</span>' : '') +
                   (act.inspection_scheduled ? '<span class="tag tag-inspect">Scheduled</span>' : '') +
                   (act.committed ? '<span class="tag tag-commit">Committed</span>' : '') +
-                  (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding âœ“</span>' : '') +
+                  (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding ✓</span>' : '') +
                   addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
-                  '</div>' + (act.constraints_notes ? '<div class="act-notes">âš  ' + act.constraints_notes + '</div>' : '') + '</div>'
+                  '</div>' + (act.constraints_notes ? '<div class="act-notes">⚠ ' + act.constraints_notes + '</div>' : '') + '</div>'
               }).join('')
             ) + '</div>'
         }).join('') + '</div>'
@@ -1071,31 +1084,57 @@ export default function Field() {
           <div style={s.empty}>You have not been assigned to any jobs yet.<br />Contact NV Construction to get started.</div>
         ) : (
           <>
-            {assignedJobs.length > 1 && (
-              <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap' }}>Active job</label>
-                <select value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)} style={s.input}>
-                  <option value="">Select a job...</option>
-                  {assignedJobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} â€” {j.project_name}</option>)}
-                </select>
-              </div>
+            {!selectedJobId && (
+              <>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#111827' }}>Your Projects</h2>
+                </div>
+                {assignedJobs.length > 1 && (
+                  <input type="search" placeholder="Search projects..." value={jobSearch} onChange={e => setJobSearch(e.target.value)} style={{ ...s.input, marginBottom: '1rem' }} />
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {assignedJobs
+                    .filter(j => !jobSearch || j.project_name?.toLowerCase().includes(jobSearch.toLowerCase()) || String(j.job_number || '').includes(jobSearch))
+                    .map(j => (
+                      <div key={j.id} onClick={() => { setSelectedJobId(j.id); setJobSearch('') }} style={{ cursor: 'pointer', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                        <div style={{ position: 'relative', paddingBottom: '58%', background: '#f3f4f6', overflow: 'hidden' }}>
+                          {coverUrls[j.id]
+                            ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <span style={{ fontSize: '22px', fontWeight: '800', color: '#9ca3af' }}>#{j.job_number}</span>
+                              </div>
+                          }
+                        </div>
+                        <div style={{ padding: '12px 14px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '0.5px', marginBottom: '2px' }}>#{j.job_number}</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '4px' }}>{j.project_name}</div>
+                          {j.location && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{j.location}</div>}
+                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', textTransform: 'capitalize', background: j.status === 'active' ? '#dcfce7' : '#f3f4f6', color: j.status === 'active' ? '#15803d' : '#6b7280', border: `1px solid ${j.status === 'active' ? '#bbf7d0' : '#e5e7eb'}` }}>{j.status || 'active'}</span>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </>
             )}
-
-            {selectedJob && assignedJobs.length === 1 && (
-              <div style={{ marginBottom: '1.5rem' }}>
-                <h2 style={{ color: '#111827', margin: '0 0 4px', fontSize: '20px', fontWeight: '800' }}>#{selectedJob.job_number} â€” {selectedJob.project_name}</h2>
-                {selectedJob.location && <p style={{ margin: 0, color: '#6b7280', fontSize: '13px' }}>{selectedJob.location}</p>}
-              </div>
-            )}
-
-            {!selectedJobId && <div style={s.empty}>Select a job above to get started.</div>}
 
             {selectedJobId && (
               <>
+                {!activeTab && selectedJob && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
+                    {assignedJobs.length > 1 && (
+                      <button onClick={() => { setSelectedJobId(''); setActiveTab('') }} style={{ padding: '5px 12px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '7px', color: '#374151', fontSize: '13px', fontWeight: '600', cursor: 'pointer', flexShrink: 0 }}>← Projects</button>
+                    )}
+                    <div>
+                      <div style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>#{selectedJob.job_number} — {selectedJob.project_name}</div>
+                      {selectedJob.location && <div style={{ fontSize: '12px', color: '#6b7280' }}>{selectedJob.location}</div>}
+                    </div>
+                  </div>
+                )}
                 {!activeTab && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '0.5rem' }}>
                     {[
-                      { key: 'daily', icon: IC.daily, label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? 'âœ“ Filed today' : null },
+                      { key: 'daily', icon: IC.daily, label: 'Daily Reports', count: dailyReports.length || null, alert: todayReportStatus === 'none', alertLabel: 'No report today', successLabel: todayReportStatus === 'submitted' ? '✓ Filed today' : null },
                       { key: 'rfi', icon: IC.rfi, label: 'RFIs', count: rfis.length || null, alert: answeredRfis > 0, alertLabel: `${answeredRfis} answered` },
                       { key: 'deliveries', icon: IC.deliveries, label: 'Deliveries', count: deliveries.length || null },
                       { key: 'schedule', icon: IC.schedule, label: 'Schedule', count: milestones.filter(m => m.status !== 'complete').length || null, alertLabel: milestones.filter(m => m.status === 'delayed').length > 0 ? `${milestones.filter(m => m.status === 'delayed').length} delayed` : null, alert: milestones.filter(m => m.status === 'delayed').length > 0 },
@@ -1178,13 +1217,13 @@ export default function Field() {
                             <div>
                               <label style={s.label}>Weather</label>
                               <select style={s.input} value={dailyForm.weather} onChange={e => setDailyForm(f => ({ ...f, weather: e.target.value }))}>
-                                <option value="">â€”</option>
+                                <option value="">—</option>
                                 {WEATHER.map(w => <option key={w} value={w}>{w}</option>)}
                               </select>
                             </div>
                           </div>
                           <div style={{ ...s.grid2, marginBottom: '1.25rem' }}>
-                            <div><label style={s.label}>Temp (Â°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75" /></div>
+                            <div><label style={s.label}>Temp (°F)</label><input type="text" style={s.input} value={dailyForm.weather_temp} onChange={e => setDailyForm(f => ({ ...f, weather_temp: e.target.value }))} placeholder="75" /></div>
                             <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
                               <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                                 <input type="checkbox" checked={dailyForm.weather_delay} onChange={e => setDailyForm(f => ({ ...f, weather_delay: e.target.checked }))} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#e8590c' }} />
@@ -1248,7 +1287,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setCrewLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                                <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
+                                <button type="button" onClick={() => setCrewLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                             {/* Save preset */}
@@ -1266,7 +1305,7 @@ export default function Field() {
                                   try { localStorage.setItem('nv_crew_presets', JSON.stringify(updated)) } catch {}
                                   setPresetNameDraft(''); setShowSavePreset(false)
                                 }} style={s.btnSm('green')}>Save</button>
-                                <button type="button" onClick={() => { setShowSavePreset(false); setPresetNameDraft('') }} style={s.btnSm('red')}>âœ•</button>
+                                <button type="button" onClick={() => { setShowSavePreset(false); setPresetNameDraft('') }} style={s.btnSm('red')}>✕</button>
                               </div>
                             )}
                           </div>
@@ -1298,7 +1337,7 @@ export default function Field() {
                                   )}
                                   <input style={s.input} placeholder="Trade" value={row.trade} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, trade: e.target.value } : r))} />
                                   <input style={s.input} placeholder="# Crew" type="number" value={row.crew_count} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, crew_count: e.target.value } : r))} />
-                                  <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
+                                  <button type="button" onClick={() => setSubActivityLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                                 </div>
                                 <textarea rows={2} style={{ ...s.input, resize: 'vertical' }} placeholder="Work performed..." value={row.work_performed} onChange={e => setSubActivityLog(l => l.map((r, j) => j === i ? { ...r, work_performed: e.target.value } : r))} />
                               </div>
@@ -1316,7 +1355,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Equipment name" value={row.name} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Hrs" type="number" value={row.hours} onChange={e => setEquipmentLog(l => l.map((r, j) => j === i ? { ...r, hours: e.target.value } : r))} />
-                                <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
+                                <button type="button" onClick={() => setEquipmentLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                           </div>
@@ -1332,7 +1371,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Material" value={row.description} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, description: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Qty" value={row.quantity} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Supplier" value={row.supplier} onChange={e => setMaterialsLog(l => l.map((r, j) => j === i ? { ...r, supplier: e.target.value } : r))} />
-                                <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
+                                <button type="button" onClick={() => setMaterialsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                           </div>
@@ -1348,7 +1387,7 @@ export default function Field() {
                                 <input style={s.input} placeholder="Name" value={row.name} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, name: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Company" value={row.company} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, company: e.target.value } : r))} />
                                 <input style={s.input} placeholder="Purpose" value={row.purpose} onChange={e => setVisitorsLog(l => l.map((r, j) => j === i ? { ...r, purpose: e.target.value } : r))} />
-                                <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>Ã—</button>
+                                <button type="button" onClick={() => setVisitorsLog(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '18px', padding: 0 }}>×</button>
                               </div>
                             ))}
                           </div>
@@ -1366,11 +1405,11 @@ export default function Field() {
                           {/* Quick summary */}
                           <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem', fontSize: '13px', color: '#6b7280', lineHeight: '1.8' }}>
                             <span style={{ color: '#111827', fontWeight: '700' }}>{new Date(dailyForm.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
-                            {dailyForm.weather && <span> Â· {dailyForm.weather}{dailyForm.weather_temp ? ` ${dailyForm.weather_temp}Â°` : ''}</span>}
-                            {dailyForm.weather_delay && <span style={{ color: '#dc2626' }}> Â· Weather delay</span>}
+                            {dailyForm.weather && <span> · {dailyForm.weather}{dailyForm.weather_temp ? ` ${dailyForm.weather_temp}°` : ''}</span>}
+                            {dailyForm.weather_delay && <span style={{ color: '#dc2626' }}> · Weather delay</span>}
                             <br />
-                            {crewLog.filter(r => r.name || r.company).length > 0 && <span>{crewLog.filter(r => r.name || r.company).length} crew Â· </span>}
-                            {subActivityLog.filter(r => r.company).length > 0 && <span>{subActivityLog.filter(r => r.company).length} sub co. Â· </span>}
+                            {crewLog.filter(r => r.name || r.company).length > 0 && <span>{crewLog.filter(r => r.name || r.company).length} crew · </span>}
+                            {subActivityLog.filter(r => r.company).length > 0 && <span>{subActivityLog.filter(r => r.company).length} sub co. · </span>}
                             {dailyForm.work_performed && <span style={{ color: '#4b5563' }}>{dailyForm.work_performed.substring(0, 80)}{dailyForm.work_performed.length > 80 ? '...' : ''}</span>}
                           </div>
 
@@ -1385,7 +1424,7 @@ export default function Field() {
                                 {reportPhotos.map((p, i) => (
                                   <div key={i} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {p.name}
-                                    <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0 }}>Ã—</button>
+                                    <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
                                   </div>
                                 ))}
                               </div>
@@ -1395,7 +1434,7 @@ export default function Field() {
                           <div style={{ display: 'flex', gap: '10px' }}>
                             <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px' }}>â† Back</button>
                             <button onClick={submitDailyReport} disabled={submittingDaily} style={{ ...s.btn, flex: 1, opacity: submittingDaily ? 0.6 : 1 }}>
-                              {submittingDaily ? 'Submitting...' : 'Submit Report âœ“'}
+                              {submittingDaily ? 'Submitting...' : 'Submit Report ✓'}
                             </button>
                           </div>
                         </div>
@@ -1418,7 +1457,7 @@ export default function Field() {
                                   {r.weather_delay && <span style={{ fontSize: '10px', color: '#dc2626', fontWeight: '700', letterSpacing: '0.5px' }}>DELAY</span>}
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                  {r.weather && <span style={{ fontSize: '11px', color: '#6b7280' }}>{r.weather}{r.weather_temp ? ` ${r.weather_temp}Â°` : ''}</span>}
+                                  {r.weather && <span style={{ fontSize: '11px', color: '#6b7280' }}>{r.weather}{r.weather_temp ? ` ${r.weather_temp}°` : ''}</span>}
                                   {crewCount > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{crewCount} crew</span>}
                                   {photoCount > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{photoCount} photos</span>}
                                 </div>
@@ -1431,27 +1470,27 @@ export default function Field() {
                                 <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: '0 0 1rem', whiteSpace: 'pre-wrap' }}>{r.work_performed}</p>
                                 {r.crew_log?.length > 0 && (<>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Crew</p>
-                                  {r.crew_log.map((c, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{c.name}{c.company ? ` â€” ${c.company}` : ''}{c.trade ? ` (${c.trade})` : ''}{c.hours ? ` Â· ${c.hours}hrs` : ''}</p>)}
+                                  {r.crew_log.map((c, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{c.name}{c.company ? ` — ${c.company}` : ''}{c.trade ? ` (${c.trade})` : ''}{c.hours ? ` · ${c.hours}hrs` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.subcontractor_activity?.length > 0 && (<>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Subcontractor Activity</p>
-                                  {r.subcontractor_activity.map((c, i) => <div key={i} style={{ marginBottom: '6px' }}><p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 2px', fontWeight: '600' }}>{c.company}{c.trade ? ` â€” ${c.trade}` : ''}{c.crew_count ? ` (${c.crew_count} crew)` : ''}</p>{c.work_performed && <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{c.work_performed}</p>}</div>)}
+                                  {r.subcontractor_activity.map((c, i) => <div key={i} style={{ marginBottom: '6px' }}><p style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 2px', fontWeight: '600' }}>{c.company}{c.trade ? ` — ${c.trade}` : ''}{c.crew_count ? ` (${c.crew_count} crew)` : ''}</p>{c.work_performed && <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>{c.work_performed}</p>}</div>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.equipment_log?.length > 0 && (<>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Equipment</p>
-                                  {r.equipment_log.map((e, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{e.name}{e.quantity ? ` Ã— ${e.quantity}` : ''}{e.hours ? ` Â· ${e.hours}hrs` : ''}</p>)}
+                                  {r.equipment_log.map((e, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{e.name}{e.quantity ? ` × ${e.quantity}` : ''}{e.hours ? ` · ${e.hours}hrs` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.materials_delivered?.length > 0 && (<>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Materials Delivered</p>
-                                  {r.materials_delivered.map((m, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{m.description}{m.quantity ? ` Â· ${m.quantity}` : ''}{m.supplier ? ` â€” ${m.supplier}` : ''}</p>)}
+                                  {r.materials_delivered.map((m, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{m.description}{m.quantity ? ` · ${m.quantity}` : ''}{m.supplier ? ` — ${m.supplier}` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.visitors?.length > 0 && (<>
                                   <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Visitors</p>
-                                  {r.visitors.map((v, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{v.name}{v.company ? ` â€” ${v.company}` : ''}{v.purpose ? ` Â· ${v.purpose}` : ''}</p>)}
+                                  {r.visitors.map((v, i) => <p key={i} style={{ fontSize: '12px', color: '#4b5563', margin: '0 0 3px' }}>{v.name}{v.company ? ` — ${v.company}` : ''}{v.purpose ? ` · ${v.purpose}` : ''}</p>)}
                                   <div style={{ marginBottom: '1rem' }} />
                                 </>)}
                                 {r.toolbox_talk && (<><p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 6px' }}>Toolbox Talk</p><p style={{ fontSize: '13px', color: '#374151', margin: '0 0 1rem' }}>{r.toolbox_talk}</p></>)}
@@ -1588,9 +1627,9 @@ export default function Field() {
                                   {d.source === 'daily_report' && <span style={{ fontSize: '10px', color: '#666', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '4px', padding: '1px 6px', fontWeight: '700' }}>DAILY RPT</span>}
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                                  {d.vendor && `${d.vendor} Â· `}{d.quantity && `${d.quantity} Â· `}
+                                  {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
                                   {d.expected_date && `Expected ${new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}`}
-                                  {d.received_date && ` Â· Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
+                                  {d.received_date && ` · Received ${new Date(d.received_date + 'T12:00:00').toLocaleDateString()}`}
                                 </div>
                                 {d.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{d.notes}</div>}
                               </div>
@@ -1619,9 +1658,9 @@ export default function Field() {
                                     <span style={s.badge(d.status)}>{d.status}</span>
                                   </div>
                                   <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                                    {d.vendor && `${d.vendor} Â· `}{d.quantity && `${d.quantity} Â· `}
+                                    {d.vendor && `${d.vendor} · `}{d.quantity && `${d.quantity} · `}
                                     {d.expected_date && <span style={{ color: '#e8590c', fontWeight: '600' }}>Expected {new Date(d.expected_date + 'T12:00:00').toLocaleDateString()}</span>}
-                                    {d.received_date && <span> Â· Received {new Date(d.received_date + 'T12:00:00').toLocaleDateString()}</span>}
+                                    {d.received_date && <span> · Received {new Date(d.received_date + 'T12:00:00').toLocaleDateString()}</span>}
                                   </div>
                                   {d.notes && <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '4px' }}>{d.notes}</div>}
                                 </div>
@@ -1653,7 +1692,7 @@ export default function Field() {
                           </div>
                           <div style={{ fontSize: '12px', color: '#6b7280' }}>
                             {m.due_date && `Due ${new Date(m.due_date + 'T12:00:00').toLocaleDateString()}`}
-                            {m.completed_date && ` Â· Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
+                            {m.completed_date && ` · Completed ${new Date(m.completed_date + 'T12:00:00').toLocaleDateString()}`}
                           </div>
                           {m.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{m.notes}</div>}
                         </div>
@@ -1673,7 +1712,7 @@ export default function Field() {
                     {dcSuccess && <div style={s.success}>Cost logged successfully.</div>}
                     {dcError && <div style={{ background: '#1a0000', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626', lineHeight: '1.5' }}>{dcError}</div>}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} Â· Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{directCosts.length} entr{directCosts.length !== 1 ? 'ies' : 'y'} · Total ${directCosts.reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()}</p>
                       <button style={s.btnSm('orange')} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>
                     </div>
                     {showDcForm && (
@@ -1836,7 +1875,7 @@ export default function Field() {
                     {/* Add contact button / form */}
                     <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
                       <button onClick={() => setShowContactForm(f => !f)} style={s.btnSm('orange')}>
-                        {showContactForm ? 'âœ• Cancel' : '+ Add Contact'}
+                        {showContactForm ? '✕ Cancel' : '+ Add Contact'}
                       </button>
                     </div>
 
@@ -2018,7 +2057,7 @@ export default function Field() {
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                       <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
-                        {punchItems.length} item{punchItems.length !== 1 ? 's' : ''}{punchItems.filter(p => p.status === 'open').length > 0 ? ` Â· ${punchItems.filter(p => p.status === 'open').length} open` : ''}
+                        {punchItems.length} item{punchItems.length !== 1 ? 's' : ''}{punchItems.filter(p => p.status === 'open').length > 0 ? ` · ${punchItems.filter(p => p.status === 'open').length} open` : ''}
                       </p>
                       <button style={s.btnSm('orange')} onClick={() => setShowPunchForm(v => !v)}>
                         {showPunchForm ? 'Cancel' : '+ Add item'}
@@ -2080,9 +2119,9 @@ export default function Field() {
                               </span>
                             </div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                              {item.assigned_company && `${item.assigned_company} Â· `}
+                              {item.assigned_company && `${item.assigned_company} · `}
                               {item.due_date && `Due ${new Date(item.due_date + 'T12:00:00').toLocaleDateString()}`}
-                              {item.completed_at && ` Â· Completed ${new Date(item.completed_at).toLocaleDateString()}`}
+                              {item.completed_at && ` · Completed ${new Date(item.completed_at).toLocaleDateString()}`}
                             </div>
                             {item.description && <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>{item.description}</div>}
                           </div>
@@ -2171,7 +2210,7 @@ export default function Field() {
                         <div style={{ background: migration.done ? '#0a1a0a' : '#141414', border: `1px solid ${migration.done ? '#1a4a1a' : '#2a2a2a'}`, borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                           {migration.done ? (
                             <>
-                              <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: '700', flex: 1 }}>All photos optimized â€” load times are now faster.</span>
+                              <span style={{ color: '#16a34a', fontSize: '13px', fontWeight: '700', flex: 1 }}>All photos optimized — load times are now faster.</span>
                               <button onClick={() => setMigration(null)} style={s.btnSm()}>Dismiss</button>
                             </>
                           ) : (
@@ -2239,7 +2278,7 @@ export default function Field() {
                                   onClick={e => { e.stopPropagation(); deletePhoto(p) }}
                                   style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '50%', color: deletingPhoto === p.path ? '#888' : '#ff6b6b', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
                                 >
-                                  {deletingPhoto === p.path ? 'â€¦' : 'âœ•'}
+                                  {deletingPhoto === p.path ? '…' : '✕'}
                                 </button>
                               </div>
                             ))}
@@ -2278,13 +2317,13 @@ export default function Field() {
                               <h2 style={{ ...s.cardTitle, marginBottom: '4px' }}>{v.name}</h2>
                               <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                                 {[v.year, v.make, v.model].filter(Boolean).join(' ')}
-                                {v.color && ` Â· ${v.color}`}
-                                {v.license_plate && ` Â· ${v.license_plate}`}
+                                {v.color && ` · ${v.color}`}
+                                {v.license_plate && ` · ${v.license_plate}`}
                               </p>
                               {(lastMileage || lastOilChange) && (
                                 <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#6b7280' }}>
                                   {lastMileage && <span>{Number(lastMileage).toLocaleString()} mi last logged</span>}
-                                  {lastMileage && lastOilChange && ' Â· '}
+                                  {lastMileage && lastOilChange && ' · '}
                                   {lastOilChange && <span>Last oil change {new Date(lastOilChange.log_date + 'T12:00:00').toLocaleDateString()}</span>}
                                 </p>
                               )}
@@ -2354,7 +2393,7 @@ export default function Field() {
                                       <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
                                       <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
                                       {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
-                                      {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#6b7280' }}>{l.fuel_gallons} gal Â· ${Number(l.fuel_cost || 0).toFixed(2)}</span>}
+                                      {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#6b7280' }}>{l.fuel_gallons} gal · ${Number(l.fuel_cost || 0).toFixed(2)}</span>}
                                     </div>
                                     {l.notes && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#777' }}>{l.notes}</p>}
                                     {l.photo_url && <button style={{ ...s.btnSm('gray'), marginTop: '6px' }} onClick={() => openVehiclePhoto(l.photo_url)}>View Photo</button>}
@@ -2440,7 +2479,7 @@ export default function Field() {
                             </div>
                             <div style={{ ...s.grid2, marginBottom: '1rem' }}>
                               <div>
-                                <label style={s.label}>Cost ($){selectedJobId ? ' â€” will post to job' : ''}</label>
+                                <label style={s.label}>Cost ($){selectedJobId ? ' — will post to job' : ''}</label>
                                 <input type="number" step="0.01" min="0" style={s.input} value={purchaseToolForm.purchase_cost} onChange={e => setPurchaseToolForm(f => ({ ...f, purchase_cost: e.target.value }))} placeholder="0.00" />
                               </div>
                               <div>
@@ -2477,10 +2516,10 @@ export default function Field() {
                                 <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{tool.name}</p>
                                 <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                                   {[tool.brand, tool.model].filter(Boolean).join(' ')}
-                                  {tool.serial_number && ` Â· SN: ${tool.serial_number}`}
-                                  {tool.job_site && ` Â· ${tool.job_site}`}
+                                  {tool.serial_number && ` · SN: ${tool.serial_number}`}
+                                  {tool.job_site && ` · ${tool.job_site}`}
                                 </p>
-                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>{tool.category} Â· Condition: <span style={{ color: tool.condition === 'good' ? '#4ade80' : tool.condition === 'fair' ? '#f59e0b' : '#ef4444' }}>{tool.condition}</span></p>
+                                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>{tool.category} · Condition: <span style={{ color: tool.condition === 'good' ? '#4ade80' : tool.condition === 'fair' ? '#f59e0b' : '#ef4444' }}>{tool.condition}</span></p>
                               </div>
                               <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
                                 <button style={s.btnSm('orange')} onClick={() => { setShowToolLogForm(isLogging ? null : tool.id); setExpandedToolFieldId(null) }}>Log</button>
@@ -2523,7 +2562,7 @@ export default function Field() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                       <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: l.log_type === 'checkin' ? '#4ade80' : l.log_type === 'checkout' ? '#f59e0b' : l.log_type === 'lost' ? '#ef4444' : '#888', border: '1px solid #d1d5db' }}>{LOG_TYPE_LABELS[l.log_type] || l.log_type}</span>
                                       <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
-                                      {l.notes && <span style={{ fontSize: '12px', color: '#777' }}>Â· {l.notes}</span>}
+                                      {l.notes && <span style={{ fontSize: '12px', color: '#777' }}>· {l.notes}</span>}
                                     </div>
                                   </div>
                                 ))}
@@ -2557,7 +2596,7 @@ export default function Field() {
                         <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>â† Prev</button>
                         <span style={{ fontSize: '12px', fontWeight: '700', color: '#666', textAlign: 'center' }}>
                           {wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
-                          {' â€“ '}
+                          {' – '}
                           {new Date(wkBase.getTime() + 11 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                         </span>
                         <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>Next â†’</button>
@@ -2572,7 +2611,7 @@ export default function Field() {
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: '10px', flexWrap: 'wrap' }}>
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: lookahead.status === 'submitted' ? '#0a2a0a' : '#1a1a0a', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', border: `1px solid ${lookahead.status === 'submitted' ? '#1a4a1a' : '#3a3a0a'}` }}>
-                              {lookahead.status === 'submitted' ? 'âœ“ Submitted to PM' : 'Draft'}
+                              {lookahead.status === 'submitted' ? '✓ Submitted to PM' : 'Draft'}
                             </span>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>â¬‡ Download PDF</button>
@@ -2594,10 +2633,10 @@ export default function Field() {
                             return (
                             <div key={w} style={{ marginBottom: '1.25rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #f3f4f6' }}>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} â€” {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} — {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
                                 <span style={{ display: 'flex', gap: '10px' }}>
                                   {wkManpower > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{wkManpower} workers</span>}
-                                  {wkInspections > 0 && <span style={{ fontSize: '11px', color: '#f59e0b' }}>âš  {wkInspections} inspection{wkInspections > 1 ? 's' : ''}</span>}
+                                  {wkInspections > 0 && <span style={{ fontSize: '11px', color: '#f59e0b' }}>⚠ {wkInspections} inspection{wkInspections > 1 ? 's' : ''}</span>}
                                 </span>
                               </div>
                               {DAY_LABELS.map((dayLabel, di) => {
@@ -2635,7 +2674,7 @@ export default function Field() {
                                             </div>
                                             <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                                               <button onClick={() => openEditLAActivity(act)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
-                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>âœ•</button>
+                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
                                             </div>
                                           </div>
                                         </div>
@@ -2658,7 +2697,7 @@ export default function Field() {
                     <div style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: '760px', margin: '0 auto', padding: '1.75rem', maxHeight: '85vh', overflowY: 'auto' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{editingLAActivity ? 'Edit Activity' : 'Add Activity'}</h3>
-                        <button onClick={() => setShowLAModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '20px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>âœ•</button>
+                        <button onClick={() => setShowLAModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '20px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
                       </div>
 
                       <div style={{ marginBottom: '1rem' }}>
@@ -2707,8 +2746,8 @@ export default function Field() {
                         <label style={s.label}>Additional Companies on Site</label>
                         {(laForm.additional_companies || []).map((co, idx) => (
                           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                            <span style={{ flex: 1, fontSize: '13px', color: '#374151', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` â€” ${co.manpower} ppl` : ''}</span>
-                            <button onClick={() => setLaForm(f => ({ ...f, additional_companies: f.additional_companies.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '4px' }}>âœ•</button>
+                            <span style={{ flex: 1, fontSize: '13px', color: '#374151', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` — ${co.manpower} ppl` : ''}</span>
+                            <button onClick={() => setLaForm(f => ({ ...f, additional_companies: f.additional_companies.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '4px' }}>✕</button>
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -2797,7 +2836,7 @@ export default function Field() {
                 />
               </label>
               {fabCount > 0 && (
-                <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#6b7280', textAlign: 'center' }}>Tap âœ• when done</p>
+                <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#6b7280', textAlign: 'center' }}>Tap ✕ when done</p>
               )}
             </div>
           )}
@@ -2805,7 +2844,7 @@ export default function Field() {
             onClick={() => { setFabOpen(o => { if (o) { setFabCount(0); setFabTag('') } return !o }); setFabCaption('') }}
             style={{ width: '58px', height: '58px', borderRadius: '50%', background: fabOpen ? '#333' : '#e8590c', border: 'none', color: '#fff', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 24px rgba(232,89,12,0.45)', transition: 'background 0.15s' }}
           >
-            {fabOpen ? 'âœ•' : IC.camera}
+            {fabOpen ? '✕' : IC.camera}
           </button>
         </div>
       )}
@@ -2826,7 +2865,7 @@ export default function Field() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <span style={{ color: '#6b7280', fontSize: '12px' }}>{lightbox.index + 1} / {lightbox.photos.length}</span>
-              <button onClick={() => setLightbox(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>âœ•</button>
+              <button onClick={() => setLightbox(null)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>✕</button>
             </div>
           </div>
 
@@ -2837,8 +2876,8 @@ export default function Field() {
               : <div style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</div>
             }
             {lightbox.photos.length > 1 && <>
-              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>â€¹</button>
-              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>â€º</button>
+              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index - 1 + l.photos.length) % l.photos.length }))} style={{ position: 'absolute', left: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>‹</button>
+              <button onClick={() => setLightbox(l => ({ ...l, index: (l.index + 1) % l.photos.length }))} style={{ position: 'absolute', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '28px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>›</button>
             </>}
           </div>
 

@@ -9,7 +9,7 @@ export async function GET() {
   const { data: profiles, error } = await adminSupabase
     .from('profiles')
     .select('id, full_name, role, phone')
-    .in('role', ['pm', 'apm', 'super', 'admin'])
+    .in('role', ['pm', 'apm', 'super', 'admin', 'metal_rep', 'roofing_rep'])
     .order('full_name')
   if (error) return Response.json({ error: error.message }, { status: 500 })
 

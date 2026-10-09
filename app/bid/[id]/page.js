@@ -662,10 +662,25 @@ function buildItbHtml(form, scopes, plans, logoSrc) {
     : '—'
   const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
+  // Build safe names matching the server-side ZIP builder (same dedup logic)
+  const usedSafeNames = new Set()
+  const planSafeNames = plans.map(p => {
+    let safeName = p.file_name.replace(/[^\w\s.\-()]/g, '_')
+    if (usedSafeNames.has(safeName)) {
+      const ext = safeName.match(/(\.[^.]+)$/) ? safeName.match(/(\.[^.]+)$/)[1] : ''
+      const base = safeName.slice(0, safeName.length - ext.length)
+      let n = 2
+      while (usedSafeNames.has(`${base}_${n}${ext}`)) n++
+      safeName = `${base}_${n}${ext}`
+    }
+    usedSafeNames.add(safeName)
+    return safeName
+  })
+
   const docRows = plans.map((p, i) => `
     <tr>
       <td class="center" style="color:#bbb;font-size:10px">${String(i + 1).padStart(2, '0')}</td>
-      <td>${esc(p.file_name)}</td>
+      <td><a href="Documents/${encodeURIComponent(planSafeNames[i])}" class="doc-link" title="Open ${esc(p.file_name)}">${esc(p.file_name)}</a></td>
       <td>${p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString('en-US') : '—'}</td>
       <td class="center" style="color:#16a34a;font-weight:700">✓</td>
     </tr>`).join('')
@@ -728,6 +743,8 @@ tbody tr { border-bottom: 1px solid #efefef; }
 tbody tr:last-child { border-bottom: none; }
 tbody td { padding: 9px 12px; font-size: 11px; color: #333; }
 .doc-note { font-size: 9px; color: #bbb; margin-top: 8px; letter-spacing: 0.3px; font-style: italic; }
+.doc-link { color: #1a56db; text-decoration: none; }
+.doc-link:hover { text-decoration: underline; }
 .footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid #efefef; display: flex; justify-content: space-between; }
 .footer div { font-size: 9px; color: #bbb; line-height: 1.7; }
 .footer div:last-child { text-align: right; }
@@ -792,7 +809,7 @@ ${plans.length > 0 ? `
   </tr></thead>
   <tbody>${docRows}</tbody>
 </table>
-<div class="doc-note">Original files are included in the complete ZIP package — this document is the invitation letter and register only.</div>` : ''}
+<div class="doc-note">Document names are linked — click any title to open the file after extracting the ZIP package. Original files are in the Documents/ folder.</div>` : ''}
 
 <div class="footer">
   <div>NV Construction, LLC &nbsp;·&nbsp; General Contractor &nbsp;·&nbsp; LA License # CL 10283<br>management@nvim.co &nbsp;·&nbsp; nvim.co</div>

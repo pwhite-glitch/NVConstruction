@@ -1765,7 +1765,7 @@ export default function Field() {
                             </div>
                             <div>
                               <label style={{ ...s.label, color: dcFile ? '#16a34a' : '#dc2626' }}>Receipt (photo / PDF) <span style={{ color: '#dc2626' }}>*</span></label>
-                              <input type="file" accept="image/*,application/pdf" capture="environment" style={{ ...s.input, padding: '8px 14px', borderColor: dcFileError ? '#dc2626' : undefined }} onChange={e => { setDcFile(e.target.files[0] || null); setDcFileError('') }} />
+                              <input type="file" accept="image/*,application/pdf" style={{ ...s.input, padding: '8px 14px', borderColor: dcFileError ? '#dc2626' : undefined }} onChange={e => { setDcFile(e.target.files[0] || null); setDcFileError('') }} />
                               {dcFile && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#16a34a' }}>✓ {dcFile.name}</p>}
                               {dcFileError && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#dc2626' }}>{dcFileError}</p>}
                             </div>
@@ -1873,7 +1873,7 @@ export default function Field() {
                             </div>
                             <div style={{ marginBottom: '10px' }}>
                               <label style={s.label}>Replace receipt (optional — keeps existing if not changed)</label>
-                              <input type="file" accept="image/*,application/pdf" capture="environment" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setResubmitFile(e.target.files[0] || null)} />
+                              <input type="file" accept="image/*,application/pdf" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setResubmitFile(e.target.files[0] || null)} />
                               {resubmitFile && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#16a34a' }}>✓ {resubmitFile.name}</p>}
                               {!c.receipt_url && !resubmitFile && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#dc2626' }}>This entry has no receipt — please attach one.</p>}
                             </div>

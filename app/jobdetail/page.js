@@ -187,6 +187,7 @@ function JobDetailInner() {
   const [addingCO, setAddingCO] = useState(false)
   const [primeCOs, setPrimeCOs] = useState([])
   const [primeBillingTotal, setPrimeBillingTotal] = useState(0)
+  const [billingPrimeAppNum, setBillingPrimeAppNum] = useState(null)
   const [showAddPrimeCO, setShowAddPrimeCO] = useState(false)
   const [primeCOForm, setPrimeCOForm] = useState(emptyPrimeCO)
   const [primeCOBillingLink, setPrimeCOBillingLink] = useState(null)
@@ -617,27 +618,39 @@ function JobDetailInner() {
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
       setBilling(bills || [])
 
-      // Load prime AIA billing total (NV → Owner) for the Total Billed stat card
-      const { data: latestPrimeApp } = await supabase
+      // Load prime AIA billing total (NV → Owner) for the Total Billed stat card.
+      // The latest application may be a draft with unlinked lines (created before budget items
+      // were configured), so we fall back through apps to find the latest one with usable data.
+      const { data: allPrimeAppsInit } = await supabase
         .from('aia_applications')
-        .select('id')
+        .select('id, app_number')
         .eq('job_id', id)
         .is('nv_subcontract_id', null)
         .order('app_number', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (latestPrimeApp) {
-        const { data: primeLines } = await supabase
+      if (allPrimeAppsInit && allPrimeAppsInit.length > 0) {
+        const initAppIds = allPrimeAppsInit.map(a => a.id)
+        const { data: initLinkedLines } = await supabase
           .from('aia_application_lines')
-          .select('budget_item_id, dollar_prev, dollar_this_period, pct_prev, pct_this_period')
-          .eq('application_id', latestPrimeApp.id)
-        const hasPctLines = (primeLines || []).some(l => l.dollar_this_period == null && parseFloat(l.pct_this_period) > 0)
+          .select('application_id, budget_item_id, dollar_prev, dollar_this_period, pct_prev, pct_this_period')
+          .in('application_id', initAppIds)
+          .not('budget_item_id', 'is', null)
+        // Group by app, pick the latest (first in desc order) with linked lines
+        const initLinesByApp = {}
+        for (const l of initLinkedLines || []) {
+          if (!initLinesByApp[l.application_id]) initLinesByApp[l.application_id] = []
+          initLinesByApp[l.application_id].push(l)
+        }
+        let initPrimeLines = []
+        for (const app of allPrimeAppsInit) {
+          if (initLinesByApp[app.id]?.length > 0) { initPrimeLines = initLinesByApp[app.id]; break }
+        }
+        const hasPctLines = initPrimeLines.some(l => l.dollar_this_period == null && parseFloat(l.pct_this_period) > 0)
         let initBudgetItemMap = {}
         if (hasPctLines) {
           const { data: bi } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('job_id', id)
           initBudgetItemMap = Object.fromEntries((bi || []).map(b => [b.id, b]))
         }
-        const total = (primeLines || []).reduce((a, l) => {
+        const total = initPrimeLines.reduce((a, l) => {
           if (l.dollar_this_period != null) {
             return a + (l.dollar_prev != null ? Number(l.dollar_prev) : 0) + Number(l.dollar_this_period)
           }
@@ -694,10 +707,10 @@ function JobDetailInner() {
   }
 
   async function loadBillingByItem() {
-    // Run both queries in parallel: latest sub billing app + latest prime app
-    const [{ data: latestSubApp }, { data: latestPrimeApp }] = await Promise.all([
+    // Run sub billing + all prime apps in parallel
+    const [{ data: latestSubApp }, { data: allPrimeApps }] = await Promise.all([
       supabase.from('aia_applications').select('id').eq('job_id', id).not('nv_subcontract_id', 'is', null).order('app_number', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('aia_applications').select('id').eq('job_id', id).is('nv_subcontract_id', null).order('app_number', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('aia_applications').select('id, app_number, status').eq('job_id', id).is('nv_subcontract_id', null).order('app_number', { ascending: false }),
     ])
 
     const map = {}
@@ -722,13 +735,35 @@ function JobDetailInner() {
       }
     }
 
-    // Load prime AIA lines (budget-item-mapped billing) if any prime apps exist
-    if (latestPrimeApp) {
-      const { data: primeLines } = await supabase.from('aia_application_lines')
-        .select('budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period')
-        .eq('application_id', latestPrimeApp.id)
+    // Load prime AIA lines (budget-item-mapped billing).
+    // The latest app may be a draft whose lines have no budget_item_id (created before budget items
+    // were configured). Fall back through apps newest-first to find the latest one with linked lines.
+    if (allPrimeApps && allPrimeApps.length > 0) {
+      const primeAppIds = allPrimeApps.map(a => a.id)
+      const { data: allLinkedLines } = await supabase
+        .from('aia_application_lines')
+        .select('application_id, budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period')
+        .in('application_id', primeAppIds)
+        .not('budget_item_id', 'is', null)
+
+      // Group lines by application
+      const linesByApp = {}
+      for (const l of allLinkedLines || []) {
+        if (!linesByApp[l.application_id]) linesByApp[l.application_id] = []
+        linesByApp[l.application_id].push(l)
+      }
+
+      // allPrimeApps is sorted desc by app_number — pick the first with linked lines
+      let billingApp = null
+      let primeLines = []
+      for (const app of allPrimeApps) {
+        if (linesByApp[app.id]?.length > 0) { billingApp = app; primeLines = linesByApp[app.id]; break }
+      }
+
+      setBillingPrimeAppNum(billingApp?.app_number ?? null)
+
       let runningTotal = 0
-      for (const l of primeLines || []) {
+      for (const l of primeLines) {
         const dpRaw = l.dollar_prev != null ? Number(l.dollar_prev) : null
         const dtRaw = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
         // dollar_this_period being null means pct mode for this period.
@@ -737,8 +772,8 @@ function JobDetailInner() {
         if (dtRaw != null) {
           // Dollar mode: this period has an explicit dollar amount
           runningTotal += (dpRaw ?? 0) + dtRaw
-          if (l.budget_item_id) map[l.budget_item_id] = { dollars: (dpRaw ?? 0) + dtRaw }
-        } else if (l.budget_item_id) {
+          map[l.budget_item_id] = { dollars: (dpRaw ?? 0) + dtRaw }
+        } else {
           // Pct mode: this period uses percentages; dollar_prev may be 0 from creation
           const pctTotal = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
           const budgetItem = budgetItems.find(b => b.id === l.budget_item_id)
@@ -749,8 +784,8 @@ function JobDetailInner() {
           map[l.budget_item_id] = { pct: pctTotal }
         }
       }
-      // Keep stat card in sync with latest AIA data
-      setPrimeBillingTotal(runningTotal)
+      // Keep stat card in sync with the billing app data
+      if (primeLines.length > 0) setPrimeBillingTotal(runningTotal)
     }
 
     setBillingByItem(map)
@@ -6485,7 +6520,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Owner Billing vs Budget</p>
                   <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>
-                    {hasBudgetBilling ? 'Based on latest AIA application.' : Object.keys(subBillingByItem).length > 0 ? 'Based on approved billing submissions linked to budget lines.' : 'No billing data found — link subcontracts to budget lines or create an AIA application in the Prime Contract tab.'}
+                    {hasBudgetBilling ? `Based on AIA Application #${billingPrimeAppNum ?? '?'} — cumulative billed to date.` : Object.keys(subBillingByItem).length > 0 ? 'Based on approved billing submissions linked to budget lines.' : 'No billing data found — open the Prime Contract tab and ensure AIA lines are linked to budget items.'}
                   </p>
 
                   {/* Summary stats */}

@@ -631,15 +631,15 @@ function JobDetailInner() {
           .from('aia_application_lines')
           .select('budget_item_id, dollar_prev, dollar_this_period, pct_prev, pct_this_period')
           .eq('application_id', latestPrimeApp.id)
-        const hasPctLines = (primeLines || []).some(l => l.dollar_prev == null && (l.pct_prev || l.pct_this_period))
+        const hasPctLines = (primeLines || []).some(l => l.dollar_this_period == null && parseFloat(l.pct_this_period) > 0)
         let initBudgetItemMap = {}
         if (hasPctLines) {
           const { data: bi } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('job_id', id)
           initBudgetItemMap = Object.fromEntries((bi || []).map(b => [b.id, b]))
         }
         const total = (primeLines || []).reduce((a, l) => {
-          if (l.dollar_prev != null) {
-            return a + Number(l.dollar_prev) + (l.dollar_this_period != null ? Number(l.dollar_this_period) : 0)
+          if (l.dollar_this_period != null) {
+            return a + (l.dollar_prev != null ? Number(l.dollar_prev) : 0) + Number(l.dollar_this_period)
           }
           if (l.budget_item_id) {
             const bi = initBudgetItemMap[l.budget_item_id]
@@ -731,21 +731,23 @@ function JobDetailInner() {
       for (const l of primeLines || []) {
         const dpRaw = l.dollar_prev != null ? Number(l.dollar_prev) : null
         const dtRaw = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
-        if (dpRaw != null) {
-          runningTotal += dpRaw + (dtRaw ?? 0)
+        // dollar_this_period being null means pct mode for this period.
+        // dollar_prev=0 can come from initial line creation even in pct mode, so it alone
+        // does not indicate dollar mode — use dollar_this_period as the authoritative indicator.
+        if (dtRaw != null) {
+          // Dollar mode: this period has an explicit dollar amount
+          runningTotal += (dpRaw ?? 0) + dtRaw
+          if (l.budget_item_id) map[l.budget_item_id] = { dollars: (dpRaw ?? 0) + dtRaw }
         } else if (l.budget_item_id) {
-          // pct-based line — compute dollars using ownerSOV from loaded budget items
+          // Pct mode: this period uses percentages; dollar_prev may be 0 from creation
+          const pctTotal = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
           const budgetItem = budgetItems.find(b => b.id === l.budget_item_id)
           if (budgetItem) {
             const ownerSOV = budgetItem.owner_amount != null ? Number(budgetItem.owner_amount) : Number(budgetItem.budget_amount || 0)
-            const pctTotal = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
             runningTotal += ownerSOV * pctTotal / 100
           }
+          map[l.budget_item_id] = { pct: pctTotal }
         }
-        if (!l.budget_item_id) continue
-        // Store dollar amounts when available — accurate even when overbilled (>100%)
-        // Fall back to pct-based for legacy lines that never stored dollars
-        map[l.budget_item_id] = dpRaw != null ? { dollars: dpRaw + (dtRaw ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
       }
       // Keep stat card in sync with latest AIA data
       setPrimeBillingTotal(runningTotal)

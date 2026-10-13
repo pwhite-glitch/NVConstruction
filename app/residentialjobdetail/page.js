@@ -519,7 +519,8 @@ function ResidentialJobDetailInner() {
         status: 'pending',
         submitted_at: new Date().toISOString(),
       }
-      const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const { data: { session: bSession } } = await supabase.auth.getSession()
+      const res = await fetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify(body) })
       const result = await res.json()
       if (result.error) { setBillingMsg('Error: ' + result.error); return }
       setBillingForm({ _contract_id: '', company_name: '', sub_id: '', amount_billed: '', retainage_pct: '10', work_description: '', billing_period: '' })
@@ -533,7 +534,8 @@ function ResidentialJobDetailInner() {
   }
 
   async function updateBillingStatus(billingId, status) {
-    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId, status }) })
+    const { data: { session: bSession } } = await supabase.auth.getSession()
+    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, status }) })
     const result = await res.json()
     if (result.error) { alert('Error: ' + result.error); return }
     await loadBillingSubmissions()
@@ -541,7 +543,8 @@ function ResidentialJobDetailInner() {
 
   async function deleteBilling(billingId) {
     if (!confirm('Delete this billing submission?')) return
-    const res = await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
+    const { data: { session: bSession } } = await supabase.auth.getSession()
+    const res = await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId }) })
     const result = await res.json()
     if (result.error) { alert('Error: ' + result.error); return }
     await loadBillingSubmissions()
@@ -570,8 +573,9 @@ function ResidentialJobDetailInner() {
   async function saveDrawBillings(drawId) {
     setSavingDrawBillings(true)
     try {
+      const { data: { session: bSession } } = await supabase.auth.getSession()
       await Promise.all(drawAddBillingIds.map(bid =>
-        fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
+        fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
       ))
       setDrawAddBillingIds([])
       await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
@@ -583,7 +587,8 @@ function ResidentialJobDetailInner() {
   }
 
   async function removeBillingFromDraw(billingId) {
-    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId, draw_request_id: null }) })
+    const { data: { session: bSession } } = await supabase.auth.getSession()
+    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, draw_request_id: null }) })
     await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
   }
 

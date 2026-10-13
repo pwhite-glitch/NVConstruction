@@ -1619,12 +1619,16 @@ function JobDetailInner() {
   async function saveAiaLines() {
     if (!activeAia) return
     setSavingAia(true)
-    await supabase.from('aia_applications').update({
+    const saveErrors = []
+
+    const { error: appErr } = await supabase.from('aia_applications').update({
       retainage_pct: parseFloat(activeAia.retainage_pct),
       markup_pct: parseFloat(activeAia.markup_pct) || 0,
       status: activeAia.status || 'draft',
       updated_at: new Date().toISOString(),
     }).eq('id', activeAia.id)
+    if (appErr) saveErrors.push(`Application header: ${appErr.message}`)
+
     for (const line of aiaLines) {
       const scheduled = Number(line.budget_amount || 0)
       const dollarRaw = line.dollar_this !== undefined ? Number(line.dollar_this) : null
@@ -1634,13 +1638,46 @@ function JobDetailInner() {
         : parseFloat(line.pct_this) || 0
       const updates = { pct_this_period: pctToSave, dollar_this_period: dollarToSave, dollar_prev: line.dollar_prev != null ? Number(line.dollar_prev) : null }
       if (line.nv_sub_mode) {
-        await supabase.from('aia_application_lines').update(updates).eq('id', line.id)
+        const { error } = await supabase.from('aia_application_lines').update(updates).eq('id', line.id)
+        if (error) saveErrors.push(`Line "${line.description}": ${error.message}`)
       } else {
-        await supabase.from('aia_application_lines').update(updates).eq('application_id', activeAia.id).eq('budget_item_id', line.budget_item_id)
+        // Try update first; if no matching row exists (app created before budget item was added),
+        // insert a new row so the amount is not silently discarded.
+        const { data: updated, error: updErr } = await supabase
+          .from('aia_application_lines')
+          .update(updates)
+          .eq('application_id', activeAia.id)
+          .eq('budget_item_id', line.budget_item_id)
+          .select('id')
+        if (updErr) {
+          saveErrors.push(`Line "${line.description}": ${updErr.message}`)
+        } else if (!updated || updated.length === 0) {
+          const { error: insErr } = await supabase.from('aia_application_lines').insert({
+            application_id: activeAia.id,
+            budget_item_id: line.budget_item_id,
+            ...updates,
+          })
+          if (insErr) saveErrors.push(`Line "${line.description}" (insert): ${insErr.message}`)
+        }
       }
     }
+
     await loadAiaApplications()
     setSavingAia(false)
+    if (saveErrors.length > 0) {
+      alert(`Save completed with errors — some line amounts may not have been stored:\n\n${saveErrors.join('\n')}`)
+      return false
+    }
+    return true
+  }
+
+  // Always saves before generating so the exported PDF reflects the stored application.
+  async function saveAndGenerateAIA(override = false) {
+    if (!activeAia) return
+    if (!activeAia.period_to && !window.confirm('The billing period end date is not set. The PDF will be marked DRAFT. Continue?')) return
+    const ok = await saveAiaLines()
+    if (ok === false) return
+    generateAIAFromApp(override)
   }
 
   async function deleteAiaApplication(appId) {
@@ -10582,14 +10619,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                                         <button style={{ ...s.btnGray, fontSize: '12px', padding: '7px 14px' }} onClick={() => setAiaBalanceWarning(null)}>Dismiss</button>
-                                        <button style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', padding: '7px 14px', cursor: 'pointer', fontWeight: '700' }} onClick={() => generateAIAFromApp(true)}>Override — Generate Anyway</button>
+                                        <button style={{ background: '#c0392b', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', padding: '7px 14px', cursor: 'pointer', fontWeight: '700' }} onClick={() => saveAndGenerateAIA(true)}>Override — Save & Generate Anyway</button>
                                       </div>
                                     </div>
                                   )
                                 })()}
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button style={{ ...s.btn, opacity: savingAia ? 0.6 : 1 }} disabled={savingAia} onClick={saveAiaLines}>{savingAia ? 'Saving...' : 'Save application'}</button>
-                                  <button style={s.btnGray} onClick={generateAIAFromApp}>Generate AIA G702/G703</button>
+                                  <button style={{ ...s.btnGray, opacity: savingAia ? 0.6 : 1 }} disabled={savingAia} onClick={() => saveAndGenerateAIA()}>Save & Generate G702/G703</button>
                                 </div>
                               </>
                             )}

@@ -629,12 +629,27 @@ function JobDetailInner() {
       if (latestPrimeApp) {
         const { data: primeLines } = await supabase
           .from('aia_application_lines')
-          .select('dollar_prev, dollar_this_period, pct_prev, pct_this_period')
+          .select('budget_item_id, dollar_prev, dollar_this_period, pct_prev, pct_this_period')
           .eq('application_id', latestPrimeApp.id)
+        const hasPctLines = (primeLines || []).some(l => l.dollar_prev == null && (l.pct_prev || l.pct_this_period))
+        let initBudgetItemMap = {}
+        if (hasPctLines) {
+          const { data: bi } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('job_id', id)
+          initBudgetItemMap = Object.fromEntries((bi || []).map(b => [b.id, b]))
+        }
         const total = (primeLines || []).reduce((a, l) => {
-          const dp = l.dollar_prev != null ? Number(l.dollar_prev) : 0
-          const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : 0
-          return a + dp + dt
+          if (l.dollar_prev != null) {
+            return a + Number(l.dollar_prev) + (l.dollar_this_period != null ? Number(l.dollar_this_period) : 0)
+          }
+          if (l.budget_item_id) {
+            const bi = initBudgetItemMap[l.budget_item_id]
+            if (bi) {
+              const ownerSOV = bi.owner_amount != null ? Number(bi.owner_amount) : Number(bi.budget_amount || 0)
+              const pct = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
+              return a + ownerSOV * pct / 100
+            }
+          }
+          return a
         }, 0)
         setPrimeBillingTotal(total)
       }
@@ -714,12 +729,20 @@ function JobDetailInner() {
         .eq('application_id', latestPrimeApp.id)
       let runningTotal = 0
       for (const l of primeLines || []) {
-        const dp = l.dollar_prev != null ? Number(l.dollar_prev) : 0
-        const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : 0
-        runningTotal += dp + dt
-        if (!l.budget_item_id) continue
         const dpRaw = l.dollar_prev != null ? Number(l.dollar_prev) : null
         const dtRaw = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
+        if (dpRaw != null) {
+          runningTotal += dpRaw + (dtRaw ?? 0)
+        } else if (l.budget_item_id) {
+          // pct-based line — compute dollars using ownerSOV from loaded budget items
+          const budgetItem = budgetItems.find(b => b.id === l.budget_item_id)
+          if (budgetItem) {
+            const ownerSOV = budgetItem.owner_amount != null ? Number(budgetItem.owner_amount) : Number(budgetItem.budget_amount || 0)
+            const pctTotal = (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0)
+            runningTotal += ownerSOV * pctTotal / 100
+          }
+        }
+        if (!l.budget_item_id) continue
         // Store dollar amounts when available — accurate even when overbilled (>100%)
         // Fall back to pct-based for legacy lines that never stored dollars
         map[l.budget_item_id] = dpRaw != null ? { dollars: dpRaw + (dtRaw ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }

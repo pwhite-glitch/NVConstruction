@@ -186,6 +186,7 @@ function JobDetailInner() {
   const [coFile, setCoFile] = useState(null)
   const [addingCO, setAddingCO] = useState(false)
   const [primeCOs, setPrimeCOs] = useState([])
+  const [primeBillingTotal, setPrimeBillingTotal] = useState(0)
   const [showAddPrimeCO, setShowAddPrimeCO] = useState(false)
   const [primeCOForm, setPrimeCOForm] = useState(emptyPrimeCO)
   const [primeCOBillingLink, setPrimeCOBillingLink] = useState(null)
@@ -615,6 +616,29 @@ function JobDetailInner() {
       setSubs(subList || [])
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
       setBilling(bills || [])
+
+      // Load prime AIA billing total (NV → Owner) for the Total Billed stat card
+      const { data: latestPrimeApp } = await supabase
+        .from('aia_applications')
+        .select('id')
+        .eq('job_id', id)
+        .is('nv_subcontract_id', null)
+        .order('app_number', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (latestPrimeApp) {
+        const { data: primeLines } = await supabase
+          .from('aia_application_lines')
+          .select('dollar_prev, dollar_this_period, pct_prev, pct_this_period')
+          .eq('application_id', latestPrimeApp.id)
+        const total = (primeLines || []).reduce((a, l) => {
+          const dp = l.dollar_prev != null ? Number(l.dollar_prev) : 0
+          const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : 0
+          return a + dp + dt
+        }, 0)
+        setPrimeBillingTotal(total)
+      }
+
       const { data: initialCOs } = await supabase.from('prime_change_orders').select('*').eq('job_id', id).order('created_at', { ascending: false })
       setPrimeCOs(initialCOs || [])
       const teamRes = await fetch('/api/team-members')
@@ -688,14 +712,20 @@ function JobDetailInner() {
       const { data: primeLines } = await supabase.from('aia_application_lines')
         .select('budget_item_id, pct_prev, pct_this_period, dollar_prev, dollar_this_period')
         .eq('application_id', latestPrimeApp.id)
+      let runningTotal = 0
       for (const l of primeLines || []) {
+        const dp = l.dollar_prev != null ? Number(l.dollar_prev) : 0
+        const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : 0
+        runningTotal += dp + dt
         if (!l.budget_item_id) continue
-        const dp = l.dollar_prev != null ? Number(l.dollar_prev) : null
-        const dt = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
+        const dpRaw = l.dollar_prev != null ? Number(l.dollar_prev) : null
+        const dtRaw = l.dollar_this_period != null ? Number(l.dollar_this_period) : null
         // Store dollar amounts when available — accurate even when overbilled (>100%)
         // Fall back to pct-based for legacy lines that never stored dollars
-        map[l.budget_item_id] = dp != null ? { dollars: dp + (dt ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
+        map[l.budget_item_id] = dpRaw != null ? { dollars: dpRaw + (dtRaw ?? 0) } : { pct: (parseFloat(l.pct_prev) || 0) + (parseFloat(l.pct_this_period) || 0) }
       }
+      // Keep stat card in sync with latest AIA data
+      setPrimeBillingTotal(runningTotal)
     }
 
     setBillingByItem(map)
@@ -4637,7 +4667,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   // ── Derived values ───────────────────────────────────────────
   const totalBilledFromSubmissions = billing.filter(b => b.status === 'approved').reduce((a, b) => a + (b.amount_billed || 0), 0)
   const gcBilledTotal = job?.nv_role === 'sub' ? (billingByItem.__gc_total__?.dollars || 0) : 0
-  const totalBilled = gcBilledTotal > 0 ? gcBilledTotal : totalBilledFromSubmissions
+  // GC role: show what NV billed the owner (prime AIA). Sub role: show what NV billed the GC.
+  const totalBilled = job?.nv_role === 'sub'
+    ? (gcBilledTotal > 0 ? gcBilledTotal : totalBilledFromSubmissions)
+    : primeBillingTotal
   const pendingBilling = billing.filter(b => b.status === 'pending').length
   const subNvContractVal = nvSubcontracts.reduce((a, s) => {
     const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)

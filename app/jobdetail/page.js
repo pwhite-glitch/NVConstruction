@@ -4635,7 +4635,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   }
 
   // ── Derived values ───────────────────────────────────────────
-  const totalBilledFromSubmissions = billing.reduce((a, b) => a + (b.amount_billed || 0), 0)
+  const totalBilledFromSubmissions = billing.filter(b => b.status === 'approved').reduce((a, b) => a + (b.amount_billed || 0), 0)
   const gcBilledTotal = job?.nv_role === 'sub' ? (billingByItem.__gc_total__?.dollars || 0) : 0
   const totalBilled = gcBilledTotal > 0 ? gcBilledTotal : totalBilledFromSubmissions
   const pendingBilling = billing.filter(b => b.status === 'pending').length
@@ -6384,6 +6384,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 )
               }
 
+              // Fallback: when no AIA apps exist, sum approved billing_submissions
+              // matched to budget items via subcontract.budget_item_id
+              const subBillingByItem = {}
+              if (!hasBudgetBilling) {
+                billingSubmissions.filter(b => b.status === 'approved').forEach(b => {
+                  const sc = contracts.find(c => c.sub_id === b.sub_id)
+                  if (sc) {
+                    const allocs = sc.budget_allocations
+                    if (allocs && allocs.length > 0) {
+                      const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
+                      allocs.forEach(a => {
+                        if (!a.budget_item_id) return
+                        const pct = totalAlloc > 0 ? Number(a.amount) / totalAlloc : 0
+                        subBillingByItem[a.budget_item_id] = (subBillingByItem[a.budget_item_id] || 0) + pct * Number(b.amount_billed || 0)
+                      })
+                    } else if (sc.budget_item_id) {
+                      subBillingByItem[sc.budget_item_id] = (subBillingByItem[sc.budget_item_id] || 0) + Number(b.amount_billed || 0)
+                    }
+                  }
+                })
+              }
+
               const rows = budgetItems.map(item => {
                 const ownerSOV = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
                 const entry = billingByItem[item.id]
@@ -6391,7 +6413,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   ? entry.dollars != null
                     ? Math.round(entry.dollars * 100) / 100
                     : Math.round(ownerSOV * (entry.pct || 0) / 100 * 100) / 100
-                  : 0
+                  : Math.round((subBillingByItem[item.id] || 0) * 100) / 100
                 const remaining = ownerSOV - billed
                 const pct = ownerSOV > 0 ? billed / ownerSOV * 100 : 0
                 return { item, ownerSOV, pct, billed, remaining }
@@ -6405,7 +6427,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.25rem' }}>Owner Billing vs Budget</p>
                   <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>
-                    {hasBudgetBilling ? 'Based on latest AIA application.' : 'No AIA billing applications found — create one in the Prime Contract tab to track billing progress per line.'}
+                    {hasBudgetBilling ? 'Based on latest AIA application.' : Object.keys(subBillingByItem).length > 0 ? 'Based on approved billing submissions linked to budget lines.' : 'No billing data found — link subcontracts to budget lines or create an AIA application in the Prime Contract tab.'}
                   </p>
 
                   {/* Summary stats */}

@@ -7872,23 +7872,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <input style={{ ...s.input, color: sovRows.length > 0 ? '#555' : undefined }} type="number" value={sovRows.length > 0 ? sovTotal.toFixed(2) : editSubCOForm.amount} readOnly={sovRows.length > 0} onChange={e => setEditSubCOForm(f => ({ ...f, amount: e.target.value }))} />
                             </div>
                           </div>
-                          {sovRows.length > 0 && (
-                            <div style={{ marginBottom: '12px' }}>
-                              <label style={{ ...s.label, marginBottom: '8px', display: 'block' }}>SOV Lines</label>
-                              {sovRows.map((row, i) => (
-                                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
-                                  <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
-                                  <select style={s.input} value={row.budget_item_id} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value } : r) }))}>
-                                    <option value="">— No budget line —</option>
-                                    {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? b.cost_code + ' · ' : ''}{b.description}</option>)}
-                                  </select>
-                                  <input style={s.input} type="number" placeholder="Amount" value={row.amount} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r) }))} />
-                                  <button style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>×</button>
-                                </div>
-                              ))}
-                              <button style={{ ...s.btnSmall, fontSize: '11px', marginTop: '4px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: [...f.sov, { description: '', budget_item_id: '', amount: '' }] }))}>+ Add Line</button>
+                          <div style={{ marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <label style={{ ...s.label, marginBottom: 0 }}>SOV Lines</label>
+                              <button style={{ ...s.btnSmall, fontSize: '11px' }} onClick={() => { setEditSubCOForm(f => ({ ...f, sov: [...(f.sov || []), { description: '', budget_item_id: '', amount: '' }] })); if (!budgetItems.length) loadBudgetItems() }}>+ Add Line</button>
                             </div>
-                          )}
+                            {sovRows.length === 0 && <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px' }}>No SOV lines — amount above is used as-is. Add lines to assign cost to budget items.</p>}
+                            {sovRows.map((row, i) => (
+                              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+                                <input style={s.input} placeholder="Description" value={row.description} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, description: e.target.value } : r) }))} />
+                                <select style={s.input} value={row.budget_item_id} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, budget_item_id: e.target.value } : r) }))}>
+                                  <option value="">— No budget line —</option>
+                                  {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? b.cost_code + ' · ' : ''}{b.description}</option>)}
+                                </select>
+                                <input style={s.input} type="number" placeholder="Amount" value={row.amount} onChange={e => setEditSubCOForm(f => ({ ...f, sov: f.sov.map((r, j) => j === i ? { ...r, amount: e.target.value } : r) }))} />
+                                <button style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', fontSize: '16px' }} onClick={() => setEditSubCOForm(f => ({ ...f, sov: f.sov.filter((_, j) => j !== i) }))}>×</button>
+                              </div>
+                            ))}
+                          </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button style={{ ...s.btn, opacity: savingSubCO ? 0.6 : 1 }} disabled={savingSubCO} onClick={saveSubCO}>{savingSubCO ? 'Saving...' : 'Save Changes'}</button>
                             <button style={s.btnGray} onClick={() => { setEditingSubCOId(null); setEditSubCOForm({}) }}>Cancel</button>

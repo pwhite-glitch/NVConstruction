@@ -310,6 +310,7 @@ function JobDetailInner() {
   // Direct Costs tab state
   const [directCosts, setDirectCosts] = useState([])
   const [updatingCostId, setUpdatingCostId] = useState(null)
+  const [approvingAll, setApprovingAll] = useState(false)
   const [rejectingCostId, setRejectingCostId] = useState(null)
   const [costRejectNote, setCostRejectNote] = useState('')
   const [assigningCostId, setAssigningCostId] = useState(null)
@@ -1091,6 +1092,24 @@ function JobDetailInner() {
     if (result.error) alert('Approve failed: ' + result.error)
     await loadDirectCosts()
     setUpdatingCostId(null)
+  }
+
+  async function approveAllAssigned() {
+    const toApprove = directCosts.filter(c => c.status === 'pending' && c.budget_item_id)
+    if (toApprove.length === 0) return
+    if (!window.confirm(`Approve ${toApprove.length} pending cost${toApprove.length !== 1 ? 's' : ''} with assigned budget lines?`)) return
+    setApprovingAll(true)
+    const token = await getDcToken()
+    if (!token) { alert('Session expired — please reload.'); setApprovingAll(false); return }
+    await Promise.all(toApprove.map(c =>
+      fetch('/api/dc-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'approve', id: c.id }),
+      })
+    ))
+    await loadDirectCosts()
+    setApprovingAll(false)
   }
 
   async function unapproveCost(costId) {
@@ -9200,6 +9219,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {directCosts.filter(c => c.status === 'pending' && c.budget_item_id).length > 0 && (
+                    <button style={s.btnSmallGreen} disabled={approvingAll} onClick={approveAllAssigned}>
+                      {approvingAll ? 'Approving…' : `Approve All Assigned (${directCosts.filter(c => c.status === 'pending' && c.budget_item_id).length})`}
+                    </button>
+                  )}
                   {directCosts.length > 0 && <button style={s.btnSmall} onClick={exportDirectCostsCSV}>Export CSV</button>}
                   <button style={s.btnSmall} onClick={() => { setShowCsvImport(v => !v); setShowDcForm(false); setCsvRows([]) }}>{showCsvImport ? 'Cancel' : 'Import CSV'}</button>
                   <button style={s.btnSmallOrange} onClick={() => { setShowDcForm(v => !v); setShowCsvImport(false) }}>{showDcForm ? 'Cancel' : '+ Log cost'}</button>

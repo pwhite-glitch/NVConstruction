@@ -154,6 +154,7 @@ function ResidentialJobDetailInner() {
   const [dcSearch, setDcSearch] = useState('')
   const [dcStatusFilter, setDcStatusFilter] = useState('all')
   const [updatingCostId, setUpdatingCostId] = useState(null)
+  const [approvingAll, setApprovingAll] = useState(false)
   const [rejectingCostId, setRejectingCostId] = useState(null)
   const [costRejectNote, setCostRejectNote] = useState('')
 
@@ -829,6 +830,18 @@ function ResidentialJobDetailInner() {
     setUpdatingCostId(null)
   }
 
+  async function approveAllAssigned() {
+    const toApprove = directCosts.filter(c => c.status === 'pending' && c.budget_item_id)
+    if (toApprove.length === 0) return
+    if (!window.confirm(`Approve ${toApprove.length} pending cost${toApprove.length !== 1 ? 's' : ''} with assigned budget lines?`)) return
+    setApprovingAll(true)
+    await Promise.all(toApprove.map(c =>
+      fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id, status: 'approved' }) })
+    ))
+    await loadDirectCosts()
+    setApprovingAll(false)
+  }
+
   async function assignDCBudgetItem(costId, budgetItemId) {
     await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
     await loadDirectCosts()
@@ -1406,6 +1419,11 @@ function ResidentialJobDetailInner() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Direct Costs ({directCosts.length})</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    {directCosts.filter(c => c.status === 'pending' && c.budget_item_id).length > 0 && (
+                      <button style={s.btnGreen} disabled={approvingAll} onClick={approveAllAssigned}>
+                        {approvingAll ? 'Approving…' : `Approve All Assigned (${directCosts.filter(c => c.status === 'pending' && c.budget_item_id).length})`}
+                      </button>
+                    )}
                     {directCosts.length > 0 && <button style={s.btnSmGray} onClick={exportDCsCSV}>Export CSV</button>}
                     <button style={s.btnSm} onClick={() => setShowDcForm(v => !v)}>{showDcForm ? 'Cancel' : '+ Log Cost'}</button>
                   </div>

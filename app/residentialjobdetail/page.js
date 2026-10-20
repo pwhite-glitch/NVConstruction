@@ -30,13 +30,17 @@ const TABS = [
 
 const s = {
   page: { minHeight: '100vh', background: '#f4f6f8', color: '#111827', fontFamily: "'Inter', sans-serif", fontSize: '14px' },
-  header: { padding: '20px 28px 0', background: '#fff', borderBottom: '1px solid #e5e7eb' },
-  backBtn: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', padding: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '6px' },
+  header: { background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '0 1.5rem', position: 'sticky', top: 0, zIndex: 10 },
+  headerInner: { maxWidth: '1320px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '56px' },
+  logoRow: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
+  logoName: { fontWeight: '700', fontSize: '14px', color: '#111827', letterSpacing: '0.5px' },
+  logoSub: { fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' },
+  main: { maxWidth: '1320px', margin: '0 auto', padding: '2rem 1.5rem' },
+  backBtn: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#6b7280', fontSize: '13px', cursor: 'pointer', background: 'none', border: 'none', padding: 0, marginBottom: '1.5rem' },
   jobTitle: { fontSize: '22px', fontWeight: '700', color: '#111827', margin: '0 0 4px' },
-  jobMeta: { fontSize: '13px', color: '#6b7280', margin: '0 0 16px' },
-  tabs: { display: 'flex', gap: '0', overflowX: 'auto' },
-  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: 'none', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', color: active ? '#e8590c' : '#6b7280', whiteSpace: 'nowrap' }),
-  body: { padding: '24px 28px', maxWidth: '1100px' },
+  jobMeta: { fontSize: '13px', color: '#6b7280', margin: '0 0 1.5rem' },
+  body: { padding: '0' },
   card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
   cardTitle: { fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 16px' },
   label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#374151', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' },
@@ -1033,11 +1037,24 @@ function ResidentialJobDetailInner() {
 
   return (
     <div style={s.page}>
-      {/* HEADER */}
-      <div style={s.header}>
+      {/* STICKY HEADER */}
+      <header style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logoRow}>
+            <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
+            <div>
+              <div style={s.logoName}>NV Construction</div>
+              <div style={s.logoSub}>Residential</div>
+            </div>
+          </div>
+          <button style={{ padding: '7px 16px', background: 'transparent', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+        </div>
+      </header>
+
+      <main style={s.main} className="rx-main">
         <button style={s.backBtn} onClick={() => router.push('/dashboard?tab=residential')}>← Back to Residential</button>
         {profileLoadError && <div style={{ ...s.errMsg, marginBottom: '10px' }}>Could not load your profile — please refresh the page.</div>}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
           <div>
             <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
             <p style={s.jobMeta}>
@@ -1049,10 +1066,83 @@ function ResidentialJobDetailInner() {
           </div>
           <span style={s.badge(job.status === 'complete' ? 'gray' : job.status === 'on-hold' ? 'amber' : 'green')}>{job.status === 'complete' ? 'COMPLETE' : job.status === 'on-hold' ? 'ON HOLD' : 'ACTIVE'}</span>
         </div>
-        <div style={s.tabs}>
-          {TABS.map(t => <button key={t.id} style={s.tab(activeTab === t.id)} onClick={() => setActiveTab(t.id)}>{t.label}</button>)}
-        </div>
-      </div>
+
+        {/* SIDEBAR + CONTENT */}
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+
+          {/* Left sidebar nav */}
+          <aside className="rx-sidebar" style={{ width: '180px', flexShrink: 0, position: 'sticky', top: '72px', maxHeight: 'calc(100vh - 92px)', overflowY: 'auto', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
+            {[
+              {
+                group: 'Project',
+                items: [
+                  { key: 'details', label: 'Details' },
+                  { key: 'contacts', label: 'Contacts' },
+                  { key: 'documents', label: 'Documents' },
+                  { key: 'photos', label: 'Photos' },
+                  { key: 'schedule', label: 'Schedule' },
+                ],
+              },
+              {
+                group: 'Financials',
+                items: [
+                  { key: 'budget', label: 'Budget' },
+                  { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length || null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
+                  { key: 'subs', label: 'Subs' },
+                  { key: 'changeorders', label: 'Change Orders', badge: changeOrders.filter(c => c.status === 'pending').length || null, alert: changeOrders.filter(c => c.status === 'pending').length > 0 },
+                  { key: 'billing', label: 'Sub Billing', badge: billingSubmissions.filter(b => b.status === 'pending').length || null, alert: billingSubmissions.filter(b => b.status === 'pending').length > 0 },
+                  { key: 'ownerdraw', label: 'Owner Draw' },
+                  { key: 'lienWaivers', label: 'Lien Waivers' },
+                ],
+              },
+              {
+                group: 'Field',
+                items: [
+                  { key: 'inspections', label: 'Inspections' },
+                  { key: 'punchlist', label: 'Punch List', badge: punchList.filter(p => p.status !== 'done').length || null, alert: punchList.filter(p => p.status === 'open').length > 0 },
+                ],
+              },
+            ].map(({ group, items }) => (
+              <div key={group} style={{ marginBottom: '20px' }}>
+                <div className="rx-sidebar-group">{group}</div>
+                {items.map(({ key, label, badge, alert }) => {
+                  const active = activeTab === key
+                  return (
+                    <button key={key} className={`rx-sidebar-btn${active ? ' rx-active' : ''}`} onClick={() => setActiveTab(key)}>
+                      <span>{label}</span>
+                      {badge ? <span className={`rx-sidebar-badge${alert ? ' rx-sidebar-badge-alert' : ''}`}>{badge}</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </aside>
+
+          {/* Main content */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Mobile nav */}
+            <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#111827', fontSize: '16px', marginBottom: '1.25rem' }}>
+              <optgroup label="Project">
+                <option value="details">Details</option>
+                <option value="contacts">Contacts</option>
+                <option value="documents">Documents</option>
+                <option value="photos">Photos</option>
+                <option value="schedule">Schedule</option>
+              </optgroup>
+              <optgroup label="Financials">
+                <option value="budget">Budget</option>
+                <option value="costs">Direct Costs</option>
+                <option value="subs">Subs</option>
+                <option value="changeorders">Change Orders</option>
+                <option value="billing">Sub Billing</option>
+                <option value="ownerdraw">Owner Draw</option>
+                <option value="lienWaivers">Lien Waivers</option>
+              </optgroup>
+              <optgroup label="Field">
+                <option value="inspections">Inspections</option>
+                <option value="punchlist">Punch List</option>
+              </optgroup>
+            </select>
 
       {/* BODY */}
       <div style={s.body}>
@@ -1412,8 +1502,12 @@ function ResidentialJobDetailInner() {
                               </select>
                             )}
                             {c.status === 'pending' && (
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <button style={s.btnGreen} disabled={updatingCostId === c.id} onClick={() => updateDCStatus(c.id, 'approved')}>Approve</button>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                {!c.receipt_url && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>No receipt</span>}
+                                <button style={s.btnGreen} disabled={updatingCostId === c.id} onClick={() => {
+                                  if (!c.receipt_url && !window.confirm('This cost has no receipt attached. Approve without one?')) return
+                                  updateDCStatus(c.id, 'approved')
+                                }}>{c.receipt_url ? 'Approve' : 'Approve Anyway'}</button>
                                 <button style={s.btnRed} onClick={() => setRejectingCostId(isRejecting ? null : c.id)}>{isRejecting ? 'Cancel' : 'Reject'}</button>
                               </div>
                             )}
@@ -1432,7 +1526,7 @@ function ResidentialJobDetailInner() {
                           </div>
                         )}
                         {editingCostId === c.id && (
-                          <div style={{ marginTop: '12px', padding: '14px', background: '#0f0f0f', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                          <div style={{ marginTop: '12px', padding: '14px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                             <div style={{ ...s.grid3, marginBottom: '10px' }}>
                               <div><label style={s.label}>Date</label><input type="date" style={s.input} value={editCostForm.cost_date} onChange={e => setEditCostForm(f => ({ ...f, cost_date: e.target.value }))} /></div>
                               <div><label style={s.label}>Category</label><select style={s.select} value={editCostForm.category} onChange={e => setEditCostForm(f => ({ ...f, category: e.target.value }))}>{['Materials','Labor','Equipment','Subcontractor','Permits','Fees','Meals/Entertainment','Other'].map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
@@ -2279,7 +2373,7 @@ function ResidentialJobDetailInner() {
               <div style={s.emptyMsg}>No contacts yet. Add the owner, architect, inspector, or other key contacts.</div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb' }}>
                   {['Name', 'Role', 'Phone', 'Email', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {contacts.map(c => (
@@ -2298,7 +2392,10 @@ function ResidentialJobDetailInner() {
             )}
           </div>
         )}
-      </div>
+      </div>{/* /body */}
+          </div>{/* /content */}
+        </div>{/* /sidebar+content row */}
+      </main>
     </div>
   )
 }

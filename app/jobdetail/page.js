@@ -260,6 +260,7 @@ function JobDetailInner() {
   const [dcAmountMin, setDcAmountMin] = useState('')
   const [dcAmountMax, setDcAmountMax] = useState('')
   const [dcStatusFilter, setDcStatusFilter] = useState('all')
+  const [dcTypeFilter, setDcTypeFilter] = useState('all')
 
   // Owner Reimbursements state
   const [reimbInvoices, setReimbInvoices] = useState([])
@@ -325,7 +326,7 @@ function JobDetailInner() {
   const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
 
@@ -990,6 +991,7 @@ function JobDetailInner() {
         status: userRole === 'apm' ? 'pending' : 'approved',
         bill_to_owner: dcForm.bill_to_owner || false,
         owner_auth_ref: dcForm.owner_auth_ref || null,
+        is_credit: dcForm.is_credit || false,
       }
       let res, json
       if (dcFile) {
@@ -1003,7 +1005,7 @@ function JobDetailInner() {
       json = await res.json()
       if (json.error) { setDcSaveErr('Save failed: ' + json.error); setSubmittingDc(false); return }
       setDcSaveErr('')
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '' })
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -9202,12 +9204,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'costs' && (
           <>
             {(() => {
-              const approvedTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+              const approvedExpenses = directCosts.filter(c => c.status === 'approved' && !c.is_credit).reduce((a, c) => a + Number(c.amount || 0), 0)
+              const approvedCredits = directCosts.filter(c => c.status === 'approved' && c.is_credit).reduce((a, c) => a + Number(c.amount || 0), 0)
+              const netApproved = approvedExpenses - approvedCredits
               const pendingTotal = directCosts.filter(c => c.status === 'pending').reduce((a, c) => a + Number(c.amount || 0), 0)
               const pendingCount = directCosts.filter(c => c.status === 'pending').length
               return (
                 <div style={s.statRow} className="rx-stats">
-                  <div style={s.statCard}><div style={s.statLabel}>Total approved</div><div style={s.statValue('#16a34a')}>${approvedTotal.toLocaleString()}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Net approved</div><div style={s.statValue('#16a34a')}>${netApproved.toLocaleString()}</div></div>
+                  {approvedCredits > 0 && <div style={s.statCard}><div style={s.statLabel}>Credits applied</div><div style={s.statValue('#dc2626')}>−${approvedCredits.toLocaleString()}</div></div>}
                   <div style={s.statCard}><div style={s.statLabel}>Pending approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>${pendingTotal.toLocaleString()}</div></div>
                   <div style={s.statCard}><div style={s.statLabel}>Pending count</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
                 </div>
@@ -9232,7 +9237,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {/* Filter bar */}
               {(() => {
-                const hasFilters = dcSearch || dcBudgetFilter || dcAmountMin || dcAmountMax || dcStatusFilter !== 'all'
+                const hasFilters = dcSearch || dcBudgetFilter || dcAmountMin || dcAmountMax || dcStatusFilter !== 'all' || dcTypeFilter !== 'all'
                 return (
                   <div style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 14px', marginBottom: '1.25rem' }}>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -9286,7 +9291,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {hasFilters && (
                         <button
                           style={{ ...s.btnSmall, alignSelf: 'flex-end', background: '#f0f0f0', border: '1px solid #333', color: '#6b7280', flexShrink: 0 }}
-                          onClick={() => { setDcSearch(''); setDcBudgetFilter(''); setDcAmountMin(''); setDcAmountMax(''); setDcStatusFilter('all') }}
+                          onClick={() => { setDcSearch(''); setDcBudgetFilter(''); setDcAmountMin(''); setDcAmountMax(''); setDcStatusFilter('all'); setDcTypeFilter('all') }}
                         >Clear filters</button>
                       )}
                     </div>
@@ -9302,6 +9307,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           key={f.key}
                           onClick={() => setDcStatusFilter(f.key)}
                           style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#dc2626' : '#16a34a') : '#d1d5db'}`, background: dcStatusFilter === f.key ? (f.key === 'pending' ? '#fff7ed' : f.key === 'rejected' ? '#fef2f2' : '#dcfce7') : 'transparent', color: dcStatusFilter === f.key ? (f.key === 'pending' ? '#e8590c' : f.key === 'rejected' ? '#dc2626' : '#16a34a') : '#555' }}
+                        >{f.label} ({f.count})</button>
+                      ))}
+                    </div>
+                    {/* Type pills */}
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      {[
+                        { key: 'all', label: 'All types', count: directCosts.length },
+                        { key: 'expenses', label: 'Expenses only', count: directCosts.filter(c => !c.is_credit).length },
+                        { key: 'credits', label: 'Returns / Credits', count: directCosts.filter(c => c.is_credit).length },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => setDcTypeFilter(f.key)}
+                          style={{ padding: '3px 11px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcTypeFilter === f.key ? (f.key === 'credits' ? '#dc2626' : '#4b5563') : '#d1d5db'}`, background: dcTypeFilter === f.key ? (f.key === 'credits' ? '#fef2f2' : '#f3f4f6') : 'transparent', color: dcTypeFilter === f.key ? (f.key === 'credits' ? '#dc2626' : '#374151') : '#6b7280' }}
                         >{f.label} ({f.count})</button>
                       ))}
                     </div>
@@ -9383,6 +9402,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                       </div>
                     )}
+                    <div style={{ marginBottom: '10px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={dcForm.is_credit} onChange={e => setDcForm(f => ({ ...f, is_credit: e.target.checked }))} />
+                        <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
+                      </label>
+                    </div>
                     <div style={{ marginBottom: '1.25rem' }}>
                       <label style={s.label}>Receipt (photo / PDF)</label>
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 14px' }} onChange={e => setDcFile(e.target.files[0])} />
@@ -9454,6 +9479,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const q = dcSearch.toLowerCase().trim()
                 const visibleCosts = directCosts.filter(c => {
                   if (dcStatusFilter !== 'all' && c.status !== dcStatusFilter) return false
+                  if (dcTypeFilter === 'credits' && !c.is_credit) return false
+                  if (dcTypeFilter === 'expenses' && c.is_credit) return false
                   if (dcBudgetFilter === '__unassigned__' && c.budget_item_id) return false
                   if (dcBudgetFilter && dcBudgetFilter !== '__unassigned__' && c.budget_item_id !== dcBudgetFilter) return false
                   if (dcAmountMin && Number(c.amount) < Number(dcAmountMin)) return false
@@ -9501,13 +9528,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const isDup = activeDupIds.has(c.id)
                 const canReview = userRole === 'pm' || userRole === 'apm' || userRole === 'admin'
                 return (
-                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#e9d5ff' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
+                  <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#e9d5ff' : c.is_credit ? '#fecdd3' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
                     <div style={s.billingEntryHeader}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{c.description}</span>
                           <span style={s.coBadge('pending')}>{c.category}</span>
                           <span style={s.coBadge(c.status)}>{c.status}</span>
+                          {c.is_credit && <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Return / Credit</span>}
                           {drawnApp && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff' }}>
                               Drawn — App #{drawnApp.app_number}
@@ -9545,7 +9573,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>${Number(c.amount).toLocaleString()}</span>
+                        <span style={{ fontSize: '16px', fontWeight: '800', color: c.is_credit ? '#dc2626' : '#111827' }}>{c.is_credit ? '−' : ''}${Number(c.amount).toLocaleString()}</span>
                         {c.receipt_url && (
                           <button style={s.btnSmall} onClick={() => openDcReceiptUrl(c.receipt_url)}>View receipt</button>
                         )}

@@ -104,7 +104,7 @@ export async function POST(request) {
     }
 
     // Columns from migration 022 may not exist yet — retry without them on schema cache error
-    const NEW_022_COLS = new Set(['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at'])
+    const NEW_022_COLS = new Set(['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at', 'is_credit'])
     let insertRow = { ...row, receipt_url }
     let { error } = await adminSupabase.from('direct_costs').insert(insertRow)
     if (error && error.message && error.message.includes('schema cache')) {

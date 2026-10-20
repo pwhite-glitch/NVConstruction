@@ -148,11 +148,12 @@ function ResidentialJobDetailInner() {
 
   // Direct costs tab
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
   const [dcSearch, setDcSearch] = useState('')
   const [dcStatusFilter, setDcStatusFilter] = useState('all')
+  const [dcTypeFilter, setDcTypeFilter] = useState('all')
   const [updatingCostId, setUpdatingCostId] = useState(null)
   const [approvingAll, setApprovingAll] = useState(false)
   const [rejectingCostId, setRejectingCostId] = useState(null)
@@ -787,6 +788,7 @@ function ResidentialJobDetailInner() {
       amount: parseFloat(dcForm.amount),
       notes: dcForm.notes || null,
       budget_item_id: dcForm.budget_item_id || null,
+      is_credit: dcForm.is_credit || false,
       status: 'approved',
     }
     let res, json
@@ -807,7 +809,7 @@ function ResidentialJobDetailInner() {
     }
     json = await res.json()
     if (!json.error) {
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '' })
+      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -1399,18 +1401,23 @@ function ResidentialJobDetailInner() {
 
         {/* ── COSTS ── */}
         {activeTab === 'costs' && (() => {
-          const approvedTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+          const approvedExpenses = directCosts.filter(c => c.status === 'approved' && !c.is_credit).reduce((a, c) => a + Number(c.amount || 0), 0)
+          const approvedCredits = directCosts.filter(c => c.status === 'approved' && c.is_credit).reduce((a, c) => a + Number(c.amount || 0), 0)
+          const approvedTotal = approvedExpenses - approvedCredits
           const pendingCount = directCosts.filter(c => c.status === 'pending').length
           const q = dcSearch.toLowerCase().trim()
           const visible = directCosts.filter(c => {
             if (dcStatusFilter !== 'all' && c.status !== dcStatusFilter) return false
+            if (dcTypeFilter === 'credits' && !c.is_credit) return false
+            if (dcTypeFilter === 'expenses' && c.is_credit) return false
             if (!q) return true
             return c.description?.toLowerCase().includes(q) || c.notes?.toLowerCase().includes(q) || String(c.amount).includes(dcSearch.trim())
           })
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-                <div style={s.statCard}><div style={s.statLabel}>Approved Total</div><div style={s.statValue('#15803d')}>${fmt(approvedTotal)}</div></div>
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${approvedCredits > 0 ? 4 : 3}, 1fr)`, gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Net Approved</div><div style={s.statValue('#15803d')}>${fmt(approvedTotal)}</div></div>
+                {approvedCredits > 0 && <div style={s.statCard}><div style={s.statLabel}>Credits Applied</div><div style={s.statValue('#dc2626')}>−${fmt(approvedCredits)}</div></div>}
                 <div style={s.statCard}><div style={s.statLabel}>Pending Approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Total Entries</div><div style={s.statValue()}>{directCosts.length}</div></div>
               </div>
@@ -1471,6 +1478,12 @@ function ResidentialJobDetailInner() {
                           <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ ...s.input, padding: '8px 12px' }} onChange={e => setDcFile(e.target.files?.[0] || null)} />
                         </div>
                       </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={dcForm.is_credit} onChange={e => setDcForm(f => ({ ...f, is_credit: e.target.checked }))} />
+                          <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: '600' }}>This is a return / credit (reduces job cost total)</span>
+                        </label>
+                      </div>
                       <button type="submit" style={s.btn} disabled={submittingDc}>{submittingDc ? 'Saving…' : 'Save Cost'}</button>
                     </form>
                   </div>
@@ -1485,6 +1498,14 @@ function ResidentialJobDetailInner() {
                   ))}
                   <input style={{ ...s.input, width: '180px', padding: '4px 10px', fontSize: '12px', marginLeft: 'auto' }} placeholder="Search..." value={dcSearch} onChange={e => setDcSearch(e.target.value)} />
                 </div>
+                {/* Type filter */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                  {[['all', 'All types', directCosts.length], ['expenses', 'Expenses only', directCosts.filter(c => !c.is_credit).length], ['credits', 'Returns / Credits', directCosts.filter(c => c.is_credit).length]].map(([k, label, count]) => (
+                    <button key={k} onClick={() => setDcTypeFilter(k)} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcTypeFilter === k ? (k === 'credits' ? '#dc2626' : '#4b5563') : '#d1d5db'}`, background: dcTypeFilter === k ? (k === 'credits' ? '#fef2f2' : '#f3f4f6') : 'transparent', color: dcTypeFilter === k ? (k === 'credits' ? '#dc2626' : '#374151') : '#6b7280' }}>
+                      {label} ({count})
+                    </button>
+                  ))}
+                </div>
 
                 {visible.length === 0 ? (
                   <div style={s.emptyMsg}>{directCosts.length === 0 ? 'No direct costs logged yet.' : 'No costs match the current filter.'}</div>
@@ -1493,13 +1514,14 @@ function ResidentialJobDetailInner() {
                     const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                     const isRejecting = rejectingCostId === c.id
                     return (
-                      <div key={c.id} style={{ border: `1px solid ${c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' }}>
+                      <div key={c.id} style={{ border: `1px solid ${c.is_credit ? '#fecdd3' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{c.description}</span>
                               <span style={s.badge('gray')}>{c.category}</span>
                               <span style={s.badge(c.status === 'approved' ? 'green' : c.status === 'rejected' ? 'red' : 'orange')}>{c.status}</span>
+                              {c.is_credit && <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Return / Credit</span>}
                             </div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>
                               {c.cost_date ? new Date(c.cost_date + 'T12:00:00').toLocaleDateString() : ''}
@@ -1508,7 +1530,7 @@ function ResidentialJobDetailInner() {
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '16px', fontWeight: '800', fontFamily: 'monospace' }}>${fmt(c.amount)}</span>
+                            <span style={{ fontSize: '16px', fontWeight: '800', fontFamily: 'monospace', color: c.is_credit ? '#dc2626' : undefined }}>{c.is_credit ? '−' : ''}${fmt(c.amount)}</span>
                             {c.receipt_url && (
                               <button style={s.btnSmGray} onClick={() => openDCReceipt(c.receipt_url)}>Receipt</button>
                             )}

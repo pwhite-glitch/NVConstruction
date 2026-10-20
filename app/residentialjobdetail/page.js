@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
@@ -29,41 +29,41 @@ const TABS = [
 ]
 
 const s = {
-  page: { minHeight: '100vh', background: '#080808', color: '#f1f1f1', fontFamily: "'Inter', sans-serif", fontSize: '14px' },
-  header: { padding: '20px 28px 0', borderBottom: '1px solid #1a1a1a' },
-  backBtn: { background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '13px', padding: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '6px' },
-  jobTitle: { fontSize: '22px', fontWeight: '700', color: '#f1f1f1', margin: '0 0 4px' },
-  jobMeta: { fontSize: '13px', color: '#555', margin: '0 0 16px' },
+  page: { minHeight: '100vh', background: '#f4f6f8', color: '#111827', fontFamily: "'Inter', sans-serif", fontSize: '14px' },
+  header: { padding: '20px 28px 0', background: '#fff', borderBottom: '1px solid #e5e7eb' },
+  backBtn: { background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', padding: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '6px' },
+  jobTitle: { fontSize: '22px', fontWeight: '700', color: '#111827', margin: '0 0 4px' },
+  jobMeta: { fontSize: '13px', color: '#6b7280', margin: '0 0 16px' },
   tabs: { display: 'flex', gap: '0', overflowX: 'auto' },
-  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: 'none', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', color: active ? '#e8590c' : '#999', whiteSpace: 'nowrap' }),
+  tab: (active) => ({ padding: '10px 18px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', background: 'none', border: 'none', borderBottom: active ? '2px solid #e8590c' : '2px solid transparent', color: active ? '#e8590c' : '#6b7280', whiteSpace: 'nowrap' }),
   body: { padding: '24px 28px', maxWidth: '1100px' },
-  card: { background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: '10px', padding: '20px', marginBottom: '20px' },
-  cardTitle: { fontSize: '11px', fontWeight: '700', color: '#555', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 16px' },
-  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#555', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' },
-  input: { width: '100%', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '9px 12px', color: '#f1f1f1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' },
-  select: { width: '100%', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '9px 12px', color: '#f1f1f1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' },
-  textarea: { width: '100%', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '6px', padding: '9px 12px', color: '#f1f1f1', fontSize: '13px', outline: 'none', resize: 'vertical', boxSizing: 'border-box' },
+  card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+  cardTitle: { fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', margin: '0 0 16px' },
+  label: { display: 'block', fontSize: '11px', fontWeight: '600', color: '#374151', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' },
+  input: { width: '100%', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 12px', color: '#111827', fontSize: '13px', outline: 'none', boxSizing: 'border-box' },
+  select: { width: '100%', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 12px', color: '#111827', fontSize: '13px', outline: 'none', boxSizing: 'border-box' },
+  textarea: { width: '100%', background: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', padding: '9px 12px', color: '#111827', fontSize: '13px', outline: 'none', resize: 'vertical', boxSizing: 'border-box' },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' },
   btn: { padding: '9px 20px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' },
   btnSm: { padding: '6px 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
-  btnGray: { padding: '9px 20px', background: '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
-  btnSmGray: { padding: '6px 12px', background: '#1a1a1a', color: '#aaa', border: '1px solid #2a2a2a', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
-  btnGreen: { padding: '6px 14px', background: '#0a2a0a', color: '#4ade80', border: '1px solid #1a4a1a', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
-  btnRed: { padding: '6px 14px', background: '#1a0a0a', color: '#f87171', border: '1px solid #3a1a1a', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
-  inlineForm: { background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', padding: '16px', marginBottom: '16px' },
+  btnGray: { padding: '9px 20px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  btnSmGray: { padding: '6px 12px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  btnGreen: { padding: '6px 14px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
+  btnRed: { padding: '6px 14px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  inlineForm: { background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', marginBottom: '16px' },
   badge: (color) => {
-    const map = { orange: ['#2a1200','#e8590c','#4a2200'], green: ['#0a2a0a','#4ade80','#1a4a1a'], red: ['#1a0a0a','#f87171','#3a1a1a'], blue: ['#0a1020','#60a5fa','#1a2a40'], gray: ['#111','#555','#222'], amber: ['#2a2000','#fbbf24','#4a3800'] }
+    const map = { orange: ['#fff7ed','#c2410c','#fed7aa'], green: ['#f0fdf4','#15803d','#bbf7d0'], red: ['#fef2f2','#dc2626','#fecaca'], blue: ['#eff6ff','#1d4ed8','#bfdbfe'], gray: ['#f9fafb','#6b7280','#e5e7eb'], amber: ['#fefce8','#a16207','#fde68a'] }
     const [bg, fg, border] = map[color] || map.gray
     return { display: 'inline-block', padding: '2px 9px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '0.5px', background: bg, color: fg, border: `1px solid ${border}` }
   },
-  statCard: { background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '14px 16px' },
-  statLabel: { fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' },
-  statValue: (color) => ({ fontSize: '20px', fontWeight: '700', color: color || '#f1f1f1', fontFamily: 'monospace' }),
-  emptyMsg: { color: '#444', fontSize: '13px', textAlign: 'center', padding: '32px 0' },
-  tableRow: { display: 'grid', gap: '12px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' },
-  successMsg: { color: '#4ade80', fontSize: '13px' },
-  errMsg: { color: '#f87171', fontSize: '13px' },
+  statCard: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' },
+  statLabel: { fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' },
+  statValue: (color) => ({ fontSize: '20px', fontWeight: '700', color: color || '#111827', fontFamily: 'monospace' }),
+  emptyMsg: { color: '#9ca3af', fontSize: '13px', textAlign: 'center', padding: '32px 0' },
+  tableRow: { display: 'grid', gap: '12px', padding: '10px 0', borderBottom: '1px solid #f3f4f6', alignItems: 'center' },
+  successMsg: { color: '#15803d', fontSize: '13px' },
+  errMsg: { color: '#dc2626', fontSize: '13px' },
 }
 
 const statusColor = { pending: 'orange', approved: 'green', rejected: 'red', active: 'green', complete: 'gray', open: 'orange', closed: 'gray', planned: 'blue', 'in-progress': 'orange', done: 'green' }
@@ -1015,14 +1015,14 @@ function ResidentialJobDetailInner() {
     setImportingItems(false)
   }
 
-  if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#555' }}>Loading...</div></div>
+  if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#6b7280' }}>Loading...</div></div>
   if (jobErrMsg && !job) return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', gap: '1rem' }}>
-      <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', color: '#ff6b6b', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{jobErrMsg}</div>
-      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px', color: '#888', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', gap: '1rem' }}>
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{jobErrMsg}</div>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
     </div>
   )
-  if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#555' }}>Project not found.</div></div>
+  if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#6b7280' }}>Project not found.</div></div>
 
   const approvedCOs = changeOrders.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount), 0)
   const baseContract = Number(job.contract_value || 0)
@@ -1064,7 +1064,7 @@ function ResidentialJobDetailInner() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
               <div style={s.statCard}><div style={s.statLabel}>Contract Value</div><div style={s.statValue()}>${fmt(job.contract_value)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Approved COs</div><div style={s.statValue('#e8590c')}>${fmt(approvedCOs)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Sub Billing Approved</div><div style={s.statValue('#4ade80')}>${fmt(approvedBillingTotal)}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Sub Billing Approved</div><div style={s.statValue('#15803d')}>${fmt(approvedBillingTotal)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Budget Items</div><div style={s.statValue()}>{budgetItems.length}</div></div>
             </div>
 
@@ -1128,8 +1128,8 @@ function ResidentialJobDetailInner() {
                     ['Notes', job.notes],
                   ].map(([label, val]) => (
                     <div key={label}>
-                      <div style={{ fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '3px' }}>{label}</div>
-                      <div style={{ fontSize: '14px', color: val ? '#f1f1f1' : '#444' }}>{val || '—'}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '3px' }}>{label}</div>
+                      <div style={{ fontSize: '14px', color: val ? '#111827' : '#9ca3af' }}>{val || '—'}</div>
                     </div>
                   ))}
                 </div>
@@ -1163,7 +1163,7 @@ function ResidentialJobDetailInner() {
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
                   {parsedItems.length === 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#aaa', lineHeight: '1.5' }}>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#6b7280', lineHeight: '1.5' }}>
                         Upload your PDF estimate sheet and AI will extract all line items for you to review before importing.
                       </p>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -1177,7 +1177,7 @@ function ResidentialJobDetailInner() {
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '13px', color: '#aaa' }}>{selectedImportIds.size} of {parsedItems.length} selected</span>
+                          <span style={{ fontSize: '13px', color: '#6b7280' }}>{selectedImportIds.size} of {parsedItems.length} selected</span>
                           <button style={s.btnSmGray} onClick={() => setSelectedImportIds(new Set(parsedItems.map((_, i) => i)))}>All</button>
                           <button style={s.btnSmGray} onClick={() => setSelectedImportIds(new Set())}>None</button>
                         </div>
@@ -1190,8 +1190,8 @@ function ResidentialJobDetailInner() {
                         </div>
                       </div>
                       <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', position: 'sticky', top: 0, background: '#0a0a0a' }}>
-                          {['', 'Description', 'Section', 'Amount'].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', position: 'sticky', top: 0, background: '#f9fafb' }}>
+                          {['', 'Description', 'Section', 'Amount'].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                         </div>
                         {parsedItems.map((item, i) => (
                           <label key={i} style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '8px 0', borderBottom: '1px solid #111', alignItems: 'center', cursor: 'pointer' }}>
@@ -1202,14 +1202,14 @@ function ResidentialJobDetailInner() {
                                 return next
                               })
                             }} />
-                            <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
-                            <span style={{ fontSize: '11px', color: '#555' }}>{item.section || '—'}</span>
+                            <span style={{ fontSize: '13px', color: '#111827' }}>{item.description}</span>
+                            <span style={{ fontSize: '11px', color: '#6b7280' }}>{item.section || '—'}</span>
                             <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.amount)}</span>
                           </label>
                         ))}
                         <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #222' }}>
                           <span />
-                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', textTransform: 'uppercase' }}>Selected total</span>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' }}>Selected total</span>
                           <span />
                           <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>
                             ${fmt(parsedItems.filter((_, i) => selectedImportIds.has(i)).reduce((a, x) => a + Number(x.amount || 0), 0))}
@@ -1238,7 +1238,7 @@ function ResidentialJobDetailInner() {
                 <>
                   <div style={{ overflowX: 'auto' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', minWidth: '700px' }}>
-                    {['Description', 'Code', 'Budget', 'Committed', 'Spent', 'Variance', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                    {['Description', 'Code', 'Budget', 'Committed', 'Spent', 'Variance', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                   </div>
                   {budgetItems.map(item => {
                     const committed = contracts.filter(c => c.budget_item_id === item.id).reduce((a, c) => a + Number(c.contract_value || 0), 0)
@@ -1247,43 +1247,43 @@ function ResidentialJobDetailInner() {
                     const variance = budgeted - committed - spent
                     const over = variance < 0
                     return editingBudgetId === item.id ? (
-                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', minWidth: '700px' }}>
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '700px' }}>
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.description || ''} onChange={e => setEditBudgetForm(f => ({ ...f, description: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editBudgetForm.budget_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} />
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spent)}</span>
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#f87171' : '#4ade80' }}>{over ? '-' : ''}${fmt(Math.abs(variance))}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#dc2626' : '#15803d' }}>{over ? '-' : ''}${fmt(Math.abs(variance))}</span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnGreen} onClick={() => saveBudgetEdit(item.id)}>Save</button>
                           <button style={s.btnSmGray} onClick={() => setEditingBudgetId(null)}>×</button>
                         </div>
                       </div>
                     ) : (
-                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', minWidth: '700px', background: over ? '#150505' : 'transparent' }}>
-                        <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{item.description}</span>
-                        <span style={{ fontSize: '12px', color: '#555', fontFamily: 'monospace' }}>{item.cost_code || '—'}</span>
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '700px', background: over ? '#fef2f2' : 'transparent' }}>
+                        <span style={{ fontSize: '13px', color: '#111827' }}>{item.description}</span>
+                        <span style={{ fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{item.cost_code || '—'}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.budget_amount)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: committed > 0 ? '#60a5fa' : '#555' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: spent > 0 ? '#e8590c' : '#555' }}>${fmt(spent)}</span>
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: '700', color: over ? '#f87171' : variance < budgeted * 0.1 ? '#f59e0b' : '#4ade80' }}>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: '700', color: over ? '#dc2626' : variance < budgeted * 0.1 ? '#f59e0b' : '#15803d' }}>
                           {over ? '-' : ''}${fmt(Math.abs(variance))}
                         </span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button style={s.btnSmGray} onClick={() => { setEditingBudgetId(item.id); setEditBudgetForm(item) }}>Edit</button>
-                          <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteBudgetItem(item.id)}>×</button>
+                          <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteBudgetItem(item.id)}>×</button>
                         </div>
                       </div>
                     )
                   })}
                   <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #333', minWidth: '700px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#555', textTransform: 'uppercase' }}>Total</span>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' }}>Total</span>
                     <span />
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(budgetTotal)}</span>
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committedTotal)}</span>
                     {(() => { const spentTotal = directCosts.filter(c => c.status === 'approved' && budgetItems.some(b => b.id === c.budget_item_id)).reduce((a, c) => a + Number(c.amount || 0), 0); const v = budgetTotal - committedTotal - spentTotal; return (<>
                       <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spentTotal)}</span>
-                      <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: v < 0 ? '#f87171' : '#4ade80' }}>{v < 0 ? '-' : ''}${fmt(Math.abs(v))}</span>
+                      <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: v < 0 ? '#dc2626' : '#15803d' }}>{v < 0 ? '-' : ''}${fmt(Math.abs(v))}</span>
                     </>) })()}
                     <span />
                   </div>
@@ -1307,7 +1307,7 @@ function ResidentialJobDetailInner() {
           return (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-                <div style={s.statCard}><div style={s.statLabel}>Approved Total</div><div style={s.statValue('#4ade80')}>${fmt(approvedTotal)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Approved Total</div><div style={s.statValue('#15803d')}>${fmt(approvedTotal)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Pending Approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Total Entries</div><div style={s.statValue()}>{directCosts.length}</div></div>
               </div>
@@ -1371,7 +1371,7 @@ function ResidentialJobDetailInner() {
                 {/* Status filter */}
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
                   {[['all', 'All', directCosts.length], ['pending', 'Pending', pendingCount], ['approved', 'Approved', directCosts.filter(c => c.status === 'approved').length]].map(([k, label, count]) => (
-                    <button key={k} onClick={() => setDcStatusFilter(k)} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === k ? '#e8590c' : '#2a2a2a'}`, background: dcStatusFilter === k ? '#2a1200' : 'transparent', color: dcStatusFilter === k ? '#e8590c' : '#555' }}>
+                    <button key={k} onClick={() => setDcStatusFilter(k)} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === k ? '#e8590c' : '#d1d5db'}`, background: dcStatusFilter === k ? '#fff7ed' : 'transparent', color: dcStatusFilter === k ? '#e8590c' : '#6b7280' }}>
                       {label} ({count})
                     </button>
                   ))}
@@ -1385,15 +1385,15 @@ function ResidentialJobDetailInner() {
                     const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                     const isRejecting = rejectingCostId === c.id
                     return (
-                      <div key={c.id} style={{ border: `1px solid ${c.status === 'approved' ? '#1a4a1a' : c.status === 'rejected' ? '#3a1a1a' : '#1e1e1e'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' }}>
+                      <div key={c.id} style={{ border: `1px solid ${c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{c.description}</span>
+                              <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{c.description}</span>
                               <span style={s.badge('gray')}>{c.category}</span>
                               <span style={s.badge(c.status === 'approved' ? 'green' : c.status === 'rejected' ? 'red' : 'orange')}>{c.status}</span>
                             </div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
                               {c.cost_date ? new Date(c.cost_date + 'T12:00:00').toLocaleDateString() : ''}
                               {budgetLine && ` · ${budgetLine.description}`}
                               {c.notes && ` · ${c.notes}`}
@@ -1418,10 +1418,10 @@ function ResidentialJobDetailInner() {
                               </div>
                             )}
                             {c.status === 'approved' && profile?.role === 'pm' && (
-                              <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => updateDCStatus(c.id, 'rejected')}>Undo</button>
+                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => updateDCStatus(c.id, 'rejected')}>Undo</button>
                             )}
                             {profile?.role === 'pm' && (
-                              <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => { if (confirm('Delete this cost?')) updateDCStatus(c.id, 'deleted') }}>Delete</button>
+                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => { if (confirm('Delete this cost?')) updateDCStatus(c.id, 'deleted') }}>Delete</button>
                             )}
                           </div>
                         </div>
@@ -1432,7 +1432,7 @@ function ResidentialJobDetailInner() {
                           </div>
                         )}
                         {editingCostId === c.id && (
-                          <div style={{ marginTop: '12px', padding: '14px', background: '#0f0f0f', borderRadius: '8px', border: '1px solid #222' }}>
+                          <div style={{ marginTop: '12px', padding: '14px', background: '#0f0f0f', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                             <div style={{ ...s.grid3, marginBottom: '10px' }}>
                               <div><label style={s.label}>Date</label><input type="date" style={s.input} value={editCostForm.cost_date} onChange={e => setEditCostForm(f => ({ ...f, cost_date: e.target.value }))} /></div>
                               <div><label style={s.label}>Category</label><select style={s.select} value={editCostForm.category} onChange={e => setEditCostForm(f => ({ ...f, category: e.target.value }))}>{['Materials','Labor','Equipment','Subcontractor','Permits','Fees','Meals/Entertainment','Other'].map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
@@ -1515,13 +1515,13 @@ function ResidentialJobDetailInner() {
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                  {['Company', 'Trade', 'Budget Line', 'Contract $', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  {['Company', 'Trade', 'Budget Line', 'Contract $', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {contracts.map(c => {
                   const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                   const isEditing = editingSubId === c.id
                   return isEditing ? (
-                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
                       <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.vendor_name || ''} onChange={e => setEditSubForm(f => ({ ...f, vendor_name: e.target.value }))} />
                       <input style={{ ...s.input, fontSize: '12px' }} placeholder="Trade / scope" value={editSubForm.description || ''} onChange={e => setEditSubForm(f => ({ ...f, description: e.target.value }))} />
                       <select style={{ ...s.select, fontSize: '12px' }} value={editSubForm.budget_item_id || ''} onChange={e => setEditSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
@@ -1535,19 +1535,19 @@ function ResidentialJobDetailInner() {
                       </div>
                     </div>
                   ) : (
-                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.vendor_name || '—'}</span>
-                      <span style={{ fontSize: '12px', color: '#aaa' }}>{c.description || '—'}</span>
+                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', color: '#111827' }}>{c.vendor_name || '—'}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{c.description || '—'}</span>
                       <span style={{ fontSize: '12px', color: budgetLine ? '#60a5fa' : '#444' }}>{budgetLine?.description || '—'}</span>
                       <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.contract_value)}</span>
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button style={s.btnSmGray} onClick={() => { setEditingSubId(c.id); setEditSubForm(c) }}>Edit</button>
-                        <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteSubcontract(c.id)}>×</button>
+                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteSubcontract(c.id)}>×</button>
                       </div>
                     </div>
                   )
                 })}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 0', borderTop: '1px solid #1a1a1a', marginTop: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 0', borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
                   <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>Total: ${fmt(committedTotal)}</span>
                 </div>
               </>
@@ -1560,7 +1560,7 @@ function ResidentialJobDetailInner() {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
               <div style={s.statCard}><div style={s.statLabel}>Pending COs</div><div style={s.statValue('#e8590c')}>{changeOrders.filter(c => c.status === 'pending').length}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Approved COs</div><div style={s.statValue('#4ade80')}>${fmt(approvedCOs)}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Approved COs</div><div style={s.statValue('#15803d')}>${fmt(approvedCOs)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue()}>${fmt(baseContract)}</div></div>
             </div>
 
@@ -1589,15 +1589,15 @@ function ResidentialJobDetailInner() {
                 <div style={s.emptyMsg}>No change orders yet.</div>
               ) : (
                 changeOrders.map(co => (
-                  <div key={co.id} style={{ padding: '14px 0', borderBottom: '1px solid #1a1a1a' }}>
+                  <div key={co.id} style={{ padding: '14px 0', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1', marginBottom: '4px' }}>{co.description}</div>
-                        {co.notes && <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px' }}>{co.notes}</div>}
-                        <div style={{ fontSize: '12px', color: '#444' }}>{co.created_at ? new Date(co.created_at).toLocaleDateString() : ''}</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{co.description}</div>
+                        {co.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{co.notes}</div>}
+                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>{co.created_at ? new Date(co.created_at).toLocaleDateString() : ''}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'monospace', color: Number(co.amount) >= 0 ? '#4ade80' : '#f87171' }}>
+                        <span style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'monospace', color: Number(co.amount) >= 0 ? '#15803d' : '#dc2626' }}>
                           {Number(co.amount) >= 0 ? '+' : ''}${fmt(co.amount)}
                         </span>
                         <span style={s.badge(statusColor[co.status] || 'gray')}>{co.status}</span>
@@ -1621,7 +1621,7 @@ function ResidentialJobDetailInner() {
           <>
             <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
               {[['submissions', 'Sub Billing'], ['draws', 'Draw Requests']].map(([id2, label]) => (
-                <button key={id2} onClick={() => setBillingBillingTab(id2)} style={{ padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${billingBilling === id2 ? '#e8590c' : '#2a2a2a'}`, background: billingBilling === id2 ? '#2a1200' : '#0a0a0a', color: billingBilling === id2 ? '#e8590c' : '#555' }}>{label}</button>
+                <button key={id2} onClick={() => setBillingBillingTab(id2)} style={{ padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${billingBilling === id2 ? '#e8590c' : '#d1d5db'}`, background: billingBilling === id2 ? '#fff7ed' : '#fff', color: billingBilling === id2 ? '#e8590c' : '#6b7280' }}>{label}</button>
               ))}
             </div>
 
@@ -1676,32 +1676,32 @@ function ResidentialJobDetailInner() {
                   billingSubmissions.map(b => {
                     const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''
                     return (
-                      <div key={b.id} style={{ padding: '12px 0', borderBottom: '1px solid #1a1a1a' }}>
+                      <div key={b.id} style={{ padding: '12px 0', borderBottom: '1px solid #e5e7eb' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{b.company_name}</div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>{period}{b.work_description ? ' · ' + b.work_description : ''}</div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{b.company_name}</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>{period}{b.work_description ? ' · ' + b.work_description : ''}</div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <div style={{ textAlign: 'right' }}>
                               <div style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(b.amount_billed)}</div>
-                              {b.retainage_held ? <div style={{ fontSize: '11px', color: '#555' }}>-${fmt(b.retainage_held)} ret.</div> : null}
+                              {b.retainage_held ? <div style={{ fontSize: '11px', color: '#6b7280' }}>-${fmt(b.retainage_held)} ret.</div> : null}
                             </div>
                             <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status}</span>
                             {profile?.role === 'pm' && b.status === 'pending' && (<>
                               <button onClick={() => updateBillingStatus(b.id, 'approved')} style={s.btnGreen}>Approve</button>
                               <button onClick={() => updateBillingStatus(b.id, 'rejected')} style={s.btnRed}>Reject</button>
                             </>)}
-                            <button onClick={() => deleteBilling(b.id)} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                            <button onClick={() => deleteBilling(b.id)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>×</button>
                           </div>
                         </div>
                       </div>
                     )
                   })
                 )}
-                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '12px', color: '#555' }}>Approved billing total</span>
-                  <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#4ade80' }}>${fmt(approvedBillingTotal)}</span>
+                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', color: '#6b7280' }}>Approved billing total</span>
+                  <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#15803d' }}>${fmt(approvedBillingTotal)}</span>
                 </div>
               </div>
             )}
@@ -1734,11 +1734,11 @@ function ResidentialJobDetailInner() {
                     const undrawnCosts = directCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
                     const undrawnBillings = billingSubmissions.filter(b => !b.draw_request_id)
                     return (
-                      <div key={dr.id} style={{ marginBottom: '12px', border: '1px solid #1e1e1e', borderRadius: '8px' }}>
+                      <div key={dr.id} style={{ marginBottom: '12px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', cursor: 'pointer' }} onClick={() => setExpandedDrawId(isExpanded ? null : dr.id)}>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f1f1' }}>{dr.title}</div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>{drCosts.length} costs · {drBillings.length} billings · ${fmt(drTotal)}</div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{dr.title}</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>{drCosts.length} costs · {drBillings.length} billings · ${fmt(drTotal)}</div>
                           </div>
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <span style={s.badge(dr.status === 'open' ? 'orange' : 'gray')}>{dr.status}</span>
@@ -1748,19 +1748,19 @@ function ResidentialJobDetailInner() {
                                 {dr.status === 'open'
                                   ? <button style={s.btnSmGray} onClick={e => { e.stopPropagation(); updateDrawStatus(dr.id, 'closed') }}>Close</button>
                                   : <button style={s.btnSmGray} onClick={e => { e.stopPropagation(); updateDrawStatus(dr.id, 'open') }}>Reopen</button>}
-                                <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={e => { e.stopPropagation(); deleteDraw(dr.id) }}>Delete</button>
+                                <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={e => { e.stopPropagation(); deleteDraw(dr.id) }}>Delete</button>
                               </>
                             )}
-                            <span style={{ color: '#555' }}>{isExpanded ? '▲' : '▼'}</span>
+                            <span style={{ color: '#6b7280' }}>{isExpanded ? '▲' : '▼'}</span>
                           </div>
                         </div>
 
                         {isExpanded && (
-                          <div style={{ padding: '0 14px 14px', borderTop: '1px solid #1a1a1a' }}>
+                          <div style={{ padding: '0 14px 14px', borderTop: '1px solid #e5e7eb' }}>
                             <p style={{ ...s.cardTitle, marginTop: '12px' }}>Direct Costs</p>
-                            {drCosts.length === 0 ? <div style={{ fontSize: '13px', color: '#444', marginBottom: '10px' }}>No costs added to this draw.</div> : drCosts.map(c => (
+                            {drCosts.length === 0 ? <div style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '10px' }}>No costs added to this draw.</div> : drCosts.map(c => (
                               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #111' }}>
-                                <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
+                                <span style={{ fontSize: '13px', color: '#6b7280' }}>{c.description}</span>
                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                                   <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.amount)}</span>
                                   {dr.status === 'open' && <button style={{ ...s.btnSmGray, fontSize: '11px' }} onClick={() => removeCostFromDraw(c.id)}>Remove</button>}
@@ -1774,7 +1774,7 @@ function ResidentialJobDetailInner() {
                                 {undrawnCosts.map(c => (
                                   <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', cursor: 'pointer' }}>
                                     <input type="checkbox" checked={drawAddCostIds.includes(c.id)} onChange={e => setDrawAddCostIds(ids => e.target.checked ? [...ids, c.id] : ids.filter(x => x !== c.id))} />
-                                    <span style={{ fontSize: '13px', color: '#aaa' }}>{c.description}</span>
+                                    <span style={{ fontSize: '13px', color: '#6b7280' }}>{c.description}</span>
                                     <span style={{ fontSize: '13px', fontFamily: 'monospace', marginLeft: 'auto' }}>${fmt(c.amount)}</span>
                                   </label>
                                 ))}
@@ -1785,11 +1785,11 @@ function ResidentialJobDetailInner() {
                             )}
 
                             <p style={{ ...s.cardTitle, marginTop: '16px' }}>Sub Billings</p>
-                            {drBillings.length === 0 ? <div style={{ fontSize: '13px', color: '#444', marginBottom: '10px' }}>No sub billings added to this draw.</div> : drBillings.map(b => (
+                            {drBillings.length === 0 ? <div style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '10px' }}>No sub billings added to this draw.</div> : drBillings.map(b => (
                               <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #111' }}>
                                 <div>
-                                  <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
-                                  {b.work_description ? <span style={{ fontSize: '11px', color: '#444', marginLeft: '8px' }}>{b.work_description}</span> : null}
+                                  <span style={{ fontSize: '13px', color: '#6b7280' }}>{b.company_name}</span>
+                                  {b.work_description ? <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '8px' }}>{b.work_description}</span> : null}
                                 </div>
                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                                   <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(b.amount_billed)}</span>
@@ -1805,8 +1805,8 @@ function ResidentialJobDetailInner() {
                                 {undrawnBillings.map(b => (
                                   <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', cursor: 'pointer' }}>
                                     <input type="checkbox" checked={drawAddBillingIds.includes(b.id)} onChange={e => setDrawAddBillingIds(ids => e.target.checked ? [...ids, b.id] : ids.filter(x => x !== b.id))} />
-                                    <span style={{ fontSize: '13px', color: '#aaa' }}>{b.company_name}</span>
-                                    {b.work_description ? <span style={{ fontSize: '11px', color: '#555' }}>{b.work_description}</span> : null}
+                                    <span style={{ fontSize: '13px', color: '#6b7280' }}>{b.company_name}</span>
+                                    {b.work_description ? <span style={{ fontSize: '11px', color: '#6b7280' }}>{b.work_description}</span> : null}
                                     <span style={{ fontSize: '13px', fontFamily: 'monospace', marginLeft: 'auto' }}>${fmt(b.amount_billed)}</span>
                                   </label>
                                 ))}
@@ -1856,18 +1856,18 @@ function ResidentialJobDetailInner() {
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                  {['Milestone', 'Planned', 'Actual', 'Status', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  {['Milestone', 'Planned', 'Actual', 'Status', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {milestones.map(m => (
-                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{m.title}</span>
-                    <span style={{ fontSize: '12px', color: '#aaa' }}>{fmtDate(m.planned_date)}</span>
-                    <span style={{ fontSize: '12px', color: m.actual_date ? '#4ade80' : '#444' }}>{fmtDate(m.actual_date)}</span>
+                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', color: '#111827' }}>{m.title}</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(m.planned_date)}</span>
+                    <span style={{ fontSize: '12px', color: m.actual_date ? '#15803d' : '#9ca3af' }}>{fmtDate(m.actual_date)}</span>
                     <span style={s.badge(statusColor[m.status] || 'gray')}>{m.status}</span>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       {m.status !== 'done' && <button style={s.btnGreen} onClick={() => updateMilestoneStatus(m.id, 'done')}>Done</button>}
                       {m.status === 'done' && <button style={s.btnSmGray} onClick={() => updateMilestoneStatus(m.id, 'planned')}>Reset</button>}
-                      <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteMilestone(m.id)}>×</button>
+                      <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteMilestone(m.id)}>×</button>
                     </div>
                   </div>
                 ))}
@@ -1892,9 +1892,9 @@ function ResidentialJobDetailInner() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
                 {photos.map(p => (
-                  <div key={p.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #1e1e1e' }}>
+                  <div key={p.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
                     <img src={p.url} alt={p.caption || 'Photo'} style={{ width: '100%', height: '140px', objectFit: 'cover', display: 'block' }} />
-                    {p.caption && <div style={{ padding: '6px 10px', fontSize: '11px', color: '#555', background: '#0a0a0a' }}>{p.caption}</div>}
+                    {p.caption && <div style={{ padding: '6px 10px', fontSize: '11px', color: '#6b7280', background: '#f9fafb' }}>{p.caption}</div>}
                   </div>
                 ))}
               </div>
@@ -1917,10 +1917,10 @@ function ResidentialJobDetailInner() {
               <div style={s.emptyMsg}>No documents yet. Upload contracts, permits, or other project docs.</div>
             ) : (
               documents.map(doc => (
-                <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1a1a1a' }}>
+                <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #e5e7eb' }}>
                   <div>
-                    <div style={{ fontSize: '13px', color: '#f1f1f1' }}>{doc.name}</div>
-                    <div style={{ fontSize: '11px', color: '#555' }}>{doc.doc_type || 'general'}{doc.created_at ? ' · ' + new Date(doc.created_at).toLocaleDateString() : ''}</div>
+                    <div style={{ fontSize: '13px', color: '#111827' }}>{doc.name}</div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>{doc.doc_type || 'general'}{doc.created_at ? ' · ' + new Date(doc.created_at).toLocaleDateString() : ''}</div>
                   </div>
                   <button onClick={() => openJobDoc(doc.url)} style={{ fontSize: '12px', color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View →</button>
                 </div>
@@ -1972,22 +1972,22 @@ function ResidentialJobDetailInner() {
               ) : (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                    {['Type', 'Scheduled', 'Inspector', 'Result', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                    {['Type', 'Scheduled', 'Inspector', 'Result', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                   </div>
                   {inspections.map(ins => (
-                    <div key={ins.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                    <div key={ins.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontSize: '13px', color: '#f1f1f1' }}>{ins.inspection_type}</div>
-                        {ins.notes && <div style={{ fontSize: '11px', color: '#555' }}>{ins.notes}</div>}
+                        <div style={{ fontSize: '13px', color: '#111827' }}>{ins.inspection_type}</div>
+                        {ins.notes && <div style={{ fontSize: '11px', color: '#6b7280' }}>{ins.notes}</div>}
                       </div>
-                      <span style={{ fontSize: '12px', color: '#aaa' }}>{fmtDate(ins.scheduled_date)}</span>
-                      <span style={{ fontSize: '12px', color: '#aaa' }}>{ins.inspector_name || '—'}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(ins.scheduled_date)}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{ins.inspector_name || '—'}</span>
                       <span style={s.badge(resultColor[ins.result] || 'gray')}>{ins.result}</span>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         {ins.result !== 'passed' && <button style={s.btnGreen} onClick={() => updateInspectionResult(ins.id, 'passed')}>Pass</button>}
                         {ins.result !== 'failed' && <button style={s.btnRed} onClick={() => updateInspectionResult(ins.id, 'failed')}>Fail</button>}
                         {ins.result !== 'pending' && <button style={s.btnSmGray} onClick={() => updateInspectionResult(ins.id, 'pending')}>Reset</button>}
-                        <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteInspection(ins.id)}>×</button>
+                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteInspection(ins.id)}>×</button>
                       </div>
                     </div>
                   ))}
@@ -2004,7 +2004,7 @@ function ResidentialJobDetailInner() {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
                 <div style={s.statCard}><div style={s.statLabel}>Pending Waivers</div><div style={s.statValue(pendingWaivers.length > 0 ? '#e8590c' : undefined)}>{pendingWaivers.length}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#4ade80')}>{lienWaivers.filter(w => w.status === 'received').length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#15803d')}>{lienWaivers.filter(w => w.status === 'received').length}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Total Waived</div><div style={s.statValue()}>${fmt(lienWaivers.filter(w => w.status === 'received').reduce((a, w) => a + Number(w.amount || 0), 0))}</div></div>
               </div>
               <div style={s.card}>
@@ -2063,18 +2063,18 @@ function ResidentialJobDetailInner() {
                 ) : (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                      {['Company', 'Type', 'Amount', 'Paid', 'Received', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                      {['Company', 'Type', 'Amount', 'Paid', 'Received', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                     </div>
                     {lienWaivers.map(w => (
-                      <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center', background: w.status === 'pending' ? '#0d0a00' : 'transparent' }}>
-                        <span style={{ fontSize: '13px', color: '#f1f1f1' }}>{w.company_name}</span>
+                      <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', background: w.status === 'pending' ? '#0d0a00' : 'transparent' }}>
+                        <span style={{ fontSize: '13px', color: '#111827' }}>{w.company_name}</span>
                         <span style={s.badge(w.waiver_type === 'conditional' ? 'blue' : 'green')}>{w.waiver_type === 'conditional' ? 'Conditional' : 'Unconditional'}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>{w.amount ? '$' + fmt(w.amount) : '—'}</span>
-                        <span style={{ fontSize: '12px', color: '#aaa' }}>{fmtDate(w.payment_date)}</span>
-                        <span style={{ fontSize: '12px', color: w.waiver_date ? '#4ade80' : '#e8590c' }}>{fmtDate(w.waiver_date)}</span>
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(w.payment_date)}</span>
+                        <span style={{ fontSize: '12px', color: w.waiver_date ? '#15803d' : '#e8590c' }}>{fmtDate(w.waiver_date)}</span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           {w.status === 'pending' && <button style={s.btnGreen} onClick={() => updateWaiverStatus(w.id, 'received')}>Received</button>}
-                          <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteWaiver(w.id)}>×</button>
+                          <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteWaiver(w.id)}>×</button>
                         </div>
                       </div>
                     ))}
@@ -2096,7 +2096,7 @@ function ResidentialJobDetailInner() {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
                 <div style={s.statCard}><div style={s.statLabel}>Total Requested</div><div style={s.statValue()}>${fmt(totalRequested)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Total Funded</div><div style={s.statValue('#4ade80')}>${fmt(totalFunded)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total Funded</div><div style={s.statValue('#15803d')}>${fmt(totalFunded)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Approved Sub Billing</div><div style={s.statValue('#60a5fa')}>${fmt(approvedBillingTotal)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Approved Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(approvedCostTotal)}</div></div>
               </div>
@@ -2107,10 +2107,10 @@ function ResidentialJobDetailInner() {
                 </div>
                 {showAddOwnerDraw && (
                   <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                    <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '6px', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: '#aaa' }}>
-                      Current approved sub billing: <strong style={{ color: '#4ade80' }}>${fmt(approvedBillingTotal)}</strong> &nbsp;·&nbsp;
+                    <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '6px', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: '#6b7280' }}>
+                      Current approved sub billing: <strong style={{ color: '#15803d' }}>${fmt(approvedBillingTotal)}</strong> &nbsp;·&nbsp;
                       Direct costs: <strong style={{ color: '#e8590c' }}>${fmt(approvedCostTotal)}</strong> &nbsp;·&nbsp;
-                      Combined: <strong style={{ color: '#f1f1f1' }}>${fmt(approvedBillingTotal + approvedCostTotal)}</strong>
+                      Combined: <strong style={{ color: '#111827' }}>${fmt(approvedBillingTotal + approvedCostTotal)}</strong>
                     </div>
                     <div style={{ ...s.grid3, marginBottom: '10px' }}>
                       <div>
@@ -2143,11 +2143,11 @@ function ResidentialJobDetailInner() {
                   <div style={s.emptyMsg}>No owner draw requests yet. Create one to request funds from the construction lender or owner.</div>
                 ) : (
                   ownerDraws.map(d => (
-                    <div key={d.id} style={{ border: `1px solid ${d.status === 'funded' ? '#1a4a1a' : d.status === 'submitted' ? '#2a1200' : '#1e1e1e'}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
+                    <div key={d.id} style={{ border: `1px solid ${d.status === 'funded' ? '#bbf7d0' : d.status === 'submitted' ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                         <div>
-                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f1f1', marginBottom: '4px' }}>Draw #{d.draw_number} — {d.title}</div>
-                          <div style={{ fontSize: '12px', color: '#555' }}>
+                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>Draw #{d.draw_number} — {d.title}</div>
+                          <div style={{ fontSize: '12px', color: '#6b7280' }}>
                             {d.period_start && d.period_end ? `${fmtDate(d.period_start)} – ${fmtDate(d.period_end)}` : d.period_start ? `From ${fmtDate(d.period_start)}` : ''}
                             {d.submitted_date && ` · Submitted ${fmtDate(d.submitted_date)}`}
                             {d.funded_date && ` · Funded ${fmtDate(d.funded_date)}`}
@@ -2155,7 +2155,7 @@ function ResidentialJobDetailInner() {
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'monospace', color: '#f1f1f1' }}>${fmt(d.amount_requested)}</span>
+                          <span style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'monospace', color: '#111827' }}>${fmt(d.amount_requested)}</span>
                           <span style={s.badge(drawStatusColor[d.status] || 'gray')}>{d.status}</span>
                         </div>
                       </div>
@@ -2163,7 +2163,7 @@ function ResidentialJobDetailInner() {
                         {d.status === 'draft' && <button style={s.btnSm} onClick={() => updateOwnerDrawStatus(d.id, 'submitted')}>Submit to Owner/Bank</button>}
                         {d.status === 'submitted' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'approved')}>Mark Approved</button>}
                         {d.status === 'approved' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'funded')}>Mark Funded</button>}
-                        {d.status !== 'funded' && <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deleteOwnerDraw(d.id)}>Delete</button>}
+                        {d.status !== 'funded' && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteOwnerDraw(d.id)}>Delete</button>}
                       </div>
                     </div>
                   ))
@@ -2183,7 +2183,7 @@ function ResidentialJobDetailInner() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
                 <div style={s.statCard}><div style={s.statLabel}>Open</div><div style={s.statValue(openCount > 0 ? '#e8590c' : undefined)}>{openCount}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>In Progress</div><div style={s.statValue('#60a5fa')}>{inProgressCount}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Done</div><div style={s.statValue('#4ade80')}>{doneCount}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Done</div><div style={s.statValue('#15803d')}>{doneCount}</div></div>
               </div>
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -2223,15 +2223,15 @@ function ResidentialJobDetailInner() {
                   punchList.map(p => {
                     const assignedSub = p.subcontract_id ? contracts.find(c => c.id === p.subcontract_id) : null
                     return (
-                      <div key={p.id} style={{ border: `1px solid ${p.status === 'done' ? '#1a4a1a' : p.status === 'in-progress' ? '#0a1a2a' : '#1e1e1e'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '8px', opacity: p.status === 'done' ? 0.65 : 1 }}>
+                      <div key={p.id} style={{ border: `1px solid ${p.status === 'done' ? '#bbf7d0' : p.status === 'in-progress' ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '8px', opacity: p.status === 'done' ? 0.65 : 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                           <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: p.status === 'done' ? '#555' : '#f1f1f1', textDecoration: p.status === 'done' ? 'line-through' : 'none', marginBottom: '3px' }}>{p.description}</div>
-                            <div style={{ fontSize: '12px', color: '#555' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: p.status === 'done' ? '#9ca3af' : '#111827', textDecoration: p.status === 'done' ? 'line-through' : 'none', marginBottom: '3px' }}>{p.description}</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
                               {(assignedSub?.vendor_name || p.assigned_to) && <span style={{ color: '#60a5fa' }}>{assignedSub?.vendor_name || p.assigned_to}</span>}
                               {p.due_date && <span> · Due {fmtDate(p.due_date)}</span>}
                               {p.notes && <span> · {p.notes}</span>}
-                              {p.completed_date && <span style={{ color: '#4ade80' }}> · Completed {fmtDate(p.completed_date)}</span>}
+                              {p.completed_date && <span style={{ color: '#15803d' }}> · Completed {fmtDate(p.completed_date)}</span>}
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2239,7 +2239,7 @@ function ResidentialJobDetailInner() {
                             {p.status === 'open' && <button style={s.btnSmGray} onClick={() => updatePunchStatus(p.id, 'in-progress')}>Start</button>}
                             {p.status !== 'done' && <button style={s.btnGreen} onClick={() => updatePunchStatus(p.id, 'done')}>Done</button>}
                             {p.status === 'done' && <button style={s.btnSmGray} onClick={() => updatePunchStatus(p.id, 'open')}>Reopen</button>}
-                            <button style={{ ...s.btnSmGray, color: '#f87171' }} onClick={() => deletePunchItem(p.id)}>×</button>
+                            <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deletePunchItem(p.id)}>×</button>
                           </div>
                         </div>
                       </div>
@@ -2280,18 +2280,18 @@ function ResidentialJobDetailInner() {
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                  {['Name', 'Role', 'Phone', 'Email', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#555', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  {['Name', 'Role', 'Phone', 'Email', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {contacts.map(c => (
-                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1a1a1a', alignItems: 'center' }}>
+                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontSize: '13px', color: '#f1f1f1' }}>{c.name}</div>
-                      {c.company && <div style={{ fontSize: '11px', color: '#555' }}>{c.company}</div>}
+                      <div style={{ fontSize: '13px', color: '#111827' }}>{c.name}</div>
+                      {c.company && <div style={{ fontSize: '11px', color: '#6b7280' }}>{c.company}</div>}
                     </div>
-                    <span style={{ fontSize: '12px', color: '#aaa' }}>{c.role || '—'}</span>
-                    <span style={{ fontSize: '12px', color: '#aaa' }}>{c.phone || '—'}</span>
-                    <span style={{ fontSize: '12px', color: '#aaa' }}>{c.email || '—'}</span>
-                    <button style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '16px' }} onClick={() => deleteContact(c.id)}>×</button>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{c.role || '—'}</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{c.phone || '—'}</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{c.email || '—'}</span>
+                    <button style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px' }} onClick={() => deleteContact(c.id)}>×</button>
                   </div>
                 ))}
               </>
@@ -2305,7 +2305,7 @@ function ResidentialJobDetailInner() {
 
 export default function ResidentialJobDetail() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#555' }}>Loading...</div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', color: '#6b7280' }}>Loading...</div>}>
       <ResidentialJobDetailInner />
     </Suspense>
   )

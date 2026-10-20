@@ -9533,15 +9533,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </button>
                         )}
                         {c.status === 'pending' && (
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             {canReview && (
-                              <button
-                                style={{ ...s.btnSmallGreen, opacity: (updatingCostId === c.id || !c.receipt_url) ? 0.4 : 1, cursor: !c.receipt_url ? 'not-allowed' : 'pointer' }}
-                                disabled={updatingCostId === c.id || !c.receipt_url}
-                                title={!c.receipt_url ? 'Attach a receipt before approving' : ''}
-                                onClick={() => approveCost(c.id)}>
-                                {updatingCostId === c.id ? '...' : 'Approve'}
-                              </button>
+                              <>
+                                {!c.receipt_url && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>No receipt</span>}
+                                <button
+                                  style={s.btnSmallGreen}
+                                  disabled={updatingCostId === c.id}
+                                  onClick={() => {
+                                    if (!c.receipt_url && !window.confirm('This cost has no receipt attached. Approve without one?')) return
+                                    approveCost(c.id)
+                                  }}>
+                                  {updatingCostId === c.id ? '...' : c.receipt_url ? 'Approve' : 'Approve Anyway'}
+                                </button>
+                              </>
                             )}
                             <button
                               style={s.btnSmallRed}

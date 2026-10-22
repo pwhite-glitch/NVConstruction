@@ -601,7 +601,7 @@ function ResidentialJobDetailInner() {
   function printDraw(dr) {
     const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
     const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
-    const costTotal = drCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+    const costTotal = drCosts.reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
     const billingTotal = drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
     const grandTotal = costTotal + billingTotal
     const fmtN = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -1047,7 +1047,7 @@ function ResidentialJobDetailInner() {
   const baseContract = Number(job.contract_value || 0)
   const budgetTotal = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
   const committedTotal = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
-  const dcTotal = directCosts.reduce((a, d) => a + Number(d.amount || 0), 0)
+  const dcTotal = directCosts.reduce((a, d) => a + (d.is_credit ? -1 : 1) * Number(d.amount || 0), 0)
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
 
   return (
@@ -1863,7 +1863,7 @@ function ResidentialJobDetailInner() {
                   drawRequests.map(dr => {
                     const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
                     const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
-                    const drTotal = drCosts.reduce((a, c) => a + Number(c.amount || 0), 0) + drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+                    const drTotal = drCosts.reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0) + drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
                     const isExpanded = expandedDrawId === dr.id
                     const undrawnCosts = directCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
                     const undrawnBillings = billingSubmissions.filter(b => !b.draw_request_id)
@@ -2224,7 +2224,7 @@ function ResidentialJobDetailInner() {
           const totalFunded = ownerDraws.filter(d => d.status === 'funded').reduce((a, d) => a + Number(d.amount_requested || 0), 0)
           const totalRequested = ownerDraws.reduce((a, d) => a + Number(d.amount_requested || 0), 0)
           const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
-          const approvedCostTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
+          const approvedCostTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
           const drawStatusColor = { draft: 'gray', submitted: 'orange', approved: 'blue', funded: 'green' }
           return (
             <>

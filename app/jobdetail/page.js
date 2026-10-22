@@ -4105,7 +4105,7 @@ ${attachmentHtml}
     }, 0)
     const dcCommitted = directCosts
       .filter(c => c.status === 'approved' && c.budget_item_id === budgetItemId)
-      .reduce((a, c) => a + Number(c.amount || 0), 0)
+      .reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
     const poCommitted = purchaseOrders
       .filter(po => (po.status === 'issued' || po.status === 'received') && po.budget_item_id === budgetItemId)
       .reduce((a, po) => a + Number(po.amount || 0), 0)
@@ -4426,7 +4426,7 @@ ${attachmentHtml}
       // Sum received via AIA: calculate from the apps that were payment_received
       // We'll compute received total from billing submissions as a proxy, plus direct costs
       const subCostsTotal = (billings || []).reduce((a, b) => a + Number(b.amount_billed || 0), 0)
-      const dcTotal = (dcs || []).reduce((a, c) => a + Number(c.amount || 0), 0)
+      const dcTotal = (dcs || []).reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
       const laborTotal = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
       const totalCosts = subCostsTotal + dcTotal + laborTotal
 
@@ -8199,7 +8199,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const taggedCosts = directCosts.filter(c => c.draw_request_id === dr.id)
                 const undrawnCosts = directCosts.filter(c => c.status === 'approved' && !c.draw_request_id && !c.drawn_application_id)
                 const drawBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
-                const taggedTotal = taggedCosts.reduce((a, c) => a + Number(c.amount || 0), 0)
+                const taggedTotal = taggedCosts.reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
                 const taggedPOs = purchaseOrders.filter(po => po.draw_request_id === dr.id)
                 const undrawnPOs = purchaseOrders.filter(po => (po.status === 'issued' || po.status === 'received') && !po.draw_request_id)
                 const taggedPOTotal = taggedPOs.reduce((a, po) => a + Number(po.amount || 0), 0)
@@ -10381,7 +10381,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 {otherPeriod.length > 0 && (
                                   <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                     <p style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 4px' }}>
-                                      {linkedDrawId ? 'Other costs' : 'Previous period costs'} — ${otherPeriod.filter(c => !c.drawn_application_id).reduce((a, c) => a + Number(c.amount || 0), 0).toLocaleString()} undrawn · {otherPeriod.filter(c => c.drawn_application_id).length} drawn elsewhere
+                                      {linkedDrawId ? 'Other costs' : 'Previous period costs'} — ${otherPeriod.filter(c => !c.drawn_application_id).reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0).toLocaleString()} undrawn · {otherPeriod.filter(c => c.drawn_application_id).length} drawn elsewhere
                                     </p>
                                     <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 10px' }}>Costs from outside this application period. Undrawn costs can be pulled into this billing. Costs already drawn to another application are shown for reference.</p>
                                     {otherPeriod.map((c, i) => renderCostRow(c, i, otherPeriod))}

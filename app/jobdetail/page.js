@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { companyKey, sameCompany } from '../../lib/company-name'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
@@ -1403,9 +1404,8 @@ function JobDetailInner() {
 
     // Fall back: match by sub_id first, then company_name
     if (Object.keys(byBudgetItem).length === 0) {
-      const contract = billing.sub_id
-        ? contracts.find(c => c.sub_id === billing.sub_id)
-        : contracts.find(c => c.vendor_name?.toLowerCase() === billing.company_name?.toLowerCase())
+      const contract = (billing.sub_id && contracts.find(c => c.sub_id === billing.sub_id)) ||
+        contracts.find(c => c.vendor_name && c.vendor_name.toLowerCase() === billing.company_name?.toLowerCase())
       if (contract?.budget_item_id) {
         byBudgetItem[contract.budget_item_id] = Number(billing.amount_billed || 0)
       }
@@ -3168,12 +3168,26 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       const d = await r.json()
       subUserId = d.members?.[0]?.id || null
     }
-    // Find or create company record for this vendor
-    let companyId = null
-    if (dirEntry?.company_name) {
+    // Company already assigned to this job (incl. company-level rows) → reuse its company_id
+    const companyRows = subs.filter(s => sameCompany(s._companyName, dirEntry?.company_name) || sameCompany(s.profiles?.company_name, dirEntry?.company_name))
+    const assignedCoIds = [...new Set(companyRows.map(s => s.company_id || s.profiles?.company_id).filter(Boolean))]
+    let companyId = assignedCoIds.length === 1 ? assignedCoIds[0] : null
+    if (!companyId && dirEntry?.company_name) {
       const coRes = await fetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: dirEntry.company_name, find_or_create: true }) })
       const coJson = await coRes.json()
       companyId = coJson.company?.id || null
+    }
+    // No person matched by email: use the company's person only if there's exactly one
+    // (on this job first, else among the company's profiles). Otherwise leave null —
+    // company_id alone gives company-level access.
+    if (!subUserId) {
+      const jobPeople = [...new Set(companyRows.map(s => s.sub_id).filter(Boolean))]
+      if (jobPeople.length === 1) subUserId = jobPeople[0]
+      else if (jobPeople.length === 0 && companyId) {
+        const r = await authFetch(`/api/company-members?company_id=${encodeURIComponent(companyId)}`)
+        const d = await r.json().catch(() => ({}))
+        if (d.members?.length === 1) subUserId = d.members[0].id
+      }
     }
     const validAllocs = (contractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (contractForm.budget_item_id || null)
@@ -6714,7 +6728,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               const subBillingByItem = {}
               if (!hasBudgetBilling) {
                 billingSubmissions.filter(b => b.status === 'approved').forEach(b => {
-                  const sc = contracts.find(c => c.sub_id === b.sub_id)
+                  const sc = (b.sub_id && contracts.find(c => c.sub_id === b.sub_id)) ||
+                    contracts.find(c => c.vendor_name && b.company_name && c.vendor_name.toLowerCase() === b.company_name.toLowerCase())
                   if (sc) {
                     const allocs = sc.budget_allocations
                     if (allocs && allocs.length > 0) {
@@ -7025,8 +7040,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div>
                       <label style={s.label}>Subcontractor</label>
                       {(() => {
+                        // Match by assigned email, or by company (company-level rows have no email/person)
                         const assignedEmails = new Set(subs.map(s => s.sub_email?.toLowerCase()).filter(Boolean))
-                        const assignedDirs = subDirectory.filter(d => assignedEmails.has(d.email?.toLowerCase()))
+                        const assignedCoKeys = new Set(subs.flatMap(s => [s._companyName, s.profiles?.company_name]).map(companyKey).filter(Boolean))
+                        const assignedDirs = subDirectory.filter(d => assignedEmails.has(d.email?.toLowerCase()) || assignedCoKeys.has(companyKey(d.company_name)))
                         return (
                           <>
                             <select style={s.input} value={contractForm.dir_id} onChange={e => setContractForm(f => ({ ...f, dir_id: e.target.value }))}>

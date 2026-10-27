@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { openStorageFile } from '../../lib/open-file'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { sameCompany } from '../../lib/company-name'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
@@ -1671,9 +1672,8 @@ export default function Dashboard() {
     else alert('Failed to send: ' + (data?.error || 'Unknown error'))
   }
 
-  async function openBillingDoc(path) {
-    const { data } = await supabase.storage.from('billing-docs').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openBillingDoc(path) {
+    return openStorageFile(supabase, 'billing-docs', path, 3600)
   }
 
   async function openBidDoc(path) {

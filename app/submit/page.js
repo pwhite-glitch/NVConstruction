@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { notifyBidSubmitted } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { openStorageFile } from '../../lib/open-file'
 
 const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
@@ -478,9 +479,8 @@ export default function Submit() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
-  async function openBillingDoc(storagePath) {
-    const { data } = await supabase.storage.from('billing-docs').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openBillingDoc(storagePath) {
+    return openStorageFile(supabase, 'billing-docs', storagePath, 3600)
   }
 
   async function submitBid(bidPackageId) {

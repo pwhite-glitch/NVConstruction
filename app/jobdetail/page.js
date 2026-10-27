@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { openStorageFile } from '../../lib/open-file'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
@@ -924,9 +925,8 @@ function JobDetailInner() {
     setSubmittingPmDelivery(false)
   }
 
-  async function openBolUrl(path) {
-    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openBolUrl(path) {
+    return openStorageFile(supabase, 'receipts', path, 3600)
   }
 
   async function loadDirectCosts() {
@@ -967,19 +967,16 @@ function JobDetailInner() {
     setGeneralConditions(json.entries || [])
   }
 
-  async function openDcReceiptUrl(path) {
-    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 60)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openDcReceiptUrl(path) {
+    return openStorageFile(supabase, 'receipts', path, 60)
   }
 
-  async function openBidProposalUrl(path) {
-    const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(path, 300)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openBidProposalUrl(path) {
+    return openStorageFile(supabase, 'prime-contracts', path, 300)
   }
 
-  async function openSignedContractUrl(path) {
-    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 300)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openSignedContractUrl(path) {
+    return openStorageFile(supabase, 'documents', path, 300)
   }
 
   async function openSubmittalDocUrl(path) {
@@ -1248,11 +1245,10 @@ function JobDetailInner() {
     setUploadingPrimeContract(false)
   }
 
-  async function openPrimeContractUrl() {
+  function openPrimeContractUrl() {
     const path = job?.prime_contract_url
     if (!path) return
-    const { data } = await supabase.storage.from('prime-contracts').createSignedUrl(path, 60)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    return openStorageFile(supabase, 'prime-contracts', path, 60)
   }
 
   async function loadAiaApplications() {
@@ -2665,9 +2661,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setScheduleUploadMeta({ revision: '', notes: '' })
   }
 
-  async function openScheduleFile(storagePath) {
-    const { data } = await supabase.storage.from('schedule-files').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openScheduleFile(storagePath) {
+    return openStorageFile(supabase, 'schedule-files', storagePath, 3600)
   }
 
   async function deleteScheduleFile(fileId, storagePath) {
@@ -9267,10 +9262,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {r.photos.map((ph, i) => (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ffffff', border: '1px solid #222', borderRadius: '6px', padding: '5px 10px' }}>
                                 <span style={{ fontSize: '12px', color: '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
-                                  onClick={async () => {
-                                    const { data } = await supabase.storage.from('daily-report-photos').createSignedUrl(ph.path, 3600)
-                                    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                                  }}>
+                                  onClick={() => openStorageFile(supabase, 'daily-report-photos', ph.path, 3600)}>
                                   {ph.name || `Photo ${i + 1}`}
                                 </span>
                                 <button
@@ -13011,7 +13003,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
-                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={async () => { const { data } = await supabase.storage.from('gc-docs').createSignedUrl(e.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>📎</button>}
+                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={() => openStorageFile(supabase, 'gc-docs', e.doc_url, 3600)}>📎</button>}
                                       <button style={s.btnSmallOrange} onClick={() => {
                                         setEditingGCId(e.id)
                                         setGcEditFile(null)

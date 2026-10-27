@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
+import { openStorageFile } from '../../lib/open-file'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -1122,7 +1123,7 @@ export default function AdminPortal() {
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
                             {!sub.paid_at && <button style={s.btnSm('gray')} onClick={() => { setEditingBillId(sub.id); setEditBillForm({ invoice_number: sub.invoice_number || '', amount_billed: '', retainage_held: '', work_description: '' }) }}>Edit</button>}
-                            {sub.doc_url && <button style={s.btnSm('blue')} onClick={async () => { const { data } = await supabase.storage.from('billing-docs').createSignedUrl(sub.doc_url, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}>View Invoice</button>}
+                            {sub.doc_url && <button style={s.btnSm('blue')} onClick={() => openStorageFile(supabase, 'billing-docs', sub.doc_url, 3600)}>View Invoice</button>}
                           </div>
                         )}
                       </div>

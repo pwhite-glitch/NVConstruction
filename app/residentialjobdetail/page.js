@@ -1055,7 +1055,7 @@ function ResidentialJobDetailInner() {
   return (
     <div style={s.page}>
       {/* STICKY HEADER */}
-      <header style={s.header}>
+      <header style={s.header} className="rx-safe-top">
         <div style={s.headerInner}>
           <div style={s.logoRow}>
             <img src="/logo.png" alt="NV Construction" style={s.logoImg} />

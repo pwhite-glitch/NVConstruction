@@ -352,7 +352,7 @@ function SalesPageInner() {
             {view === 'list' && (
               loading ? <p style={s.empty}>Loading orders…</p> :
               filteredOrders.length === 0 ? <p style={s.empty}>No orders found.</p> : (
-                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
                   <table style={s.table}>
                     <thead>
                       <tr>
@@ -497,7 +497,7 @@ function SalesPageInner() {
 
             {lbLoading ? <p style={s.empty}>Loading…</p> :
              lbData.length === 0 ? <p style={s.empty}>No qualifying sales in the selected period.</p> : (
-              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
+              <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
                 <table style={s.table}>
                   <thead>
                     <tr>

@@ -156,18 +156,21 @@ textarea:focus {
   /* Sidebar: hide on mobile */
   .rx-sidebar { display: none !important; }
 
-  /* Bottom nav */
+  /* Bottom nav — grows by the home-indicator inset so buttons sit above it */
   .rx-bottom-nav {
     display: flex !important;
     position: fixed;
     bottom: 0; left: 0; right: 0;
     z-index: 100;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   /* Content: no left margin, pad bottom for nav */
   .rx-content {
-    padding: 1rem 0.75rem 80px !important;
+    padding: 1rem 0.75rem calc(80px + env(safe-area-inset-bottom)) !important;
     max-width: 100% !important;
   }
 
@@ -189,18 +192,41 @@ textarea:focus {
   /* Multi-column form rows */
   .rx-form-row  { grid-template-columns: 1fr 1fr !important; }
 
-  /* Prevent iOS input zoom */
-  input[type="text"],
-  input[type="email"],
-  input[type="password"],
-  input[type="number"],
-  input[type="date"],
-  input[type="month"],
-  input[type="tel"],
+  /* Tap targets — 44px minimum height for anything tappable */
+  button,
+  [role="button"],
+  select,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]) {
+    min-height: 44px;
+  }
+
+  /* Header rows (title + actions) that stack on phones */
+  .rx-stack-sm {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+  /* Rows of figures / buttons that wrap on phones */
+  .rx-wrap-sm {
+    flex-wrap: wrap !important;
+    gap: 10px 16px !important;
+  }
+  .rx-wrap-sm > * { text-align: left !important; }
+}
+
+/* Prevent iOS input zoom — any field under 16px makes Safari zoom on focus.
+   Also applies to touch-first devices (iPad) since they zoom the same way. */
+@media (max-width: 640px), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
   select,
   textarea {
     font-size: 16px !important;
   }
+}
+
+/* Sticky page headers — clear the notch / status bar */
+.rx-safe-top {
+  padding-top: env(safe-area-inset-top) !important;
 }
 
 /* ── Dashboard nav items ──────────────────────────────────────────────────── */

@@ -9,6 +9,12 @@ export const metadata = {
     apple: '/logo.png',
   },
 }
+// viewport-fit=cover lets env(safe-area-inset-*) report the notch / home-indicator insets
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+}
 export default function RootLayout({ children }) {
   return (
     <html lang="en">

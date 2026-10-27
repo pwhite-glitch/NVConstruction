@@ -1392,7 +1392,7 @@ export default function Submit() {
                 {sovForm.length > 0 && (
                   <div style={{ marginBottom: '1rem' }}>
                     <label style={s.label}>Schedule of values</label>
-                    <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div style={{ background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '8px', overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid #1e1e1e' }}>

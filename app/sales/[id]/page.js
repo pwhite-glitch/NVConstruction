@@ -484,7 +484,7 @@ export default function SalesOrderDetailPage() {
     <div style={s.page}>
 
       {/* ── Header ── */}
-      <header style={s.header}>
+      <header style={s.header} className="rx-safe-top">
         <button style={s.backBtn} onClick={() => router.push('/sales' + (order.division ? '?division=' + order.division : ''))}>← Orders</button>
         <div style={s.hdivider} />
         <div>

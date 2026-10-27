@@ -24,6 +24,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>NV Construction uses the camera so you can take job site photos, receipts, and documents and attach them to your projects.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>NV Construction uses the microphone when you record a video to attach to a project.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NV Construction needs access to your photo library so you can attach existing photos and documents to your projects.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NV Construction saves photos you choose to download to your photo library.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

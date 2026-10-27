@@ -3568,7 +3568,7 @@ ${estimate.notes ? `
       </div>
       {/* ── MORE DRAWER (mobile) ── */}
       {mobileMoreOpen && (
-        <div style={{ position: 'fixed', bottom: '60px', left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', zIndex: 200, display: 'none' }} className="rx-more-drawer">
+        <div style={{ position: 'fixed', bottom: 'calc(60px + env(safe-area-inset-bottom))', left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', zIndex: 200, display: 'none' }} className="rx-more-drawer">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
             {navItems.filter(n => !['overview','jobs','billing','directory'].includes(n.tab)).map(({ tab, icon, label, badge }) => (
               <button key={tab} onClick={() => { setActiveTab(tab); setMobileMoreOpen(false) }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', background: 'none', border: 'none', cursor: 'pointer', color: activeTab === tab ? '#e8590c' : '#374151', fontSize: '11px', fontWeight: activeTab === tab ? '700' : '400', position: 'relative' }}>
@@ -5843,7 +5843,7 @@ ${estimate.notes ? `
                               const sorted = [...submissions].filter(s => s.status !== 'rejected').sort((a, b) => Number(a.amount) - Number(b.amount))
                               const low = sorted.length > 0 ? Number(sorted[0].amount) : 0
                               return (
-                                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden' }}>
+                                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                     <thead>
                                       <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
@@ -7716,113 +7716,115 @@ ${estimate.notes ? `
                                               {allocs.length === 0 ? (
                                                 <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No job allocations yet.</p>
                                               ) : (
-                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                                  <thead>
-                                                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                                      {['Job', 'Type', '%', 'Start', 'Days', '$/Wk', 'Accrued', ''].map(h => (
-                                                        <th key={h} style={{ textAlign: 'left', padding: '4px 8px 8px 0', fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>{h}</th>
-                                                      ))}
-                                                    </tr>
-                                                  </thead>
-                                                  <tbody>
-                                                    {allocs.map(a => {
-                                                      const pct = a.percentage != null ? Number(a.percentage) : 100
-                                                      const start = a.start_date ? new Date(a.start_date) : null
-                                                      const end = a.end_date ? new Date(a.end_date) : new Date()
-                                                      const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : null
-                                                      const effectiveWeekly = Math.round(weeklyRate * pct / 100)
-                                                      const total = days != null ? Math.round(effectiveWeekly * days / 7) : null
-                                                      const isPM = a.allocation_type === 'pm_allocation'
-                                                      const isOngoing = !a.end_date
-                                                      return (
-                                                        <tr key={a.id} style={{ borderBottom: '1px solid #141414' }}>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#111827' }}>
-                                                            {a.jobs ? `#${a.jobs.job_number} ${a.jobs.project_name}` : '—'}
-                                                            {isPM && (
-                                                              editingAllocBudget?.allocId === a.id ? (
-                                                                <select
-                                                                  autoFocus
-                                                                  style={{ marginTop: '4px', display: 'block', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '6px', color: '#111827', fontSize: '11px', padding: '4px 8px', width: '100%' }}
-                                                                  defaultValue=""
-                                                                  onChange={async ev => {
-                                                                    const item = editingAllocBudget.items.find(b => b.id === ev.target.value)
-                                                                    if (!item) return
-                                                                    await fetch('/api/employee-allocations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` }) })
-                                                                    setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).map(x => x.id === a.id ? { ...x, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` } : x) }))
-                                                                    setEditingAllocBudget(null)
-                                                                  }}
-                                                                  onBlur={() => setEditingAllocBudget(null)}
-                                                                >
-                                                                  <option value="">Select budget line…</option>
-                                                                  {editingAllocBudget.items.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} — ` : ''}{b.description}</option>)}
-                                                                </select>
-                                                              ) : (
-                                                                <div
-                                                                  onClick={async () => {
-                                                                    const jobId = a.job_id
-                                                                    const { data } = await supabase.from('budget_items').select('id, cost_code, description').eq('job_id', jobId).order('cost_code')
-                                                                    setEditingAllocBudget({ allocId: a.id, jobId, items: data || [] })
-                                                                  }}
-                                                                  style={{ marginTop: '3px', fontSize: '11px', color: a.budget_line ? '#555' : '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
-                                                                >
-                                                                  {a.budget_line || 'Set budget line ▾'}
-                                                                </div>
-                                                              )
-                                                            )}
-                                                          </td>
-                                                          <td style={{ padding: '8px 8px 8px 0' }}>
-                                                            <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isPM ? '#eff6ff' : '#1a0a00', color: isPM ? '#2563eb' : '#f97316', border: `1px solid ${isPM ? '#bfdbfe' : '#4a2a00'}` }}>
-                                                              {isPM ? 'PM / Super' : 'Profit'}
-                                                            </span>
-                                                          </td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: pct < 100 ? '#d97706' : '#aaa', fontWeight: pct < 100 ? '700' : '400' }}>{pct}%</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#4b5563' }}>{a.start_date || '—'}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: isOngoing ? '#16a34a' : '#aaa' }}>
-                                                            {days != null ? days : '—'}
-                                                            {isOngoing && <span style={{ fontSize: '10px', marginLeft: '4px', color: '#16a34a' }}>▲</span>}
-                                                          </td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#111827', fontWeight: '600' }}>${effectiveWeekly.toLocaleString()}</td>
-                                                          <td style={{ padding: '8px 8px 8px 0', color: '#16a34a', fontWeight: '700' }}>{total != null ? `$${total.toLocaleString()}` : '—'}</td>
-                                                          <td style={{ padding: '8px 0' }}>
-                                                            <button
-                                                              onClick={async () => {
-                                                                if (!confirm('Remove this allocation?')) return
-                                                                await fetch('/api/employee-allocations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id }) })
-                                                                setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).filter(x => x.id !== a.id) }))
-                                                              }}
-                                                              style={{ background: 'none', border: 'none', color: '#374151', cursor: 'pointer', fontSize: '16px' }}
-                                                            >×</button>
-                                                          </td>
-                                                        </tr>
-                                                      )
-                                                    })}
-                                                  </tbody>
-                                                  <tfoot>
-                                                    {(() => {
-                                                      const totalEffectiveWeekly = allocs.reduce((sum, a) => sum + Math.round(weeklyRate * (a.percentage != null ? Number(a.percentage) : 100) / 100), 0)
-                                                      const totalPct = allocs.reduce((sum, a) => sum + (a.percentage != null ? Number(a.percentage) : 100), 0)
-                                                      const totalAccrued = allocs.reduce((sum, a) => {
+                                                <div className="rx-scroll-x">
+                                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                                    <thead>
+                                                      <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                                        {['Job', 'Type', '%', 'Start', 'Days', '$/Wk', 'Accrued', ''].map(h => (
+                                                          <th key={h} style={{ textAlign: 'left', padding: '4px 8px 8px 0', fontSize: '10px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase' }}>{h}</th>
+                                                        ))}
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {allocs.map(a => {
                                                         const pct = a.percentage != null ? Number(a.percentage) : 100
-                                                        const s = a.start_date ? new Date(a.start_date) : null
-                                                        const en = a.end_date ? new Date(a.end_date) : new Date()
-                                                        const d = s ? Math.max(0, Math.round((en - s) / (24 * 60 * 60 * 1000))) : 0
-                                                        return sum + Math.round(weeklyRate * pct / 100 * d / 7)
-                                                      }, 0)
-                                                      return (
-                                                        <tr style={{ borderTop: '1px solid #2a2a2a' }}>
-                                                          <td colSpan={4} style={{ padding: '8px 0', fontSize: '11px', color: '#6b7280' }}>
-                                                            {profitAllocs.length} against profit · {pmAllocs.length} PM/Super · {totalPct}% allocated
-                                                          </td>
-                                                          <td style={{ padding: '8px 0' }}></td>
-                                                          <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: totalPct > 100 ? '#f87171' : '#111827' }}>${totalEffectiveWeekly.toLocaleString()}/wk</td>
-                                                          <td colSpan={2} style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#16a34a' }}>
-                                                            ${totalAccrued.toLocaleString()} total
-                                                          </td>
-                                                        </tr>
-                                                      )
-                                                    })()}
-                                                  </tfoot>
-                                                </table>
+                                                        const start = a.start_date ? new Date(a.start_date) : null
+                                                        const end = a.end_date ? new Date(a.end_date) : new Date()
+                                                        const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : null
+                                                        const effectiveWeekly = Math.round(weeklyRate * pct / 100)
+                                                        const total = days != null ? Math.round(effectiveWeekly * days / 7) : null
+                                                        const isPM = a.allocation_type === 'pm_allocation'
+                                                        const isOngoing = !a.end_date
+                                                        return (
+                                                          <tr key={a.id} style={{ borderBottom: '1px solid #141414' }}>
+                                                            <td style={{ padding: '8px 8px 8px 0', color: '#111827' }}>
+                                                              {a.jobs ? `#${a.jobs.job_number} ${a.jobs.project_name}` : '—'}
+                                                              {isPM && (
+                                                                editingAllocBudget?.allocId === a.id ? (
+                                                                  <select
+                                                                    autoFocus
+                                                                    style={{ marginTop: '4px', display: 'block', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '6px', color: '#111827', fontSize: '11px', padding: '4px 8px', width: '100%' }}
+                                                                    defaultValue=""
+                                                                    onChange={async ev => {
+                                                                      const item = editingAllocBudget.items.find(b => b.id === ev.target.value)
+                                                                      if (!item) return
+                                                                      await fetch('/api/employee-allocations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` }) })
+                                                                      setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).map(x => x.id === a.id ? { ...x, budget_item_id: item.id, budget_line: `${item.cost_code ? item.cost_code + ' — ' : ''}${item.description}` } : x) }))
+                                                                      setEditingAllocBudget(null)
+                                                                    }}
+                                                                    onBlur={() => setEditingAllocBudget(null)}
+                                                                  >
+                                                                    <option value="">Select budget line…</option>
+                                                                    {editingAllocBudget.items.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} — ` : ''}{b.description}</option>)}
+                                                                  </select>
+                                                                ) : (
+                                                                  <div
+                                                                    onClick={async () => {
+                                                                      const jobId = a.job_id
+                                                                      const { data } = await supabase.from('budget_items').select('id, cost_code, description').eq('job_id', jobId).order('cost_code')
+                                                                      setEditingAllocBudget({ allocId: a.id, jobId, items: data || [] })
+                                                                    }}
+                                                                    style={{ marginTop: '3px', fontSize: '11px', color: a.budget_line ? '#555' : '#e8590c', cursor: 'pointer', textDecoration: 'underline' }}
+                                                                  >
+                                                                    {a.budget_line || 'Set budget line ▾'}
+                                                                  </div>
+                                                                )
+                                                              )}
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px 8px 0' }}>
+                                                              <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isPM ? '#eff6ff' : '#1a0a00', color: isPM ? '#2563eb' : '#f97316', border: `1px solid ${isPM ? '#bfdbfe' : '#4a2a00'}` }}>
+                                                                {isPM ? 'PM / Super' : 'Profit'}
+                                                              </span>
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px 8px 0', color: pct < 100 ? '#d97706' : '#aaa', fontWeight: pct < 100 ? '700' : '400' }}>{pct}%</td>
+                                                            <td style={{ padding: '8px 8px 8px 0', color: '#4b5563' }}>{a.start_date || '—'}</td>
+                                                            <td style={{ padding: '8px 8px 8px 0', color: isOngoing ? '#16a34a' : '#aaa' }}>
+                                                              {days != null ? days : '—'}
+                                                              {isOngoing && <span style={{ fontSize: '10px', marginLeft: '4px', color: '#16a34a' }}>▲</span>}
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px 8px 0', color: '#111827', fontWeight: '600' }}>${effectiveWeekly.toLocaleString()}</td>
+                                                            <td style={{ padding: '8px 8px 8px 0', color: '#16a34a', fontWeight: '700' }}>{total != null ? `$${total.toLocaleString()}` : '—'}</td>
+                                                            <td style={{ padding: '8px 0' }}>
+                                                              <button
+                                                                onClick={async () => {
+                                                                  if (!confirm('Remove this allocation?')) return
+                                                                  await fetch('/api/employee-allocations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id }) })
+                                                                  setEmpAllocations(prev => ({ ...prev, [e.id]: (prev[e.id] || []).filter(x => x.id !== a.id) }))
+                                                                }}
+                                                                style={{ background: 'none', border: 'none', color: '#374151', cursor: 'pointer', fontSize: '16px' }}
+                                                              >×</button>
+                                                            </td>
+                                                          </tr>
+                                                        )
+                                                      })}
+                                                    </tbody>
+                                                    <tfoot>
+                                                      {(() => {
+                                                        const totalEffectiveWeekly = allocs.reduce((sum, a) => sum + Math.round(weeklyRate * (a.percentage != null ? Number(a.percentage) : 100) / 100), 0)
+                                                        const totalPct = allocs.reduce((sum, a) => sum + (a.percentage != null ? Number(a.percentage) : 100), 0)
+                                                        const totalAccrued = allocs.reduce((sum, a) => {
+                                                          const pct = a.percentage != null ? Number(a.percentage) : 100
+                                                          const s = a.start_date ? new Date(a.start_date) : null
+                                                          const en = a.end_date ? new Date(a.end_date) : new Date()
+                                                          const d = s ? Math.max(0, Math.round((en - s) / (24 * 60 * 60 * 1000))) : 0
+                                                          return sum + Math.round(weeklyRate * pct / 100 * d / 7)
+                                                        }, 0)
+                                                        return (
+                                                          <tr style={{ borderTop: '1px solid #2a2a2a' }}>
+                                                            <td colSpan={4} style={{ padding: '8px 0', fontSize: '11px', color: '#6b7280' }}>
+                                                              {profitAllocs.length} against profit · {pmAllocs.length} PM/Super · {totalPct}% allocated
+                                                            </td>
+                                                            <td style={{ padding: '8px 0' }}></td>
+                                                            <td style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: totalPct > 100 ? '#f87171' : '#111827' }}>${totalEffectiveWeekly.toLocaleString()}/wk</td>
+                                                            <td colSpan={2} style={{ padding: '8px 0', fontSize: '12px', fontWeight: '700', color: '#16a34a' }}>
+                                                              ${totalAccrued.toLocaleString()} total
+                                                            </td>
+                                                          </tr>
+                                                        )
+                                                      })()}
+                                                    </tfoot>
+                                                  </table>
+                                                </div>
                                               )}
                                             </>
                                           )
@@ -8496,24 +8498,26 @@ ${estimate.notes ? `
                           {(!tpl.order_template_items || tpl.order_template_items.length === 0) ? (
                             <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No items in this template.</p>
                           ) : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: '#4b5563' }}>
-                              <thead>
-                                <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                  <th style={{ textAlign: 'left', padding: '4px 0', color: '#6b7280', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>ITEM</th>
-                                  <th style={{ textAlign: 'left', padding: '4px 8px', color: '#6b7280', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>CATEGORY</th>
-                                  <th style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>QTY</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {[...(tpl.order_template_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map(item => (
-                                  <tr key={item.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                                    <td style={{ padding: '8px 0', color: '#111827' }}>{item.item_name}</td>
-                                    <td style={{ padding: '8px 8px', color: '#6b7280' }}>{item.category || '—'}</td>
-                                    <td style={{ padding: '8px 0', textAlign: 'right' }}>{item.default_qty} {item.unit}</td>
+                            <div className="rx-scroll-x">
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', color: '#4b5563' }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                    <th style={{ textAlign: 'left', padding: '4px 0', color: '#6b7280', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>ITEM</th>
+                                    <th style={{ textAlign: 'left', padding: '4px 8px', color: '#6b7280', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>CATEGORY</th>
+                                    <th style={{ textAlign: 'right', padding: '4px 0', color: '#6b7280', fontWeight: '600', fontSize: '11px', letterSpacing: '1px' }}>QTY</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody>
+                                  {[...(tpl.order_template_items || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map(item => (
+                                    <tr key={item.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                      <td style={{ padding: '8px 0', color: '#111827' }}>{item.item_name}</td>
+                                      <td style={{ padding: '8px 8px', color: '#6b7280' }}>{item.category || '—'}</td>
+                                      <td style={{ padding: '8px 0', textAlign: 'right' }}>{item.default_qty} {item.unit}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           )}
                         </div>
                       )}

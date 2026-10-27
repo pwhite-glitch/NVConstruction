@@ -2833,7 +2833,7 @@ export default function Field() {
 
       {/* FLOATING CAMERA BUTTON */}
       {selectedJobId && !lightbox && (
-        <div style={{ position: 'fixed', bottom: '24px', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+        <div style={{ position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom))', right: '20px', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
           {fabOpen && (
             <div style={{ background: '#1c1c1c', border: '1px solid #d1d5db', borderRadius: '14px', padding: '14px', width: '280px', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>

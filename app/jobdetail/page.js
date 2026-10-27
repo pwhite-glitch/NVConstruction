@@ -5144,7 +5144,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
   return (
     <div style={s.page}>
-      <header style={s.header}>
+      <header style={s.header} className="rx-safe-top">
         <div style={s.headerInner}>
           <div style={s.logoRow}>
             <img src="/logo.png" alt="NV Construction" style={s.logoImg} />
@@ -5886,7 +5886,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </form>
                       ) : (
                         <>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }} className="rx-stack-sm">
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                                 <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{sc.scope_description}</span>
@@ -5910,7 +5910,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               </div>
                               {sc.notes && <p style={{ fontSize: '12px', color: '#6b7280', margin: '6px 0 0' }}>{sc.notes}</p>}
                             </div>
-                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }} className="rx-wrap-sm">
                               <button style={s.btnSmall} type="button" onClick={() => setExpandedNvSubCOId(expandedNvSubCOId === sc.id ? null : sc.id)}>
                                 {expandedNvSubCOId === sc.id ? 'Hide COs' : `COs (${(sc.change_orders || []).length})`}
                               </button>
@@ -7093,7 +7093,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                 return (
                   <div key={c.id} style={{ ...s.contractRow, ...(isDraft ? { borderStyle: 'dashed', borderColor: '#f59e0b' } : {}) }}>
-                    <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }}>
+                    <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }} className="rx-stack-sm">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{subName}</span>
                         {c.description && <span style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #222', borderRadius: '4px', padding: '1px 7px' }}>{c.description}</span>}
@@ -7119,7 +7119,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }} className="rx-wrap-sm">
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Contract</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>${Number(c.contract_value).toLocaleString()}</div>
@@ -8980,31 +8980,33 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {billingSovData[b.id] && billingSovData[b.id].length > 0 && (
                           <div style={{ marginTop: '1.25rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
                             <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Schedule of values — this submission</p>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                              <thead>
-                                <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
-                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
-                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>This submission</th>
-                                  <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>% Complete</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {billingSovData[b.id].map(line => {
-                                  const sched = Number(line.subcontract_sov_lines?.scheduled_value || 0)
-                                  const amt = Number(line.amount || 0)
-                                  const pct = sched > 0 ? (amt / sched * 100).toFixed(0) : '—'
-                                  return (
-                                    <tr key={line.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                      <td style={{ padding: '8px', color: '#374151' }}>{line.subcontract_sov_lines?.description || '—'}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', color: '#6b7280' }}>${sched.toLocaleString()}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', color: '#111827', fontWeight: '600' }}>${amt.toLocaleString()}</td>
-                                      <td style={{ padding: '8px', textAlign: 'right', color: '#16a34a' }}>{pct}%</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
+                            <div className="rx-scroll-x">
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                    <th style={{ textAlign: 'left', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Description</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>Scheduled</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>This submission</th>
+                                    <th style={{ textAlign: 'right', padding: '6px 8px', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>% Complete</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {billingSovData[b.id].map(line => {
+                                    const sched = Number(line.subcontract_sov_lines?.scheduled_value || 0)
+                                    const amt = Number(line.amount || 0)
+                                    const pct = sched > 0 ? (amt / sched * 100).toFixed(0) : '—'
+                                    return (
+                                      <tr key={line.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ padding: '8px', color: '#374151' }}>{line.subcontract_sov_lines?.description || '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', color: '#6b7280' }}>${sched.toLocaleString()}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', color: '#111827', fontWeight: '600' }}>${amt.toLocaleString()}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', color: '#16a34a' }}>{pct}%</td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -10004,7 +10006,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     const isShowingForm = showNewNvSubAia === sc.id
                     return (
                       <div key={sc.id} style={{ borderTop: scIdx > 0 ? '1px solid #f0f0f0' : 'none', paddingTop: scIdx > 0 ? '1.25rem' : 0, marginBottom: '1.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }} className="rx-stack-sm">
                           <div>
                             <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{sc.gc_name || 'GC Subcontract'}</span>
                             {sc.scope_description && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>{sc.scope_description}</span>}
@@ -11664,46 +11666,48 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.card}>
                 <p style={s.cardTitle}>Monthly cash flow</p>
                 {allMonths.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved billing, direct costs, or payments yet.</p> : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        {['Month', 'Cash in', 'Sub billings', 'Direct costs', 'Total out', 'Net'].map(h => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        let running = 0
-                        return allMonths.map(m => {
-                          const inflow = cashInByMonth[m] || 0
-                          const sub = subPayByMonth[m] || 0
-                          const dc = dcByMonth[m] || 0
-                          const out = sub + dc
-                          const net = inflow - out
-                          running += net
-                          return (
-                            <tr key={m} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                              <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#16a34a' : '#444' }}>{fmt(inflow)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', color: out > 0 ? '#dc2626' : '#444' }}>{fmt(out)}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: net >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(net)}</td>
-                            </tr>
-                          )
-                        })
-                      })()}
-                      <tr style={{ borderTop: '2px solid #222' }}>
-                        <td style={{ padding: '10px 12px', color: '#6b7280', fontWeight: '700' }}>Total</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: '700' }}>{fmt(totalIn)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#dc2626', fontWeight: '700' }}>{fmt(totalOut)}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(netCashFlow)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <div className="rx-scroll-x">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                          {['Month', 'Cash in', 'Sub billings', 'Direct costs', 'Total out', 'Net'].map(h => (
+                            <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          let running = 0
+                          return allMonths.map(m => {
+                            const inflow = cashInByMonth[m] || 0
+                            const sub = subPayByMonth[m] || 0
+                            const dc = dcByMonth[m] || 0
+                            const out = sub + dc
+                            const net = inflow - out
+                            running += net
+                            return (
+                              <tr key={m} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                <td style={{ padding: '10px 12px', color: '#111827', fontWeight: '600' }}>{new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#16a34a' : '#444' }}>{fmt(inflow)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: out > 0 ? '#dc2626' : '#444' }}>{fmt(out)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: net >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(net)}</td>
+                              </tr>
+                            )
+                          })
+                        })()}
+                        <tr style={{ borderTop: '2px solid #222' }}>
+                          <td style={{ padding: '10px 12px', color: '#6b7280', fontWeight: '700' }}>Total</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: '700' }}>{fmt(totalIn)}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#dc2626', fontWeight: '700' }}>{fmt(totalOut)}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(netCashFlow)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
 
@@ -13655,32 +13659,34 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                           </div>
 
                           {/* Lines table */}
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '12px' }}>
-                            <thead><tr style={{ background: '#f3f4f6' }}>
-                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expense</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Markup</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Billed</th>
-                            </tr></thead>
-                            <tbody>
-                              {lines.map(l => (
-                                <tr key={l.id}>
-                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb' }}>{l.description}</td>
-                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{fmtD(l.expense_date)}</td>
-                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtC(l.expense_amount)}</td>
-                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right' }}>{l.markup_pct ? `${l.markup_pct}%` : '—'}</td>
-                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontWeight: '600', fontVariantNumeric: 'tabular-nums' }}>{fmtC(l.billed_amount)}</td>
+                          <div className="rx-scroll-x">
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '12px' }}>
+                              <thead><tr style={{ background: '#f3f4f6' }}>
+                                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Expense</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Markup</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: '700', border: '1px solid #e5e7eb', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Billed</th>
+                              </tr></thead>
+                              <tbody>
+                                {lines.map(l => (
+                                  <tr key={l.id}>
+                                    <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb' }}>{l.description}</td>
+                                    <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{fmtD(l.expense_date)}</td>
+                                    <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtC(l.expense_amount)}</td>
+                                    <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right' }}>{l.markup_pct ? `${l.markup_pct}%` : '—'}</td>
+                                    <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontWeight: '600', fontVariantNumeric: 'tabular-nums' }}>{fmtC(l.billed_amount)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr style={{ background: '#f3f4f6' }}>
+                                  <td colSpan={4} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', fontWeight: '700', fontSize: '12px' }}>Total Billed</td>
+                                  <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontWeight: '800', fontVariantNumeric: 'tabular-nums' }}>{fmtC(inv.totalBilled)}</td>
                                 </tr>
-                              ))}
-                            </tbody>
-                            <tfoot>
-                              <tr style={{ background: '#f3f4f6' }}>
-                                <td colSpan={4} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', fontWeight: '700', fontSize: '12px' }}>Total Billed</td>
-                                <td style={{ padding: '6px 8px', border: '1px solid #e5e7eb', textAlign: 'right', fontWeight: '800', fontVariantNumeric: 'tabular-nums' }}>{fmtC(inv.totalBilled)}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
+                              </tfoot>
+                            </table>
+                          </div>
 
                           {/* Payment history */}
                           {payments.length > 0 && (

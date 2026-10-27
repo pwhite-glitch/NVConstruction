@@ -124,32 +124,34 @@ function OverviewSection({ pkg, scopeItems, plans, invitations, submissions }) {
       {trades.length > 0 && (
         <div style={s.card}>
           <h3 style={s.cardH}>Quote Coverage by Trade</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr>{['Trade','Scope Items','Quotes','Low Bid'].map(h => (
-                <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {trades.map(trade => {
-                const ti = scopeItems.filter(i => i.trade === trade)
-                const ts = submissionsByTrade[trade] || []
-                const low = ts.length > 0 ? Math.min(...ts.map(s => Number(s.amount || 0))) : null
-                return (
-                  <tr key={trade} style={{ borderTop: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '7px 12px 7px 0', fontWeight: '500' }}>{trade}</td>
-                    <td style={{ padding: '7px 12px 7px 0', color: '#6b7280' }}>{ti.length}</td>
-                    <td style={{ padding: '7px 12px 7px 0' }}>
-                      <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', background: ts.length > 0 ? '#dcfce7' : '#f3f4f6', color: ts.length > 0 ? '#16a34a' : '#9ca3af' }}>
-                        {ts.length > 0 ? `${ts.length} received` : 'None'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '7px 0', fontWeight: '600', color: '#111827' }}>{low !== null ? fmtMoney(low) : '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="rx-scroll-x">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr>{['Trade','Scope Items','Quotes','Low Bid'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {trades.map(trade => {
+                  const ti = scopeItems.filter(i => i.trade === trade)
+                  const ts = submissionsByTrade[trade] || []
+                  const low = ts.length > 0 ? Math.min(...ts.map(s => Number(s.amount || 0))) : null
+                  return (
+                    <tr key={trade} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '7px 12px 7px 0', fontWeight: '500' }}>{trade}</td>
+                      <td style={{ padding: '7px 12px 7px 0', color: '#6b7280' }}>{ti.length}</td>
+                      <td style={{ padding: '7px 12px 7px 0' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', background: ts.length > 0 ? '#dcfce7' : '#f3f4f6', color: ts.length > 0 ? '#16a34a' : '#9ca3af' }}>
+                          {ts.length > 0 ? `${ts.length} received` : 'None'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 0', fontWeight: '600', color: '#111827' }}>{low !== null ? fmtMoney(low) : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -212,25 +214,27 @@ function DocumentsSection({ bidId, plans, reload, canEdit }) {
       {plans.length === 0 ? (
         <div style={s.empty}>No documents uploaded. Upload drawings and specs before sending ITBs.</div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-          <thead>
-            <tr>{['File Name','Uploaded','Actions'].map(h => (
-              <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody>
-            {plans.map(p => (
-              <tr key={p.id} style={{ borderTop: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '8px 12px 8px 0', fontWeight: '500', color: '#111827' }}>{p.file_name}</td>
-                <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '—'}</td>
-                <td style={{ padding: '8px 0', display: 'flex', gap: '8px' }}>
-                  <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => openPlan(p.storage_path)}>Open</button>
-                  {canEdit && <button style={{ ...s.btnDanger, padding: '4px 10px', fontSize: '12px' }} onClick={() => deletePlan(p)}>Remove</button>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="rx-scroll-x">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr>{['File Name','Uploaded','Actions'].map(h => (
+                <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {plans.map(p => (
+                <tr key={p.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px 12px 8px 0', fontWeight: '500', color: '#111827' }}>{p.file_name}</td>
+                  <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '—'}</td>
+                  <td style={{ padding: '8px 0', display: 'flex', gap: '8px' }}>
+                    <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => openPlan(p.storage_path)}>Open</button>
+                    {canEdit && <button style={{ ...s.btnDanger, padding: '4px 10px', fontSize: '12px' }} onClick={() => deletePlan(p)}>Remove</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
@@ -1060,39 +1064,41 @@ function ItbPrepScreen({ pkg, plans, scopeItems, profile, onClose }) {
                 <p style={{ color: '#9ca3af', fontSize: '13px', margin: 0 }}>No documents uploaded — upload drawings and specs in the Documents section first.</p>
               ) : (
                 <>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ width: '32px' }}></th>
-                        {['Filename','Uploaded','Status'].map(h => (
-                          <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {plans.map(p => {
-                        const inc = selectedPlanIds.has(p.id)
-                        return (
-                          <tr key={p.id} style={{ borderTop: '1px solid #f3f4f6' }}>
-                            <td style={{ padding: '8px 8px 8px 0' }}>
-                              <input type="checkbox" checked={inc} onChange={e => {
-                                const next = new Set(selectedPlanIds)
-                                if (e.target.checked) next.add(p.id); else next.delete(p.id)
-                                setSelectedPlanIds(next)
-                              }} />
-                            </td>
-                            <td style={{ padding: '8px 12px 8px 0', fontWeight: '500', color: inc ? '#111827' : '#9ca3af' }}>{p.file_name}</td>
-                            <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '—'}</td>
-                            <td style={{ padding: '8px 0' }}>
-                              <span style={{ padding: '2px 8px', borderRadius: '3px', fontSize: '11px', fontWeight: '600', background: inc ? '#dcfce7' : '#f3f4f6', color: inc ? '#16a34a' : '#9ca3af' }}>
-                                {inc ? 'In ZIP' : 'Excluded'}
-                              </span>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="rx-scroll-x">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: '32px' }}></th>
+                          {['Filename','Uploaded','Status'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {plans.map(p => {
+                          const inc = selectedPlanIds.has(p.id)
+                          return (
+                            <tr key={p.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                              <td style={{ padding: '8px 8px 8px 0' }}>
+                                <input type="checkbox" checked={inc} onChange={e => {
+                                  const next = new Set(selectedPlanIds)
+                                  if (e.target.checked) next.add(p.id); else next.delete(p.id)
+                                  setSelectedPlanIds(next)
+                                }} />
+                              </td>
+                              <td style={{ padding: '8px 12px 8px 0', fontWeight: '500', color: inc ? '#111827' : '#9ca3af' }}>{p.file_name}</td>
+                              <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleDateString() : '—'}</td>
+                              <td style={{ padding: '8px 0' }}>
+                                <span style={{ padding: '2px 8px', borderRadius: '3px', fontSize: '11px', fontWeight: '600', background: inc ? '#dcfce7' : '#f3f4f6', color: inc ? '#16a34a' : '#9ca3af' }}>
+                                  {inc ? 'In ZIP' : 'Excluded'}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                   <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#6b7280' }}>
                     Selected files are listed by filename in the PDF and included as original files in the ZIP.
                   </p>
@@ -1274,44 +1280,46 @@ function InvitationsSection({ bidId, pkg, plans, invitations, submissions, scope
         {invWithSubs.length === 0 ? (
           <div style={s.empty}>No invitations recorded.</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr>{['Company / Email','Trade','Status','Quote','Actions'].map(h => (
-                <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {invWithSubs.map(inv => {
-                const sub = inv.submission
-                const status = sub ? (sub.status === 'awarded' ? 'awarded' : 'submitted') : 'invited'
-                const badgeMap = { invited: ['#f3f4f6','#6b7280'], submitted: ['#eff6ff','#1d4ed8'], awarded: ['#dcfce7','#16a34a'] }
-                const [bg, col] = badgeMap[status] || badgeMap.invited
-                return (
-                  <tr key={inv.id} style={{ borderTop: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '8px 12px 8px 0' }}>
-                      <p style={{ margin: '0 0 2px', fontWeight: '600', color: '#111827' }}>{inv.company_name || inv.sub_email}</p>
-                      {inv.company_name && <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>{inv.sub_email}</p>}
-                    </td>
-                    <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{inv.trade || 'All trades'}</td>
-                    <td style={{ padding: '8px 12px 8px 0' }}>
-                      <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', background: bg, color: col }}>{status}</span>
-                    </td>
-                    <td style={{ padding: '8px 12px 8px 0', fontWeight: sub ? '600' : '400', color: sub ? '#111827' : '#9ca3af' }}>
-                      {sub ? fmtMoney(sub.amount) : '—'}
-                    </td>
-                    <td style={{ padding: '8px 0' }}>
-                      {!sub && canEdit && (
-                        <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => { setSubForm(inv); setErr('') }}>Record quote</button>
-                      )}
-                      {sub && sub.status !== 'awarded' && canEdit && (
-                        <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px', color: '#16a34a', borderColor: '#bbf7d0' }} onClick={() => setSubmissionStatus(sub.id, 'awarded')}>Award</button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="rx-scroll-x">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr>{['Company / Email','Trade','Status','Quote','Actions'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', padding: '0 12px 8px 0' }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {invWithSubs.map(inv => {
+                  const sub = inv.submission
+                  const status = sub ? (sub.status === 'awarded' ? 'awarded' : 'submitted') : 'invited'
+                  const badgeMap = { invited: ['#f3f4f6','#6b7280'], submitted: ['#eff6ff','#1d4ed8'], awarded: ['#dcfce7','#16a34a'] }
+                  const [bg, col] = badgeMap[status] || badgeMap.invited
+                  return (
+                    <tr key={inv.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '8px 12px 8px 0' }}>
+                        <p style={{ margin: '0 0 2px', fontWeight: '600', color: '#111827' }}>{inv.company_name || inv.sub_email}</p>
+                        {inv.company_name && <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>{inv.sub_email}</p>}
+                      </td>
+                      <td style={{ padding: '8px 12px 8px 0', color: '#6b7280' }}>{inv.trade || 'All trades'}</td>
+                      <td style={{ padding: '8px 12px 8px 0' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', background: bg, color: col }}>{status}</span>
+                      </td>
+                      <td style={{ padding: '8px 12px 8px 0', fontWeight: sub ? '600' : '400', color: sub ? '#111827' : '#9ca3af' }}>
+                        {sub ? fmtMoney(sub.amount) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 0' }}>
+                        {!sub && canEdit && (
+                          <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px' }} onClick={() => { setSubForm(inv); setErr('') }}>Record quote</button>
+                        )}
+                        {sub && sub.status !== 'awarded' && canEdit && (
+                          <button style={{ ...s.btnSec, padding: '4px 10px', fontSize: '12px', color: '#16a34a', borderColor: '#bbf7d0' }} onClick={() => setSubmissionStatus(sub.id, 'awarded')}>Award</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

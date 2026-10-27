@@ -2,7 +2,7 @@
 import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { sendEmail, emailWrap } from '../../lib/email'
+import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
@@ -389,6 +389,7 @@ function JobDetailInner() {
   // Contract SOV state
   const [contractSovLines, setContractSovLines] = useState({})
   const [expandedSov, setExpandedSov] = useState(null)
+  const [expandedScopeIds, setExpandedScopeIds] = useState(new Set())
   const [showAddSovLine, setShowAddSovLine] = useState(null)
   const [sovLineForm, setSovLineForm] = useState({ description: '', scheduled_value: '', budget_item_id: '' })
   const [addingSovLine, setAddingSovLine] = useState(false)
@@ -3210,6 +3211,46 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     showToast(`${name} activated. No email sent.`)
   }
 
+  // Signed = signed PDF on file, status 'signed', or a completed e-sign request. Signed contracts can't go back to draft.
+  function isContractSigned(c) {
+    return c.status === 'signed' || !!c.signed_contract_url || signingRequests.some(r => r.subcontract_id === c.id && r.status === 'signed')
+  }
+
+  // Billing state of the contract's company on this job: 'on' | 'partly' | 'off' | null (not assigned)
+  function contractBillingState(c) {
+    const rows = subs.filter(a =>
+      (c.company_id && a.company_id === c.company_id) ||
+      (c.sub_id && a.sub_id === c.sub_id) ||
+      (c.vendor_name && a.profiles?.company_name?.toLowerCase() === c.vendor_name.toLowerCase())
+    )
+    if (rows.length === 0) return null
+    const on = rows.filter(a => a.billing_enabled !== false).length
+    return on === rows.length ? 'on' : on > 0 ? 'partly' : 'off'
+  }
+
+  // Active (unsigned) → draft. Hides the contract from the sub; their job assignment and billing setting are left as-is.
+  async function moveContractToDraft(c) {
+    const name = c.vendor_name || 'this sub'
+    if (isContractSigned(c)) { setErrMsg('This subcontract has been signed and can\'t be moved back to draft.'); setTimeout(() => setErrMsg(''), 5000); return }
+    const billing = contractBillingState(c)
+    const pendingSign = signingRequests.find(r => r.subcontract_id === c.id && r.status !== 'signed')
+    const lines = [
+      `Move ${name}'s subcontract back to draft?`,
+      '',
+      `• ${name} will no longer see this contract in their portal and can't sign it, bill against it, or request change orders on it.`,
+      billing
+        ? `• They stay assigned to this job (billing is currently ${billing === 'partly' ? 'partly on' : billing.toUpperCase()}). Change that on the Companies tab if needed.`
+        : '• They are not assigned to this job, so nothing else changes.',
+      ...(pendingSign ? [`• A signature request sent to ${pendingSign.signer_email} is still open. That signing link is NOT cancelled.`] : []),
+      '• No email is sent.',
+    ]
+    if (!window.confirm(lines.join('\n'))) return
+    const res = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id, status: 'draft' }) })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('Move to draft failed: ' + (j.error || res.status)); setTimeout(() => setErrMsg(''), 5000); return }
+    await loadContracts()
+    showToast(`${name} moved back to draft — hidden from the sub. No email sent.`)
+  }
+
   async function updateContract() {
     const validAllocs = (editContractForm.budget_allocations || []).filter(a => a.budget_item_id && a.amount)
     const singleBudgetId = validAllocs.length === 1 ? validAllocs[0].budget_item_id : (editContractForm.budget_item_id || null)
@@ -3502,7 +3543,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   }
 
   async function loadSigningRequests() {
-    const res = await fetch(`/api/signing-requests?job_id=${id}`)
+    // PM listing requires a session token — plain fetch() got a 401 and left this empty
+    const res = await authFetch(`/api/signing-requests?job_id=${id}`)
     const json = await res.json()
     setSigningRequests(json.data || [])
   }
@@ -4272,7 +4314,6 @@ ${attachmentHtml}
     }
     let emailed = []
     if (enable && emailContacts) {
-      const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
       const groupContracts = contracts.filter(c => c.status !== 'draft' && (
         (group.company_id && c.company_id === group.company_id) ||
         (c.vendor_name && c.vendor_name.toLowerCase() === group.name.toLowerCase())
@@ -4283,25 +4324,8 @@ ${attachmentHtml}
       for (const to of emailed) {
         const member = group.members.find(m => m.sub_email?.toLowerCase() === to)
         const firstName = (member?.profiles?.full_name || member?._dirEntry?.contact_name)?.split(' ')[0] || 'there'
-        await sendEmail(to, `Billing is open: Set up your Schedule of Values — ${job?.project_name || ''}`,
-          emailWrap(`
-            <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Hey ${firstName},</h2>
-            <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
-              Billing is now open for <strong style="color:#f1f1f1">${job?.project_name || 'the project'}</strong>${total > 0 ? ` against your subcontract of <strong style="color:#e8590c">${contractAmt}</strong>` : ''}.
-            </p>
-            <p style="color:#aaa;margin:0 0 20px;font-size:14px;line-height:1.6">
-              Before you can submit billing, you need to create your <strong style="color:#f1f1f1">Schedule of Values</strong> — a breakdown of your contract into line items that you'll bill against each period.
-            </p>
-            <table cellpadding="0" cellspacing="0" style="margin:0 0 24px">
-              <tr>
-                <td style="background:#e8590c;border-radius:8px">
-                  <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Set Up My SOV</a>
-                </td>
-              </tr>
-            </table>
-            <p style="color:#555;font-size:12px;margin:0">Log in, select the project, and you'll be prompted to create your schedule before billing is available.</p>
-          `)
-        )
+        const { subject, html } = billingOpenEmail({ firstName, projectName: job?.project_name, contractAmt: total > 0 ? contractAmt : null })
+        await sendEmail(to, subject, html)
       }
     }
     await reloadSubs()
@@ -4328,8 +4352,10 @@ ${attachmentHtml}
   }
 
   async function notifyAllUnregistered() {
-    const unregistered = subs.filter(a => !a.sub_id && a.sub_email)
-    for (const a of unregistered) await notifySubToRegister(a.sub_email)
+    // De-dupe case-insensitively but keep the original string — per-row results are keyed by a.sub_email
+    const emails = [...new Map(subs.filter(a => !a.sub_id && a.sub_email).map(a => [a.sub_email.toLowerCase(), a.sub_email])).values()]
+    if (!window.confirm(`Send a portal invite email (link to set a password and log in) to these ${emails.length} contact${emails.length === 1 ? '' : 's'}?\n\n${emails.join('\n')}\n\nNothing about billing or contracts is sent.`)) return
+    for (const e of emails) await notifySubToRegister(e)
   }
 
   // ── Billing (PM-managed) ─────────────────────────────────────
@@ -6018,11 +6044,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <p style={{ ...s.cardTitle, margin: 0 }}>Assigned ({new Set(subs.map(a => a.company_id || a.profiles?.company_id || a.profiles?.company_name || a.sub_email || 'Unknown')).size} companies, {subs.length} contacts)</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {subs.some(a => !a.sub_id && a.sub_email) && (
-                    <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Notify all unregistered</button>
+                    <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Email portal invites to unregistered</button>
                   )}
                   {!showAssignSub && <button style={s.btnSmallOrange} onClick={() => { setShowAssignSub(true); loadSubDirectory() }}>+ Assign company</button>}
                 </div>
               </div>
+              {subs.some(a => !a.sub_id && a.sub_email) && (
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: '-0.75rem 0 1rem', lineHeight: '1.5', overflowWrap: 'anywhere' }}>
+                  "Email portal invites" sends a portal invite email (link to set a password and log in) to: <strong style={{ color: '#374151' }}>{[...new Set(subs.filter(a => !a.sub_id && a.sub_email).map(a => a.sub_email.toLowerCase()))].join(', ')}</strong>
+                </p>
+              )}
 
               {showAssignSub && (
                 <div style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
@@ -6211,11 +6242,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               )}
                               {!isRegistered && a.sub_email && (
                                 notifySubResult[a.sub_email] === 'sent'
-                                  ? <span style={{ fontSize: '12px', color: '#16a34a' }}>Invite sent</span>
+                                  ? <span style={{ fontSize: '12px', color: '#16a34a' }}>Portal invite sent to {a.sub_email}</span>
                                   : notifySubResult[a.sub_email]
                                     ? <span style={{ fontSize: '12px', color: '#dc2626' }}>{notifySubResult[a.sub_email]}</span>
-                                    : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}>
-                                        {notifyingSubId === a.sub_email ? 'Sending...' : 'Notify'}
+                                    : <button style={s.btnSmallOrange} disabled={notifyingSubId === a.sub_email} onClick={() => notifySubToRegister(a.sub_email)}
+                                        title={`Sends a portal invite email (link to set a password and log in) to ${a.sub_email}`}>
+                                        {notifyingSubId === a.sub_email ? 'Sending...' : `Email portal invite to ${a.sub_email}`}
                                       </button>
                               )}
                               <button style={s.btnSmallRed} onClick={() => removeSubFromJob(a.id)}>Remove</button>
@@ -7019,7 +7051,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div style={{ marginBottom: '12px' }}>
                     <label style={s.label}>Description / scope *</label>
-                    <input style={s.input} placeholder="e.g. Plumbing Rough-In, Electrical Trim-Out..." value={contractForm.description} onChange={e => setContractForm(f => ({ ...f, description: e.target.value }))} />
+                    <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical', lineHeight: '1.5' }} placeholder="e.g. Plumbing Rough-In, Electrical Trim-Out..." value={contractForm.description} onChange={e => setContractForm(f => ({ ...f, description: e.target.value }))} />
                   </div>
                   {budgetItems.length > 0 && (() => {
                     const allocs = contractForm.budget_allocations || []
@@ -7089,14 +7121,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const allocations = (c.budget_allocations || []).filter(a => a.budget_item_id)
                 const isEditing = editingContract === c.id
                 const isDraft = c.status === 'draft'
+                const isSigned = isContractSigned(c)
+                const canMoveToDraft = !isDraft && (c.status === 'active' || !c.status) && !isSigned
                 const attachments = [c.bid_proposal_url && 'Bid proposal', c.signed_contract_url && 'Signed contract'].filter(Boolean)
+                const scopeIsLong = (c.description || '').length > 160 || (c.description || '').split('\n').length > 3
+                const scopeExpanded = expandedScopeIds.has(c.id)
 
                 return (
                   <div key={c.id} style={{ ...s.contractRow, ...(isDraft ? { borderStyle: 'dashed', borderColor: '#f59e0b' } : {}) }}>
                     <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }} className="rx-stack-sm">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{subName}</span>
-                        {c.description && <span style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #222', borderRadius: '4px', padding: '1px 7px' }}>{c.description}</span>}
                         {allocations.length > 0
                           ? allocations.map((a, i) => {
                               const item = budgetItems.find(b => b.id === a.budget_item_id)
@@ -7143,7 +7178,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.retainage_pct) > 0 ? '#a16207' : '#6b7280' }}>{Number(c.retainage_pct || 0)}%</div>
                         </div>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          {isDraft && <button style={s.btnSmallOrange} onClick={() => activateContract(c)} title="Makes it visible in the sub's portal and assigns them with billing off. No email is sent.">Activate</button>}
+                          {isDraft && <button style={{ ...s.btnSmall, background: '#16a34a', color: '#fff', border: '1px solid #16a34a' }} onClick={() => activateContract(c)} title="Makes it visible in the sub's portal and assigns them with billing off. No email is sent.">Activate</button>}
+                          {canMoveToDraft && <button style={s.btnSmall} onClick={() => moveContractToDraft(c)} title="Hides it from the sub's portal again. Not available once signed. No email is sent.">Move to draft</button>}
                           <button style={s.btnSmallOrange} onClick={() => {
                             if (expandedSov === c.id) { setExpandedSov(null) }
                             else { setExpandedSov(c.id); loadContractSov(c.id); setShowAddSovLine(null); setEditingSovLine(null) }
@@ -7170,9 +7206,56 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     </div>
 
+                    {isDraft && !isEditing && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', padding: '10px 14px', background: '#fffbeb', borderTop: '1px solid #fde68a' }}>
+                        <span style={{ fontSize: '13px', color: '#92400e', lineHeight: '1.5' }}>
+                          <strong>Draft.</strong> Only NV staff can see this. {subName} can't see, sign, or bill it until you activate it.
+                        </span>
+                        <button style={{ ...s.btnSmall, background: '#16a34a', color: '#fff', border: '1px solid #16a34a', minHeight: '36px' }} onClick={() => activateContract(c)}>
+                          Activate — show to {subName}
+                        </button>
+                      </div>
+                    )}
+
+                    {c.description && !isEditing && (
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid #f3f4f6', background: '#fff' }}>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Scope</div>
+                        <div style={{
+                          fontSize: '13px', color: '#374151', lineHeight: '1.6', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+                          ...(scopeIsLong && !scopeExpanded ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}),
+                        }}>
+                          {c.description}
+                        </div>
+                        {scopeIsLong && (
+                          <button
+                            style={{ background: 'none', border: 'none', padding: '6px 0 0', color: '#2563eb', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                            aria-expanded={scopeExpanded}
+                            onClick={() => setExpandedScopeIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })}>
+                            {scopeExpanded ? 'Show less' : 'Show more'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {isEditing && (
                       <div style={s.contractRowExpanded}>
                         <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Edit subcontract</p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', padding: '10px 12px', marginBottom: '14px', borderRadius: '6px', background: isDraft ? '#fffbeb' : '#fff', border: `1px solid ${isDraft ? '#fde68a' : '#e5e7eb'}` }}>
+                          <div style={{ fontSize: '13px', color: '#374151', lineHeight: '1.5' }}>
+                            <strong>Status: {isDraft ? 'Draft' : isSigned ? 'Signed' : (c.status || 'active').replace(/^./, ch => ch.toUpperCase())}</strong>
+                            <span style={{ color: '#6b7280' }}> — {isDraft
+                              ? `only NV staff can see it; ${subName} can't see, sign, or bill it.`
+                              : isSigned
+                                ? `visible to ${subName}. Signed contracts can't be moved back to draft.`
+                                : `visible in ${subName}'s portal.`}</span>
+                          </div>
+                          {isDraft && (
+                            <button style={{ ...s.btnSmall, background: '#16a34a', color: '#fff', border: '1px solid #16a34a' }} onClick={() => activateContract(c)}>Activate</button>
+                          )}
+                          {canMoveToDraft && (
+                            <button style={s.btnSmall} onClick={() => moveContractToDraft(c)}>Move back to draft</button>
+                          )}
+                        </div>
                         <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                           <div>
                             <label style={s.label}>Contract value ($)</label>
@@ -7180,7 +7263,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Description / scope</label>
-                            <input style={s.input} value={editContractForm.description} onChange={e => setEditContractForm(f => ({ ...f, description: e.target.value }))} />
+                            <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical', lineHeight: '1.5' }} value={editContractForm.description} onChange={e => setEditContractForm(f => ({ ...f, description: e.target.value }))} />
                           </div>
                         </div>
                         {budgetItems.length > 0 && (() => {

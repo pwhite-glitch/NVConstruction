@@ -62,12 +62,23 @@ export async function PUT(request) {
     const fields = pick(raw)
 
     // Fetch current values for auditing changed fields
-    const { data: current } = await adminSupabase.from('subcontracts').select('contract_value, status, vendor_name, job_id').eq('id', id).single()
+    const { data: current } = await adminSupabase.from('subcontracts').select('contract_value, status, vendor_name, job_id, signed_contract_url').eq('id', id).single()
 
     // Draft → active is the "Activate" step; stamp who did it and when
     if (fields.status === 'active' && current?.status === 'draft') {
       fields.activated_at = new Date().toISOString()
       fields.activated_by = auth.userId
+    }
+
+    // Active → draft ("Move back to draft") is only allowed while the contract is unsigned
+    if (fields.status === 'draft' && current && current.status !== 'draft') {
+      if (current.status && current.status !== 'active') {
+        return Response.json({ error: `Only active subcontracts can be moved back to draft (this one is "${current.status}").` }, { status: 400 })
+      }
+      const { data: signedReq } = await adminSupabase.from('signing_requests').select('id').eq('subcontract_id', id).eq('status', 'signed').limit(1)
+      if (current.signed_contract_url || signedReq?.length) {
+        return Response.json({ error: 'This subcontract has been signed and can\'t be moved back to draft.' }, { status: 400 })
+      }
     }
 
     const { error } = await adminSupabase.from('subcontracts').update(fields).eq('id', id)

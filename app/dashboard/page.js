@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { sendEmail, emailWrap } from '../../lib/email'
+import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 import EstimatorHome from '../components/estimating/EstimatorHome'
@@ -306,6 +306,9 @@ export default function Dashboard() {
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
   const [assignMsg, setAssignMsg] = useState({})       // { [dirSubId]: { text, ok } }
   const [assigningId, setAssigningId] = useState(null)
+  const [chipBillingPanel, setChipBillingPanel] = useState(null) // `${dirSubId}:${jobId}` while the "turn billing on" confirm is open
+  const [chipBillingEmail, setChipBillingEmail] = useState(false)
+  const [savingChipBilling, setSavingChipBilling] = useState(null)
 
   // Billing edit state
   const [editingBilling, setEditingBilling] = useState(null)
@@ -1268,7 +1271,7 @@ export default function Dashboard() {
     })
     setSendingNotify(false)
     if (res.ok) {
-      setNotifyResult(prev => ({ ...prev, [sub.id]: { ok: true, text: 'Sent!' } }))
+      setNotifyResult(prev => ({ ...prev, [sub.id]: { ok: true, text: `Email sent to ${sub.email}.` } }))
       setNotifySubject('')
       setNotifyMessage('')
       setNotifySubId(null)
@@ -1558,10 +1561,51 @@ export default function Dashboard() {
       await supabase.rpc('sync_job_assignments')
       await loadAll()
       setAssignTarget(prev => ({ ...prev, [sub.id]: '' }))
-      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned with billing off. No email sent. Enable billing from the job\'s Companies tab.', ok: true } }))
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned with billing off. No email sent. Use "Turn billing on" on the job below when ready.', ok: true } }))
       setTimeout(() => setAssignMsg(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
     }
     setAssigningId(null)
+  }
+
+  // Assignment rows for this directory company on one job: the contact's own row plus any company-linked rows.
+  // Billing is toggled on all of them together, matching the job page's Companies tab.
+  function companyJobRows(sub, jobId) {
+    const co = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+    const email = sub.email?.toLowerCase().trim()
+    return assignments.filter(a => a.job_id === jobId && ((email && a.sub_email?.toLowerCase().trim() === email) || (co && a.company_id === co.id)))
+  }
+
+  // Turns billing on/off for a company on one job. Emails only when enabling AND "Email these contacts" is ticked.
+  async function setChipBilling(sub, jobId, enable, emailContacts) {
+    const rows = companyJobRows(sub, jobId)
+    const ids = rows.map(r => r.id)
+    if (ids.length === 0) return
+    setSavingChipBilling(`${sub.id}:${jobId}`)
+    const res = await authFetch('/api/job-assignments', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, billing_enabled: enable }) })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Billing update failed: ' + (j.error || res.status), ok: false } }))
+      setSavingChipBilling(null)
+      return
+    }
+    setAssignments(prev => prev.map(a => ids.includes(a.id) ? { ...a, billing_enabled: enable } : a))
+    const jobLabel = rows[0]?.jobs ? `#${rows[0].jobs.job_number} — ${rows[0].jobs.project_name}` : 'this job'
+    let emailed = []
+    if (enable && emailContacts) {
+      emailed = [...new Set(rows.map(r => r.sub_email?.toLowerCase().trim()).filter(Boolean))]
+      for (const to of emailed) {
+        const name = to === sub.email?.toLowerCase().trim() ? sub.contact_name : subProfiles.find(p => p.invite_email?.toLowerCase() === to)?.full_name
+        const { subject, html } = billingOpenEmail({ firstName: name?.split(' ')[0], projectName: rows[0]?.jobs?.project_name })
+        await sendEmail(to, subject, html)
+      }
+    }
+    setSavingChipBilling(null)
+    setChipBillingPanel(null)
+    setChipBillingEmail(false)
+    setAssignMsg(prev => ({ ...prev, [sub.id]: { ok: true, text: enable
+      ? `Billing on for ${jobLabel}. ${emailed.length ? `Email sent to ${emailed.join(', ')}.` : 'No email sent.'}`
+      : `Billing off for ${jobLabel}. No email sent.` } }))
+    setTimeout(() => setAssignMsg(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 6000)
   }
 
   async function getDocUrl(filePath) {
@@ -4598,18 +4642,71 @@ ${estimate.notes ? `
                               <div style={{ marginTop: '10px' }}>
                                 <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Currently assigned to</div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                  {assignments.filter(a => a.sub_email === sub.email).map(a => (
-                                    <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', padding: '3px 10px' }}>
-                                      #{a.jobs?.job_number} — {a.jobs?.project_name}
-                                      <button
-                                        title="Remove from job"
-                                        onClick={() => removeJobAssignment(a.id)}
-                                        style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: '0 0 0 2px', display: 'flex', alignItems: 'center' }}>
-                                        ×
-                                      </button>
-                                    </span>
-                                  ))}
+                                  {assignments.filter(a => a.sub_email === sub.email).map(a => {
+                                    const chipKey = `${sub.id}:${a.job_id}`
+                                    const rows = companyJobRows(sub, a.job_id)
+                                    const onCount = rows.filter(r => r.billing_enabled !== false).length
+                                    const billingOn = onCount === rows.length
+                                    const isSaving = savingChipBilling === chipKey
+                                    return (
+                                      <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: `1px solid ${chipBillingPanel === chipKey ? '#fdba74' : '#d1d5db'}`, borderRadius: '6px', padding: '4px 6px 4px 10px' }}>
+                                        #{a.jobs?.job_number} — {a.jobs?.project_name}
+                                        <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '99px', fontWeight: '700', whiteSpace: 'nowrap', background: billingOn ? '#eff6ff' : '#fff', color: billingOn ? '#1d4ed8' : '#6b7280', border: `1px solid ${billingOn ? '#bfdbfe' : '#e5e7eb'}` }}>
+                                          {billingOn ? 'Billing on' : onCount > 0 ? 'Billing partly on' : 'Billing off'}
+                                        </span>
+                                        <button
+                                          disabled={isSaving}
+                                          style={{ ...s.btnSm(billingOn ? 'gray' : 'orange'), padding: '3px 9px', fontSize: '11px', opacity: isSaving ? 0.6 : 1 }}
+                                          onClick={() => {
+                                            if (billingOn) {
+                                              if (window.confirm(`Turn billing off for ${sub.company_name} on #${a.jobs?.job_number} — ${a.jobs?.project_name}?\n\nThey keep portal access but can't submit billing on this job.\n\nNo email is sent.`)) setChipBilling(sub, a.job_id, false, false)
+                                            } else {
+                                              setChipBillingPanel(chipBillingPanel === chipKey ? null : chipKey); setChipBillingEmail(false)
+                                            }
+                                          }}>
+                                          {isSaving ? 'Saving...' : billingOn ? 'Turn billing off' : 'Turn billing on'}
+                                        </button>
+                                        <button
+                                          title="Remove from job"
+                                          aria-label={`Remove from #${a.jobs?.job_number}`}
+                                          onClick={() => removeJobAssignment(a.id)}
+                                          style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '15px', lineHeight: 1, padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
+                                          ×
+                                        </button>
+                                      </span>
+                                    )
+                                  })}
                                 </div>
+                                {(() => {
+                                  const panelJobId = chipBillingPanel?.startsWith(`${sub.id}:`) ? chipBillingPanel.slice(`${sub.id}:`.length) : null
+                                  if (!panelJobId) return null
+                                  const rows = companyJobRows(sub, panelJobId)
+                                  const job = rows[0]?.jobs
+                                  const recipients = [...new Set(rows.map(r => r.sub_email?.toLowerCase().trim()).filter(Boolean))]
+                                  const isSaving = savingChipBilling === chipBillingPanel
+                                  return (
+                                    <div style={{ marginTop: '10px', border: '1px solid #fed7aa', background: '#fff7ed', borderRadius: '8px', padding: '12px 14px' }}>
+                                      <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>
+                                        Turn billing on for {sub.company_name} on #{job?.job_number} — {job?.project_name}
+                                      </p>
+                                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#111827', cursor: recipients.length ? 'pointer' : 'default' }}>
+                                        <input type="checkbox" disabled={recipients.length === 0} checked={chipBillingEmail && recipients.length > 0} onChange={e => setChipBillingEmail(e.target.checked)} style={{ marginTop: '2px' }} />
+                                        <span>Email these contacts that billing is open (asks them to set up their Schedule of Values): {recipients.join(', ') || 'none on file'}</span>
+                                      </label>
+                                      <p style={{ fontSize: '12px', margin: '8px 0 10px', color: chipBillingEmail && recipients.length ? '#c2410c' : '#15803d', fontWeight: '600' }}>
+                                        {chipBillingEmail && recipients.length
+                                          ? `An email WILL be sent to: ${recipients.join(', ')}`
+                                          : recipients.length ? 'No email will be sent.' : 'No email will be sent (no email address on file).'}
+                                      </p>
+                                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                        <button style={{ ...s.btnSm('orange'), opacity: isSaving ? 0.6 : 1 }} disabled={isSaving} onClick={() => setChipBilling(sub, panelJobId, true, chipBillingEmail)}>
+                                          {isSaving ? 'Saving...' : 'Confirm — turn billing on'}
+                                        </button>
+                                        <button style={s.btnSm('gray')} onClick={() => { setChipBillingPanel(null); setChipBillingEmail(false) }}>Cancel</button>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             )}
                           </div>
@@ -4618,10 +4715,19 @@ ${estimate.notes ? `
                         {sub.email && (
                           <div style={{ marginBottom: '1rem' }}>
                             {notifySubId !== sub.id ? (
-                              <button style={s.btnSm('blue')} onClick={() => { setNotifySubId(sub.id); setNotifySubject(''); setNotifyMessage('') }}>Send notification</button>
+                              <>
+                                <button style={s.btnSm('blue')} onClick={() => { setNotifySubId(sub.id); setNotifySubject(''); setNotifyMessage('') }}>Email a message to {sub.contact_name || sub.email}</button>
+                                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#6b7280', overflowWrap: 'anywhere' }}>
+                                  Opens a form to write one email (your subject and message) to {sub.contact_name ? `${sub.contact_name} <${sub.email}>` : sub.email}. Nothing is sent until you click Send.
+                                </p>
+                                {notifyResult[sub.id] && <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: notifyResult[sub.id].ok ? '#16a34a' : '#dc2626' }}>{notifyResult[sub.id].text}</p>}
+                              </>
                             ) : (
                               <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '1rem' }}>
-                                <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: '700', color: '#2563eb', letterSpacing: '1px', textTransform: 'uppercase' }}>Notify {sub.company_name}</p>
+                                <p style={{ margin: '0 0 4px', fontSize: '12px', fontWeight: '700', color: '#2563eb', letterSpacing: '1px', textTransform: 'uppercase' }}>Email {sub.company_name}</p>
+                                <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#374151', overflowWrap: 'anywhere' }}>
+                                  To: <strong>{sub.contact_name ? `${sub.contact_name} <${sub.email}>` : sub.email}</strong> — only this address. Sends your subject and message as an email from NV Construction; nothing else changes.
+                                </p>
                                 <div style={{ marginBottom: '8px' }}>
                                   <label style={s.label}>Subject</label>
                                   <input style={s.input} value={notifySubject} onChange={e => setNotifySubject(e.target.value)} placeholder="e.g. COI renewal needed" />
@@ -4631,7 +4737,7 @@ ${estimate.notes ? `
                                   <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={notifyMessage} onChange={e => setNotifyMessage(e.target.value)} placeholder="Your message to the subcontractor..." />
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                  <button style={{ ...s.btnSm('blue'), opacity: sendingNotify || !notifySubject || !notifyMessage ? 0.5 : 1 }} disabled={sendingNotify || !notifySubject || !notifyMessage} onClick={() => sendNotification(sub)}>{sendingNotify ? 'Sending...' : 'Send'}</button>
+                                  <button style={{ ...s.btnSm('blue'), opacity: sendingNotify || !notifySubject || !notifyMessage ? 0.5 : 1 }} disabled={sendingNotify || !notifySubject || !notifyMessage} onClick={() => sendNotification(sub)}>{sendingNotify ? 'Sending...' : `Send email to ${sub.email}`}</button>
                                   <button style={s.btnSm('gray')} onClick={() => setNotifySubId(null)}>Cancel</button>
                                   {notifyResult[sub.id] && <span style={{ fontSize: '12px', color: notifyResult[sub.id].ok ? '#16a34a' : '#dc2626' }}>{notifyResult[sub.id].text}</span>}
                                 </div>

@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { notifyBidSubmitted } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { openStorageFile } from '../../lib/open-file'
+import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
 
 const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
@@ -661,10 +662,12 @@ export default function Submit() {
       const { lines: newLines } = await backfillRes.json()
       if (newLines?.length) lines = [...lines, ...newLines.map(l => ({ ...l, pct_prev: 0 }))]
     } catch {}
-    const withLines = new Set(lines.map(l => l.subcontract_id))
-    setJobSovContracts(contracts.map(c => ({ ...c, has_sov: withLines.has(c.id) })))
+    // has_sov = base schedule set up. CO lines alone don't count, and a contract's CO lines
+    // aren't billable until its base schedule exists.
+    const withBase = contractsWithBaseSov(lines)
+    setJobSovContracts(contracts.map(c => ({ ...c, has_sov: withBase.has(c.id), co_lines: lines.filter(l => l.subcontract_id === c.id && isCoLine(l)) })))
     setSovError('')
-    setSovForm(lines.map(l => ({
+    setSovForm(lines.filter(l => withBase.has(l.subcontract_id)).map(l => ({
       sov_line_id: l.id,
       subcontract_id: l.subcontract_id,
       description: l.description,
@@ -1443,11 +1446,12 @@ export default function Submit() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
                         <div>
                           <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>Create your Schedule of Values</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', lineHeight: '1.6' }}>Break your contract into billing line items. Total must match your contract value.</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', lineHeight: '1.6' }}>Break your contract into billing line items. Total must match your {target.co_lines.length ? 'base ' : ''}contract value.</p>
+                          {target.co_lines.length > 0 && <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#6b7280', lineHeight: '1.6' }}>Approved change orders are already on your schedule as their own lines — don't include them here. You can bill them once this is saved: {target.co_lines.map(l => `${l.description} ($${Number(l.scheduled_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })})`).join(', ')}</p>}
                           {jobSovContracts.length > 1 && <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#374151', fontWeight: '600' }}>For contract: {target.description || 'Subcontract'} ({jobSovContracts.filter(c => !c.has_sov).length} of {jobSovContracts.length} contracts still need a schedule)</p>}
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '16px' }}>
-                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px', letterSpacing: '1px', textTransform: 'uppercase' }}>Contract value</div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px', letterSpacing: '1px', textTransform: 'uppercase' }}>{target.co_lines.length ? 'Base contract value' : 'Contract value'}</div>
                           <div style={{ fontSize: '22px', fontWeight: '800', color: '#e8590c' }}>${contractMax.toLocaleString()}</div>
                         </div>
                       </div>

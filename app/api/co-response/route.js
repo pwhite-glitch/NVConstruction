@@ -4,6 +4,7 @@ import { logChange } from '../../../lib/change-log'
 import { requireAuth, isSub } from '../../../lib/server-auth'
 import { canAccessSubcontract } from '../../../lib/sub-access'
 import { escapeHtml } from '../../../lib/email'
+import { coLineRow, insertCoLine } from '../../../lib/sov-lines'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -71,12 +72,7 @@ export async function POST(request) {
       .order('sort_order', { ascending: false })
       .limit(1)
     const nextSort = (lastLine?.[0]?.sort_order || 0) + 1
-    await adminSupabase.from('subcontract_sov_lines').insert({
-      subcontract_id: co.subcontract_id,
-      description: `CO: ${co.description}`,
-      scheduled_value: parseFloat(co.amount),
-      sort_order: nextSort,
-    })
+    await insertCoLine(adminSupabase, coLineRow(co, nextSort))
   }
 
   // Notify PM

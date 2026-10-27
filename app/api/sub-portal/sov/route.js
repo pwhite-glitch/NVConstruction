@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../../lib/server-auth'
 import { billingContext } from '../../../../lib/sub-access'
+import { isCoLine, contractsWithBaseSov } from '../../../../lib/sov-lines'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -37,9 +38,10 @@ export async function GET(request) {
         if (pl.billing_submissions?.status !== 'rejected') prevPct[pl.sov_line_id] = (prevPct[pl.sov_line_id] || 0) + (parseFloat(pl.pct_this_period) || 0)
       }
     }
-    const withLines = new Set((lines || []).map(l => l.subcontract_id))
+    // has_sov = the sub has set up their base schedule. Lines added for approved COs don't count.
+    const withBase = contractsWithBaseSov(lines)
     return Response.json({
-      contracts: ctx.contracts.map(c => ({ ...c, has_sov: withLines.has(c.id) })),
+      contracts: ctx.contracts.map(c => ({ ...c, has_sov: withBase.has(c.id) })),
       lines: (lines || []).map(l => ({ ...l, pct_prev: Math.min(100, Math.round((prevPct[l.id] || 0) * 100) / 100) })),
     })
   } catch (e) {
@@ -48,8 +50,9 @@ export async function GET(request) {
 }
 
 // POST { job_id, subcontract_id, lines: [{ description, amount }] } → creates the
-// SOV for ONE contract. Refuses if that contract already has lines, so two
-// teammates can't both create one.
+// base SOV for ONE contract. Lines must total the base contract_value (COs excluded).
+// Refuses if that contract already has base lines, so two teammates can't both
+// create one. Existing CO lines are kept and moved after the new base lines.
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
@@ -69,8 +72,8 @@ export async function POST(request) {
       return Response.json({ error: `Lines total $${total.toFixed(2)} but the contract is $${contractValue.toFixed(2)}.` }, { status: 400 })
     }
 
-    const { data: existing } = await adminSupabase.from('subcontract_sov_lines').select('id').eq('subcontract_id', contract.id).limit(1)
-    if (existing?.length) return Response.json({ error: 'A schedule of values already exists for this contract (a teammate may have just created it). Reload the project.' }, { status: 409 })
+    const { data: existing } = await adminSupabase.from('subcontract_sov_lines').select('*').eq('subcontract_id', contract.id).order('sort_order').order('created_at')
+    if ((existing || []).some(l => !isCoLine(l))) return Response.json({ error: 'A schedule of values already exists for this contract (a teammate may have just created it). Reload the project.' }, { status: 409 })
 
     const { error } = await adminSupabase.from('subcontract_sov_lines').insert(valid.map((l, idx) => ({
       subcontract_id: contract.id,
@@ -79,6 +82,10 @@ export async function POST(request) {
       sort_order: idx + 1,
     })))
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    const coLines = (existing || []).filter(isCoLine)
+    for (const [idx, l] of coLines.entries()) {
+      await adminSupabase.from('subcontract_sov_lines').update({ sort_order: valid.length + idx + 1 }).eq('id', l.id)
+    }
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

@@ -6,6 +6,7 @@ import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { openStorageFile } from '../../lib/open-file'
 import { companyKey, sameCompany } from '../../lib/company-name'
+import { isCoLine, coLineRow, insertCoLine } from '../../lib/sov-lines'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
@@ -3700,12 +3701,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       if (co?.direction === 'sub_to_pm' && co?.subcontract_id && co?.amount) {
         const { data: existingLines } = await supabase.from('subcontract_sov_lines').select('sort_order').eq('subcontract_id', co.subcontract_id).order('sort_order', { ascending: false }).limit(1)
         const nextSort = (existingLines?.[0]?.sort_order || 0) + 1
-        await supabase.from('subcontract_sov_lines').insert({
-          subcontract_id: co.subcontract_id,
-          description: `CO: ${co.description}`,
-          scheduled_value: parseFloat(co.amount),
-          sort_order: nextSort,
-        })
+        await insertCoLine(supabase, coLineRow(co, nextSort))
       }
     }
     await loadAllCOs()
@@ -7490,6 +7486,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {!sovs && <p style={{ color: '#6b7280', fontSize: '13px' }}>Loading...</p>}
                           {sovs && sovs.length === 0 && !showAddSovLine && (
                             <p style={{ color: '#6b7280', fontSize: '13px' }}>No SOV lines yet. Add lines to track sub's completion per scope item.</p>
+                          )}
+
+                          {sovs && sovs.length > 0 && sovs.every(isCoLine) && (
+                            <p style={{ color: '#d97706', fontSize: '12px', marginBottom: '0.5rem' }}>Base schedule not set up yet — only change order lines so far. The sub will be asked to set it up before billing.</p>
                           )}
 
                           {sovs && sovs.length > 0 && (

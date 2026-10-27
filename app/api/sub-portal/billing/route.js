@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth } from '../../../../lib/server-auth'
 import { billingContext } from '../../../../lib/sub-access'
+import { contractsWithBaseSov } from '../../../../lib/sov-lines'
 import { emailWrap, escapeHtml } from '../../../../lib/email'
 
 const adminSupabase = createClient(
@@ -63,6 +64,13 @@ export async function POST(request) {
       const contractMap = Object.fromEntries(ctx.contracts.map(c => [c.id, c]))
       if (sovIn.some(l => !lineMap[l.sov_line_id] || !contractMap[lineMap[l.sov_line_id].subcontract_id])) {
         return Response.json({ error: 'One or more schedule-of-values lines do not belong to your subcontract.' }, { status: 400 })
+      }
+      // A contract's CO lines can't be billed until the sub has set up its base schedule
+      const billedContractIds = [...new Set(sovIn.map(l => lineMap[l.sov_line_id].subcontract_id))]
+      const { data: contractLines } = await adminSupabase.from('subcontract_sov_lines').select('*').in('subcontract_id', billedContractIds)
+      const withBase = contractsWithBaseSov(contractLines)
+      if (billedContractIds.some(id => !withBase.has(id))) {
+        return Response.json({ error: 'Set up your schedule of values for the base contract before billing.' }, { status: 400 })
       }
       const { data: prev } = await adminSupabase
         .from('billing_sov_lines')

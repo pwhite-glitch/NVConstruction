@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { sameCompany } from '../../../lib/company-name'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -32,12 +33,10 @@ export async function POST(request) {
   if (!name) return Response.json({ error: 'name required' }, { status: 400 })
 
   if (find_or_create) {
-    const { data: existing } = await adminSupabase
-      .from('companies')
-      .select('*')
-      .ilike('name', name.trim())
-      .limit(1)
-      .maybeSingle()
+    // Loose match so "J2 Construction Services LLC" doesn't create a second
+    // "J2 Construction Services LLC." company
+    const { data: all } = await adminSupabase.from('companies').select('*')
+    const existing = (all || []).find(c => sameCompany(c.name, name))
     if (existing) return Response.json({ company: existing })
   }
 

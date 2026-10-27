@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
 import NewPOForm from './NewPOForm'
@@ -284,7 +285,6 @@ function JobDetailInner() {
   const [billingPanelKey, setBillingPanelKey] = useState(null)
   const [billingEmailOpt, setBillingEmailOpt] = useState(false)
   const [savingBillingKey, setSavingBillingKey] = useState(null)
-  const [companyMembersCache, setCompanyMembersCache] = useState({})
   const [showAssignSub, setShowAssignSub] = useState(false)
   const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
   const [assigningSubLoading, setAssigningSubLoading] = useState(false)
@@ -620,8 +620,7 @@ function JobDetailInner() {
       setJob(jobData)
       setForm(jobData)
       setContractValueUnlocked(false)
-      const { data: subList } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone)').eq('job_id', id)
-      setSubs(subList || [])
+      await reloadSubs()
       const { data: bills } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
       setBilling(bills || [])
 
@@ -823,9 +822,18 @@ function JobDetailInner() {
     setDrawRequests(draws || [])
   }
 
+  // Assignment rows for this job. Company-level rows (no person) get their company name attached
+  // so they group under the right company instead of "Unknown".
   async function reloadSubs() {
-    const { data } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, phone)').eq('job_id', id)
-    setSubs(data || [])
+    const { data } = await supabase.from('job_assignments').select('*, profiles(full_name, company_name, company_id, phone)').eq('job_id', id)
+    const rows = data || []
+    const companyIds = [...new Set(rows.map(a => a.company_id || a.profiles?.company_id).filter(Boolean))]
+    let names = {}
+    if (companyIds.length) {
+      const { data: cos } = await supabase.from('companies').select('id, name').in('id', companyIds)
+      names = Object.fromEntries((cos || []).map(co => [co.id, co.name]))
+    }
+    setSubs(rows.map(a => ({ ...a, _companyName: names[a.company_id || a.profiles?.company_id] || null })))
   }
 
   async function loadSubDirectory() {
@@ -3132,7 +3140,12 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       (companyId && s.company_id === companyId)
     )
     if (alreadyAssigned) return
-    await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, sub_id: subUserId || null, company_id: companyId || null, invited_at: new Date().toISOString(), billing_enabled: false }) })
+    if (companyId) {
+      // Company-level: everyone at the company set to "All company jobs" sees it
+      await authFetch('/api/company-job-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, company_id: companyId, action: 'add_company' }) })
+    } else {
+      await authFetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, sub_id: subUserId || null, company_id: null, invited_at: new Date().toISOString(), billing_enabled: false }) })
+    }
     await reloadSubs()
   }
 
@@ -3151,7 +3164,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const matchedSub = subs.find(s => s.sub_email?.toLowerCase() === dirEntry?.email?.toLowerCase() && s.sub_id)
     let subUserId = matchedSub?.sub_id || null
     if (!subUserId && dirEntry?.email) {
-      const r = await fetch(`/api/company-members?email=${encodeURIComponent(dirEntry.email.toLowerCase())}`)
+      const r = await authFetch(`/api/company-members?email=${encodeURIComponent(dirEntry.email.toLowerCase())}`)
       const d = await r.json()
       subUserId = d.members?.[0]?.id || null
     }
@@ -4283,8 +4296,31 @@ ${attachmentHtml}
     )?.toLowerCase()
     if (!normalEmail) return
     setAssigningSubLoading(true)
-    // Assign only: portal access with billing OFF. No email is sent from this step.
-    const assignRes = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, billing_enabled: false }) })
+    // Picked from the directory → put the COMPANY on the job (stage 1), then open its
+    // card so the PM can pick people, billing and notifications. No email is sent.
+    const dirEntry = assignSubForm.from_dir ? subDirectory.find(d => d.id === assignSubForm.from_dir) : null
+    if (dirEntry?.company_name) {
+      const coRes = await authFetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: dirEntry.company_name, find_or_create: true }) })
+      const companyId = (await coRes.json().catch(() => ({}))).company?.id
+      if (companyId) {
+        const res = await authFetch('/api/company-job-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, company_id: companyId, action: 'add_company' }) })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          setErrMsg(j.error || 'Assignment failed.'); setTimeout(() => setErrMsg(''), 4000)
+          setAssigningSubLoading(false)
+          return
+        }
+        await reloadSubs()
+        setShowAssignSub(false)
+        setAssignSubForm({ email: '', from_dir: '' })
+        setAssigningSubLoading(false)
+        setExpandedCompanyKey(companyId)
+        showToast(`${dirEntry.company_name} added to the job with billing off. No email sent. Next: choose who sees it.`)
+        return
+      }
+    }
+    // Typed email (or no company record): assign that one person. Billing off, no email.
+    const assignRes = await authFetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, billing_enabled: false }) })
     if (!assignRes.ok) {
       const assignJson = await assignRes.json()
       setErrMsg(assignRes.status === 409 ? 'This sub is already assigned to this job.' : assignJson.error || 'Assignment failed.')
@@ -4345,7 +4381,7 @@ ${attachmentHtml}
 
   async function notifySubToRegister(email) {
     setNotifyingSubId(email)
-    const res = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+    const res = await authFetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
     const json = await res.json()
     setNotifySubResult(prev => ({ ...prev, [email]: res.ok ? 'sent' : (json.error || 'error') }))
     setNotifyingSubId(null)
@@ -6041,7 +6077,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned ({new Set(subs.map(a => a.company_id || a.profiles?.company_id || a.profiles?.company_name || a.sub_email || 'Unknown')).size} companies, {subs.length} contacts)</p>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Assigned ({new Set(subs.map(a => a.company_id || a.profiles?.company_id || a.profiles?.company_name || a.sub_email || 'Unknown')).size} companies, {subs.filter(a => a.sub_id || a.sub_email).length} people assigned by name)</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {subs.some(a => !a.sub_id && a.sub_email) && (
                     <button style={s.btnSmallOrange} onClick={notifyAllUnregistered}>Email portal invites to unregistered</button>
@@ -6059,14 +6095,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
                   <p style={{ ...s.cardTitle, marginBottom: '1rem' }}>Assign subcontractor to job</p>
 
-                  {subDirectory.filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase())).length > 0 && (
+                  {subDirectory.filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase() || (s._companyName && s._companyName.toLowerCase() === d.company_name?.toLowerCase()))).length > 0 && (
                     <div style={{ marginBottom: '12px' }}>
                       <label style={s.label}>Pick from approved directory</label>
                       <select style={s.input} value={assignSubForm.from_dir}
                         onChange={e => setAssignSubForm({ from_dir: e.target.value, email: '' })}>
                         <option value="">— Select company —</option>
                         {subDirectory
-                          .filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase()))
+                          .filter(d => !subs.some(s => s.sub_email?.toLowerCase() === d.email?.toLowerCase() || (s._companyName && s._companyName.toLowerCase() === d.company_name?.toLowerCase())))
                           .map(d => <option key={d.id} value={d.id}>{d.company_name}{d.trade ? ` · ${d.trade}` : ''}</option>)}
                       </select>
                     </div>
@@ -6088,7 +6124,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <button style={s.btnGray} onClick={() => { setShowAssignSub(false); setAssignSubForm({ email: '', from_dir: '' }) }}>Cancel</button>
                   </div>
                   <p style={{ fontSize: '12px', color: '#6b7280', margin: '10px 0 0', lineHeight: '1.5' }}>
-                    <strong>No email is sent.</strong> The company gets portal access to this job with billing <strong>off</strong>. Turn billing on separately with "Enable billing" on the company below. Unregistered contacts can be sent a portal invite from their row.
+                    <strong>No email is sent.</strong> Step 1 of 4: the company is added to this job with billing <strong>off</strong>. Its card then opens so you can choose who sees the job (step 2), turn billing on (step 3), and pick exactly who to email (step 4).
                   </p>
                 </div>
               )}
@@ -6099,13 +6135,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {Object.values(subs.reduce((acc, a) => {
                 const dirEntry = subDirectory.find(d => d.email?.toLowerCase() === a.sub_email?.toLowerCase())
-                const companyName = a.profiles?.company_name || dirEntry?.company_name || a.sub_email || 'Unknown'
+                const companyName = a._companyName || a.profiles?.company_name || dirEntry?.company_name || a.sub_email || 'Unknown'
                 const groupKey = a.company_id || a.profiles?.company_id || companyName
                 if (!acc[groupKey]) acc[groupKey] = { name: companyName, company_id: a.company_id || a.profiles?.company_id || null, members: [] }
                 acc[groupKey].members.push({ ...a, _dirEntry: dirEntry })
                 return acc
               }, {})).sort((a, b) => a.name.localeCompare(b.name)).map(group => {
-                const registeredCount = group.members.filter(a => !!a.sub_id).length
+                // Company-level rows (no person) put the company on the job; they aren't people
+                const personRows = group.members.filter(a => a.sub_id || a.sub_email)
+                const registeredCount = personRows.filter(a => !!a.sub_id).length
                 const gKey = group.company_id || group.name
                 const isExpanded = expandedCompanyKey === gKey
                 const billingOnCount = group.members.filter(a => a.billing_enabled !== false).length
@@ -6117,30 +6155,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {/* Company header — click to expand/collapse */}
                     <div
                       style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#f9fafb' : 'transparent', userSelect: 'none' }}
-                      onClick={() => {
-                        const nextKey = isExpanded ? null : gKey
-                        setExpandedCompanyKey(nextKey)
-                        if (nextKey && !companyMembersCache[nextKey]) {
-                          const params = group.company_id
-                            ? `company_id=${group.company_id}`
-                            : `company_name=${encodeURIComponent(group.name)}`
-                          fetch(`/api/company-members?${params}`)
-                            .then(r => r.json())
-                            .then(({ members }) => {
-                              if (members) setCompanyMembersCache(prev => ({ ...prev, [nextKey]: members }))
-                            })
-                        }
-                      }}
+                      onClick={() => setExpandedCompanyKey(isExpanded ? null : gKey)}
                     >
                       <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', flex: 1 }}>{group.name}</span>
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', background: registeredCount > 0 ? '#dcfce7' : '#f0f0f0', color: registeredCount > 0 ? '#16a34a' : '#555', border: `1px solid ${registeredCount > 0 ? '#bbf7d0' : '#d1d5db'}` }}>
-                        {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
+                        {registeredCount > 0 ? (registeredCount < personRows.length ? `${registeredCount}/${personRows.length} registered` : 'Registered') : personRows.length ? 'Not registered' : 'Company'}
                       </span>
-                      {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{group.members.length} users</span>}
+                      {personRows.length > 1 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{personRows.length} assigned by name</span>}
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', whiteSpace: 'nowrap', background: billingAllOn ? '#eff6ff' : '#f9fafb', color: billingAllOn ? '#1d4ed8' : '#6b7280', border: `1px solid ${billingAllOn ? '#bfdbfe' : '#e5e7eb'}` }}>
                         {billingAllOn ? 'Billing on' : billingOnCount > 0 ? 'Billing partly on' : 'Billing off'}
                       </span>
-                      <button
+                      {group.company_id ? (
+                        <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '600' }}>{isExpanded ? 'Hide people & billing' : 'People, access & billing'}</span>
+                      ) : <button
                         style={{ ...(billingAllOn ? s.btnSmall : s.btnSmallOrange), opacity: savingBillingKey === gKey ? 0.6 : 1 }}
                         disabled={savingBillingKey === gKey}
                         onClick={e => {
@@ -6152,11 +6179,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           }
                         }}>
                         {savingBillingKey === gKey ? 'Saving...' : billingAllOn ? 'Disable billing' : 'Enable billing'}
-                      </button>
+                      </button>}
                       <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
 
-                    {isBillingPanel && !billingAllOn && (
+                    {isBillingPanel && !billingAllOn && !group.company_id && (
                       <div style={{ borderTop: '1px solid #fed7aa', background: '#fff7ed', padding: '12px 14px' }}>
                         <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#111827', cursor: groupEmails.length ? 'pointer' : 'default' }}>
                           <input type="checkbox" disabled={groupEmails.length === 0} checked={billingEmailOpt && groupEmails.length > 0} onChange={e => setBillingEmailOpt(e.target.checked)} style={{ marginTop: '2px' }} />
@@ -6178,7 +6205,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                     {/* Users — only visible when expanded */}
                     {isExpanded && <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 14px 12px' }}>
-                    {group.members.map(a => {
+                    {group.company_id && (
+                      <div style={{ margin: '4px 0 12px' }}>
+                        <CompanyPeoplePanel companyId={group.company_id} companyName={group.name} jobId={id} jobLabel={job?.project_name} onChanged={reloadSubs} />
+                      </div>
+                    )}
+                    {group.company_id && personRows.length > 0 && (
+                      <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '4px 0 8px' }}>Assigned by name · messages & ratings</p>
+                    )}
+                    {personRows.map(a => {
                       const contactName = a.profiles?.full_name || a._dirEntry?.contact_name
                       const phone = a.profiles?.phone || a._dirEntry?.phone
                       const address = a._dirEntry?.address
@@ -6296,32 +6331,6 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       )
                     })}
 
-                    {/* Additional portal users from the same company not directly assigned */}
-                    {(() => {
-                      const cached = companyMembersCache[gKey] || []
-                      const assignedIds = new Set(group.members.map(a => a.sub_id).filter(Boolean))
-                      const extra = cached.filter(m => !assignedIds.has(m.id))
-                      if (extra.length === 0) return null
-                      return (
-                        <div style={{ borderTop: '1px solid #f3f4f6', marginTop: '4px', paddingTop: '8px' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', margin: '0 0 8px' }}>Also on this company</p>
-                          {extra.map(m => (
-                            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f9fafb' }}>
-                              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#eff6ff', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: '#2563eb', flexShrink: 0 }}>
-                                {(m.full_name || m.invite_email || '?').slice(0, 2).toUpperCase()}
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '13px', color: '#374151', fontWeight: '600' }}>{m.full_name || m.invite_email}</div>
-                                {m.full_name && m.invite_email && <div style={{ fontSize: '12px', color: '#6b7280' }}>{m.invite_email}</div>}
-                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                                  {{ sub_estimator: 'Estimator', sub_pm: 'Project Manager', sub_admin: 'Admin' }[m.role] || 'Member'} at this company · has portal access
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })()}
                     </div>}
                   </div>
                 )

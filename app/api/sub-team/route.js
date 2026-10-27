@@ -1,14 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// Caller's own company team. The user comes from the session, not the query string.
 export async function GET(request) {
-  const { searchParams } = new URL(request.url)
-  const userId = searchParams.get('user_id')
-  if (!userId) return Response.json({ error: 'user_id required' }, { status: 400 })
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+  const userId = auth.userId
 
   // Get caller's company_id
   const { data: caller } = await adminSupabase
@@ -21,7 +23,7 @@ export async function GET(request) {
 
   const { data: profiles } = await adminSupabase
     .from('profiles')
-    .select('id, full_name, role, phone, invite_email, company_name')
+    .select('id, full_name, role, phone, invite_email, company_name, job_access, can_bill')
     .eq('company_id', caller.company_id)
     .order('full_name')
 

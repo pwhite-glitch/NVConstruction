@@ -7,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { job_id, sub_email, sub_id, company_id, invited_at, billing_enabled } = body
@@ -65,6 +67,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id, job_id } = await request.json()
     if (id) {

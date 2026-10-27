@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -10,6 +11,8 @@ const adminSupabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { directory_id, email: rawEmail, company_id, company_name: reqCompanyName, full_name: reqFullName, role: reqRole } = await request.json()
     if (!directory_id && !rawEmail) return Response.json({ error: 'directory_id or email required' }, { status: 400 })

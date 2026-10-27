@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { authFetch } from '../../lib/client-fetch'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -245,7 +246,7 @@ export default function AdminPortal() {
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('profiles').select('id, full_name').in('role', ['pm', 'apm', 'admin', 'super']),
         supabase.from('companies').select('*'),
-        fetch('/api/company-members').then(r => r.json()),
+        authFetch('/api/company-members').then(r => r.json()),
       ])
       setJobs(jobList || [])
       setDirectory(dir || [])
@@ -491,7 +492,7 @@ export default function AdminPortal() {
       setAddDirForm({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '', scope_description: '' })
       await reloadDirectory()
       // Send invite — company_id is passed so the profile gets linked correctly
-      fetch('/api/invite-sub', {
+      authFetch('/api/invite-sub', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ directory_id: data.id, company_id: savedCompanyId }),
@@ -576,7 +577,7 @@ export default function AdminPortal() {
 
   async function inviteSub(dirId) {
     setInvitingSubFor(dirId)
-    const res = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId }) })
+    const res = await authFetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId }) })
     const data = await res.json()
     setInvitingSubFor(null)
     if (data?.ok) {
@@ -595,7 +596,7 @@ export default function AdminPortal() {
       const { data: newCo } = await supabase.from('companies').insert({ name: companyName }).select().single()
       if (newCo) { company = newCo; setCompaniesData(prev => [...prev, newCo]) }
     }
-    const res = await fetch('/api/invite-sub', {
+    const res = await authFetch('/api/invite-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, company_id: company?.id }),
@@ -604,7 +605,7 @@ export default function AdminPortal() {
     setTeamInviteResult(prev => ({ ...prev, [dirId]: res.ok ? 'sent' : (json.error || 'error') }))
     setTeamInviteForm(prev => ({ ...prev, [dirId]: '' }))
     setTeamInviteLoading(null)
-    const { members } = await fetch('/api/company-members').then(r => r.json())
+    const { members } = await authFetch('/api/company-members').then(r => r.json())
     setSubProfiles(members || [])
   }
 

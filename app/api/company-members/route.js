@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const company_id = searchParams.get('company_id')
   const company_name = searchParams.get('company_name')

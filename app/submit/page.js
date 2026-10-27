@@ -156,8 +156,8 @@ export default function Submit() {
   const [sovRetainageMap, setSovRetainageMap] = useState({})
   const [sovError, setSovError] = useState('')
   const [noContract, setNoContract] = useState(false)
-  const [billingLockedJobIds, setBillingLockedJobIds] = useState(new Set())
-  const [billingLocked, setBillingLocked] = useState(false)
+  const [billingLockByJob, setBillingLockByJob] = useState({}) // job_id → 'billing_off' | 'person_cannot_bill'
+  const [billingLocked, setBillingLocked] = useState(null)     // lock reason for the selected job, or null
   const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
   const [savingSov, setSavingSov] = useState(false)
   const [sovSaved, setSovSaved] = useState(false)
@@ -246,48 +246,24 @@ export default function Submit() {
           body: JSON.stringify({ user_id: session.user.id, company_name: prof.company_name }),
         })
       }
-      const companyId = prof?.company_id
       let mergedJobs
       if (devIsSubOverride) {
         const { data: allJobs } = await supabase.from('jobs').select('id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path').eq('status', 'active').order('project_name')
         mergedJobs = allJobs || []
+        memberIdsRef.current = [session.user.id]
+        setSubmissions([])
       } else {
-        const jobQueries = [
-          supabase.from('job_assignments').select('*, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id),
-          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id).or('status.is.null,status.neq.draft'),
-        ]
-        if (companyId) {
-          jobQueries.push(
-            supabase.from('job_assignments').select('*, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId),
-            supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId).or('status.is.null,status.neq.draft'),
-          )
-        }
-        const jobResults = await Promise.all(jobQueries)
-        const allJobRecords = jobResults.flatMap(r => (r.data || []).map(x => x.jobs).filter(j => j && j.status === 'active'))
-        const seenJobIds = new Set()
-        mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
-        // Billing is locked on a job when the sub is assigned but every matching
-        // assignment has billing_enabled = false. Contract-only jobs stay billable.
-        const assignmentRows = [jobResults[0], jobResults[2]].flatMap(r => r?.data || [])
-        const billingOnJobIds = new Set(assignmentRows.filter(a => a.billing_enabled !== false).map(a => a.job_id))
-        setBillingLockedJobIds(new Set(assignmentRows.filter(a => !billingOnJobIds.has(a.job_id)).map(a => a.job_id)))
+        // Jobs, per-job billing state and company billing history all come from the
+        // server, which applies the company / per-person access rules (lib/sub-access.js).
+        const accessRes = await authFetch('/api/sub-portal')
+        const access = accessRes.ok ? await accessRes.json() : { jobs: [], submissions: [], member_ids: [session.user.id] }
+        mergedJobs = access.jobs || []
+        memberIdsRef.current = access.member_ids || [session.user.id]
+        setBillingLockByJob(Object.fromEntries(mergedJobs.filter(j => !j.can_bill).map(j => [j.id, j.billing_lock_reason])))
+        setSubmissions((access.submissions || []).map(s => ({ ...s, jobs: s.jobs || mergedJobs.find(j => j.id === s.job_id) || null })))
       }
       setJobs(mergedJobs)
       loadCoverUrls(mergedJobs)
-      // Fetch billing for this user AND all teammates in the same company
-      let billingQuery = supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').order('submitted_at', { ascending: false })
-      if (companyId) {
-        const { data: companyMembers } = await supabase.from('profiles').select('id').eq('company_id', companyId)
-        const memberIds = (companyMembers || []).map(m => m.id)
-        if (!memberIds.includes(session.user.id)) memberIds.push(session.user.id)
-        memberIdsRef.current = memberIds
-        billingQuery = billingQuery.in('sub_id', memberIds)
-      } else {
-        memberIdsRef.current = [session.user.id]
-        billingQuery = billingQuery.eq('sub_id', session.user.id)
-      }
-      const { data: subs } = await billingQuery
-      setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || mergedJobs.find(j => j.id === s.job_id) || null })))
       await loadMyPunchItems(session.user.id, mergedJobs)
       await loadMyContracts(session.user.id, prof?.company_id, prof?.company_name)
       const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
@@ -296,7 +272,7 @@ export default function Submit() {
       await loadMyRfis(session.user.id)
       const { data: dir } = await supabase.from('sub_directory').select('*').ilike('email', session.user.email).maybeSingle()
       if (dir) { setDirEntry(dir); setDocsCoiExpiry(dir.coi_expiration?.split('T')[0] || '') }
-      const teamRes = await fetch(`/api/sub-team?user_id=${session.user.id}`)
+      const teamRes = await authFetch('/api/sub-team')
       if (teamRes.ok) {
         const teamData = await teamRes.json()
         setTeamMembers(teamData.members || [])
@@ -320,17 +296,10 @@ export default function Submit() {
   }, [router])
 
   async function loadSubmissions() {
-    let q = supabase.from('billing_submissions').select('*, jobs(job_number, project_name, location, owner_name, owner_company)').order('submitted_at', { ascending: false })
-    const ids = memberIdsRef.current
-    if (ids.length > 1) {
-      q = q.in('sub_id', ids)
-    } else if (ids.length === 1) {
-      q = q.eq('sub_id', ids[0])
-    } else {
-      q = q.eq('sub_id', user.id)
-    }
-    const { data: subs } = await q
-    setSubmissions((subs || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
+    const res = await authFetch('/api/sub-portal')
+    if (!res.ok) return
+    const access = await res.json()
+    setSubmissions((access.submissions || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
   }
 
   async function loadBidInvitations(email) {
@@ -683,81 +652,70 @@ export default function Submit() {
   }
 
   async function loadJobSov(jobId) {
-    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setBillingLocked(false); setJobDrawRequests([]); return }
-    // Assigned but billing not enabled by the PM yet — block the form the same way a missing contract does
-    if (billingLockedJobIds.has(jobId)) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(true); setJobDrawRequests([]); return }
-    setBillingLocked(false)
+    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setBillingLocked(null); setJobDrawRequests([]); return }
+    // Billing not on for the company, or this login isn't allowed to bill — block the form with a clear reason
+    if (billingLockByJob[jobId]) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(billingLockByJob[jobId]); setJobDrawRequests([]); return }
+    setBillingLocked(null)
     const drRes = await fetch(`/api/draw-requests?job_id=${jobId}`)
     if (!drRes.ok) { setJobDrawRequests([]); return }
     const { draws } = await drRes.json()
     const openDraws = (draws || []).filter(d => d.status === 'open')
     setJobDrawRequests(openDraws)
-    const _cRes = await fetch(`/api/sub-contracts?job_id=${jobId}&user_id=${user.id}&company_id=${encodeURIComponent(profile?.company_id || '')}&company_name=${encodeURIComponent(profile?.company_name || '')}`)
-    if (!_cRes.ok) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); return }
-    const { contracts } = await _cRes.json()
-    if (!contracts || contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
+    // Contracts + SOV come from the server so every teammate sees the company's contracts,
+    // not just the person the contract happens to be linked to.
+    const sovRes = await authFetch(`/api/sub-portal/sov?job_id=${jobId}`)
+    const sov = sovRes.ok ? await sovRes.json() : { contracts: [], lines: [] }
+    if (sov.locked) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(sov.locked); return }
+    const contracts = sov.contracts || []
+    if (contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
     setNoContract(false)
     setSovDraftLines([{ description: '', amount: '' }])
     const contractIds = contracts.map(c => c.id)
     const retMap = Object.fromEntries(contracts.map(c => [c.id, parseFloat(c.retainage_pct) || 0]))
     setSovRetainageMap(retMap)
-    const { data: rawLines } = await supabase.from('subcontract_sov_lines').select('*, subcontracts(description, retainage_pct)').in('subcontract_id', contractIds).order('sort_order').order('created_at')
-    let lines = rawLines || []
+    let lines = sov.lines || []
     // Backfill SOV lines for approved COs missing a row — runs server-side to bypass RLS
     try {
       const backfillRes = await fetch('/api/sov-co-backfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subcontract_ids: contractIds }) })
       const { lines: newLines } = await backfillRes.json()
-      if (newLines?.length) lines = [...lines, ...newLines]
+      if (newLines?.length) lines = [...lines, ...newLines.map(l => ({ ...l, pct_prev: 0 }))]
     } catch {}
-    const lineIds = lines.map(l => l.id)
-    const prevPctMap = {}
-    if (lineIds.length > 0) {
-      const { data: prevBilled } = await supabase
-        .from('billing_sov_lines')
-        .select('sov_line_id, pct_this_period, billing_submissions(status)')
-        .in('sov_line_id', lineIds)
-      for (const pl of (prevBilled || [])) {
-        if (pl.billing_submissions?.status !== 'rejected') {
-          prevPctMap[pl.sov_line_id] = (prevPctMap[pl.sov_line_id] || 0) + (parseFloat(pl.pct_this_period) || 0)
-        }
-      }
-    }
-    setJobSovContracts(contracts)
+    const withLines = new Set(lines.map(l => l.subcontract_id))
+    setJobSovContracts(contracts.map(c => ({ ...c, has_sov: withLines.has(c.id) })))
     setSovError('')
-    setSovForm((lines || []).map(l => ({
+    setSovForm(lines.map(l => ({
       sov_line_id: l.id,
       subcontract_id: l.subcontract_id,
       description: l.description,
       scheduled_value: Number(l.scheduled_value || 0),
       retainage_pct: parseFloat(l.subcontracts?.retainage_pct) || 0,
       contract_description: l.subcontracts?.description || '',
-      pct_prev: Math.min(100, Math.round((prevPctMap[l.id] || 0) * 100) / 100),
+      pct_prev: l.pct_prev || 0,
       pct_this: '',
       amount_this: 0,
     })))
   }
 
+  // Creates the SOV for one contract — the first one on this job that doesn't have one yet.
   async function saveSovLines() {
+    const target = jobSovContracts.find(c => !c.has_sov)
     const valid = sovDraftLines.filter(l => l.description.trim() && l.amount)
-    if (valid.length === 0) return
+    if (!target || valid.length === 0) return
     setSavingSov(true)
     setSovError('')
-    for (const contract of jobSovContracts) {
-      const { error: sovInsErr } = await supabase.from('subcontract_sov_lines').insert(
-        valid.map((l, idx) => ({
-          subcontract_id: contract.id,
-          description: l.description.trim(),
-          scheduled_value: parseFloat(l.amount),
-          sort_order: idx + 1,
-        }))
-      )
-      if (sovInsErr) { setSavingSov(false); setSovError('Save failed. Please try again.'); return }
-    }
+    const res = await authFetch('/api/sub-portal/sov', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: form.job_id, subcontract_id: target.id, lines: valid }),
+    })
+    const json = await res.json().catch(() => ({}))
     setSavingSov(false)
+    if (!res.ok) { setSovError(json.error || 'Save failed. Please try again.'); if (res.status === 409) await loadJobSov(form.job_id); return }
     await loadJobSov(form.job_id)
     setSovSaved(true)
     setTimeout(() => setSovSaved(false), 5000)
   }
+
 
   function printLienWaiver(sub) {
     const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
@@ -896,43 +854,29 @@ export default function Submit() {
     }
     const doc_url = path
     const selectedJob = jobs.find(j => j.id === form.job_id)
-    const totalAmtBilled = parseFloat(form.amount_billed) || 0
-    const retainageHeld = sovForm.length > 0
-      ? Math.round(sovForm.reduce((a, l) => a + l.amount_this * (l.retainage_pct || 0) / 100, 0) * 100) / 100
-      : 0
-    const weightedRetPct = totalAmtBilled > 0 && retainageHeld > 0
-      ? Math.round(retainageHeld / totalAmtBilled * 100 * 100) / 100
-      : 0
-    const { data: newSub, error } = await supabase.from('billing_submissions').insert({
-      sub_id: user.id, job_id: form.job_id,
-      sub_email: user.email.toLowerCase(),
-      company_name: profile?.company_name || 'Unknown',
-      contact_name: profile?.full_name, contact_info: profile?.phone,
-      amount_billed: totalAmtBilled,
-      retainage_pct: weightedRetPct,
-      retainage_held: retainageHeld,
-      pct_complete: parseInt(form.pct_complete) || null,
-      work_description: form.work_description,
-      invoice_number: form.invoice_number.trim(),
-      billing_period: form.billing_period ? form.billing_period + '-01' : null,
-      draw_request_id: form.draw_request_id || null,
-      doc_url,
-    }).select().single()
-    if (error) {
-      setSubmitError(error.message || 'Submission failed. Please try again.')
+    // Server checks access, billing on, and over-billing, and computes retainage from the SOV lines
+    const res = await authFetch('/api/sub-portal/billing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: form.job_id,
+        amount_billed: form.amount_billed,
+        pct_complete: form.pct_complete,
+        work_description: form.work_description,
+        invoice_number: form.invoice_number.trim(),
+        billing_period: form.billing_period || null,
+        draw_request_id: form.draw_request_id || null,
+        doc_url,
+        sov_lines: sovForm.filter(l => l.amount_this > 0).map(l => ({ sov_line_id: l.sov_line_id, amount: l.amount_this, pct_this_period: parseFloat(l.pct_this) || 0 })),
+      }),
+    })
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setSubmitError(result.error || 'Submission failed. Please try again.')
       setLoading(false)
       return
     }
-    setSubmitError('')
-    const sovInserts = sovForm.filter(l => l.amount_this > 0).map(l => ({
-      billing_submission_id: newSub.id,
-      sov_line_id: l.sov_line_id,
-      amount: l.amount_this,
-      pct_this_period: parseFloat(l.pct_this) || 0,
-    }))
-    if (sovInserts.length > 0) {
-      await supabase.from('billing_sov_lines').insert(sovInserts)
-    }
+    setSubmitError(result.warning || '')
     const pmEmail = selectedJob?.pm_email || PM_EMAIL
     await sendEmail(pmEmail, `Billing submitted — ${profile?.company_name || user.email}`,
       emailWrap(`
@@ -992,7 +936,7 @@ export default function Submit() {
     if (data.ok) {
       setTeamInviteMsg('Invite sent to ' + teamInviteForm.email.trim())
       setTeamInviteForm({ name: '', email: '' })
-      const teamRes = await fetch(`/api/sub-team?user_id=${user?.id}`)
+      const teamRes = await authFetch('/api/sub-team')
       if (teamRes.ok) { const d = await teamRes.json(); setTeamMembers(d.members || []) }
     } else {
       setTeamInviteMsg('Error: ' + (data.error || 'Failed to send'))
@@ -1386,7 +1330,7 @@ export default function Submit() {
                   <label style={s.label}>Project</label>
                   <select value={form.job_id} onChange={e => { update('job_id', e.target.value); loadJobSov(e.target.value) }} required style={s.input}>
                     <option value="">Select a project...</option>
-                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}{billingLockByJob[j.id] === 'person_cannot_bill' ? ' (view only)' : billingLockByJob[j.id] ? ' (billing not open yet)' : ''}</option>)}
                   </select>
                 </div>
                 {sovForm.length > 0 && (
@@ -1509,15 +1453,19 @@ export default function Submit() {
                 )}
                 {form.job_id && noContract && (
                   <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '14px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
-                    {billingLocked
-                      ? 'Billing is not enabled for this project yet. NV Construction will turn it on when your subcontract is ready.'
-                      : 'No subcontract on file for this project. Contact NV Construction to have your subcontract issued before submitting billing.'}
+                    {billingLocked === 'person_cannot_bill'
+                      ? 'Your login is set to view-only for billing. A teammate who can bill can submit for your company, or ask NV Construction to allow billing for your login.'
+                      : billingLocked
+                        ? 'Billing is not open for your company on this project yet. NV Construction will turn it on when your subcontract is ready.'
+                        : 'No subcontract on file for your company on this project. Contact NV Construction to have your subcontract issued before submitting billing.'}
                   </div>
                 )}
 
                 {/* ── SOV builder: contracts exist but no lines yet ── */}
-                {form.job_id && !noContract && jobSovContracts.length > 0 && sovForm.length === 0 && (() => {
-                  const contractMax = jobSovContracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
+                {form.job_id && !noContract && jobSovContracts.some(c => !c.has_sov) && (() => {
+                  // One contract at a time, so lines are never copied onto every contract on the job
+                  const target = jobSovContracts.find(c => !c.has_sov)
+                  const contractMax = Number(target.contract_value || 0)
                   const totalDraft = sovDraftLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
                   const remaining = contractMax - totalDraft
                   const isBalanced = Math.round(totalDraft * 100) === Math.round(contractMax * 100)
@@ -1527,6 +1475,7 @@ export default function Submit() {
                         <div>
                           <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>Create your Schedule of Values</p>
                           <p style={{ margin: 0, fontSize: '12px', color: '#6b7280', lineHeight: '1.6' }}>Break your contract into billing line items. Total must match your contract value.</p>
+                          {jobSovContracts.length > 1 && <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#374151', fontWeight: '600' }}>For contract: {target.description || 'Subcontract'} ({jobSovContracts.filter(c => !c.has_sov).length} of {jobSovContracts.length} contracts still need a schedule)</p>}
                         </div>
                         <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '16px' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px', letterSpacing: '1px', textTransform: 'uppercase' }}>Contract value</div>
@@ -2379,6 +2328,9 @@ export default function Submit() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{m.full_name || m.email || 'Unnamed'}</div>
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{m.email}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                        {m.job_access === 'assigned' ? 'Sees only projects NV assigns to them' : 'Sees all company projects'} · {m.can_bill === false ? 'View only (cannot bill)' : 'Can submit billing'}
+                      </div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
                       <div style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '99px', background: hasLoggedIn ? '#0a2a0a' : '#1a1a0a', color: hasLoggedIn ? '#4ade80' : '#888', border: `1px solid ${hasLoggedIn ? '#1a4a1a' : '#2a2a1a'}` }}>

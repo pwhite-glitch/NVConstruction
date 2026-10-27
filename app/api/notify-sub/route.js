@@ -1,19 +1,39 @@
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
+// POST { recipients: [{ email, name }], company_name, subject, message }
+// (legacy: { to_email, to_name, ... }). One personalised email per recipient.
 export async function POST(request) {
-  const { to_email, to_name, company_name, subject, message } = await request.json()
-  if (!to_email || !subject || !message) return Response.json({ error: 'Missing required fields' }, { status: 400 })
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
+  const { recipients: rawRecipients, to_email, to_name, company_name, subject, message } = await request.json()
+  const recipients = (rawRecipients || (to_email ? [{ email: to_email, name: to_name }] : []))
+    .filter(r => r?.email)
+    .filter((r, i, arr) => arr.findIndex(x => x.email.toLowerCase() === r.email.toLowerCase()) === i)
+  if (!recipients.length || !subject || !message) return Response.json({ error: 'Missing required fields' }, { status: 400 })
 
+  const sent = []
+  const failed = []
+  for (const r of recipients) {
+    const error = await sendOne({ to_email: r.email, to_name: r.name, company_name, subject, message })
+    if (error) failed.push({ email: r.email, error: error.message }); else sent.push(r.email)
+  }
+  if (!sent.length) return Response.json({ error: failed[0]?.error || 'Send failed', failed }, { status: 500 })
+  return Response.json({ ok: true, sent, failed })
+}
+
+async function sendOne({ to_email, to_name, company_name, subject, message }) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
   const firstName = to_name?.split(' ')[0] || 'there'
   const logo = logoSrc()
 
   const { error } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
+    reply_to: process.env.PM_EMAIL || 'management@nvim.co',
     to: to_email,
     subject: subject,
     html: `
@@ -52,6 +72,5 @@ export async function POST(request) {
 </html>`,
   })
 
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ ok: true })
+  return error || null
 }

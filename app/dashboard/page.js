@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
+import { sameCompany } from '../../lib/company-name'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
@@ -317,11 +319,6 @@ export default function Dashboard() {
 
   // Manual sub add state
   const [showAddSubManual, setShowAddSubManual] = useState(false)
-  const [notifySubId, setNotifySubId] = useState(null)
-  const [notifySubject, setNotifySubject] = useState('')
-  const [notifyMessage, setNotifyMessage] = useState('')
-  const [sendingNotify, setSendingNotify] = useState(false)
-  const [notifyResult, setNotifyResult] = useState({})
   const [newSubManual, setNewSubManual] = useState({ company_name: '', contact_name: '', email: '', phone: '', address: '', trade: '', license_number: '', coi_expiration: '' })
   const [addingSubManual, setAddingSubManual] = useState(false)
   const [addSubManualError, setAddSubManualError] = useState('')
@@ -751,7 +748,7 @@ export default function Dashboard() {
       const [{ data: dir }, { data: cos }, membersRes1] = await Promise.all([
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('companies').select('*'),
-        fetch('/api/company-members').then(r => r.json()),
+        authFetch('/api/company-members').then(r => r.json()),
       ])
       setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes1.members || [])
       return
@@ -766,7 +763,7 @@ export default function Dashboard() {
     const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
       supabase.from('sub_directory').select('*').order('company_name'),
       supabase.from('companies').select('*'),
-      fetch('/api/company-members').then(r => r.json()),
+      authFetch('/api/company-members').then(r => r.json()),
     ])
     setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes2.members || [])
   }
@@ -896,7 +893,7 @@ export default function Dashboard() {
     }
     // Send invite if email provided
     if (newSubManual.email) {
-      fetch('/api/invite-sub', {
+      authFetch('/api/invite-sub', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ directory_id: data.id, company_id: data.company_id }),
@@ -1058,7 +1055,7 @@ export default function Dashboard() {
     for (const email of selectedEmails) {
       const sub = directory.find(d => d.email?.toLowerCase() === email.toLowerCase())
       if (!sub) continue
-      const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+      const company = companyFor(sub)
       const estimators = subProfiles.filter(p =>
         p.role === 'sub_estimator' &&
         ((company && p.company_id === company.id) || p.company_name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
@@ -1261,26 +1258,6 @@ export default function Dashboard() {
     setSavingSubEdit(false)
   }
 
-  async function sendNotification(sub) {
-    if (!notifySubject.trim() || !notifyMessage.trim()) return
-    setSendingNotify(true)
-    const res = await fetch('/api/notify-sub', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_email: sub.email, to_name: sub.contact_name || sub.company_name, company_name: sub.company_name, subject: notifySubject, message: notifyMessage }),
-    })
-    setSendingNotify(false)
-    if (res.ok) {
-      setNotifyResult(prev => ({ ...prev, [sub.id]: { ok: true, text: `Email sent to ${sub.email}.` } }))
-      setNotifySubject('')
-      setNotifyMessage('')
-      setNotifySubId(null)
-    } else {
-      setNotifyResult(prev => ({ ...prev, [sub.id]: { ok: false, text: 'Failed to send.' } }))
-    }
-    setTimeout(() => setNotifyResult(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
-  }
-
   async function addJob(e) {
     e.preventDefault()
     const { data, error } = await supabase.from('jobs').insert({
@@ -1336,7 +1313,7 @@ export default function Dashboard() {
 
   async function inviteSub(e) {
     e.preventDefault()
-    const res = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: inviteJobId, sub_email: inviteEmail.toLowerCase().trim() }) })
+    const res = await authFetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: inviteJobId, sub_email: inviteEmail.toLowerCase().trim() }) })
     const result = await res.json()
     if (!res.ok) { setInviteMsg(res.status === 409 ? 'Already invited to this job.' : 'Error: ' + result.error); return }
     await syncAssignments()
@@ -1357,7 +1334,7 @@ export default function Dashboard() {
 
   async function refreshSubProfiles() {
     try {
-      const result = await fetch('/api/company-members').then(r => r.json())
+      const result = await authFetch('/api/company-members').then(r => r.json())
       if (Array.isArray(result?.members)) setSubProfiles(result.members)
     } catch (_) {}
   }
@@ -1366,7 +1343,7 @@ export default function Dashboard() {
     const [dirRes, cosRes, membersRes] = await Promise.all([
       supabase.from('sub_directory').select('*').order('company_name'),
       supabase.from('companies').select('*'),
-      fetch('/api/company-members').then(r => r.json()),
+      authFetch('/api/company-members').then(r => r.json()),
     ])
     if (dirRes.data) setDirectory(dirRes.data)
     if (cosRes.data) setCompaniesData(cosRes.data)
@@ -1433,7 +1410,7 @@ export default function Dashboard() {
       const { data: newCo } = await supabase.from('companies').insert({ name: companyName }).select().single()
       if (newCo) { company = newCo; setCompaniesData(prev => [...prev, newCo]) }
     }
-    const res = await fetch('/api/invite-sub', {
+    const res = await authFetch('/api/invite-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, company_id: company?.id, company_name: companyName, full_name: name || undefined, role }),
@@ -1454,7 +1431,7 @@ export default function Dashboard() {
 
   async function resendSubInvite(userId, email, companyId, companyName) {
     setSubUserActionLoading(userId)
-    await fetch('/api/invite-sub', {
+    await authFetch('/api/invite-sub', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, company_id: companyId, company_name: companyName }),
@@ -1548,12 +1525,21 @@ export default function Dashboard() {
     const jobId = assignTarget[sub.id]
     if (!jobId) return
     setAssigningId(sub.id)
-    // Assign only — billing stays off until enabled on the job's Companies tab. No email is sent.
-    const { error } = await supabase.from('job_assignments').insert({
-      job_id: jobId,
-      sub_email: sub.email.toLowerCase().trim(),
-      billing_enabled: false,
-    })
+    // Put the COMPANY on the job (billing off, no email). Who sees it, billing and
+    // notifications are set from the job chip's "Manage" panel below.
+    let error = null
+    const coRes = sub.company_name ? await authFetch('/api/companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: sub.company_name, find_or_create: true }) }) : null
+    const companyId = coRes ? (await coRes.json().catch(() => ({}))).company?.id : null
+    if (companyId) {
+      const res = await authFetch('/api/company-job-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: jobId, company_id: companyId, action: 'add_company' }) })
+      if (!res.ok) error = { message: (await res.json().catch(() => ({}))).error || 'Assignment failed' }
+    } else {
+      ({ error } = await supabase.from('job_assignments').insert({
+        job_id: jobId,
+        sub_email: sub.email.toLowerCase().trim(),
+        billing_enabled: false,
+      }))
+    }
     if (error) {
       const text = error.code === '23505' ? 'Already assigned to this job.' : 'Error: ' + error.message
       setAssignMsg(prev => ({ ...prev, [sub.id]: { text, ok: false } }))
@@ -1561,18 +1547,53 @@ export default function Dashboard() {
       await supabase.rpc('sync_job_assignments')
       await loadAll()
       setAssignTarget(prev => ({ ...prev, [sub.id]: '' }))
-      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned with billing off. No email sent. Use "Turn billing on" on the job below when ready.', ok: true } }))
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Company added to the job with billing off. No email sent. Click "Manage" on the job below to choose who sees it, turn billing on, and email people.', ok: true } }))
       setTimeout(() => setAssignMsg(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
     }
     setAssigningId(null)
   }
 
+  // Directory row → companies row: loose name match, else the company of the
+  // portal user whose email is the directory contact (e.g. Justin → J2).
+  function companyFor(sub) {
+    const byName = companiesData.find(c => sameCompany(c.name, sub.company_name))
+    if (byName) return byName
+    const email = sub.email?.toLowerCase().trim()
+    const prof = email && subProfiles.find(p => p.company_id && p.invite_email?.toLowerCase().trim() === email)
+    return (prof && companiesData.find(c => c.id === prof.company_id)) || null
+  }
+
+  // One representative row per job this directory company is on (company-level rows,
+  // the directory contact's row, or any teammate's row).
+  function companyJobs(sub) {
+    const co = companyFor(sub)
+    const email = sub.email?.toLowerCase().trim()
+    const memberIds = new Set(co ? subProfiles.filter(p => p.company_id === co.id).map(p => p.id) : [])
+    const seen = new Set()
+    return assignments.filter(a => {
+      const mine = (email && a.sub_email?.toLowerCase().trim() === email) || (co && a.company_id === co.id) || (a.sub_id && memberIds.has(a.sub_id))
+      if (!mine || seen.has(a.job_id)) return false
+      seen.add(a.job_id)
+      return true
+    })
+  }
+
+  async function removeCompanyFromJob(sub, a) {
+    const co = companyFor(sub)
+    const label = `#${a.jobs?.job_number} — ${a.jobs?.project_name}`
+    if (!co) { await removeJobAssignment(a.id); return }
+    if (!window.confirm(`Remove ${sub.company_name} and everyone at it from ${label}?\n\nNo email is sent. An active subcontract on the job still gives them access until it's moved back to draft.`)) return
+    await authFetch('/api/company-job-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: a.job_id, company_id: co.id, action: 'remove_company' }) })
+    await loadAll()
+  }
+
   // Assignment rows for this directory company on one job: the contact's own row plus any company-linked rows.
   // Billing is toggled on all of them together, matching the job page's Companies tab.
   function companyJobRows(sub, jobId) {
-    const co = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+    const co = companyFor(sub)
     const email = sub.email?.toLowerCase().trim()
-    return assignments.filter(a => a.job_id === jobId && ((email && a.sub_email?.toLowerCase().trim() === email) || (co && a.company_id === co.id)))
+    const memberIds = new Set(co ? subProfiles.filter(p => p.company_id === co.id).map(p => p.id) : [])
+    return assignments.filter(a => a.job_id === jobId && ((email && a.sub_email?.toLowerCase().trim() === email) || (co && a.company_id === co.id) || (a.sub_id && memberIds.has(a.sub_id))))
   }
 
   // Turns billing on/off for a company on one job. Emails only when enabling AND "Email these contacts" is ticked.
@@ -4255,7 +4276,7 @@ ${estimate.notes ? `
 
                         {/* ── Portal Users ── */}
                         {(() => {
-                          const company = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+                          const company = companyFor(sub)
                           const subNameKey = sub.company_name?.toLowerCase().trim()
                           const members = subProfiles.filter(p =>
                             (company && p.company_id === company.id) ||
@@ -4638,11 +4659,11 @@ ${estimate.notes ? `
                                 </span>
                               )}
                             </div>
-                            {assignments.filter(a => a.sub_email === sub.email).length > 0 && (
+                            {companyJobs(sub).length > 0 && (
                               <div style={{ marginTop: '10px' }}>
                                 <div style={{ fontSize: '11px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Currently assigned to</div>
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                  {assignments.filter(a => a.sub_email === sub.email).map(a => {
+                                  {companyJobs(sub).map(a => {
                                     const chipKey = `${sub.id}:${a.job_id}`
                                     const rows = companyJobRows(sub, a.job_id)
                                     const onCount = rows.filter(r => r.billing_enabled !== false).length
@@ -4658,18 +4679,19 @@ ${estimate.notes ? `
                                           disabled={isSaving}
                                           style={{ ...s.btnSm(billingOn ? 'gray' : 'orange'), padding: '3px 9px', fontSize: '11px', opacity: isSaving ? 0.6 : 1 }}
                                           onClick={() => {
+                                            if (companyFor(sub)) { setChipBillingPanel(chipBillingPanel === chipKey ? null : chipKey); return }
                                             if (billingOn) {
                                               if (window.confirm(`Turn billing off for ${sub.company_name} on #${a.jobs?.job_number} — ${a.jobs?.project_name}?\n\nThey keep portal access but can't submit billing on this job.\n\nNo email is sent.`)) setChipBilling(sub, a.job_id, false, false)
                                             } else {
                                               setChipBillingPanel(chipBillingPanel === chipKey ? null : chipKey); setChipBillingEmail(false)
                                             }
                                           }}>
-                                          {isSaving ? 'Saving...' : billingOn ? 'Turn billing off' : 'Turn billing on'}
+                                          {isSaving ? 'Saving...' : companyFor(sub) ? (chipBillingPanel === chipKey ? 'Close' : 'Manage') : billingOn ? 'Turn billing off' : 'Turn billing on'}
                                         </button>
                                         <button
-                                          title="Remove from job"
+                                          title="Remove company from job"
                                           aria-label={`Remove from #${a.jobs?.job_number}`}
-                                          onClick={() => removeJobAssignment(a.id)}
+                                          onClick={() => removeCompanyFromJob(sub, a)}
                                           style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '15px', lineHeight: 1, padding: '2px 4px', display: 'flex', alignItems: 'center' }}>
                                           ×
                                         </button>
@@ -4680,6 +4702,16 @@ ${estimate.notes ? `
                                 {(() => {
                                   const panelJobId = chipBillingPanel?.startsWith(`${sub.id}:`) ? chipBillingPanel.slice(`${sub.id}:`.length) : null
                                   if (!panelJobId) return null
+                                  const co = companyFor(sub)
+                                  if (co) {
+                                    const pj = jobs.find(j => j.id === panelJobId)
+                                    return (
+                                      <div style={{ marginTop: '10px', border: '1px solid #fed7aa', background: '#fff', borderRadius: '8px', padding: '12px 14px' }}>
+                                        <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '600', color: '#111827' }}>{sub.company_name} on #{pj?.job_number} — {pj?.project_name}</p>
+                                        <CompanyPeoplePanel companyId={co.id} companyName={co.name} jobId={panelJobId} jobLabel={pj?.project_name} onChanged={loadAll} />
+                                      </div>
+                                    )
+                                  }
                                   const rows = companyJobRows(sub, panelJobId)
                                   const job = rows[0]?.jobs
                                   const recipients = [...new Set(rows.map(r => r.sub_email?.toLowerCase().trim()).filter(Boolean))]
@@ -4712,40 +4744,13 @@ ${estimate.notes ? `
                           </div>
                         )}
 
-                        {sub.email && (
-                          <div style={{ marginBottom: '1rem' }}>
-                            {notifySubId !== sub.id ? (
-                              <>
-                                <button style={s.btnSm('blue')} onClick={() => { setNotifySubId(sub.id); setNotifySubject(''); setNotifyMessage('') }}>Email a message to {sub.contact_name || sub.email}</button>
-                                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#6b7280', overflowWrap: 'anywhere' }}>
-                                  Opens a form to write one email (your subject and message) to {sub.contact_name ? `${sub.contact_name} <${sub.email}>` : sub.email}. Nothing is sent until you click Send.
-                                </p>
-                                {notifyResult[sub.id] && <p style={{ margin: '4px 0 0', fontSize: '12px', fontWeight: '600', color: notifyResult[sub.id].ok ? '#16a34a' : '#dc2626' }}>{notifyResult[sub.id].text}</p>}
-                              </>
-                            ) : (
-                              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '1rem' }}>
-                                <p style={{ margin: '0 0 4px', fontSize: '12px', fontWeight: '700', color: '#2563eb', letterSpacing: '1px', textTransform: 'uppercase' }}>Email {sub.company_name}</p>
-                                <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#374151', overflowWrap: 'anywhere' }}>
-                                  To: <strong>{sub.contact_name ? `${sub.contact_name} <${sub.email}>` : sub.email}</strong> — only this address. Sends your subject and message as an email from NV Construction; nothing else changes.
-                                </p>
-                                <div style={{ marginBottom: '8px' }}>
-                                  <label style={s.label}>Subject</label>
-                                  <input style={s.input} value={notifySubject} onChange={e => setNotifySubject(e.target.value)} placeholder="e.g. COI renewal needed" />
-                                </div>
-                                <div style={{ marginBottom: '10px' }}>
-                                  <label style={s.label}>Message</label>
-                                  <textarea style={{ ...s.input, minHeight: '80px', resize: 'vertical' }} value={notifyMessage} onChange={e => setNotifyMessage(e.target.value)} placeholder="Your message to the subcontractor..." />
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                  <button style={{ ...s.btnSm('blue'), opacity: sendingNotify || !notifySubject || !notifyMessage ? 0.5 : 1 }} disabled={sendingNotify || !notifySubject || !notifyMessage} onClick={() => sendNotification(sub)}>{sendingNotify ? 'Sending...' : `Send email to ${sub.email}`}</button>
-                                  <button style={s.btnSm('gray')} onClick={() => setNotifySubId(null)}>Cancel</button>
-                                  {notifyResult[sub.id] && <span style={{ fontSize: '12px', color: notifyResult[sub.id].ok ? '#16a34a' : '#dc2626' }}>{notifyResult[sub.id].text}</span>}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
+                        <div style={{ marginBottom: '1rem' }}>
+                          <p style={s.assignTitle}>People, job access & email</p>
+                          <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280', lineHeight: '1.5' }}>
+                            Everyone at {sub.company_name}: portal users, contacts without a login, and the directory contact. Set who sees all company jobs vs. only jobs they're assigned to, and who may submit billing. Nothing here sends email except the Email button, which lets you tick exactly who receives it.
+                          </p>
+                          <CompanyPeoplePanel companyId={companyFor(sub)?.id || null} companyName={sub.company_name} contactEmail={sub.email} onChanged={refreshSubProfiles} />
+                        </div>
 
                         <div style={{ marginTop: '1rem' }}>
                           {sub.status === 'pending' && (
@@ -4775,7 +4780,7 @@ ${estimate.notes ? `
             {activeTab === 'directory' && (() => {
               const matchedIds = new Set()
               directory.forEach(sub => {
-                const co = companiesData.find(c => c.name?.toLowerCase().trim() === sub.company_name?.toLowerCase().trim())
+                const co = companyFor(sub)
                 const nameKey = sub.company_name?.toLowerCase().trim()
                 subProfiles.forEach(p => {
                   if ((co && p.company_id === co.id) || (nameKey && p.company_name?.toLowerCase().trim() === nameKey)) matchedIds.add(p.id)

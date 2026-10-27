@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -7,6 +8,8 @@ const adminSupabase = createClient(
 )
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get('job_id')
@@ -26,6 +29,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { job_id, week_start_date, submitted_by, notes } = await request.json()
     if (!job_id || !week_start_date) return Response.json({ error: 'job_id and week_start_date required' }, { status: 400 })
@@ -42,6 +47,8 @@ export async function POST(request) {
 }
 
 export async function PUT(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { id, status, notes } = body

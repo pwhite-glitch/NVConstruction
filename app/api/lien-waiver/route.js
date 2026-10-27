@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -10,6 +11,8 @@ const adminSupabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { submission_id } = await request.json()
   if (!submission_id) return Response.json({ error: 'submission_id required' }, { status: 400 })
 

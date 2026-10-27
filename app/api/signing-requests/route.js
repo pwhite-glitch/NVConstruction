@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { getSubContracts } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -101,11 +102,8 @@ export async function GET(request) {
 
   // Sub sees only their own signing requests — always derive from session, never from query param
   if (isSub(auth.role) || sub_id) {
-    const { data: subs } = await adminSupabase
-      .from('subcontracts')
-      .select('id')
-      .eq('sub_id', auth.userId)  // always use session userId, not the supplied sub_id param
-    const subIds = (subs || []).map(s => s.id)
+    // Contracts the session user can access (theirs and their company's), never the supplied sub_id param
+    const subIds = isSub(auth.role) ? (await getSubContracts(auth)).map(s => s.id) : []
     if (subIds.length === 0) return Response.json({ data: [] })
     const { data, error } = await adminSupabase
       .from('signing_requests')

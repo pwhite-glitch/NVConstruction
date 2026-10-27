@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -7,6 +8,8 @@ const adminSupabase = createClient(
 
 // POST: insert one row or an array of rows
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { error } = await adminSupabase.from('budget_items').insert(body)
@@ -19,6 +22,8 @@ export async function POST(request) {
 
 // PUT: update a single row by id, or increment fields ({ id, increment: { field: delta } })
 export async function PUT(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id, fields } = await request.json()
     if (!id || !fields) return Response.json({ error: 'id and fields required' }, { status: 400 })
@@ -31,6 +36,8 @@ export async function PUT(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     if (body.job_id) {

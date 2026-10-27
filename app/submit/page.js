@@ -2,10 +2,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { sendEmail, emailWrap } from '../../lib/email'
+import { notifyBidSubmitted } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 
-const PM_EMAIL = 'pwhite@nvim.co'
 const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
 const s = {
@@ -238,14 +237,6 @@ export default function Submit() {
         if (prof?.role === 'super') { router.push('/field'); return }
       }
       setProfile(devIsSubOverride ? { ...prof, role: devRole } : prof)
-      // Link any unmatched contracts where vendor_name matches this sub's company
-      if (prof?.company_name) {
-        await fetch('/api/link-sub-contracts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: session.user.id, company_name: prof.company_name }),
-        })
-      }
       let mergedJobs
       if (devIsSubOverride) {
         const { data: allJobs } = await supabase.from('jobs').select('id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path').eq('status', 'active').order('project_name')
@@ -512,17 +503,7 @@ export default function Submit() {
     })
     if (!error) {
       await supabase.from('bid_invitations').update({ status: 'submitted' }).eq('bid_package_id', bidPackageId).ilike('sub_email', user.email)
-      const inv = bidInvitations.find(i => i.bid_packages?.id === bidPackageId)
-      const pkgTitle = inv?.bid_packages?.title || 'Bid Package'
-      await sendEmail(PM_EMAIL, `Bid received — ${profile?.company_name || user.email}`,
-        emailWrap(`
-          <h2 style="color:#f1f1f1;margin:0 0 1rem">New bid submitted</h2>
-          <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted a bid for <strong style="color:#f1f1f1">${pkgTitle}</strong>.</p>
-          <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(bidSubmitForm.amount).toLocaleString()}</p>
-          ${bidSubmitForm.notes ? `<p style="color:#888;font-size:13px">${bidSubmitForm.notes}</p>` : ''}
-          ${doc_url ? `<p style="color:#888;font-size:13px">📎 Estimate attached</p>` : ''}
-        `)
-      )
+      await notifyBidSubmitted(bidPackageId)
       await loadBidPackageDetail(bidPackageId)
       await loadBidInvitations(user.email)
       setBidSubmitForm({ amount: '', notes: '' })
@@ -853,7 +834,6 @@ export default function Submit() {
       return
     }
     const doc_url = path
-    const selectedJob = jobs.find(j => j.id === form.job_id)
     // Server checks access, billing on, and over-billing, and computes retainage from the SOV lines
     const res = await authFetch('/api/sub-portal/billing', {
       method: 'POST',
@@ -876,19 +856,8 @@ export default function Submit() {
       setLoading(false)
       return
     }
+    // The PM's "billing submitted" email is sent by /api/sub-portal/billing
     setSubmitError(result.warning || '')
-    const pmEmail = selectedJob?.pm_email || PM_EMAIL
-    await sendEmail(pmEmail, `Billing submitted — ${profile?.company_name || user.email}`,
-      emailWrap(`
-        <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
-        <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${profile?.company_name || user.email}</strong> submitted billing for <strong style="color:#f1f1f1">#${selectedJob?.job_number} — ${selectedJob?.project_name}</strong>.</p>
-        <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${parseFloat(form.amount_billed).toLocaleString()}</p>
-        ${form.pct_complete ? `<p style="color:#888;font-size:13px">${form.pct_complete}% complete on scope</p>` : ''}
-        <p style="color:#888;font-size:13px;line-height:1.6">${form.work_description}</p>
-        <p style="color:#888;font-size:13px">📎 Invoice PDF attached</p>
-        <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
-      `)
-    )
     try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}
     setSuccess(true)
     setPrefillSub(null)

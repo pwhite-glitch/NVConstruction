@@ -36,7 +36,7 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key'
 process.env.CRON_SECRET = 'test-cron-secret'
 
-const { requireAuth, requirePM, verifyCronSecret, isPM, isSub } = require('../lib/server-auth')
+const { requireAuth, requirePM, requireRole, verifyCronSecret, isPM, isSub } = require('../lib/server-auth')
 
 function makeRequest(headers = {}) {
   return {
@@ -132,6 +132,37 @@ describe('verifyCronSecret', () => {
 
   it('returns false with no secret', () => {
     expect(verifyCronSecret(makeRequest({}))).toBe(false)
+  })
+
+  it('accepts the Vercel Cron bearer header', () => {
+    expect(verifyCronSecret(makeRequest({ authorization: 'Bearer test-cron-secret' }))).toBe(true)
+    expect(verifyCronSecret(makeRequest({ authorization: 'Bearer wrong' }))).toBe(false)
+  })
+
+  it('fails closed when CRON_SECRET is not configured', () => {
+    const saved = process.env.CRON_SECRET
+    delete process.env.CRON_SECRET
+    try {
+      expect(verifyCronSecret(makeRequest({ authorization: 'Bearer undefined' }))).toBe(false)
+      expect(verifyCronSecret(makeRequest({ 'x-cron-secret': 'undefined' }))).toBe(false)
+    } finally {
+      process.env.CRON_SECRET = saved
+    }
+  })
+})
+
+describe('requireRole', () => {
+  beforeEach(() => {
+    mockGetUser.mockReset()
+    mockProfileSelect.mockReset()
+  })
+
+  it('allows a listed role and blocks others with 403', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'owner-user' } }, error: null })
+    mockProfileSelect.mockResolvedValue({ data: { role: 'owner', company_id: null }, error: null })
+    expect((await requireRole(makeRequest({ authorization: 'Bearer t' }), ['owner', 'pm'])).error).toBeNull()
+    const blocked = await requireRole(makeRequest({ authorization: 'Bearer t' }), ['pm'])
+    expect(blocked.error.status).toBe(403)
   })
 })
 

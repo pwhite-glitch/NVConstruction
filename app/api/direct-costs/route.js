@@ -1,38 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-// Lightly check auth if a Bearer token is present; returns role or null.
-// Does not reject requests without auth — used for per-role enforcement only.
-async function tryGetRole(request) {
-  const header = request.headers.get('authorization') || ''
-  if (!header.startsWith('Bearer ')) return null
-  const token = header.slice(7).trim()
-  try {
-    const anonClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    )
-    const { data: { user } } = await anonClient.auth.getUser(token)
-    if (!user) return null
-    const { data: profile } = await adminSupabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle()
-    return profile?.role ?? null
-  } catch {
-    return null
-  }
-}
-
 // GET: fetch direct costs for a job, or generate a signed receipt URL
 // ?job_id=uuid  → list of costs
 // ?receipt_path=... → { url } signed URL (valid 5 min)
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { searchParams } = new URL(request.url)
     const receipt_path = searchParams.get('receipt_path')
@@ -58,16 +37,17 @@ export async function GET(request) {
 // POST: insert a direct cost, optionally uploading a receipt file
 // Accepts multipart FormData: file (optional) + "data" JSON string
 // OR plain JSON body (no file)
-// If caller is authenticated as 'super', a receipt file is required.
+// If the caller is a super (field), a receipt file is required.
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const contentType = request.headers.get('content-type') || ''
     let row = {}
     let receipt_url = null
     let fileAttached = false
 
-    // Soft auth — enforce receipt for field workers (super role)
-    const authRole = await tryGetRole(request)
+    const authRole = auth.role
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
@@ -123,6 +103,8 @@ export async function POST(request) {
 // Used for budget line assignment, job moves, and draw application linkage.
 // Status transitions (approve/reject/resubmit) should go through /api/dc-review.
 export async function PUT(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id, ...fields } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
@@ -137,6 +119,8 @@ export async function PUT(request) {
 // DELETE: permanently delete a direct cost by id
 // For actual deletions only — rejection now goes through /api/dc-review.
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })

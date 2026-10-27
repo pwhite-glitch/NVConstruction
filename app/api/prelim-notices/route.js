@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ notices: [] })
@@ -19,6 +22,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { job_id, from_company, amount_claimed, received_at, notes } = await request.json()
   if (!job_id || !from_company) return Response.json({ error: 'job_id and from_company required' }, { status: 400 })
   const { data: notice, error } = await adminSupabase
@@ -31,6 +36,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { id, status, notes } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
   const updates = {}
@@ -42,6 +49,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   const { error } = await adminSupabase.from('prelim_notices').delete().eq('id', id)

@@ -1,11 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-export async function GET() {
+export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { data: profiles, error } = await adminSupabase
     .from('profiles')
     .select('id, full_name, role, phone')

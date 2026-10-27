@@ -1,46 +1,30 @@
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth, isSub } from '../../../lib/server-auth'
+import { getSubContracts } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-// Drafts are PM-only until activated. Written as an OR so legacy rows with a
-// null status still match (a plain neq would drop them).
-const notDraft = q => q.or('status.is.null,status.neq.draft')
-
-// Returns subcontracts for a job this user can bill against:
-// 1. sub_id match (legacy direct link)
-// 2. company_id match (preferred — all users in the company can bill)
-// 3. vendor_name ilike fallback (for any not yet migrated)
-// Pass all=1 (no job_id) to get all contracts across jobs for the sub portal contracts tab
+// Sub portal only. The caller comes from the session; user_id / company_id /
+// company_name query params are ignored. Which contracts are included is
+// decided by getSubContracts (lib/sub-access.js). Drafts are never returned.
+// ?all=1        → { all_contracts } for the My Contracts tab (subcontract_summary rows + job)
+// ?job_id=uuid  → { contracts } on that job
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+  if (!isSub(auth.role)) return Response.json({ error: 'Sub portal only' }, { status: 403 })
+
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
-  const user_id = searchParams.get('user_id')
-  const company_id = searchParams.get('company_id') || ''
-  const company_name = searchParams.get('company_name') || ''
   const all = searchParams.get('all')
 
-  // All-contracts mode: load subcontract_summary for the sub portal contracts tab
-  if (all && user_id) {
-    // Collect all subcontract IDs this user can access
-    const idQueries = [
-      notDraft(adminSupabase.from('subcontracts').select('id').eq('sub_id', user_id)),
-    ]
-    if (company_id) {
-      idQueries.push(
-        notDraft(adminSupabase.from('subcontracts').select('id').eq('company_id', company_id))
-      )
-    }
-    if (company_name.trim()) {
-      idQueries.push(
-        notDraft(adminSupabase.from('subcontracts').select('id').ilike('vendor_name', company_name.trim()))
-      )
-    }
-    const idResults = await Promise.all(idQueries)
-    const allIds = [...new Set(idResults.flatMap(r => (r.data || []).map(c => c.id)))]
+  const accessible = await getSubContracts(auth)
 
+  if (all) {
+    const allIds = accessible.map(c => c.id)
     if (allIds.length === 0) return Response.json({ all_contracts: [] })
 
     const [{ data: summaries }, { data: rawContracts }] = await Promise.all([
@@ -56,36 +40,12 @@ export async function GET(request) {
     return Response.json({ all_contracts: contracts.map(c => ({ ...c, job: jobMap[c.job_id], signed_contract_url: signedUrlMap[c.id] || null })) })
   }
 
-  if (!job_id || !user_id) return Response.json({ contracts: [] })
-
-  const { data: byId } = await adminSupabase
+  if (!job_id) return Response.json({ contracts: [] })
+  const ids = accessible.filter(c => c.job_id === job_id).map(c => c.id)
+  if (ids.length === 0) return Response.json({ contracts: [] })
+  const { data } = await adminSupabase
     .from('subcontracts')
     .select('id, description, retainage_pct, contract_value')
-    .eq('job_id', job_id)
-    .eq('sub_id', user_id)
-    .or('status.is.null,status.neq.draft')
-
-  let contracts = byId || []
-
-  if (contracts.length === 0 && company_id) {
-    const { data: byCompany } = await adminSupabase
-      .from('subcontracts')
-      .select('id, description, retainage_pct, contract_value')
-      .eq('job_id', job_id)
-      .eq('company_id', company_id)
-      .or('status.is.null,status.neq.draft')
-    contracts = byCompany || []
-  }
-
-  if (contracts.length === 0 && company_name.trim()) {
-    const { data: byName } = await adminSupabase
-      .from('subcontracts')
-      .select('id, description, retainage_pct, contract_value')
-      .eq('job_id', job_id)
-      .ilike('vendor_name', company_name.trim())
-      .or('status.is.null,status.neq.draft')
-    contracts = byName || []
-  }
-
-  return Response.json({ contracts })
+    .in('id', ids)
+  return Response.json({ contracts: data || [] })
 }

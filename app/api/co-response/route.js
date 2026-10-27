@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { logChange } from '../../../lib/change-log'
+import { requireAuth, isSub } from '../../../lib/server-auth'
+import { canAccessSubcontract } from '../../../lib/sub-access'
+import { escapeHtml } from '../../../lib/email'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,10 +11,17 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// Sub portal: approve or dispute a PM-to-sub change order on a contract the
+// caller can access. The responder is the session user (any sub_user_id in the
+// body is ignored).
 export async function POST(request) {
-  const { co_id, response, dispute_reason, sub_user_id } = await request.json()
-  if (!co_id || !response || !sub_user_id) {
-    return Response.json({ error: 'co_id, response, and sub_user_id required' }, { status: 400 })
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+  if (!isSub(auth.role)) return Response.json({ error: 'Sub portal only' }, { status: 403 })
+  const sub_user_id = auth.userId
+  const { co_id, response, dispute_reason } = await request.json()
+  if (!co_id || !response) {
+    return Response.json({ error: 'co_id and response required' }, { status: 400 })
   }
   if (response !== 'approved' && response !== 'disputed') {
     return Response.json({ error: 'response must be approved or disputed' }, { status: 400 })
@@ -25,8 +35,11 @@ export async function POST(request) {
     .single()
 
   if (!co) return Response.json({ error: 'Change order not found' }, { status: 404 })
-  if (co.subcontracts?.sub_id !== sub_user_id) {
+  if (!(await canAccessSubcontract(auth, co.subcontract_id))) {
     return Response.json({ error: 'Not authorized' }, { status: 403 })
+  }
+  if (co.status !== 'pending') {
+    return Response.json({ error: `This change order is already ${co.status}.` }, { status: 400 })
   }
   if (co.direction !== 'pm_to_sub') {
     return Response.json({ error: 'Only PM-to-sub change orders require sub approval' }, { status: 400 })
@@ -82,8 +95,8 @@ export async function POST(request) {
       <p style="color:${color};font-size:16px;font-weight:700;margin:0 0 8px">${response === 'approved' ? '✓' : '⚠'} Change order ${label}</p>
       <p style="color:#aaa;margin:0 0 4px"><strong style="color:#f1f1f1">${vendor}</strong> has ${label.toLowerCase()} a change order for <strong style="color:#f1f1f1">#${job?.job_number} — ${job?.project_name}</strong>.</p>
       <p style="font-size:24px;font-weight:800;color:#e8590c;margin:16px 0">${amt}</p>
-      <p style="color:#666;font-size:13px;margin:0 0 4px">Description: ${co.description}</p>
-      ${dispute_reason ? `<p style="color:#ff6b6b;font-size:13px;margin:8px 0 0">Dispute reason: ${dispute_reason}</p>` : ''}
+      <p style="color:#666;font-size:13px;margin:0 0 4px">Description: ${escapeHtml(co.description)}</p>
+      ${dispute_reason ? `<p style="color:#ff6b6b;font-size:13px;margin:8px 0 0">Dispute reason: ${escapeHtml(dispute_reason)}</p>` : ''}
     </div>`,
   }).catch(() => {})
 

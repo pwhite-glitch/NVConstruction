@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
-import { requirePM } from '../../../lib/server-auth'
+import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { canAccessSubcontract } from '../../../lib/sub-access'
 import { logChange } from '../../../lib/change-log'
 
 const adminSupabase = createClient(
@@ -18,6 +19,8 @@ function pick(obj) {
 }
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { searchParams } = new URL(request.url)
     const job_id = searchParams.get('job_id')
@@ -42,6 +45,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = pick(await request.json())
     const { error, data } = await adminSupabase.from('subcontracts').insert(body).select('id').single()
@@ -52,11 +57,31 @@ export async function POST(request) {
   }
 }
 
+// Sub portal "upload signed contract": a sub may set signed_contract_url, and
+// nothing else, on a contract they can access. The path must be the one their
+// upload URL was issued for (contracts/<id>/...).
+async function subUploadSignedContract(auth, raw) {
+  const { id, signed_contract_url } = raw
+  const otherFields = Object.keys(pick(raw)).filter(k => k !== 'signed_contract_url')
+  if (!id || !signed_contract_url || otherFields.length) {
+    return Response.json({ error: 'Subs can only attach a signed contract' }, { status: 403 })
+  }
+  if (!String(signed_contract_url).startsWith(`contracts/${id}/`) || String(signed_contract_url).includes('..')) {
+    return Response.json({ error: 'Invalid document path' }, { status: 400 })
+  }
+  if (!(await canAccessSubcontract(auth, id))) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  const { error } = await adminSupabase.from('subcontracts').update({ signed_contract_url }).eq('id', id)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  return Response.json({ ok: true })
+}
+
 export async function PUT(request) {
-  const auth = await requirePM(request)
+  const auth = await requireAuth(request)
   if (auth.error) return auth.error
   try {
     const raw = await request.json()
+    if (isSub(auth.role)) return await subUploadSignedContract(auth, raw)
+    if (!isPM(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
     const { id } = raw
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const fields = pick(raw)
@@ -101,6 +126,8 @@ export async function PUT(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })

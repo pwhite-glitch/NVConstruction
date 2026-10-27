@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   const employee_id = searchParams.get('employee_id')
@@ -36,6 +39,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const body = await request.json()
   const { data, error } = await adminSupabase
     .from('employee_job_allocations')
@@ -48,6 +53,8 @@ export async function POST(request) {
 }
 
 export async function PUT(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { id, budget_item_id, budget_line } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
   const { error } = await adminSupabase.from('employee_job_allocations').update({ budget_item_id, budget_line }).eq('id', id)
@@ -56,6 +63,8 @@ export async function PUT(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   let id = searchParams.get('id')
 

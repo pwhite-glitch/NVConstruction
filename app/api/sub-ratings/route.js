@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -6,6 +7,8 @@ const adminSupabase = createClient(
 )
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const sub_id = searchParams.get('sub_id')
   const job_id = searchParams.get('job_id')
@@ -18,6 +21,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { sub_id, job_id, rated_by, quality, timeliness, communication, notes } = await request.json()
   if (!sub_id || !job_id || !rated_by) {
     return Response.json({ error: 'sub_id, job_id, rated_by required' }, { status: 400 })

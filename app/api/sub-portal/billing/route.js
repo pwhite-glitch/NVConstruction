@@ -1,11 +1,34 @@
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
 import { requireAuth } from '../../../../lib/server-auth'
 import { billingContext } from '../../../../lib/sub-access'
+import { emailWrap, escapeHtml } from '../../../../lib/email'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+// "Billing submitted" email to the job's PM. Sent from here rather than the
+// client so a sub can't choose the recipient or the content.
+async function emailPmBillingSubmitted(job, submission) {
+  const company = submission.company_name || submission.sub_email
+  await resend.emails.send({
+    from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
+    to: job.pm_email || process.env.PM_EMAIL || 'pwhite@nvim.co',
+    subject: `Billing submitted — ${company}`,
+    html: emailWrap(`
+      <h2 style="color:#f1f1f1;margin:0 0 1rem">New billing submission</h2>
+      <p style="color:#aaa;margin:0 0 6px"><strong style="color:#f1f1f1">${escapeHtml(company)}</strong> submitted billing for <strong style="color:#f1f1f1">#${escapeHtml(job.job_number)} — ${escapeHtml(job.project_name)}</strong>.</p>
+      <p style="font-size:28px;font-weight:800;color:#e8590c;margin:1rem 0">$${Number(submission.amount_billed || 0).toLocaleString()}</p>
+      ${submission.pct_complete ? `<p style="color:#888;font-size:13px">${submission.pct_complete}% complete on scope</p>` : ''}
+      <p style="color:#888;font-size:13px;line-height:1.6">${escapeHtml(submission.work_description)}</p>
+      <p style="color:#888;font-size:13px">📎 Invoice PDF attached</p>
+      <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
+    `),
+  }).catch(() => {})
+}
 
 // POST → submit billing from the sub portal. Any user at the company who can see
 // the job may submit, as long as billing is on for the company and their
@@ -73,6 +96,7 @@ export async function POST(request) {
       doc_url: body.doc_url,
     }).select().single()
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    await emailPmBillingSubmitted(ctx.job, newSub)
 
     if (sovIn.length) {
       const { error: lineErr } = await adminSupabase.from('billing_sov_lines').insert(sovIn.map(l => ({

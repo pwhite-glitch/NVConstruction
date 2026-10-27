@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { verifyCronSecret } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,7 +16,8 @@ function wrap(body) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const secret = searchParams.get('secret')
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+  const querySecretOk = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
+  if (!verifyCronSecret(request) && !querySecretOk) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

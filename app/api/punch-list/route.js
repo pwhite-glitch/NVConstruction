@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { notify } from '../../../lib/notify'
+import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { subCanSeeJob } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,11 +10,21 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// Office staff: full access. Sub users: read the items assigned to them on jobs
+// they see, and mark their own items sub_complete.
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
-  const sub_id = searchParams.get('sub_id')
+  let sub_id = searchParams.get('sub_id')
   if (!job_id) return Response.json({ items: [] })
+  if (isSub(auth.role)) {
+    if (!(await subCanSeeJob(auth, job_id))) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    sub_id = auth.userId
+  } else if (!isPM(auth.role)) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
   let q = adminSupabase.from('punch_list_items').select('*').eq('job_id', job_id).order('created_at')
   if (sub_id) q = q.eq('assigned_sub_id', sub_id)
   const { data, error } = await q
@@ -21,6 +33,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { job_id, title, description, assigned_sub_id, assigned_company, due_date, created_by } = await request.json()
   if (!job_id || !title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
   const { data: item, error } = await adminSupabase
@@ -70,8 +84,19 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
-  const { id, status, pm_notes, title, description, assigned_sub_id, assigned_company, due_date } = await request.json()
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+  const body = await request.json()
+  const { id, status, pm_notes, title, description, assigned_sub_id, assigned_company, due_date } = body
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  if (isSub(auth.role)) {
+    const onlyStatus = Object.keys(body).every(k => k === 'id' || k === 'status')
+    if (!onlyStatus || status !== 'sub_complete') return Response.json({ error: 'Subs can only mark their items complete' }, { status: 403 })
+    const { data: item } = await adminSupabase.from('punch_list_items').select('assigned_sub_id').eq('id', id).maybeSingle()
+    if (!item || item.assigned_sub_id !== auth.userId) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  } else if (!isPM(auth.role)) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
   const updates = {}
   if (status !== undefined) {
     updates.status = status
@@ -90,6 +115,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   const { error } = await adminSupabase.from('punch_list_items').delete().eq('id', id)

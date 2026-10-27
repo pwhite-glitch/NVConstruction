@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requireAuth, isSub } from '../../../lib/server-auth'
+import { getSubAccess } from '../../../lib/sub-access'
+import { escapeHtml } from '../../../lib/email'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -7,10 +10,24 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// Sub portal: sign the conditional lien waiver on a billing submission made by
+// the caller, or by a teammate on a job the caller sees.
 export async function POST(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
+  if (!isSub(auth.role)) return Response.json({ error: 'Sub portal only' }, { status: 403 })
   const { submission_id, signer_name, signature } = await request.json()
   if (!submission_id || !signer_name)
     return Response.json({ error: 'submission_id and signer_name required' }, { status: 400 })
+
+  const { data: target } = await adminSupabase.from('billing_submissions').select('sub_id, job_id, lien_waiver_signed_at').eq('id', submission_id).maybeSingle()
+  if (!target) return Response.json({ error: 'Not found' }, { status: 404 })
+  if (target.sub_id !== auth.userId) {
+    const { members, jobs } = await getSubAccess(auth.userId, auth.email)
+    const teammate = members.some(m => m.id === target.sub_id)
+    if (!teammate || !jobs.some(j => j.id === target.job_id)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  if (target.lien_waiver_signed_at) return Response.json({ error: 'Already signed' }, { status: 400 })
 
   const { error } = await adminSupabase
     .from('billing_submissions')
@@ -41,7 +58,7 @@ export async function POST(request) {
         <p style="color:#4ade80;font-size:16px;font-weight:700;margin:0 0 8px">✓ Lien waiver signed</p>
         <p style="color:#aaa;margin:0 0 4px"><strong style="color:#f1f1f1">${sub.company_name}</strong> has signed their conditional lien waiver for <strong style="color:#f1f1f1">#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</strong>.</p>
         <p style="font-size:24px;font-weight:800;color:#e8590c;margin:16px 0">${amt}</p>
-        <p style="color:#666;font-size:13px">Signed by: ${signer_name}<br/>Date: ${new Date().toLocaleDateString()}</p>
+        <p style="color:#666;font-size:13px">Signed by: ${escapeHtml(signer_name)}<br/>Date: ${new Date().toLocaleDateString()}</p>
       </div>`,
     }).catch(() => {})
   }

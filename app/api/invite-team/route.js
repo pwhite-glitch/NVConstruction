@@ -26,6 +26,9 @@ export async function POST(request) {
   if (!email || !role) {
     return Response.json({ error: 'Email and role are required.' }, { status: 400 })
   }
+  if (!ROLE_LABELS[role]) {
+    return Response.json({ error: `Role must be one of: ${Object.keys(ROLE_LABELS).join(', ')}` }, { status: 400 })
+  }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
   const logo = logoSrc()
@@ -63,14 +66,17 @@ export async function POST(request) {
     inviteUrl = data.properties?.action_link
   }
 
-  await adminSupabase.from('profiles').upsert({
+  // The signup trigger always creates the profile as 'subcontractor' (migration 029);
+  // the staff role is set here, so a failure must not be ignored.
+  const { error: profileErr } = await adminSupabase.from('profiles').upsert({
     id: userId,
     full_name: full_name || null,
     role,
     phone: phone || null,
   }, { onConflict: 'id' })
-
-  await adminSupabase.from('profiles').update({ role, full_name: full_name || null, phone: phone || null }).eq('id', userId)
+  if (profileErr) {
+    return Response.json({ error: `Account created but the role could not be set: ${profileErr.message}` }, { status: 500 })
+  }
   const roleLabel = ROLE_LABELS[role] || role
   const firstName = full_name ? full_name.split(' ')[0] : 'there'
 

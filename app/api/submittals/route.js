@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -29,6 +30,8 @@ function parseFileUrls(raw) {
 }
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   const file_path = searchParams.get('file_path')
@@ -52,6 +55,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const contentType = request.headers.get('content-type') || ''
     let fields = {}
@@ -105,6 +110,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const contentType = request.headers.get('content-type') || ''
     let fields = {}
@@ -170,6 +177,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   const { error } = await adminSupabase.from('submittals').delete().eq('id', id)

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,6 +9,8 @@ const adminSupabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ orders: [] })
@@ -21,6 +24,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { job_id, title, description, due_date, assigned_employee_id, assigned_employee_name, assigned_sub_id, assigned_company } = await request.json()
   if (!job_id || !title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
   const { data: order, error } = await adminSupabase
@@ -41,6 +46,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { id, status, is_billable, billable_amount, resolution_notes, photos, assigned_employee_id, assigned_employee_name, assigned_sub_id, assigned_company, due_date, title, description } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
@@ -106,6 +113,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   const { error } = await adminSupabase.from('warranty_orders').delete().eq('id', id)

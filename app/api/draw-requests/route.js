@@ -1,14 +1,32 @@
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { subCanSeeJob } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// GET ?job_id — office: every draw. Sub: open draws on a job they see (picked
+// when submitting billing), without the office-only fields.
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ draws: [] })
+  if (isSub(auth.role)) {
+    if (!(await subCanSeeJob(auth, job_id))) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    const { data, error } = await adminSupabase
+      .from('draw_requests')
+      .select('id, job_id, draw_number, title, status')
+      .eq('job_id', job_id)
+      .eq('status', 'open')
+      .order('draw_number')
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ draws: data || [] })
+  }
+  if (!isPM(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
   const { data, error } = await adminSupabase
     .from('draw_requests')
     .select('*')
@@ -19,6 +37,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { job_id, title, dc_ids, po_ids, gc_ids } = await request.json()
   if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
 
@@ -56,6 +76,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { id, status, title, add_dc_ids, remove_dc_ids, add_po_ids, remove_po_ids, add_gc_ids, remove_gc_ids, add_billing_ids, remove_billing_ids } = await request.json()
   const updates = {}
   if (status !== undefined) updates.status = status
@@ -92,6 +114,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   await adminSupabase.from('direct_costs').update({ draw_request_id: null }).eq('draw_request_id', id)

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,6 +9,8 @@ const adminSupabase = createClient(
 // Finds or creates a companies entry for the given company_name,
 // then links all profiles and subcontracts that match by name.
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { company_name } = await request.json()
     if (!company_name?.trim()) return Response.json({ error: 'company_name required' }, { status: 400 })

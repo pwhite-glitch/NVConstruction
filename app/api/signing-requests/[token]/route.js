@@ -53,7 +53,8 @@ export async function POST(request, { params }) {
       status: 'signed',
       signature_text: signature_text.trim(),
       signed_at: signedAt,
-      signer_ip: signer_ip || null,
+      // Record the IP the request came from; the body value is only a fallback
+      signer_ip: request.headers.get('x-forwarded-for')?.split(',')[0].trim() || signer_ip || null,
     })
     .eq('token', token)
 

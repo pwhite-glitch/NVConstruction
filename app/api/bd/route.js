@@ -1,11 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-export async function GET() {
+export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const [{ data: opps, error: oppsErr }, { data: goals }] = await Promise.all([
       adminSupabase.from('bd_opportunities').select('*').order('created_at', { ascending: false }),
@@ -19,6 +22,8 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { data, error } = await adminSupabase.from('bd_opportunities').insert([{
@@ -39,6 +44,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     if (body.type === 'goal') {
@@ -60,6 +67,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })

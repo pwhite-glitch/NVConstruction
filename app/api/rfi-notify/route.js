@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { notify } from '../../../lib/notify'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,6 +23,8 @@ async function mail(to, subject, html) {
 
 // GET ?job_id=xxx — test: shows pm_email on the job and sends a test email
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ error: 'Pass ?job_id=xxx' }, { status: 400 })
@@ -41,6 +44,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || ''

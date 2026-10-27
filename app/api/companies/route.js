@@ -1,12 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 import { sameCompany } from '../../../lib/company-name'
+import { requirePM } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// Office staff only (dashboard Directory and job Companies tab).
 export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const name = searchParams.get('name')
 
@@ -28,6 +32,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const body = await request.json()
   const { name, phone, email, find_or_create } = body
   if (!name) return Response.json({ error: 'name required' }, { status: 400 })
@@ -50,6 +56,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   const { id, name, phone, email } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
   const updates = {}

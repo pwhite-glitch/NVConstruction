@@ -1,4 +1,4 @@
-import { requireAuth } from '../../../lib/server-auth'
+import { requirePM } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
 import { createClient } from '@supabase/supabase-js'
 
@@ -11,7 +11,7 @@ const adminSupabase = createClient(
 // Allows client-side code (jobdetail) to write change log entries for events that
 // happen via direct Supabase calls (job status, prime COs, etc.)
 export async function POST(request) {
-  const auth = await requireAuth(request)
+  const auth = await requirePM(request)
   if (auth.error) return auth.error
 
   let body

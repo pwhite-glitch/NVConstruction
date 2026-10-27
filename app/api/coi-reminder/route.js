@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { verifyCronSecret } from '../../../lib/server-auth'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,8 +12,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-do
 const PM_EMAIL = process.env.PM_EMAIL || 'pwhite@nvim.co'
 
 export async function GET(request) {
-  const auth = request.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!verifyCronSecret(request)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

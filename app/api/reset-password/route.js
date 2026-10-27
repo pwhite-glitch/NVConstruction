@@ -19,10 +19,9 @@ export async function POST(request) {
     options: { redirectTo: `${siteUrl}/set-password` },
   })
 
-  if (error) {
-    // User not found in auth
-    return Response.json({ error: 'No account found for that email address.' }, { status: 404 })
-  }
+  // Public route: answer the same whether or not the account exists, so it
+  // can't be used to find out which emails have logins.
+  if (error) return Response.json({ ok: true })
 
   const resetUrl = data.properties?.action_link
   const logoUrl = `${siteUrl}/logo.png`
@@ -74,6 +73,9 @@ export async function POST(request) {
 </html>`,
   })
 
-  if (emailError) return Response.json({ error: `Account found but email failed to send: ${emailError.message}` }, { status: 500 })
+  if (emailError) {
+    console.error('[reset-password] email failed', emailError.message)
+    return Response.json({ error: 'Could not send the reset email. Please try again.' }, { status: 500 })
+  }
   return Response.json({ ok: true })
 }

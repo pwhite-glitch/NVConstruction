@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { getSubContracts } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,17 +19,25 @@ function pick(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([k]) => ALLOWED.has(k)))
 }
 
+// GET ?from&to — activities on the caller's subcontracts (sub portal Upcoming Work).
+// Office staff may pass ?sub_user_id to look at one sub user's contracts.
 export async function GET(request) {
+  const auth = await requireAuth(request)
+  if (auth.error) return auth.error
   try {
     const { searchParams } = new URL(request.url)
-    const subUserId = searchParams.get('sub_user_id')
     const from = searchParams.get('from')
     const to = searchParams.get('to')
-    if (!subUserId) return Response.json({ error: 'sub_user_id required' }, { status: 400 })
-    const { data: contracts } = await adminSupabase
-      .from('subcontracts')
-      .select('id')
-      .eq('sub_id', subUserId)
+    let contracts
+    if (isSub(auth.role)) {
+      contracts = await getSubContracts(auth)
+    } else if (isPM(auth.role)) {
+      const subUserId = searchParams.get('sub_user_id')
+      if (!subUserId) return Response.json({ error: 'sub_user_id required' }, { status: 400 })
+      contracts = (await adminSupabase.from('subcontracts').select('id').eq('sub_id', subUserId)).data
+    } else {
+      return Response.json({ error: 'Forbidden' }, { status: 403 })
+    }
     if (!contracts || contracts.length === 0) return Response.json({ data: [] })
     const contractIds = contracts.map(c => c.id)
     let query = adminSupabase
@@ -46,6 +56,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const body = pick(await request.json())
     if (!body.lookahead_id || !body.description || !body.planned_date)
@@ -63,6 +75,8 @@ export async function POST(request) {
 }
 
 export async function PUT(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const raw = await request.json()
     const { id } = raw
@@ -81,6 +95,8 @@ export async function PUT(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })

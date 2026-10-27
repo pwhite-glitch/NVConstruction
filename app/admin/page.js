@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
-import { openStorageFile } from '../../lib/open-file'
+import { openFile, openStorageFile } from '../../lib/open-file'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -84,7 +84,8 @@ const IconBilling  = () => <svg width="15" height="15" fill="none" stroke="curre
 const IconPayment  = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
 const IconUsers    = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 const IconLien     = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 12 18 15 15"/><line x1="12" y1="12" x2="12" y2="18"/></svg>
-const IconKey      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>
+const IconPO       = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+const IconKey      =() => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>
 
 const PERM_ROLES = [
   { key: 'pm', label: 'PM' },
@@ -227,6 +228,13 @@ export default function AdminPortal() {
   const [teamInviteLoading, setTeamInviteLoading] = useState(null)
   const [teamInviteResult, setTeamInviteResult] = useState({})
 
+  // Purchase order state (read-only)
+  const [purchaseOrders, setPurchaseOrders] = useState([])
+  const [poLoading, setPoLoading] = useState(false)
+  const [poError, setPoError] = useState('')
+  const [filterPoJob, setFilterPoJob] = useState('')
+  const [filterPoStatus, setFilterPoStatus] = useState('')
+
   // Lien waiver state
   const [filterLienJob, setFilterLienJob] = useState('')
   const [sendingWaiver, setSendingWaiver] = useState(null)
@@ -264,8 +272,22 @@ export default function AdminPortal() {
   useEffect(() => {
     if (activeTab === 'costs') loadCosts()
     if (activeTab === 'calendar' || activeTab === 'billing' || activeTab === 'payments') loadBilling()
+    if (activeTab === 'orders') loadPurchaseOrders()
     if (activeTab === 'permissions') loadPermissions()
   }, [activeTab])
+
+  async function loadPurchaseOrders() {
+    setPoLoading(true)
+    setPoError('')
+    try {
+      const json = await authFetch('/api/purchase-orders').then(r => r.json())
+      if (json.error) setPoError(json.error)
+      else setPurchaseOrders(json.purchase_orders || [])
+    } catch (e) {
+      setPoError(e.message)
+    }
+    setPoLoading(false)
+  }
 
   async function loadPermissions() {
     setPermsLoading(true)
@@ -735,7 +757,8 @@ export default function AdminPortal() {
     { tab: 'costs',        label: 'Direct Costs',  icon: <IconCost /> },
     { tab: 'billing',      label: 'Billing',       icon: <IconBilling />, badge: pendingBillingCount || null },
     { tab: 'payments',     label: 'Payments',      icon: <IconPayment /> },
-    { tab: 'coi',          label: 'Companies',     icon: <IconUsers /> },
+    { tab: 'orders',       label: 'Purchase Orders', icon: <IconPO /> },
+    { tab: 'coi',         label: 'Companies',     icon: <IconUsers /> },
     { tab: 'liens',        label: 'Lien Waivers',  icon: <IconLien /> },
     { tab: 'permissions',  label: 'Permissions',   icon: <IconKey /> },
   ]
@@ -1248,6 +1271,89 @@ export default function AdminPortal() {
                             <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total paid</td>
                             <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}>${totalPaid.toLocaleString()}</td>
                             <td colSpan={2} style={s.td} />
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+
+            {/* ── PURCHASE ORDERS (read-only, all jobs) ── */}
+            {activeTab === 'orders' && (() => {
+              const PO_STATUSES = ['draft', 'issued', 'received', 'closed']
+              const PO_BADGE = {
+                draft:    { color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' },
+                issued:   { color: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
+                received: { color: '#15803d', bg: '#dcfce7', border: '#bbf7d0' },
+                closed:   { color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+              }
+              const fmtAmt = n => '$' + parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              const poList = purchaseOrders.filter(po =>
+                (!filterPoJob || po.job_id === filterPoJob) &&
+                (!filterPoStatus || po.status === filterPoStatus)
+              )
+              const totalAmt = poList.reduce((sum, po) => sum + parseFloat(po.amount || 0), 0)
+              const openAttachment = path => openFile(async () => {
+                const json = await authFetch(`/api/purchase-orders?sign=${encodeURIComponent(path)}`).then(r => r.json())
+                if (!json.signedUrl) alert('Could not open attachment: ' + (json.error || 'Unknown error'))
+                return json.signedUrl
+              })
+              return (
+                <>
+                  <div style={s.filterRow}>
+                    <select style={s.filterSelect} value={filterPoJob} onChange={e => setFilterPoJob(e.target.value)}>
+                      <option value="">All jobs</option>
+                      {jobs.map(j => <option key={j.id} value={j.id}>#{j.job_number} — {j.project_name}</option>)}
+                    </select>
+                    <select style={s.filterSelect} value={filterPoStatus} onChange={e => setFilterPoStatus(e.target.value)}>
+                      <option value="">All statuses</option>
+                      {PO_STATUSES.map(st => <option key={st} value={st}>{st.charAt(0).toUpperCase() + st.slice(1)}</option>)}
+                    </select>
+                    <span style={{ fontSize: '12px', color: '#6b7280', alignSelf: 'center' }}>{poList.length} purchase order{poList.length !== 1 ? 's' : ''}</span>
+                  </div>
+
+                  {poError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '12px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>{poError}</div>}
+
+                  {poLoading && purchaseOrders.length === 0 ? <div style={s.emptyMsg}>Loading...</div> : poList.length === 0 ? <div style={s.emptyMsg}>No purchase orders found.</div> : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr>
+                            <th style={s.th}>Job</th>
+                            <th style={s.th}>PO</th>
+                            <th style={s.th}>Vendor</th>
+                            <th style={{ ...s.th, textAlign: 'right' }}>Amount</th>
+                            <th style={s.th}>Status</th>
+                            <th style={s.th}>Date</th>
+                            <th style={s.th}>Attachment</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {poList.map(po => {
+                            const badge = PO_BADGE[po.status] || PO_BADGE.draft
+                            const date = po.issued_date || po.created_at
+                            return (
+                              <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/jobdetail?id=${po.job_id}&tab=po`)}>
+                                <td style={s.td}><span style={{ color: '#111827' }}>#{po.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{po.jobs?.project_name}</span></td>
+                                <td style={s.td}><span style={{ fontWeight: '600', color: '#111827' }}>{po.po_number}</span>{po.description && <><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{po.description}</span></>}</td>
+                                <td style={s.td}>{po.vendor_name}</td>
+                                <td style={{ ...s.td, textAlign: 'right', fontWeight: '600' }}>{fmtAmt(po.amount)}</td>
+                                <td style={s.td}><span style={{ padding: '2px 9px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase', color: badge.color, background: badge.bg, border: `1px solid ${badge.border}` }}>{po.status}</span></td>
+                                <td style={s.td}>{date ? new Date(po.issued_date ? date + 'T00:00:00' : date).toLocaleDateString() : '—'}</td>
+                                <td style={s.td}>
+                                  {po.attachment_url
+                                    ? <button style={s.btnSm('blue')} onClick={e => { e.stopPropagation(); openAttachment(po.attachment_url) }}>View</button>
+                                    : <span style={{ color: '#9ca3af' }}>—</span>}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          <tr>
+                            <td colSpan={3} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total</td>
+                            <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#111827' }}>{fmtAmt(totalAmt)}</td>
+                            <td colSpan={3} style={s.td} />
                           </tr>
                         </tbody>
                       </table>

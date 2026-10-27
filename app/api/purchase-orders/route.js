@@ -30,7 +30,16 @@ export async function GET(request) {
   }
 
   const job_id = searchParams.get('job_id')
-  if (!job_id) return Response.json({ purchase_orders: [] })
+
+  // No job_id: list POs across all jobs (admin Purchase Orders tab)
+  if (!job_id) {
+    const { data: pos, error } = await adminSupabase
+      .from('purchase_orders')
+      .select('*, jobs(job_number, project_name)')
+      .order('created_at', { ascending: false })
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ purchase_orders: pos || [] })
+  }
 
   const { data: pos, error } = await adminSupabase
     .from('purchase_orders')

@@ -1545,9 +1545,11 @@ export default function Dashboard() {
     const jobId = assignTarget[sub.id]
     if (!jobId) return
     setAssigningId(sub.id)
+    // Assign only — billing stays off until enabled on the job's Companies tab. No email is sent.
     const { error } = await supabase.from('job_assignments').insert({
       job_id: jobId,
       sub_email: sub.email.toLowerCase().trim(),
+      billing_enabled: false,
     })
     if (error) {
       const text = error.code === '23505' ? 'Already assigned to this job.' : 'Error: ' + error.message
@@ -1556,7 +1558,7 @@ export default function Dashboard() {
       await supabase.rpc('sync_job_assignments')
       await loadAll()
       setAssignTarget(prev => ({ ...prev, [sub.id]: '' }))
-      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned — sub can now bill this job.', ok: true } }))
+      setAssignMsg(prev => ({ ...prev, [sub.id]: { text: 'Assigned with billing off. No email sent. Enable billing from the job\'s Companies tab.', ok: true } }))
       setTimeout(() => setAssignMsg(prev => { const n = { ...prev }; delete n[sub.id]; return n }), 4000)
     }
     setAssigningId(null)
@@ -4584,7 +4586,7 @@ ${estimate.notes ? `
                                 disabled={assigningId === sub.id || !assignTarget[sub.id]}
                                 onClick={() => assignToJob(sub)}
                               >
-                                {assigningId === sub.id ? 'Assigning...' : 'Assign & enable billing'}
+                                {assigningId === sub.id ? 'Assigning...' : 'Assign to job'}
                               </button>
                               {assignMsg[sub.id] && (
                                 <span style={assignMsg[sub.id].ok ? s.successInline : s.errorInline}>

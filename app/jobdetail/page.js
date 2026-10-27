@@ -138,6 +138,7 @@ function JobDetailInner() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [toast, setToast] = useState(null)
   const [errMsg, setErrMsg] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
@@ -280,6 +281,9 @@ function JobDetailInner() {
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
   const [expandedCompanyKey, setExpandedCompanyKey] = useState(null)
+  const [billingPanelKey, setBillingPanelKey] = useState(null)
+  const [billingEmailOpt, setBillingEmailOpt] = useState(false)
+  const [savingBillingKey, setSavingBillingKey] = useState(null)
   const [companyMembersCache, setCompanyMembersCache] = useState({})
   const [showAssignSub, setShowAssignSub] = useState(false)
   const [assignSubForm, setAssignSubForm] = useState({ email: '', from_dir: '' })
@@ -682,7 +686,8 @@ function JobDetailInner() {
     const { data: summary } = await supabase.from('subcontract_summary').select('*').eq('job_id', id).order('created_at', { ascending: true })
     if (!summary) { setContracts([]); return [] }
     // Fetch budget_item_id from the base table — the view may predate this column
-    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url').eq('job_id', id)
+    // Read status / attachments here too so the row (and the edit form) never rely on view columns
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url, bid_proposal_url, onedrive_url, status, company_id').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
       budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
@@ -690,6 +695,10 @@ function JobDetailInner() {
       vendor_name: raw?.find(r => r.id === c.id)?.vendor_name ?? null,
       retainage_pct: raw?.find(r => r.id === c.id)?.retainage_pct ?? 10,
       signed_contract_url: raw?.find(r => r.id === c.id)?.signed_contract_url ?? null,
+      bid_proposal_url: raw?.find(r => r.id === c.id)?.bid_proposal_url ?? null,
+      onedrive_url: raw?.find(r => r.id === c.id)?.onedrive_url ?? null,
+      status: raw?.find(r => r.id === c.id)?.status ?? c.status,
+      company_id: raw?.find(r => r.id === c.id)?.company_id ?? c.company_id ?? null,
     }))
     setContracts(merged)
     return merged
@@ -3108,9 +3117,33 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     } catch { return [] }
   }
 
+  function showToast(text, kind = 'ok') {
+    setToast({ text, kind })
+    setTimeout(() => setToast(t => (t?.text === text ? null : t)), 3500)
+  }
+
+  // Assigns the contract's sub to this job with billing OFF. Sends no email.
+  async function ensureAssignedForContract({ email, subUserId, companyId }) {
+    const normalEmail = email?.toLowerCase() || null
+    if (!normalEmail && !companyId) return
+    const alreadyAssigned = subs.some(s =>
+      (normalEmail && s.sub_email?.toLowerCase() === normalEmail) ||
+      (companyId && s.company_id === companyId)
+    )
+    if (alreadyAssigned) return
+    await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, sub_id: subUserId || null, company_id: companyId || null, invited_at: new Date().toISOString(), billing_enabled: false }) })
+    await reloadSubs()
+  }
+
   // ── Contracts ──────────────────────────────────────────────
-  async function addContract() {
-    if (!contractForm.dir_id || !contractForm.contract_value || !contractForm.description) return
+  // asDraft = true → saved as a draft: PM-only, not assigned, nothing sent.
+  // asDraft = false → saved active: visible in the sub portal and the sub is assigned
+  // to the job with billing off. No email either way (billing email is sent from
+  // "Enable billing" on the Companies tab, and only if the PM ticks the box).
+  async function addContract(asDraft = false) {
+    if (!contractForm.dir_id || !contractForm.contract_value || !contractForm.description) {
+      setErrMsg('Pick a subcontractor and enter a contract value and description.'); setTimeout(() => setErrMsg(''), 4000); return
+    }
     setAddingContract(true)
     const { data: { session } } = await supabase.auth.getSession()
     const dirEntry = subDirectory.find(d => d.id === contractForm.dir_id)
@@ -3135,55 +3168,46 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       const ext = contractBidFile.name.split('.').pop()
       const path = `bid-proposals/${id}/${Date.now()}.${ext}`
       const { error: upErr } = await supabase.storage.from('prime-contracts').upload(path, contractBidFile)
-      if (!upErr) bidProposalUrl = path
+      if (upErr) {
+        setErrMsg('Bid proposal upload failed — contract not saved: ' + upErr.message); setTimeout(() => setErrMsg(''), 6000)
+        setAddingContract(false)
+        return
+      }
+      bidProposalUrl = path
     }
     const scRes = await fetch('/api/subcontracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       job_id: id, sub_id: subUserId, company_id: companyId, vendor_name: dirEntry?.company_name || '',
       contract_value: parseFloat(contractForm.contract_value),
       description: contractForm.description || null, onedrive_url: contractForm.onedrive_url || null,
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
-      retainage_pct: parseFloat(contractForm.retainage_pct) || 0, created_by: session.user.id, status: 'active',
+      retainage_pct: parseFloat(contractForm.retainage_pct) || 0, created_by: session.user.id, status: asDraft ? 'draft' : 'active',
       bid_proposal_url: bidProposalUrl,
     }) })
     const scJson = await scRes.json()
     if (!scRes.ok) { setErrMsg(scJson.error || 'Failed to save contract'); setTimeout(() => setErrMsg(''), 4000) }
     else {
       setShowAddContract(false); setContractForm(emptyContract); setContractBidFile(null); await loadContracts()
-      // Auto-assign sub to job if not already assigned
-      if (dirEntry?.email) {
-        const alreadyAssigned = subs.some(s => s.sub_email?.toLowerCase() === dirEntry.email.toLowerCase())
-        if (!alreadyAssigned) {
-          await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: dirEntry.email.toLowerCase(), sub_id: subUserId || null, company_id: companyId || null, invited_at: new Date().toISOString() }) })
-          await reloadSubs()
-        }
-      }
-      if (dirEntry?.email) {
-        const firstName = dirEntry.contact_name?.split(' ')[0] || 'there'
-        const contractAmt = parseFloat(contractForm.contract_value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-        const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
-        sendEmail(dirEntry.email, `Action required: Set up your Schedule of Values — ${job?.project_name || ''}`,
-          emailWrap(`
-            <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Hey ${firstName},</h2>
-            <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
-              Your subcontract for <strong style="color:#f1f1f1">${job?.project_name || 'the project'}</strong> has been issued
-              ${contractForm.description ? `(${contractForm.description})` : ''} for <strong style="color:#e8590c">${contractAmt}</strong>.
-            </p>
-            <p style="color:#aaa;margin:0 0 20px;font-size:14px;line-height:1.6">
-              Before you can submit billing, you need to create your <strong style="color:#f1f1f1">Schedule of Values</strong> — a breakdown of your contract into line items that you'll bill against each period.
-            </p>
-            <table cellpadding="0" cellspacing="0" style="margin:0 0 24px">
-              <tr>
-                <td style="background:#e8590c;border-radius:8px">
-                  <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Set Up My SOV</a>
-                </td>
-              </tr>
-            </table>
-            <p style="color:#555;font-size:12px;margin:0">Log in, select the project, and you'll be prompted to create your schedule before billing is available.</p>
-          `)
-        )
-      }
+      if (!asDraft) await ensureAssignedForContract({ email: dirEntry?.email, subUserId, companyId })
+      showToast(asDraft
+        ? `Saved as draft — ${dirEntry?.company_name || 'subcontract'} (not visible to the sub)`
+        : `Saved — ${dirEntry?.company_name || 'subcontract'} is active. No email sent.`)
     }
     setAddingContract(false)
+  }
+
+  async function activateContract(c) {
+    const name = c.vendor_name || 'this sub'
+    if (!window.confirm(`Activate this subcontract?\n\n${name} will see it in their portal and be assigned to this job with billing OFF.\nNo email is sent. Turn on billing from the Companies tab when ready.`)) return
+    const res = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id, status: 'active' }) })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('Activate failed: ' + (j.error || res.status)); setTimeout(() => setErrMsg(''), 5000); return }
+    let email = null
+    if (c.vendor_name) {
+      const { data: dir } = await supabase.from('sub_directory').select('email').ilike('company_name', c.vendor_name).limit(1).maybeSingle()
+      email = dir?.email || null
+    }
+    await ensureAssignedForContract({ email, subUserId: c.sub_id, companyId: c.company_id })
+    await loadContracts()
+    showToast(`${name} activated. No email sent.`)
   }
 
   async function updateContract() {
@@ -3194,9 +3218,11 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       const ext = editContractBidFile.name.split('.').pop()
       const path = `bid-proposals/${id}/${Date.now()}.${ext}`
       const { error: upErr } = await supabase.storage.from('prime-contracts').upload(path, editContractBidFile)
-      if (!upErr) bidProposalUrl = path
+      if (upErr) { setErrMsg('Bid proposal upload failed — changes not saved: ' + upErr.message); setTimeout(() => setErrMsg(''), 6000); return }
+      bidProposalUrl = path
     }
-    const scUpRes = await fetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    // PUT requires a PM session token — plain fetch() was rejected with 401
+    const scUpRes = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       id: editingContract, contract_value: parseFloat(editContractForm.contract_value),
       description: editContractForm.description || null, onedrive_url: editContractForm.onedrive_url || null,
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
@@ -3205,6 +3231,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     if (!scUpRes.ok) { const j = await scUpRes.json(); setErrMsg('Save failed: ' + j.error); setTimeout(() => setErrMsg(''), 5000); return }
     setEditingContract(null); setEditContractBidFile(null)
     await loadContracts()
+    showToast('Saved — subcontract changes stored.')
   }
 
   async function deleteContract(contractId) {
@@ -3482,6 +3509,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   async function sendForESign() {
     if (!signerEmail.trim()) return
+    if (contracts.find(c => c.id === contractGenForm.contract_id)?.status === 'draft') {
+      setSignMsg('Error: This subcontract is a draft. Activate it before sending it for signature.')
+      return
+    }
     setSendingSign(true)
     setSignMsg('')
     try {
@@ -4210,7 +4241,8 @@ ${attachmentHtml}
     )?.toLowerCase()
     if (!normalEmail) return
     setAssigningSubLoading(true)
-    const assignRes = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail }) })
+    // Assign only: portal access with billing OFF. No email is sent from this step.
+    const assignRes = await fetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, billing_enabled: false }) })
     if (!assignRes.ok) {
       const assignJson = await assignRes.json()
       setErrMsg(assignRes.status === 409 ? 'This sub is already assigned to this job.' : assignJson.error || 'Assignment failed.')
@@ -4223,9 +4255,62 @@ ${attachmentHtml}
     setShowAssignSub(false)
     setAssignSubForm({ email: '', from_dir: '' })
     setAssigningSubLoading(false)
-    const invRes = await fetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: normalEmail }) })
-    const invJson = await invRes.json()
-    if (!invRes.ok) setErrMsg('Assigned but invite failed: ' + invJson.error)
+    showToast('Assigned with billing off. No email sent.')
+  }
+
+  // Turns billing on/off for every assignment row in a company group.
+  // Emails only when enabling AND the PM ticked "email these contacts".
+  async function setCompanyBilling(group, enable, emailContacts) {
+    const gKey = group.company_id || group.name
+    setSavingBillingKey(gKey)
+    const res = await authFetch('/api/job-assignments', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: group.members.map(m => m.id), billing_enabled: enable }) })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setErrMsg('Billing update failed: ' + (j.error || res.status)); setTimeout(() => setErrMsg(''), 5000)
+      setSavingBillingKey(null)
+      return
+    }
+    let emailed = []
+    if (enable && emailContacts) {
+      const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
+      const groupContracts = contracts.filter(c => c.status !== 'draft' && (
+        (group.company_id && c.company_id === group.company_id) ||
+        (c.vendor_name && c.vendor_name.toLowerCase() === group.name.toLowerCase())
+      ))
+      const total = groupContracts.reduce((a, c) => a + Number(c.adjusted_contract_value ?? c.contract_value ?? 0), 0)
+      const contractAmt = total.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+      emailed = [...new Set(group.members.map(m => m.sub_email?.toLowerCase()).filter(Boolean))]
+      for (const to of emailed) {
+        const member = group.members.find(m => m.sub_email?.toLowerCase() === to)
+        const firstName = (member?.profiles?.full_name || member?._dirEntry?.contact_name)?.split(' ')[0] || 'there'
+        await sendEmail(to, `Billing is open: Set up your Schedule of Values — ${job?.project_name || ''}`,
+          emailWrap(`
+            <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Hey ${firstName},</h2>
+            <p style="color:#aaa;margin:0 0 16px;font-size:14px;line-height:1.6">
+              Billing is now open for <strong style="color:#f1f1f1">${job?.project_name || 'the project'}</strong>${total > 0 ? ` against your subcontract of <strong style="color:#e8590c">${contractAmt}</strong>` : ''}.
+            </p>
+            <p style="color:#aaa;margin:0 0 20px;font-size:14px;line-height:1.6">
+              Before you can submit billing, you need to create your <strong style="color:#f1f1f1">Schedule of Values</strong> — a breakdown of your contract into line items that you'll bill against each period.
+            </p>
+            <table cellpadding="0" cellspacing="0" style="margin:0 0 24px">
+              <tr>
+                <td style="background:#e8590c;border-radius:8px">
+                  <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;font-size:13px;font-weight:700;color:#fff;text-decoration:none;letter-spacing:1px;text-transform:uppercase">Set Up My SOV</a>
+                </td>
+              </tr>
+            </table>
+            <p style="color:#555;font-size:12px;margin:0">Log in, select the project, and you'll be prompted to create your schedule before billing is available.</p>
+          `)
+        )
+      }
+    }
+    await reloadSubs()
+    setSavingBillingKey(null)
+    setBillingPanelKey(null)
+    setBillingEmailOpt(false)
+    showToast(enable
+      ? `Billing enabled for ${group.name}. ${emailed.length ? `Email sent to ${emailed.join(', ')}.` : 'No email sent.'}`
+      : `Billing disabled for ${group.name}. No email sent.`)
   }
 
   async function removeSubFromJob(assignmentId) {
@@ -5077,6 +5162,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         {msg && <div style={s.successMsg}>{msg}</div>}
         {errMsg && <div style={s.errorMsg}>{errMsg}</div>}
+        {toast && (
+          <div role="status" aria-live="polite" style={{ position: 'fixed', bottom: 'calc(20px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, maxWidth: 'calc(100vw - 32px)', background: '#111827', color: '#fff', padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', boxShadow: '0 6px 20px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: '#4ade80' }}>✓</span>{toast.text}
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
           <div>
@@ -5962,10 +6052,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <button style={{ ...s.btn, opacity: assigningSubLoading ? 0.6 : 1 }}
                       disabled={assigningSubLoading || (!assignSubForm.from_dir && !assignSubForm.email)}
                       onClick={assignSubToJob}>
-                      {assigningSubLoading ? 'Assigning...' : 'Assign & enable billing'}
+                      {assigningSubLoading ? 'Assigning...' : 'Assign to job'}
                     </button>
                     <button style={s.btnGray} onClick={() => { setShowAssignSub(false); setAssignSubForm({ email: '', from_dir: '' }) }}>Cancel</button>
                   </div>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '10px 0 0', lineHeight: '1.5' }}>
+                    <strong>No email is sent.</strong> The company gets portal access to this job with billing <strong>off</strong>. Turn billing on separately with "Enable billing" on the company below. Unregistered contacts can be sent a portal invite from their row.
+                  </p>
                 </div>
               )}
 
@@ -5984,11 +6077,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const registeredCount = group.members.filter(a => !!a.sub_id).length
                 const gKey = group.company_id || group.name
                 const isExpanded = expandedCompanyKey === gKey
+                const billingOnCount = group.members.filter(a => a.billing_enabled !== false).length
+                const billingAllOn = billingOnCount === group.members.length
+                const isBillingPanel = billingPanelKey === gKey
+                const groupEmails = [...new Set(group.members.map(m => m.sub_email?.toLowerCase()).filter(Boolean))]
                 return (
                   <div key={group.name} style={{ marginBottom: '6px', border: '1px solid #f0f0f0', borderRadius: '8px', overflow: 'hidden' }}>
                     {/* Company header — click to expand/collapse */}
                     <div
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#f9fafb' : 'transparent', userSelect: 'none' }}
+                      style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', padding: '12px 14px', cursor: 'pointer', background: isExpanded ? '#f9fafb' : 'transparent', userSelect: 'none' }}
                       onClick={() => {
                         const nextKey = isExpanded ? null : gKey
                         setExpandedCompanyKey(nextKey)
@@ -6009,8 +6106,44 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {registeredCount > 0 ? (registeredCount < group.members.length ? `${registeredCount}/${group.members.length} registered` : 'Registered') : 'Not registered'}
                       </span>
                       {group.members.length > 1 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{group.members.length} users</span>}
+                      <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', whiteSpace: 'nowrap', background: billingAllOn ? '#eff6ff' : '#f9fafb', color: billingAllOn ? '#1d4ed8' : '#6b7280', border: `1px solid ${billingAllOn ? '#bfdbfe' : '#e5e7eb'}` }}>
+                        {billingAllOn ? 'Billing on' : billingOnCount > 0 ? 'Billing partly on' : 'Billing off'}
+                      </span>
+                      <button
+                        style={{ ...(billingAllOn ? s.btnSmall : s.btnSmallOrange), opacity: savingBillingKey === gKey ? 0.6 : 1 }}
+                        disabled={savingBillingKey === gKey}
+                        onClick={e => {
+                          e.stopPropagation()
+                          if (billingAllOn) {
+                            if (window.confirm(`Turn billing off for ${group.name}? They keep portal access but can't submit billing on this job.\n\nNo email is sent.`)) setCompanyBilling(group, false, false)
+                          } else {
+                            setBillingPanelKey(isBillingPanel ? null : gKey); setBillingEmailOpt(false)
+                          }
+                        }}>
+                        {savingBillingKey === gKey ? 'Saving...' : billingAllOn ? 'Disable billing' : 'Enable billing'}
+                      </button>
                       <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
+
+                    {isBillingPanel && !billingAllOn && (
+                      <div style={{ borderTop: '1px solid #fed7aa', background: '#fff7ed', padding: '12px 14px' }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#111827', cursor: groupEmails.length ? 'pointer' : 'default' }}>
+                          <input type="checkbox" disabled={groupEmails.length === 0} checked={billingEmailOpt && groupEmails.length > 0} onChange={e => setBillingEmailOpt(e.target.checked)} style={{ marginTop: '2px' }} />
+                          <span>Email these contacts that billing is open (asks them to set up their Schedule of Values)</span>
+                        </label>
+                        <p style={{ fontSize: '12px', margin: '8px 0 10px', color: billingEmailOpt && groupEmails.length ? '#c2410c' : '#15803d', fontWeight: '600' }}>
+                          {billingEmailOpt && groupEmails.length
+                            ? `An email WILL be sent to: ${groupEmails.join(', ')}`
+                            : groupEmails.length ? 'No email will be sent.' : 'No email will be sent (no email address on file).'}
+                        </p>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button style={{ ...s.btnSmallOrange, opacity: savingBillingKey === gKey ? 0.6 : 1 }} disabled={savingBillingKey === gKey} onClick={() => setCompanyBilling(group, true, billingEmailOpt)}>
+                            {savingBillingKey === gKey ? 'Saving...' : 'Confirm — enable billing'}
+                          </button>
+                          <button style={s.btnSmall} onClick={() => { setBillingPanelKey(null); setBillingEmailOpt(false) }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Users — only visible when expanded */}
                     {isExpanded && <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 14px 12px' }}>
@@ -6937,10 +7070,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <label style={s.label}>Bid proposal PDF (optional)</label>
                     <input type="file" accept=".pdf,.doc,.docx" onChange={e => setContractBidFile(e.target.files[0] || null)} style={{ fontSize: '13px', color: '#374151' }} />
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button style={{ ...s.btn, opacity: addingContract ? 0.6 : 1 }} disabled={addingContract} onClick={addContract}>{addingContract ? 'Saving...' : 'Save contract'}</button>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button style={{ ...s.btn, opacity: addingContract ? 0.6 : 1 }} disabled={addingContract} onClick={() => addContract(false)}>{addingContract ? 'Saving...' : 'Save & activate'}</button>
+                    <button style={{ ...s.btnGray, opacity: addingContract ? 0.6 : 1 }} disabled={addingContract} onClick={() => addContract(true)}>Save as draft</button>
                     <button style={s.btnGray} onClick={() => { setShowAddContract(false); setContractForm(emptyContract); setContractBidFile(null) }}>Cancel</button>
                   </div>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '10px 0 0', lineHeight: '1.5' }}>
+                    <strong>Draft:</strong> only NV staff can see it — the sub isn't assigned and can't see, sign, or bill it. <strong>Activate:</strong> the contract appears in the sub's portal and they're assigned to this job with billing <strong>off</strong>. <strong>No email is sent either way.</strong>
+                  </p>
                 </div>
               )}
 
@@ -6951,10 +7088,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const allocations = (c.budget_allocations || []).filter(a => a.budget_item_id)
                 const isEditing = editingContract === c.id
+                const isDraft = c.status === 'draft'
+                const attachments = [c.bid_proposal_url && 'Bid proposal', c.signed_contract_url && 'Signed contract'].filter(Boolean)
 
                 return (
-                  <div key={c.id} style={s.contractRow}>
-                    <div style={s.contractRowHeader}>
+                  <div key={c.id} style={{ ...s.contractRow, ...(isDraft ? { borderStyle: 'dashed', borderColor: '#f59e0b' } : {}) }}>
+                    <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{subName}</span>
                         {c.description && <span style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: '1px solid #222', borderRadius: '4px', padding: '1px 7px' }}>{c.description}</span>}
@@ -6971,7 +7110,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             })
                           : budgetLine && <span style={{ fontSize: '11px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 8px' }}>{budgetLine.cost_code || budgetLine.description}</span>
                         }
-                        <span style={s.contractBadge(c.status)}>{c.status}</span>
+                        {isDraft
+                          ? <span title="Only NV staff can see this. Activate to show it in the sub's portal." style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', whiteSpace: 'nowrap' }}>Draft · not visible to sub</span>
+                          : <span style={s.contractBadge(c.status)}>{c.status}</span>}
+                        {attachments.length > 0 && (
+                          <span title={`Attachments on file: ${attachments.join(', ')}`} aria-label={`${attachments.length} attachment${attachments.length > 1 ? 's' : ''}: ${attachments.join(', ')}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '12px', color: '#4b5563', whiteSpace: 'nowrap' }}>
+                            📎{attachments.length > 1 ? <span style={{ fontWeight: '700' }}>{attachments.length}</span> : null}
+                          </span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                         <div style={{ textAlign: 'right' }}>
@@ -6992,13 +7138,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Remaining</div>
                           <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#dc2626' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
                         </div>
-                        {(c.retainage_pct > 0) && (
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Retainage</div>
-                            <div style={{ fontSize: '14px', fontWeight: '700', color: '#a16207' }}>{Number(c.retainage_pct)}%</div>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Retainage</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.retainage_pct) > 0 ? '#a16207' : '#6b7280' }}>{Number(c.retainage_pct || 0)}%</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {isDraft && <button style={s.btnSmallOrange} onClick={() => activateContract(c)} title="Makes it visible in the sub's portal and assigns them with billing off. No email is sent.">Activate</button>}
                           <button style={s.btnSmallOrange} onClick={() => {
                             if (expandedSov === c.id) { setExpandedSov(null) }
                             else { setExpandedSov(c.id); loadContractSov(c.id); setShowAddSovLine(null); setEditingSovLine(null) }
@@ -8502,7 +8647,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {contracts.length === 0 && (
                         <option value="" disabled>No subcontracts on this job yet</option>
                       )}
-                      {contracts.map(c => (
+                      {contracts.filter(c => c.status !== 'draft').map(c => (
                         <option key={c.id} value={c.id}>
                           {c.vendor_name || 'Unknown'}{c.description ? ` — ${c.description}` : ''}{c.adjusted_contract_value || c.contract_value ? ` ($${Number(c.adjusted_contract_value || c.contract_value).toLocaleString()})` : ''}
                         </option>

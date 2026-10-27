@@ -64,6 +64,12 @@ export async function PUT(request) {
     // Fetch current values for auditing changed fields
     const { data: current } = await adminSupabase.from('subcontracts').select('contract_value, status, vendor_name, job_id').eq('id', id).single()
 
+    // Draft → active is the "Activate" step; stamp who did it and when
+    if (fields.status === 'active' && current?.status === 'draft') {
+      fields.activated_at = new Date().toISOString()
+      fields.activated_by = auth.userId
+    }
+
     const { error } = await adminSupabase.from('subcontracts').update(fields).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
 

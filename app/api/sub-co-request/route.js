@@ -44,7 +44,7 @@ export async function POST(request) {
       .eq('id', subcontract_id)
       .single()
 
-    if (!subcontract) return Response.json({ error: 'Subcontract not found' }, { status: 404 })
+    if (!subcontract || subcontract.status === 'draft') return Response.json({ error: 'Subcontract not found' }, { status: 404 })
     if (subcontract.sub_id !== sub_user_id) {
       const [{ data: userProfile }, { data: subProfile }] = await Promise.all([
         adminSupabase.from('profiles').select('company_id').eq('id', sub_user_id).single(),

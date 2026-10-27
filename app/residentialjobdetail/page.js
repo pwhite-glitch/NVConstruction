@@ -457,9 +457,11 @@ function ResidentialJobDetailInner() {
   }
 
   async function saveSubEdit(contractId) {
+    // PUT requires a PM session token — without it the save was rejected with 401
+    const { data: { session: sSession } } = await supabase.auth.getSession()
     const res = await fetch('/api/subcontracts', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sSession?.access_token}` },
       body: JSON.stringify({ id: contractId, vendor_name: editSubForm.vendor_name, description: editSubForm.description, contract_value: parseFloat(editSubForm.contract_value) || 0, budget_item_id: editSubForm.budget_item_id || null }),
     })
     const data = await res.json()

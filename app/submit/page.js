@@ -156,6 +156,8 @@ export default function Submit() {
   const [sovRetainageMap, setSovRetainageMap] = useState({})
   const [sovError, setSovError] = useState('')
   const [noContract, setNoContract] = useState(false)
+  const [billingLockedJobIds, setBillingLockedJobIds] = useState(new Set())
+  const [billingLocked, setBillingLocked] = useState(false)
   const [sovDraftLines, setSovDraftLines] = useState([{ description: '', amount: '' }])
   const [savingSov, setSavingSov] = useState(false)
   const [sovSaved, setSovSaved] = useState(false)
@@ -251,19 +253,24 @@ export default function Submit() {
         mergedJobs = allJobs || []
       } else {
         const jobQueries = [
-          supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id),
-          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id),
+          supabase.from('job_assignments').select('*, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id),
+          supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('sub_id', session.user.id).or('status.is.null,status.neq.draft'),
         ]
         if (companyId) {
           jobQueries.push(
-            supabase.from('job_assignments').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId),
-            supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId),
+            supabase.from('job_assignments').select('*, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId),
+            supabase.from('subcontracts').select('job_id, jobs(id, job_number, project_name, status, pm_email, sub_billing_due, sub_billing_frequency, sub_billing_anchor, sub_billing_start, owner_name, owner_company, location, cover_image_path)').eq('company_id', companyId).or('status.is.null,status.neq.draft'),
           )
         }
         const jobResults = await Promise.all(jobQueries)
         const allJobRecords = jobResults.flatMap(r => (r.data || []).map(x => x.jobs).filter(j => j && j.status === 'active'))
         const seenJobIds = new Set()
         mergedJobs = allJobRecords.filter(j => { if (seenJobIds.has(j.id)) return false; seenJobIds.add(j.id); return true })
+        // Billing is locked on a job when the sub is assigned but every matching
+        // assignment has billing_enabled = false. Contract-only jobs stay billable.
+        const assignmentRows = [jobResults[0], jobResults[2]].flatMap(r => r?.data || [])
+        const billingOnJobIds = new Set(assignmentRows.filter(a => a.billing_enabled !== false).map(a => a.job_id))
+        setBillingLockedJobIds(new Set(assignmentRows.filter(a => !billingOnJobIds.has(a.job_id)).map(a => a.job_id)))
       }
       setJobs(mergedJobs)
       loadCoverUrls(mergedJobs)
@@ -676,7 +683,10 @@ export default function Submit() {
   }
 
   async function loadJobSov(jobId) {
-    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setJobDrawRequests([]); return }
+    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setBillingLocked(false); setJobDrawRequests([]); return }
+    // Assigned but billing not enabled by the PM yet — block the form the same way a missing contract does
+    if (billingLockedJobIds.has(jobId)) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(true); setJobDrawRequests([]); return }
+    setBillingLocked(false)
     const drRes = await fetch(`/api/draw-requests?job_id=${jobId}`)
     if (!drRes.ok) { setJobDrawRequests([]); return }
     const { draws } = await drRes.json()
@@ -1499,7 +1509,9 @@ export default function Submit() {
                 )}
                 {form.job_id && noContract && (
                   <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '14px 16px', borderRadius: '8px', fontSize: '13px', marginBottom: '1rem' }}>
-                    No subcontract on file for this project. Contact NV Construction to have your subcontract issued before submitting billing.
+                    {billingLocked
+                      ? 'Billing is not enabled for this project yet. NV Construction will turn it on when your subcontract is ready.'
+                      : 'No subcontract on file for this project. Contact NV Construction to have your subcontract issued before submitting billing.'}
                   </div>
                 )}
 

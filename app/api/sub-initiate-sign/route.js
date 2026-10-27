@@ -25,7 +25,7 @@ export async function POST(request) {
       .eq('id', subcontract_id)
       .single()
 
-    if (!sc) return Response.json({ error: 'Subcontract not found' }, { status: 404 })
+    if (!sc || sc.status === 'draft') return Response.json({ error: 'Subcontract not found' }, { status: 404 })
 
     const isDirectSub = sc.sub_id === sub_user_id
     let isCompanySub = false

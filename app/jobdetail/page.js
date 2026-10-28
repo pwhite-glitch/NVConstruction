@@ -1,11 +1,12 @@
 ﻿'use client'
-import React, { useState, useEffect, Suspense } from 'react'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
-import { openStorageFile } from '../../lib/open-file'
+import { openStorageFile, openHtml } from '../../lib/open-file'
 import { companyKey, sameCompany } from '../../lib/company-name'
+import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, coLineRow, insertCoLine } from '../../lib/sov-lines'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
@@ -119,7 +120,7 @@ const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'p
 const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [] }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: true }
+const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: false }
 
 function CoAttachmentLink({ path, supabase }) {
   const [url, setUrl] = useState(null)
@@ -535,10 +536,14 @@ function JobDetailInner() {
 
   // E-signature state
   const [signerEmail, setSignerEmail] = useState('')
+  const [signerName, setSignerName] = useState('')
   const [showSignPanel, setShowSignPanel] = useState(false)
+  const [contractGenMsg, setContractGenMsg] = useState('')
+  const contractGenRef = useRef(null)
   const [sendingSign, setSendingSign] = useState(false)
   const [signMsg, setSignMsg] = useState('')
   const [signingRequests, setSigningRequests] = useState([])
+  const [signingLoadError, setSigningLoadError] = useState('')
 
   // Lookahead state
   const [lookahead, setLookahead] = useState(null)
@@ -691,6 +696,8 @@ function JobDetailInner() {
     // Fetch budget_item_id from the base table — the view may predate this column
     // Read status / attachments here too so the row (and the edit form) never rely on view columns
     const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url, bid_proposal_url, onedrive_url, status, company_id').eq('job_id', id)
+    // Separate query: these columns come from migration 031 and this errors (gen = null) until it is applied
+    const { data: gen } = await supabase.from('subcontracts').select('id, generated_contract_path, generated_at').eq('job_id', id)
     const merged = summary.map(c => ({
       ...c,
       budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
@@ -702,6 +709,8 @@ function JobDetailInner() {
       onedrive_url: raw?.find(r => r.id === c.id)?.onedrive_url ?? null,
       status: raw?.find(r => r.id === c.id)?.status ?? c.status,
       company_id: raw?.find(r => r.id === c.id)?.company_id ?? c.company_id ?? null,
+      generated_contract_path: gen?.find(r => r.id === c.id)?.generated_contract_path ?? null,
+      generated_at: gen?.find(r => r.id === c.id)?.generated_at ?? null,
     }))
     setContracts(merged)
     return merged
@@ -976,8 +985,27 @@ function JobDetailInner() {
     return openStorageFile(supabase, 'prime-contracts', path, 300)
   }
 
-  function openSignedContractUrl(path) {
-    return openStorageFile(supabase, 'documents', path, 300)
+  function openSignedContractUrl(c) {
+    // E-signed copies are HTML; Supabase may serve those as plain text, so fetch and render them
+    if (c.signed_contract_url.toLowerCase().endsWith('.html')) return openHtml(() => fetchStoredContractHtml(c.id, 'signed'))
+    return openStorageFile(supabase, 'documents', c.signed_contract_url, 300)
+  }
+
+  function openLastGeneratedContract(c) {
+    return openHtml(() => fetchStoredContractHtml(c.id, 'generated'))
+  }
+
+  async function fetchStoredContractHtml(contractId, kind) {
+    const res = await authFetch(`/api/subcontract-contract?subcontract_id=${contractId}&kind=${kind}`)
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok || !json.html) { setErrMsg('Could not open contract: ' + (json.error || res.status)); setTimeout(() => setErrMsg(''), 5000); return null }
+    return json.html
+  }
+
+  // Show the stored copy on the row right away (also covers the time before migration 031 is applied)
+  function markContractGenerated(contractId, saved) {
+    if (!saved?.path) return
+    setContracts(prev => prev.map(c => c.id === contractId ? { ...c, generated_contract_path: saved.path, generated_at: saved.generated_at } : c))
   }
 
   async function openSubmittalDocUrl(path) {
@@ -3332,7 +3360,27 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       contract_documents: 'Subcontractor Proposal\nLink to Current Plan Sheets\nExhibit A Attached\nExhibit B Attached\nSchedule',
       scope_notes: '* Change Orders: You must receive written authorization from the Project Manager before you begin the work.\n* Daily broom swept clean-up of all trash & debris\n* Comply with all OSHA regulations. *PPE will be required at all times for this job\n* Time is of the essence for this project. Complete work per schedule provided below.',
     })
+    setShowSignPanel(false)
+    setSignMsg('')
+    setContractGenMsg('')
     setShowContractGen(true)
+    // The panel renders above the contract list, so bring it into view
+    setTimeout(() => contractGenRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+  }
+
+  // Prefill the e-signature recipient from the contract's sub, else the company's contact on file
+  async function openSignPanel() {
+    setShowSignPanel(true)
+    setSignMsg('')
+    const contract = contracts.find(c => c.id === contractGenForm.contract_id)
+    let company = null
+    if (contract?.company_id) {
+      const { data } = await supabase.from('companies').select('name, email').eq('id', contract.company_id).maybeSingle()
+      company = data
+    }
+    const { name, email } = pickSignerContact({ contract, assignments: subs, company, directory: subDirectory })
+    setSignerName(name)
+    setSignerEmail(email)
   }
 
   function buildSubcontractHtml(f) {
@@ -3562,14 +3610,45 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       win.document.open()
       win.document.write(editHtml)
       win.document.close()
+      setContractGenMsg('Contract opened in a new window.')
+    } else {
+      setContractGenMsg('Error: the contract window was blocked. Allow pop-ups for this site and try again.')
+    }
+    // Keep a copy of the contract as generated (edits made in the print window aren't captured)
+    const contractId = contractGenForm.contract_id
+    if (contractId) {
+      const opened = !!win
+      authFetch('/api/subcontract-contract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subcontract_id: contractId, html }) })
+        .then(r => r.json())
+        .then(json => {
+          if (json.error) throw new Error(json.error)
+          markContractGenerated(contractId, json.data)
+          if (opened) setContractGenMsg('Contract opened in a new window. A copy was saved ("Last generated contract" on the row).')
+        })
+        .catch(e => {
+          console.error('save generated contract:', e)
+          setContractGenMsg(opened ? 'Error: contract opened, but saving a copy failed: ' + e.message : 'Error: the contract window was blocked, and saving a copy failed: ' + e.message)
+        })
     }
   }
 
   async function loadSigningRequests() {
-    // PM listing requires a session token — plain fetch() got a 401 and left this empty
-    const res = await authFetch(`/api/signing-requests?job_id=${id}`)
-    const json = await res.json()
-    setSigningRequests(json.data || [])
+    // PM listing requires a session token — plain fetch() got a 401 and left this empty.
+    // A stale token (e.g. app resumed on a phone) also gives a 401, so refresh the session and retry once.
+    try {
+      let res = await authFetch(`/api/signing-requests?job_id=${id}`)
+      if (res.status === 401) {
+        await supabase.auth.refreshSession()
+        res = await authFetch(`/api/signing-requests?job_id=${id}`)
+      }
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`)
+      setSigningRequests(json.data || [])
+      setSigningLoadError('')
+    } catch (e) {
+      console.error('loadSigningRequests:', e)
+      setSigningLoadError(e.message)
+    }
   }
 
   async function sendForESign() {
@@ -3590,7 +3669,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           job_id: id,
           subcontract_id: contractGenForm.contract_id || null,
           signer_email: signerEmail.trim().toLowerCase(),
-          signer_name: contractGenForm.sub_name,
+          signer_name: signerName.trim() || contractGenForm.sub_name,
           document_html: html,
           document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
           created_by: session?.user?.id,
@@ -3598,9 +3677,11 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       })
       const json = await res.json()
       if (json.error) { setSignMsg('Error: ' + json.error); return }
+      markContractGenerated(contractGenForm.contract_id, json.saved_contract)
       setSignMsg('Sent! The subcontractor will receive an email link to sign.')
       setShowSignPanel(false)
       setSignerEmail('')
+      setSignerName('')
       await loadSigningRequests()
     } catch (e) {
       setSignMsg('Error: ' + e.message)
@@ -4418,6 +4499,8 @@ ${attachmentHtml}
       retainage_held: retHeld,
       pct_complete: createBillingForm.pct_complete ? parseFloat(createBillingForm.pct_complete) : null,
       work_description: createBillingForm.work_description || null,
+      invoice_number: createBillingForm.invoice_number.trim() || null,
+      invoice_date: createBillingForm.invoice_date || null,
       billing_period: createBillingForm.billing_period ? createBillingForm.billing_period + '-01' : null,
       draw_request_id: createBillingForm.draw_request_id || null,
       sub_id: createBillingForm.sub_id || null,
@@ -4467,6 +4550,8 @@ ${attachmentHtml}
       retainage_held: Math.round(origAmt * editRetPct / 100 * 100) / 100,
       pct_complete: editBillingForm.pct_complete ? parseFloat(editBillingForm.pct_complete) : null,
       work_description: editBillingForm.work_description || null,
+      invoice_number: editBillingForm.invoice_number.trim() || null,
+      invoice_date: editBillingForm.invoice_date || null,
       billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
@@ -4485,6 +4570,34 @@ ${attachmentHtml}
     setEditingBilling(null)
     setEditBillingFile(null)
     await loadBillingForJob()
+  }
+
+  function billingToEditForm(b) {
+    return {
+      company_name: b.company_name || '',
+      contact_name: b.contact_name || '',
+      contact_info: b.contact_info || '',
+      amount_billed: b.amount_billed ?? '',
+      retainage_pct: b.retainage_pct ?? 0,
+      pct_complete: b.pct_complete ?? '',
+      work_description: b.work_description || '',
+      invoice_number: b.invoice_number || '',
+      invoice_date: b.invoice_date || '',
+      billing_period: b.billing_period ? b.billing_period.slice(0, 7) : '',
+      status: b.status,
+      doc_url: b.doc_url || null,
+    }
+  }
+
+  // Fill the form from the card right away, then from the saved row so it never starts from stale data
+  async function openBillingEdit(b) {
+    loadBillingSov(b.id)
+    setEditingBilling(b.id)
+    setEditBillingFile(null)
+    setEditBillingForm(billingToEditForm(b))
+    const { data, error } = await supabase.from('billing_submissions').select('*').eq('id', b.id).maybeSingle()
+    if (error) { console.error('openBillingEdit:', error); return }
+    if (data) setEditBillingForm(billingToEditForm(data))
   }
 
   async function deleteBillingEntry(billingId) {
@@ -6898,7 +7011,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
 
             {showContractGen && (
-              <div style={{ ...s.card, border: '1px solid #dcfce7', marginBottom: '1.25rem' }}>
+              <div ref={contractGenRef} style={{ ...s.card, border: '1px solid #dcfce7', marginBottom: '1.25rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ ...s.cardTitle, margin: 0, color: '#16a34a' }}>Generate Subcontract</p>
                   <button style={s.btnGray} onClick={() => setShowContractGen(false)}>Close</button>
@@ -6969,15 +7082,24 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button style={{ ...s.btn, background: '#dcfce7', color: '#16a34a' }} onClick={generateSubcontract}>Edit &amp; Print Contract</button>
-                  <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { setShowSignPanel(v => !v); setSignMsg('') }}>
+                  <button style={{ ...s.btn, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => { if (showSignPanel) { setShowSignPanel(false); setSignMsg('') } else openSignPanel() }}>
                     {showSignPanel ? 'Cancel' : '✉ Send for e-Signature'}
                   </button>
                 </div>
+                {contractGenMsg && (
+                  <p style={{ fontSize: '12px', color: contractGenMsg.startsWith('Error') ? '#dc2626' : '#16a34a', marginTop: '8px' }}>{contractGenMsg}</p>
+                )}
 
                 {showSignPanel && (
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '1rem', marginTop: '12px' }}>
                     <p style={{ fontSize: '13px', fontWeight: '700', color: '#2563eb', marginBottom: '10px' }}>Send for e-Signature</p>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        style={{ ...s.input, flex: 1, minWidth: '180px' }}
+                        placeholder="Recipient name"
+                        value={signerName}
+                        onChange={e => setSignerName(e.target.value)}
+                      />
                       <input
                         type="email"
                         style={{ ...s.input, flex: 1, minWidth: '220px' }}
@@ -7132,6 +7254,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {contracts.length === 0 && !showAddContract && <p style={{ color: '#6b7280', fontSize: '14px' }}>No subcontracts yet.</p>}
 
+              {signingLoadError && (
+                <p style={{ fontSize: '12px', color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px' }}>
+                  Couldn't load e-signature status ({signingLoadError}), so sent/signed contracts may not show below.{' '}
+                  <button style={{ ...s.btnSmall, marginLeft: '6px' }} onClick={loadSigningRequests}>Retry</button>
+                </p>
+              )}
+
               {contracts.map(c => {
                 const subName = c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name || 'Unknown sub'
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
@@ -7203,18 +7332,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           }}>
                             {expandedSov === c.id ? 'Hide SOV' : 'SOV'}
                           </button>
-                          <button style={{ ...s.btnSmall, background: '#dcfce7', color: '#16a34a', border: '1px solid #dcfce7' }} onClick={() => openContractGenerator(c)}>Gen Contract</button>
-                          {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#bfdbfe', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
-                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #dcfce7' }} onClick={() => openSignedContractUrl(c.signed_contract_url)}>Signed Contract ↗</button>}
                           {(() => {
+                            // Newest request first (API orders by created_at desc)
                             const req = signingRequests.find(r => r.subcontract_id === c.id)
-                            if (!req) return null
+                            const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                             return (
-                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#dcfce7' : '#fff7ed', color: req.status === 'signed' ? '#16a34a' : '#d97706', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#fed7aa'}`, whiteSpace: 'nowrap' }}>
-                                {req.status === 'signed' ? '✓ Signed' : '⏳ Awaiting sign'}
-                              </span>
+                              <>
+                                <button style={{ ...s.btnSmall, background: '#dcfce7', color: '#16a34a', border: '1px solid #dcfce7' }} onClick={() => openContractGenerator(c)}>{!req ? 'Gen Contract' : req.status === 'signed' ? 'View contract' : 'View / Resend contract'}</button>
+                                {req && (
+                                  <span title={req.signer_email} style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '99px', background: req.status === 'signed' ? '#dcfce7' : '#fff7ed', color: req.status === 'signed' ? '#16a34a' : '#d97706', border: `1px solid ${req.status === 'signed' ? '#bbf7d0' : '#fed7aa'}` }}>
+                                    {req.status === 'signed'
+                                      ? `✓ Signed ${req.signed_at ? fmtDate(req.signed_at) : ''}`
+                                      : `⏳ Sent for signature ${fmtDate(req.created_at)} to ${req.signer_email}`}
+                                  </span>
+                                )}
+                              </>
                             )
                           })()}
+                          {c.generated_contract_path && <button style={s.btnSmall} onClick={() => openLastGeneratedContract(c)} title={c.generated_at ? `Generated ${new Date(c.generated_at).toLocaleString('en-US')}` : undefined}>Last generated contract</button>}
+                          {c.bid_proposal_url && <button style={{ ...s.btnSmall, background: '#bfdbfe', color: '#2563eb', border: '1px solid #bfdbfe' }} onClick={() => openBidProposalUrl(c.bid_proposal_url)}>Bid Proposal</button>}
+                          {c.signed_contract_url && <button style={{ ...s.btnSmall, background: '#1a2a1a', color: '#86efac', border: '1px solid #dcfce7' }} onClick={() => openSignedContractUrl(c)}>Signed Contract ↗</button>}
                           <button style={s.btnSmall} onClick={() => { setEditingContract(isEditing ? null : c.id); setEditContractForm({ contract_value: c.contract_value, description: c.description || '', onedrive_url: c.onedrive_url || '', budget_item_id: c.budget_item_id || '', budget_allocations: c.budget_allocations || [], retainage_pct: String(c.retainage_pct ?? 10), bid_proposal_url: c.bid_proposal_url || '' }); setEditContractBidFile(null) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
@@ -8798,6 +8935,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input type="number" min="0" style={s.input} value={createBillingForm.pct_complete} onChange={e => setCreateBillingForm(f => ({ ...f, pct_complete: e.target.value }))} placeholder="0" />
                     </div>
                   </div>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                    <div>
+                      <label style={s.label}>Invoice #</label>
+                      <input style={s.input} value={createBillingForm.invoice_number} onChange={e => setCreateBillingForm(f => ({ ...f, invoice_number: e.target.value }))} placeholder="e.g. INV-1042" />
+                    </div>
+                    <div>
+                      <label style={s.label}>Invoice date</label>
+                      <input type="date" style={s.input} value={createBillingForm.invoice_date} onChange={e => setCreateBillingForm(f => ({ ...f, invoice_date: e.target.value }))} />
+                    </div>
+                  </div>
                   <div style={{ ...s.grid2, marginBottom: '1rem' }} className="rx-grid-2">
                     <div>
                       <label style={s.label}>Work description</label>
@@ -8907,8 +9054,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             : b.billing_period && <span style={{ background: '#1a2a1a', color: '#16a34a', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                           }
                           {cumPct != null ? ` · ${cumPct}% billed to date` : b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
-                          {b.work_description ? ` · ${b.work_description.slice(0, 60)}${b.work_description.length > 60 ? '…' : ''}` : ''}
+                          {b.invoice_number ? ` · Invoice #${b.invoice_number}` : ''}
+                          {b.invoice_date ? ` · Invoice date ${new Date(b.invoice_date + 'T12:00:00').toLocaleDateString()}` : ''}
+                          {b.doc_url && (
+                            <button title="Open attached invoice" onClick={() => openStorageFile(supabase, 'billing-docs', b.doc_url, 3600)} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'none', border: 'none', padding: '0 4px', marginLeft: '4px', cursor: 'pointer', fontSize: '12px', color: '#4b5563', whiteSpace: 'nowrap', textDecoration: 'underline' }}>📎 Invoice</button>
+                          )}
                         </div>
+                        {b.work_description && (
+                          <div style={{ fontSize: '12px', color: '#374151', marginTop: '4px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.work_description}</div>
+                        )}
                         {drawRequests.length > 0 && (
                           <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '11px', color: '#6b7280' }}>Draw:</span>
@@ -8996,21 +9150,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               w.document.close()
                             }}>View Waiver</button>
                           )}
-                          <button style={s.btnSmallOrange} onClick={() => {
-                            if (!isEditing) loadBillingSov(b.id)
-                            setEditingBilling(isEditing ? null : b.id)
-                            setEditBillingForm({
-                              company_name: b.company_name || '',
-                              contact_name: b.contact_name || '',
-                              contact_info: b.contact_info || '',
-                              amount_billed: b.amount_billed || '',
-                              retainage_pct: b.retainage_pct ?? 0,
-                              pct_complete: b.pct_complete ?? '',
-                              work_description: b.work_description || '',
-                              billing_period: b.billing_period ? b.billing_period.slice(0, 7) : '',
-                              status: b.status,
-                            })
-                          }}>
+                          <button style={s.btnSmallOrange} onClick={() => { if (isEditing) { setEditingBilling(null); setEditBillingFile(null) } else openBillingEdit(b) }}>
                             {isEditing ? 'Cancel' : 'Edit'}
                           </button>
                           <button style={s.btnSmallRed} onClick={() => deleteBillingEntry(b.id)}>Delete</button>
@@ -9064,10 +9204,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <input type="month" style={s.input} value={editBillingForm.billing_period || ''} onChange={e => setEditBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
                           </div>
                         </div>
+                        <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                          <div>
+                            <label style={s.label}>Invoice #</label>
+                            <input style={s.input} value={editBillingForm.invoice_number} onChange={e => setEditBillingForm(f => ({ ...f, invoice_number: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Invoice date</label>
+                            <input type="date" style={s.input} value={editBillingForm.invoice_date} onChange={e => setEditBillingForm(f => ({ ...f, invoice_date: e.target.value }))} />
+                          </div>
+                        </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Attachment (PDF, image, etc.)</label>
+                          {editBillingForm.doc_url && (
+                            <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 6px' }}>
+                              <button type="button" style={{ ...s.btnSmall, marginRight: '6px' }} onClick={() => openStorageFile(supabase, 'billing-docs', editBillingForm.doc_url, 3600)}>📎 Current invoice</button>
+                              Kept unless you choose a new file.
+                            </p>
+                          )}
                           <input type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" style={{ fontSize: '13px', color: '#374151' }} onChange={e => setEditBillingFile(e.target.files[0] || null)} />
-                          {editBillingFile && <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{editBillingFile.name}</p>}
+                          {editBillingFile && <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{editBillingFile.name}{editBillingForm.doc_url ? ' (replaces current invoice)' : ''}</p>}
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Status</label>

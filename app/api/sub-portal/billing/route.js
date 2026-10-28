@@ -4,6 +4,7 @@ import { requireAuth } from '../../../../lib/server-auth'
 import { billingContext } from '../../../../lib/sub-access'
 import { contractsWithBaseSov } from '../../../../lib/sov-lines'
 import { emailWrap, escapeHtml } from '../../../../lib/email'
+import { withoutNew032 } from '../../../../lib/billing-fields'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -86,7 +87,8 @@ export async function POST(request) {
     }
 
     const amountBilled = parseFloat(body.amount_billed) || 0
-    const { data: newSub, error } = await adminSupabase.from('billing_submissions').insert({
+    const invoiceDate = /^\d{4}-\d{2}-\d{2}$/.test(body.invoice_date || '') ? body.invoice_date : null
+    const row = {
       sub_id: auth.userId,
       job_id: body.job_id,
       sub_email: (auth.email || ctx.profile.invite_email || '').toLowerCase(),
@@ -99,10 +101,15 @@ export async function POST(request) {
       pct_complete: parseInt(body.pct_complete) || null,
       work_description: body.work_description || null,
       invoice_number: body.invoice_number.trim(),
+      ...(invoiceDate ? { invoice_date: invoiceDate } : {}),
       billing_period: body.billing_period ? body.billing_period + '-01' : null,
       draw_request_id: body.draw_request_id || null,
       doc_url: body.doc_url,
-    }).select().single()
+    }
+    let { data: newSub, error } = await adminSupabase.from('billing_submissions').insert(row).select().single()
+    if (error?.message?.includes('schema cache')) {
+      ({ data: newSub, error } = await adminSupabase.from('billing_submissions').insert(withoutNew032(row)).select().single())
+    }
     if (error) return Response.json({ error: error.message }, { status: 500 })
     await emailPmBillingSubmitted(ctx.job, newSub)
 

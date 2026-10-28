@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
+import { isUuid, saveGeneratedContract } from '../../../lib/generated-contract'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -35,6 +36,16 @@ export async function POST(request) {
     .single()
 
   if (insertErr) return Response.json({ error: insertErr.message }, { status: 500 })
+
+  // Keep a copy of exactly what was sent. A failure here must not block sending.
+  let saved_contract = null
+  if (isUuid(subcontract_id)) {
+    try {
+      saved_contract = await saveGeneratedContract(adminSupabase, { subcontractId: subcontract_id, html: document_html, userId: auth.userId })
+    } catch (e) {
+      console.error('signing-requests: could not save contract copy:', e.message)
+    }
+  }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
   const signingLink = `${siteUrl}/sign?token=${row.token}`
@@ -89,7 +100,7 @@ export async function POST(request) {
 </html>`,
   })
 
-  return Response.json({ data: row })
+  return Response.json({ data: row, saved_contract })
 }
 
 export async function GET(request) {

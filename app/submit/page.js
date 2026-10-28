@@ -120,7 +120,7 @@ export default function Submit() {
   const [expandedContract, setExpandedContract] = useState(null)
   const [uploadingSignedContract, setUploadingSignedContract] = useState(null)
   const [contractUploadMsg, setContractUploadMsg] = useState({})
-  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' })
+  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
   const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -847,6 +847,7 @@ export default function Submit() {
         pct_complete: form.pct_complete,
         work_description: form.work_description,
         invoice_number: form.invoice_number.trim(),
+        invoice_date: form.invoice_date || null,
         billing_period: form.billing_period || null,
         draw_request_id: form.draw_request_id || null,
         doc_url,
@@ -864,7 +865,7 @@ export default function Submit() {
     try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}
     setSuccess(true)
     setPrefillSub(null)
-    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' })
+    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
     setSovForm([])
     setJobSovContracts([])
     setSovRetainageMap({})
@@ -889,6 +890,7 @@ export default function Submit() {
         : new Date().toISOString().slice(0, 7),
       draw_request_id:  sub.draw_request_id || '',
       invoice_number:   sub.invoice_number || '',
+      invoice_date:     sub.invoice_date || '',
     })
     if (sub.job_id) loadJobSov(sub.job_id)
     setActiveTab('billing')
@@ -1281,7 +1283,7 @@ export default function Submit() {
                 return hasDraft ? (
                   <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
                     <span style={{ fontSize: '13px', color: '#c2410c', fontWeight: '600' }}>Draft restored — your previous entries have been loaded.</span>
-                    <button type="button" onClick={() => { try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}; setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '' }) }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
+                    <button type="button" onClick={() => { try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}; setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' }) }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
                   </div>
                 ) : null
               })()}
@@ -1536,6 +1538,10 @@ export default function Submit() {
                       <label style={s.label}>Invoice # <span style={{ color: '#e8590c' }}>*</span></label>
                       <input style={s.input} value={form.invoice_number} onChange={e => update('invoice_number', e.target.value)} placeholder="e.g. INV-2024-001" />
                       {!form.invoice_number.trim() && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>Required — enter the invoice number from your invoice</div>}
+                    </div>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={s.label}>Invoice date</label>
+                      <input type="date" style={s.input} value={form.invoice_date} onChange={e => update('invoice_date', e.target.value)} />
                     </div>
                     <div style={{ marginBottom: '1.5rem' }}>
                       <label style={s.label}>Invoice PDF <span style={{ color: '#e8590c' }}>*</span></label>

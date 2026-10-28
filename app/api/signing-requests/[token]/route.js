@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { saveSignedContract } from '../../../../lib/generated-contract'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,7 +39,7 @@ export async function POST(request, { params }) {
 
   const { data: existing, error: fetchErr } = await adminSupabase
     .from('signing_requests')
-    .select('id, signer_email, signer_name, document_title, job_id, status')
+    .select('id, signer_email, signer_name, document_title, document_html, job_id, subcontract_id, status')
     .eq('token', token)
     .single()
 
@@ -47,18 +48,34 @@ export async function POST(request, { params }) {
 
   const signedAt = new Date().toISOString()
 
+  // Record the IP the request came from; the body value is only a fallback
+  const signerIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || signer_ip || null
   const { error: updateErr } = await adminSupabase
     .from('signing_requests')
     .update({
       status: 'signed',
       signature_text: signature_text.trim(),
       signed_at: signedAt,
-      // Record the IP the request came from; the body value is only a fallback
-      signer_ip: request.headers.get('x-forwarded-for')?.split(',')[0].trim() || signer_ip || null,
+      signer_ip: signerIp,
     })
     .eq('token', token)
 
   if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
+
+  // Store the signed document and link it as the subcontract's signed contract.
+  // The signature itself is already recorded above, so a failure here is only logged.
+  if (existing.subcontract_id) {
+    try {
+      await saveSignedContract(adminSupabase, {
+        subcontractId: existing.subcontract_id,
+        html: existing.document_html,
+        certificate: { signature_text: signature_text.trim(), signer_name: existing.signer_name, signer_email: existing.signer_email, signed_at: signedAt, signer_ip: signerIp, request_id: existing.id },
+        at: signedAt,
+      })
+    } catch (e) {
+      console.error('signing-requests: could not store signed contract:', e.message)
+    }
+  }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
   const logo = logoSrc()

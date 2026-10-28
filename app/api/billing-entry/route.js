@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
 import { notify } from '../../../lib/notify'
+import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032 } from '../../../lib/billing-fields'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,15 +11,6 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-// Fields a PM may set on a new submission (POST)
-const PM_INSERT_FIELDS = new Set(['job_id', 'sub_id', 'company_name', 'amount_billed', 'retainage_held', 'status', 'notes', 'billing_period', 'doc_url', 'lien_waiver_signed_at'])
-// Fields a sub may set on their own new submission
-const SUB_INSERT_FIELDS = new Set(['job_id', 'amount_billed', 'retainage_held', 'notes', 'billing_period', 'doc_url'])
-
-// Fields a PM may PATCH
-const PM_PATCH_FIELDS = new Set(['status', 'amount_billed', 'retainage_held', 'notes', 'ready_to_pay', 'lien_waiver_signed_at', 'paid_at', 'doc_url', 'billing_period', 'payment_amount', 'payment_method', 'check_number', 'payment_notes', 'nv_cuts_check', 'invoice_number', 'work_description', 'draw_request_id'])
-// Sub may only update their own pending submission's safe fields
-const SUB_PATCH_FIELDS = new Set(['notes', 'billing_period', 'doc_url'])
 
 // Valid status transitions
 const ALLOWED_TRANSITIONS = {
@@ -41,14 +33,6 @@ async function uploadBillingDoc(file, jobId) {
     .upload(path, buffer, { contentType: file.type })
   if (error) throw new Error('File upload failed: ' + error.message)
   return path
-}
-
-function pickFields(obj, allowed) {
-  const result = {}
-  for (const key of allowed) {
-    if (key in obj) result[key] = obj[key]
-  }
-  return result
 }
 
 export async function POST(request) {
@@ -87,9 +71,11 @@ export async function POST(request) {
       if (!authUser?.user) row.sub_id = null
     }
 
-    const { error } = await adminSupabase
-      .from('billing_submissions')
-      .insert({ ...row, doc_url })
+    const insertRow = { ...row, doc_url }
+    let { error } = await adminSupabase.from('billing_submissions').insert(insertRow)
+    if (error?.message?.includes('schema cache')) {
+      ({ error } = await adminSupabase.from('billing_submissions').insert(withoutNew032(insertRow)))
+    }
 
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
@@ -106,16 +92,17 @@ export async function PATCH(request) {
     const contentType = request.headers.get('content-type') || ''
     let id = null
     let rawFields = {}
+    let file = null
+    // Only set when a new file is uploaded, so saving without one keeps the existing attachment
     let doc_url = undefined
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      file = formData.get('file')
       const parsed = JSON.parse(formData.get('data') || '{}')
       id = parsed.id
       const { id: _id, ...rest } = parsed
       rawFields = rest
-      if (file && file.size > 0) doc_url = await uploadBillingDoc(file, rawFields.job_id)
     } else {
       const body = await request.json()
       id = body.id
@@ -158,8 +145,12 @@ export async function PATCH(request) {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    if (file && file.size > 0) doc_url = await uploadBillingDoc(file, current.job_id)
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
-    const { error } = await adminSupabase.from('billing_submissions').update(update).eq('id', id)
+    let { error } = await adminSupabase.from('billing_submissions').update(update).eq('id', id)
+    if (error?.message?.includes('schema cache')) {
+      ({ error } = await adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id))
+    }
     if (error) return Response.json({ error: error.message }, { status: 500 })
 
     // Log auditable changes

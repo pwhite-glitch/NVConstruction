@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { isMissingPaymentTypeColumn, PAYMENT_TYPE_NOT_SAVED_WARNING } from '../../../lib/payment-route'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -89,13 +90,15 @@ export async function POST(request) {
 
     const insertRow = { job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url }
 
-    // Try with payment_type first; if the column doesn't exist yet, retry without it
+    // Try with payment_type first; if the column doesn't exist yet (migration 004), save the rest and warn
     if (payment_type) insertRow.payment_type = payment_type
+    let warning = null
     let { data: po, error: poErr } = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
-    if (poErr?.message?.includes('payment_type')) {
+    if (payment_type && isMissingPaymentTypeColumn(poErr)) {
       delete insertRow.payment_type
       const retry = await adminSupabase.from('purchase_orders').insert(insertRow).select().single()
       po = retry.data; poErr = retry.error
+      if (!poErr) warning = PAYMENT_TYPE_NOT_SAVED_WARNING
     }
 
     if (poErr) return Response.json({ error: poErr.message }, { status: 500 })
@@ -113,7 +116,7 @@ export async function POST(request) {
       await adminSupabase.from('purchase_order_items').insert(lineItems)
     }
 
-    return Response.json({ purchase_order: po })
+    return Response.json(warning ? { purchase_order: po, warning } : { purchase_order: po })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
@@ -173,17 +176,19 @@ export async function PUT(request) {
       }
     }
 
+    let warning = null
     if (Object.keys(updates).length > 0) {
       const { error: upErr } = await adminSupabase.from('purchase_orders').update(updates).eq('id', id)
-      if (upErr?.message?.includes('payment_type')) {
+      if ('payment_type' in updates && isMissingPaymentTypeColumn(upErr)) {
         const { payment_type: _pt, ...updatesWithout } = updates
         if (Object.keys(updatesWithout).length > 0) {
           await adminSupabase.from('purchase_orders').update(updatesWithout).eq('id', id)
         }
+        warning = PAYMENT_TYPE_NOT_SAVED_WARNING
       }
     }
 
-    return Response.json({ ok: true })
+    return Response.json(warning ? { ok: true, warning } : { ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

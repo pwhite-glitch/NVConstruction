@@ -13,6 +13,7 @@ import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
 import NewPOForm from './NewPOForm'
 import EditPOForm from './EditPOForm'
+import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
 
 const s = {
   // ── Layout ──
@@ -2200,6 +2201,8 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       setSavingPO(false)
       return
     }
+    const saved = await res.json().catch(() => ({}))
+    if (saved.warning) alert(saved.warning)
     setShowNewPO(false)
     setPOForm({ vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
     setPOFile(null)
@@ -2245,6 +2248,8 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       setSavingPOEdit(false)
       return
     }
+    const edited = await editRes.json().catch(() => ({}))
+    if (edited.warning) alert(edited.warning)
     setEditingPOId(null)
     setEditPOFile(null)
     await loadPurchaseOrders()
@@ -8592,6 +8597,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const taggedGCs = generalConditions.filter(e => e.draw_request_id === dr.id)
                 const undrawnGCsForDraw = generalConditions.filter(e => !e.draw_request_id)
                 const taggedGCTotal = taggedGCs.reduce((a, e) => a + Number(e.amount || 0), 0)
+                const billingRoute = subBillingPaymentRoute(job)
+                const routeTotals = totalsByPaymentRoute([
+                  ...taggedCosts.map(c => ({ route: directCostPaymentRoute(c), amount: (c.is_credit ? -1 : 1) * Number(c.amount || 0) })),
+                  ...taggedPOs.map(po => ({ route: poPaymentRoute(po), amount: po.amount })),
+                  ...taggedGCs.map(e => ({ route: generalConditionPaymentRoute(e), amount: e.amount })),
+                  ...drawBillings.filter(b => b.status === 'approved').map(b => ({ route: billingRoute, amount: b.amount_billed })),
+                ])
+                const payTag = route => (
+                  <span style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '99px', fontWeight: '700', marginLeft: '8px', whiteSpace: 'nowrap', ...(route === REIMBURSEMENT ? { background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' } : { background: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db' }) }}>
+                    {PAYMENT_ROUTE_LABELS[route]}
+                  </span>
+                )
+                const fmtRoute = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                 return (
                   <div key={dr.id} style={{ border: `1px solid ${dr.status === 'open' ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
                     {/* Header row — click to expand */}
@@ -8639,6 +8657,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {isOpen && (
                       <div style={{ borderTop: `1px solid ${dr.status === 'open' ? '#fff7ed' : '#f0f0f0'}`, padding: '1rem 1.25rem', background: '#f9fafb' }}>
 
+                        {/* Subtotal by how each line is paid */}
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', padding: '8px 10px', marginBottom: '1rem', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '13px' }}>
+                          {Object.keys(PAYMENT_ROUTE_LABELS).map(route => (
+                            <span key={route} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {payTag(route)}
+                              <span style={{ fontWeight: '800', color: '#111827' }}>{fmtRoute(routeTotals[route])}</span>
+                            </span>
+                          ))}
+                          <span style={{ fontSize: '11px', color: '#6b7280' }}>Sub billings count once approved.</span>
+                        </div>
+
                         {/* Tagged direct costs */}
                         <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Direct costs drawn ({taggedCosts.length})</p>
                         {taggedCosts.length === 0 ? (
@@ -8650,6 +8679,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div>
                                   <span style={{ color: '#374151' }}>{dc.description}</span>
                                   <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{dc.cost_date} · {dc.category}</span>
+                                  {payTag(directCostPaymentRoute(dc))}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(dc.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -8718,6 +8748,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div>
                                   <span style={{ color: '#374151' }}>{po.vendor_name}</span>
                                   <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{po.po_number}{po.description ? ` · ${po.description}` : ''}</span>
+                                  {payTag(poPaymentRoute(po))}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(po.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -8784,6 +8815,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div>
                                   <span style={{ color: '#374151' }}>{e.description}</span>
                                   <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{e.entry_date} · {e.category}</span>
+                                  {payTag(generalConditionPaymentRoute(e))}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
@@ -8836,6 +8868,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <div>
                                   <span style={{ color: '#374151', fontWeight: '600' }}>{b.company_name}</span>
                                   <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '8px' }}>{new Date(b.submitted_at).toLocaleDateString()}</span>
+                                  {payTag(billingRoute)}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span style={{ color: '#111827', fontWeight: '700' }}>${Number(b.amount_billed).toLocaleString()}</span>

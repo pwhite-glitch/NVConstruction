@@ -2396,7 +2396,7 @@ export default function Submit() {
                     <div style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '12px', borderBottom: '1px solid #f3f4f6', paddingBottom: '8px' }}>{dateLabel}</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {acts.map(act => (
-                        <div key={act.id} style={{ background: '#0d0d0d', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px' }}>
+                        <div key={act.id} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '14px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{act.description}</div>
@@ -2404,13 +2404,13 @@ export default function Submit() {
                               <div style={{ fontSize: '11px', color: '#6b7280' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` · Job #${act.lookaheads.jobs.job_number}` : ''}</div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', flexShrink: 0 }}>
-                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#6b7280' }}>👷 {act.manpower} crew</span>}
+                              {act.manpower > 0 && <span style={{ fontSize: '12px', color: '#6b7280' }}>👷 {act.manpower} people</span>}
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block' }} />
                                 <span style={{ fontSize: '11px', color: '#666' }}>{mLabel[act.materials_status] || 'No materials'}</span>
                               </div>
                               {act.inspection_required && (
-                                <span style={{ fontSize: '11px', color: act.inspection_scheduled ? '#4ade80' : '#f59e0b' }}>🔍 Inspection {act.inspection_scheduled ? 'scheduled' : 'required'}</span>
+                                <span style={{ fontSize: '11px', color: act.inspection_scheduled ? '#16a34a' : '#b45309' }}>🔍 Inspection {act.inspection_scheduled ? 'scheduled' : 'required'}</span>
                               )}
                               {act.committed && <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>✓ Committed</span>}
                             </div>
@@ -2418,10 +2418,13 @@ export default function Submit() {
                           {act.equipment && (
                             <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>Equipment: {act.equipment}</div>
                           )}
-                          {act.constraints_notes && (
-                            <div style={{ marginTop: '10px', padding: '10px', background: '#1a1008', border: '1px solid #2a1a08', borderRadius: '6px', fontSize: '12px', color: '#f59e0b' }}>
-                              ⚠ {act.constraints_notes}
+                          {act.constraints && (
+                            <div style={{ marginTop: '10px', padding: '10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '12px', color: '#92400e' }}>
+                              ⚠ {act.constraints}
                             </div>
+                          )}
+                          {act.constraints_notes && (
+                            <div style={{ marginTop: '8px', fontSize: '12px', color: '#4b5563', fontStyle: 'italic' }}>{act.constraints_notes}</div>
                           )}
                         </div>
                       ))}

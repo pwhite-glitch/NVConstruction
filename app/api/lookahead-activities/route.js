@@ -1,23 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
+import { cleanActivity, withoutNew033 } from '../../../lib/lookahead-fields'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
-
-const ALLOWED = new Set([
-  'lookahead_id', 'planned_date', 'description', 'location',
-  'responsible_type', 'sub_id', 'other_company_name', 'manpower', 'equipment',
-  'materials_status', 'inspection_required', 'inspection_scheduled',
-  'preceding_work_complete', 'committed', 'constraints_notes',
-  'company_equipment_ids', 'additional_companies',
-])
-
-function pick(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(([k]) => ALLOWED.has(k)))
-}
 
 // GET ?from&to — activities on the caller's subcontracts (sub portal Upcoming Work).
 // Office staff may pass ?sub_user_id to look at one sub user's contracts.
@@ -59,16 +48,18 @@ export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const body = pick(await request.json())
+    const body = cleanActivity(await request.json())
     if (!body.lookahead_id || !body.description || !body.planned_date)
       return Response.json({ error: 'lookahead_id, description, planned_date required' }, { status: 400 })
-    const { data, error } = await adminSupabase
-      .from('lookahead_activities')
-      .insert(body)
-      .select('*')
-      .single()
+    const insert = row => adminSupabase.from('lookahead_activities').insert(row).select('*').single()
+    let { data, error } = await insert(body)
+    let warning
+    if (error?.message?.includes('schema cache')) {
+      ({ data, error } = await insert(withoutNew033(body)))
+      if (!error && body.constraints) warning = 'Activity saved, but Constraints were not saved (migration 033 not applied yet).'
+    }
     if (error) return Response.json({ error: error.message }, { status: 500 })
-    return Response.json({ data })
+    return Response.json({ data, warning })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
@@ -81,14 +72,16 @@ export async function PUT(request) {
     const raw = await request.json()
     const { id } = raw
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-    const { data, error } = await adminSupabase
-      .from('lookahead_activities')
-      .update(pick(raw))
-      .eq('id', id)
-      .select('*')
-      .single()
+    const fields = cleanActivity(raw)
+    const update = row => adminSupabase.from('lookahead_activities').update(row).eq('id', id).select('*').single()
+    let { data, error } = await update(fields)
+    let warning
+    if (error?.message?.includes('schema cache')) {
+      ({ data, error } = await update(withoutNew033(fields)))
+      if (!error && fields.constraints) warning = 'Activity saved, but Constraints were not saved (migration 033 not applied yet).'
+    }
     if (error) return Response.json({ error: error.message }, { status: 500 })
-    return Response.json({ data })
+    return Response.json({ data, warning })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

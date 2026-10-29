@@ -12,6 +12,7 @@ import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
 import NewPOForm from './NewPOForm'
+import LookaheadActivityModal from './LookaheadActivityModal'
 import EditPOForm from './EditPOForm'
 import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
 
@@ -559,15 +560,12 @@ function JobDetailInner() {
   const [showActivityModal, setShowActivityModal] = useState(false)
   const [editingActivity, setEditingActivity] = useState(null)
   const [activityForm, setActivityForm] = useState({})
-  const [savingActivity, setSavingActivity] = useState(false)
   const [submittingLookahead, setSubmittingLookahead] = useState(false)
   const [companyEquipment, setCompanyEquipment] = useState([])
   const [showEquipmentMgr, setShowEquipmentMgr] = useState(false)
   const [newEqName, setNewEqName] = useState('')
   const [newEqCategory, setNewEqCategory] = useState('')
   const [addingEquipment, setAddingEquipment] = useState(false)
-  const [newCoName, setNewCoName] = useState('')
-  const [newCoManpower, setNewCoManpower] = useState('')
 
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
@@ -5111,7 +5109,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
       const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
       const inspections = wkActs.filter(a => a.inspection_required)
-      const constraints = wkActs.filter(a => a.constraints_notes)
+      const constraints = wkActs.filter(a => a.constraints)
       return '<div class="week"><div class="week-header"><span class="week-title">Week ' + wkNum + ' — ' + new Date(wkDays[0] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + new Date(wkDays[4] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' +
         (totalManpower > 0 ? '<span>' + totalManpower + ' workers total</span>' : '') +
         (inspections.length > 0 ? '<span class="warn">⚠ ' + inspections.length + ' inspection' + (inspections.length > 1 ? 's' : '') + '</span>' : '') +
@@ -5139,7 +5137,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   (act.preceding_work_complete ? '<span class="tag tag-green">Preceding ✓</span>' : '') +
                   (matStatus || '') +
                   addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
-                  '</div>' + (act.constraints_notes ? '<div class="act-constraint">⛔ ' + act.constraints_notes + '</div>' : '') + '</div>'
+                  '</div>' + (act.constraints ? '<div class="act-constraint">⛔ ' + act.constraints + '</div>' : '') + (act.constraints_notes ? '<div class="act-notes">' + act.constraints_notes + '</div>' : '') + '</div>'
               }).join('')
             ) + '</div>'
         }).join('') + '</div>'
@@ -5170,6 +5168,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       .tag-alert{background:#fef2f2;color:#991b1b;border-color:#fecaca}
       .tag-green{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
       .act-constraint{font-size:11px;color:#991b1b;margin-top:5px;padding-top:5px;border-top:1px solid #fecaca;font-style:italic}
+      .act-notes{font-size:11px;color:#4b5563;margin-top:5px;font-style:italic}
       .empty{font-size:12px;color:#d1d5db;padding:2px 0 6px}
       @media print{body{padding:18px}@page{margin:1.5cm;size:letter portrait}}
     </style></head><body>
@@ -5257,43 +5256,37 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
       inspection_scheduled: false,
       preceding_work_complete: false,
       committed: false,
+      constraints: '',
       constraints_notes: '',
     })
-    setNewCoName('')
-    setNewCoManpower('')
     setShowActivityModal(true)
   }
 
   function openEditActivity(act) {
     setEditingActivity(act)
     setActivityForm({ ...act, additional_companies: act.additional_companies || [] })
-    setNewCoName('')
-    setNewCoManpower('')
     setShowActivityModal(true)
   }
 
-  async function saveActivity() {
-    if (!activityForm.description) return
-    setSavingActivity(true)
-    if (editingActivity) {
+  // Called by LookaheadActivityModal; returns { error } so the modal stays open on failure
+  async function saveActivity(form) {
+    let json
+    try {
       const res = await fetch('/api/lookahead-activities', {
-        method: 'PUT',
+        method: editingActivity ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingActivity.id, ...activityForm }),
+        body: JSON.stringify(editingActivity ? { ...form, id: editingActivity.id } : { ...form, lookahead_id: lookahead.id }),
       })
-      const { data } = await res.json()
-      if (data) setLookaheadActivities(prev => prev.map(a => a.id === data.id ? data : a))
-    } else {
-      const res = await fetch('/api/lookahead-activities', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lookahead_id: lookahead.id, ...activityForm }),
-      })
-      const { data } = await res.json()
-      if (data) setLookaheadActivities(prev => [...prev, data])
+      json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.data) return { error: json.error || `Server error (${res.status})` }
+    } catch (e) {
+      return { error: e.message || 'Network error' }
     }
-    setSavingActivity(false)
+    const { data, warning } = json
+    setLookaheadActivities(prev => editingActivity ? prev.map(a => a.id === data.id ? data : a) : [...prev, data])
     setShowActivityModal(false)
+    if (warning) alert(warning)
+    return {}
   }
 
   async function deleteActivity(actId) {
@@ -12052,7 +12045,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             const wkActs = weekDays.flatMap(dt => activitiesForDay(dt))
             const wkManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
             const wkInspect = wkActs.filter(a => a.inspection_required).length
-            const wkConstraints = wkActs.filter(a => a.constraints_notes).length
+            const wkConstraints = wkActs.filter(a => a.constraints).length
             return (
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
@@ -12076,20 +12069,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           style={{ background: '#ffffff', border: '1px solid #252525', borderRadius: '6px', padding: '8px', cursor: 'pointer', fontSize: '12px' }}
                           onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a3a3a' }}
                           onMouseLeave={e => { e.currentTarget.style.borderColor = '#252525' }}>
-                          <div style={{ fontWeight: '600', color: '#e8e8e8', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
+                          <div style={{ fontWeight: '600', color: '#111827', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
                           {act.location && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>{act.location}</div>}
                           <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
                             {act.responsible_type === 'sub'
-                              ? <span style={{ fontSize: '10px', background: '#1a2e4a', color: '#2563eb', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub'}</span>
+                              ? <span style={{ fontSize: '10px', background: '#eff6ff', color: '#1d4ed8', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub'}</span>
                               : act.responsible_type === 'other'
-                                ? <span style={{ fontSize: '10px', background: '#2a1a0a', color: '#ea580c', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.other_company_name || 'Other'}</span>
+                                ? <span style={{ fontSize: '10px', background: '#fff7ed', color: '#c2410c', borderRadius: '4px', padding: '1px 5px', maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.other_company_name || 'Other'}</span>
                                 : <span style={{ fontSize: '10px', background: '#f0fdf4', color: '#16a34a', borderRadius: '4px', padding: '1px 5px' }}>Own Crew</span>
                             }
                             {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563' }}>👷{act.manpower}</span>}
                             {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7c3aed' }} title={(act.additional_companies || []).map(c => c.name).join(', ')}>+{(act.additional_companies || []).length}</span>}
                             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: mColor[act.materials_status] || '#333', display: 'inline-block', flexShrink: 0 }} title={`Materials: ${act.materials_status || 'none'}`} />
                             {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#16a34a' : '#d97706' }}>🔍</span>}
-                            {act.constraints_notes && <span style={{ fontSize: '10px', color: '#ef4444' }}>⚠</span>}
+                            {act.constraints && <span style={{ fontSize: '10px', color: '#ef4444' }} title={act.constraints}>⚠</span>}
                             {act.committed && <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓</span>}
                             {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#d97706' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
                           </div>
@@ -12142,7 +12135,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   const totalWorkers = lookaheadActivities.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
                   const inspections = lookaheadActivities.filter(a => a.inspection_required)
                   const unscheduled = inspections.filter(a => !a.inspection_scheduled)
-                  const constraints = lookaheadActivities.filter(a => a.constraints_notes)
+                  const constraints = lookaheadActivities.filter(a => a.constraints)
                   const materialsNeeded = lookaheadActivities.filter(a => a.materials_status === 'needed')
                   return (
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #f0f0f0' }}>
@@ -12155,20 +12148,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   )
                 })()}
 
-                {lookahead && lookaheadActivities.some(a => a.inspection_required || a.constraints_notes) && (
+                {lookahead && lookaheadActivities.some(a => a.inspection_required || a.constraints) && (
                   <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f0f0f0' }}>
                     <div style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: '8px' }}>Attention Items</div>
-                    {lookaheadActivities.filter(a => a.inspection_required || a.constraints_notes).map(act => (
+                    {lookaheadActivities.filter(a => a.inspection_required || a.constraints).map(act => (
                       <div key={act.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px solid #f3f4f6', fontSize: '12px' }}>
-                        <span style={{ color: act.constraints_notes ? '#ef4444' : act.inspection_scheduled ? '#16a34a' : '#d97706', flexShrink: 0, fontSize: '13px' }}>
-                          {act.constraints_notes ? '⚠' : act.inspection_scheduled ? '🔍✓' : '🔍'}
+                        <span style={{ color: act.constraints ? '#ef4444' : act.inspection_scheduled ? '#16a34a' : '#d97706', flexShrink: 0, fontSize: '13px' }}>
+                          {act.constraints ? '⚠' : act.inspection_scheduled ? '🔍✓' : '🔍'}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, color: '#e8e8e8', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.description}</div>
+                          <div style={{ fontWeight: 600, color: '#111827', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.description}</div>
                           <div style={{ color: '#6b7280' }}>
                             {new Date(act.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
                             {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#16a34a' : '#d97706', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
-                            {act.constraints_notes && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints_notes}</span>}
+                            {act.constraints && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints}</span>}
                           </div>
                         </div>
                         <button onClick={() => openEditActivity(act)} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '5px', color: '#6b7280', fontSize: '11px', cursor: 'pointer', padding: '3px 8px', flexShrink: 0 }}>Edit</button>
@@ -12222,160 +12215,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               )}
 
               {showActivityModal && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
-                  onClick={e => { if (e.target === e.currentTarget) setShowActivityModal(false) }}>
-                  <div style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{editingActivity ? 'Edit Activity' : 'Add Activity'} — {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
-                      <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div>
-                        <label style={s.label}>Description *</label>
-                        <input style={s.input} value={activityForm.description || ''} onChange={e => setActivityForm(f => ({ ...f, description: e.target.value }))} placeholder="Pour slab, set steel, frame walls..." />
-                      </div>
-                      <div>
-                        <label style={s.label}>Location on Site</label>
-                        <input style={s.input} value={activityForm.location || ''} onChange={e => setActivityForm(f => ({ ...f, location: e.target.value }))} placeholder="Level 2 west, Grid B–D..." />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div>
-                          <label style={s.label}>Responsible</label>
-                          <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.responsible_type || 'own_crew'} onChange={e => setActivityForm(f => ({ ...f, responsible_type: e.target.value, sub_id: '', other_company_name: '' }))}>
-                            <option value="own_crew">Own Crew</option>
-                            <option value="sub">Subcontractor</option>
-                            <option value="other">Other Company</option>
-                          </select>
-                        </div>
-                        <div>
-                          {activityForm.responsible_type === 'sub' ? (
-                            <>
-                              <label style={s.label}>Subcontractor</label>
-                              <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.sub_id || ''} onChange={e => setActivityForm(f => ({ ...f, sub_id: e.target.value }))}>
-                                <option value="">— Select —</option>
-                                {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
-                              </select>
-                            </>
-                          ) : activityForm.responsible_type === 'other' ? (
-                            <>
-                              <label style={s.label}>Company Name</label>
-                              <input style={s.input} value={activityForm.other_company_name || ''} onChange={e => setActivityForm(f => ({ ...f, other_company_name: e.target.value }))} placeholder="Xcel Energy, AT&T, City Inspector..." />
-                            </>
-                          ) : (
-                            <>
-                              <label style={s.label}>Manpower (headcount)</label>
-                              <input style={s.input} type="number" min="0" value={activityForm.manpower || ''} onChange={e => setActivityForm(f => ({ ...f, manpower: parseInt(e.target.value) || 0 }))} placeholder="4" />
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      {(activityForm.responsible_type === 'sub' || activityForm.responsible_type === 'other') && (
-                        <div>
-                          <label style={s.label}>Manpower (headcount)</label>
-                          <input style={s.input} type="number" min="0" value={activityForm.manpower || ''} onChange={e => setActivityForm(f => ({ ...f, manpower: parseInt(e.target.value) || 0 }))} placeholder="4" />
-                        </div>
-                      )}
-                      <div>
-                        <label style={s.label}>Rented / External Equipment</label>
-                        <input style={s.input} value={activityForm.equipment || ''} onChange={e => setActivityForm(f => ({ ...f, equipment: e.target.value }))} placeholder="Concrete pump, scissor lift, forklift..." />
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <label style={{ ...s.label, margin: 0 }}>Additional Companies on Site</label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!newCoName.trim()) return
-                              setActivityForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newCoName.trim(), manpower: parseInt(newCoManpower) || 0 }] }))
-                              setNewCoName('')
-                              setNewCoManpower('')
-                            }}
-                            style={{ background: '#1a2e4a', border: '1px solid #2d4a6a', color: '#2563eb', borderRadius: '6px', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
-                            + Add Company
-                          </button>
-                        </div>
-                        {(activityForm.additional_companies || []).map((co, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '6px', padding: '6px 10px', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
-                            <span>{co.name}{co.manpower > 0 ? <span style={{ color: '#4b5563', marginLeft: '6px' }}>👷{co.manpower}</span> : null}</span>
-                            <button type="button" onClick={() => setActivityForm(f => ({ ...f, additional_companies: (f.additional_companies || []).filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '16px', cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}>×</button>
-                          </div>
-                        ))}
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                          <input style={{ ...s.input, flex: 1 }} value={newCoName} onChange={e => setNewCoName(e.target.value)} placeholder="Company name (Xcel Energy, AT&T...)" onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (newCoName.trim()) { setActivityForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newCoName.trim(), manpower: parseInt(newCoManpower) || 0 }] })); setNewCoName(''); setNewCoManpower('') } } }} />
-                          <input style={{ ...s.input, width: '70px', flexShrink: 0 }} type="number" min="0" value={newCoManpower} onChange={e => setNewCoManpower(e.target.value)} placeholder="# ppl" />
-                        </div>
-                      </div>
-                      <div>
-                        <label style={s.label}>Company Equipment Needed</label>
-                        {companyEquipment.length === 0 ? (
-                          <div style={{ fontSize: '12px', color: '#6b7280', padding: '8px 0' }}>No company equipment added yet — use the ⚙ Equipment button in the header to add your fleet.</div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                            {companyEquipment.map(eq => (
-                              <label key={eq.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
-                                <input type="checkbox"
-                                  checked={(activityForm.company_equipment_ids || []).includes(eq.id)}
-                                  onChange={e => {
-                                    const ids = activityForm.company_equipment_ids || []
-                                    setActivityForm(f => ({ ...f, company_equipment_ids: e.target.checked ? [...ids, eq.id] : ids.filter(i => i !== eq.id) }))
-                                  }}
-                                />
-                                <span>{eq.name}</span>
-                                {eq.category && <span style={{ fontSize: '11px', color: '#6b7280' }}>({eq.category})</span>}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <label style={s.label}>Materials Status</label>
-                        <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.materials_status || 'needed'} onChange={e => setActivityForm(f => ({ ...f, materials_status: e.target.value }))}>
-                          <option value="needed">Need to Order</option>
-                          <option value="ordered">Ordered</option>
-                          <option value="on_site">On Site</option>
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={!!activityForm.inspection_required} onChange={e => setActivityForm(f => ({ ...f, inspection_required: e.target.checked }))} />
-                          Inspection Required
-                        </label>
-                        {activityForm.inspection_required && (
-                          <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer', paddingLeft: '20px' }}>
-                            <input type="checkbox" checked={!!activityForm.inspection_scheduled} onChange={e => setActivityForm(f => ({ ...f, inspection_scheduled: e.target.checked }))} />
-                            Inspection Scheduled
-                          </label>
-                        )}
-                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={!!activityForm.preceding_work_complete} onChange={e => setActivityForm(f => ({ ...f, preceding_work_complete: e.target.checked }))} />
-                          Preceding Work Complete
-                        </label>
-                        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={!!activityForm.committed} onChange={e => setActivityForm(f => ({ ...f, committed: e.target.checked }))} />
-                          Committed
-                        </label>
-                      </div>
-                      <div>
-                        <label style={s.label}>Constraints / Notes</label>
-                        <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} value={activityForm.constraints_notes || ''} onChange={e => setActivityForm(f => ({ ...f, constraints_notes: e.target.value }))} placeholder="Missing approvals, material delays, weather concerns..." />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-                      <div>
-                        {editingActivity && (
-                          <button onClick={() => { deleteActivity(editingActivity.id); setShowActivityModal(false) }}
-                            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', padding: '8px 14px', cursor: 'pointer', fontSize: '13px' }}>Delete</button>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => setShowActivityModal(false)} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', padding: '8px 16px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
-                        <button onClick={saveActivity} disabled={savingActivity || !activityForm.description} style={{ ...s.btn, opacity: !activityForm.description ? 0.5 : 1 }}>
-                          {savingActivity ? 'Saving…' : editingActivity ? 'Save Changes' : 'Add Activity'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <LookaheadActivityModal
+                  s={s}
+                  initialForm={activityForm}
+                  editing={editingActivity}
+                  contracts={contracts}
+                  companyEquipment={companyEquipment}
+                  onSave={saveActivity}
+                  onDelete={deleteActivity}
+                  onClose={() => setShowActivityModal(false)}
+                />
               )}
             </>
           )

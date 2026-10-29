@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { uniqueSubOptions, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 
 const WEATHER = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain', 'Heavy Rain', 'Thunderstorm', 'Snow', 'Windy', 'Extreme Heat', 'Fog']
 
@@ -223,6 +224,7 @@ export default function Field() {
   const [editingLAActivity, setEditingLAActivity] = useState(null)
   const [laForm, setLaForm] = useState({})
   const [savingLA, setSavingLA] = useState(false)
+  const [laError, setLaError] = useState('')
   const [submittingLA, setSubmittingLA] = useState(false)
   const [newLACoName, setNewLACoName] = useState('')
   const [newLACoManpower, setNewLACoManpower] = useState('')
@@ -679,10 +681,11 @@ export default function Field() {
       manpower: '', equipment: '', additional_companies: [],
       materials_status: 'needed', inspection_required: false,
       inspection_scheduled: false, preceding_work_complete: false,
-      committed: false, constraints_notes: '',
+      committed: false, constraints: '', constraints_notes: '',
     })
     setNewLACoName('')
     setNewLACoManpower('')
+    setLaError('')
     setShowLAModal(true)
   }
 
@@ -691,33 +694,28 @@ export default function Field() {
     setLaForm({ ...act, additional_companies: act.additional_companies || [] })
     setNewLACoName('')
     setNewLACoManpower('')
+    setLaError('')
     setShowLAModal(true)
   }
 
   async function saveLAActivity() {
     if (!laForm.description) return
     setSavingLA(true)
+    setLaError('')
     try {
-      if (editingLAActivity) {
-        const res = await fetch('/api/lookahead-activities', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editingLAActivity.id, ...laForm }),
-        })
-        const { data } = await res.json()
-        if (data) setLookaheadActivities(prev => prev.map(a => a.id === data.id ? data : a))
-      } else {
-        const res = await fetch('/api/lookahead-activities', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lookahead_id: lookahead.id, ...laForm }),
-        })
-        const { data } = await res.json()
-        if (data) setLookaheadActivities(prev => [...prev, data])
-      }
+      const res = await fetch('/api/lookahead-activities', {
+        method: editingLAActivity ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingLAActivity ? { ...laForm, id: editingLAActivity.id } : { ...laForm, lookahead_id: lookahead.id }),
+      })
+      const { data, error, warning } = await res.json().catch(() => ({}))
+      // Keep the form open with the input intact so nothing is lost
+      if (!res.ok || !data) { setLaError(error || `Server error (${res.status})`); return }
+      setLookaheadActivities(prev => editingLAActivity ? prev.map(a => a.id === data.id ? data : a) : [...prev, data])
       setShowLAModal(false)
-    } catch {
-      alert('Failed to save activity. Please try again.')
+      if (warning) alert(warning)
+    } catch (e) {
+      setLaError(e.message || 'Network error')
     } finally {
       setSavingLA(false)
     }
@@ -836,7 +834,7 @@ export default function Field() {
                   (act.committed ? '<span class="tag tag-commit">Committed</span>' : '') +
                   (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding ✓</span>' : '') +
                   addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
-                  '</div>' + (act.constraints_notes ? '<div class="act-notes">⚠ ' + act.constraints_notes + '</div>' : '') + '</div>'
+                  '</div>' + (act.constraints ? '<div class="act-notes">⚠ ' + act.constraints + '</div>' : '') + (act.constraints_notes ? '<div class="act-notes">' + act.constraints_notes + '</div>' : '') + '</div>'
               }).join('')
             ) + '</div>'
         }).join('') + '</div>'
@@ -2688,7 +2686,7 @@ export default function Field() {
                                       <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
                                     </div>
                                     {dayActs.map(act => {
-                                      const tc = act.responsible_type === 'sub' ? { bg: '#0a1a2a', fg: '#38bdf8', bd: '#1a3a4a' } : act.responsible_type === 'other' ? { bg: '#2a1a0a', fg: '#fb923c', bd: '#4a2a1a' } : { bg: '#0a1a0a', fg: '#4ade80', bd: '#1a3a1a' }
+                                      const tc = act.responsible_type === 'sub' ? { bg: '#eff6ff', fg: '#1d4ed8', bd: '#bfdbfe' } : act.responsible_type === 'other' ? { bg: '#fff7ed', fg: '#c2410c', bd: '#fed7aa' } : { bg: '#f0fdf4', fg: '#15803d', bd: '#bbf7d0' }
                                       return (
                                         <div key={act.id} style={{ background: tc.bg, border: `1px solid ${tc.bd}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '6px' }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
@@ -2699,16 +2697,17 @@ export default function Field() {
                                                 <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
                                                   {act.responsible_type === 'sub' ? (lookaheadContracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : act.responsible_type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'}
                                                 </span>
-                                                {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#6b7280', padding: '2px 7px', borderRadius: '99px', background: '#f3f4f6', border: '1px solid #d1d5db' }}>{act.manpower} ppl</span>}
-                                                {act.inspection_required && <span style={{ fontSize: '10px', color: '#f59e0b', padding: '2px 7px', borderRadius: '99px', background: '#1a1400', border: '1px solid #3a3000' }}>Inspection</span>}
-                                                {act.committed && <span style={{ fontSize: '10px', color: '#16a34a', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', border: '1px solid #1a3a1a' }}>Committed</span>}
-                                                {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#a855f7', padding: '2px 7px', borderRadius: '99px', background: '#1a0a2a', border: '1px solid #3a1a4a' }}>+{act.additional_companies.length} co</span>}
+                                                {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563', padding: '2px 7px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{act.manpower} people</span>}
+                                                {act.inspection_required && <span style={{ fontSize: '10px', color: '#b45309', padding: '2px 7px', borderRadius: '99px', background: '#fffbeb', border: '1px solid #fde68a' }}>Inspection</span>}
+                                                {act.committed && <span style={{ fontSize: '10px', color: '#15803d', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>Committed</span>}
+                                                {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7e22ce', padding: '2px 7px', borderRadius: '99px', background: '#faf5ff', border: '1px solid #e9d5ff' }}>+{act.additional_companies.length} co</span>}
                                               </div>
-                                              {act.constraints_notes && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
+                                              {act.constraints && <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '6px' }}>⚠ {act.constraints}</div>}
+                                              {act.constraints_notes && <div style={{ fontSize: '11px', color: '#4b5563', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
                                             </div>
                                             <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                                               <button onClick={() => openEditLAActivity(act)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
-                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#1a0a0a', border: '1px solid #3a1a1a', borderRadius: '5px', color: '#ef4444', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
+                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', color: '#dc2626', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
                                             </div>
                                           </div>
                                         </div>
@@ -2755,7 +2754,7 @@ export default function Field() {
                           <label style={s.label}>Subcontractor</label>
                           <select value={laForm.sub_id || ''} onChange={e => setLaForm(f => ({ ...f, sub_id: e.target.value }))} style={s.input}>
                             <option value="">Select subcontractor...</option>
-                            {lookaheadContracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                            {uniqueSubOptions(lookaheadContracts, laForm.sub_id).map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
                           </select>
                         </div>
                       )}
@@ -2767,12 +2766,12 @@ export default function Field() {
                       )}
                       {(laForm.responsible_type === 'own_crew' || laForm.responsible_type === 'sub') && (
                         <div style={{ marginBottom: '1rem' }}>
-                          <label style={s.label}>Manpower</label>
-                          <input type="number" value={laForm.manpower || ''} onChange={e => setLaForm(f => ({ ...f, manpower: e.target.value }))} style={s.input} placeholder="# of workers" min="0" />
+                          <label style={s.label}>Manpower (# people)</label>
+                          <input type="number" value={laForm.manpower || ''} onChange={e => setLaForm(f => ({ ...f, manpower: e.target.value }))} style={s.input} placeholder="4" min="0" />
                         </div>
                       )}
                       <div style={{ marginBottom: '1rem' }}>
-                        <label style={s.label}>Equipment / Notes</label>
+                        <label style={s.label}>Equipment</label>
                         <input value={laForm.equipment || ''} onChange={e => setLaForm(f => ({ ...f, equipment: e.target.value }))} style={s.input} placeholder="Equipment or materials needed" />
                       </div>
 
@@ -2780,13 +2779,13 @@ export default function Field() {
                         <label style={s.label}>Additional Companies on Site</label>
                         {(laForm.additional_companies || []).map((co, idx) => (
                           <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                            <span style={{ flex: 1, fontSize: '13px', color: '#374151', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` — ${co.manpower} ppl` : ''}</span>
+                            <span style={{ flex: 1, fontSize: '13px', color: '#374151', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '7px', padding: '7px 10px' }}>{co.name}{co.manpower ? ` — ${co.manpower} people` : ''}</span>
                             <button onClick={() => setLaForm(f => ({ ...f, additional_companies: f.additional_companies.filter((_, i) => i !== idx) }))} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '4px' }}>✕</button>
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <input value={newLACoName} onChange={e => setNewLACoName(e.target.value)} style={{ ...s.input, flex: 2 }} placeholder="Company name" />
-                          <input type="number" value={newLACoManpower} onChange={e => setNewLACoManpower(e.target.value)} style={{ ...s.input, flex: 1 }} placeholder="# ppl" min="0" />
+                          <input type="number" value={newLACoManpower} onChange={e => setNewLACoManpower(e.target.value)} style={{ ...s.input, flex: 1 }} placeholder="Manpower (# people)" min="0" />
                           <button
                             onClick={() => { if (!newLACoName.trim()) return; setLaForm(f => ({ ...f, additional_companies: [...(f.additional_companies || []), { name: newLACoName.trim(), manpower: newLACoManpower ? parseInt(newLACoManpower) : null }] })); setNewLACoName(''); setNewLACoManpower('') }}
                             style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '12px', fontWeight: '700', cursor: 'pointer', padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
@@ -2798,20 +2797,33 @@ export default function Field() {
                         {[
                           { key: 'inspection_required', label: 'Inspection Required' },
                           { key: 'inspection_scheduled', label: 'Inspection Scheduled' },
-                          { key: 'preceding_work_complete', label: 'Preceding Work Complete' },
-                          { key: 'committed', label: 'Committed' },
-                        ].map(({ key, label }) => (
-                          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={!!laForm[key]} onChange={e => setLaForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
-                            <span style={{ fontSize: '13px', color: '#4b5563' }}>{label}</span>
-                          </label>
+                          { key: 'preceding_work_complete', label: 'Preceding Work Complete', help: PRECEDING_WORK_HELP },
+                          { key: 'committed', label: 'Committed', help: COMMITTED_HELP },
+                        ].map(({ key, label, help }) => (
+                          <div key={key}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={!!laForm[key]} onChange={e => setLaForm(f => ({ ...f, [key]: e.target.checked }))} style={{ accentColor: '#e8590c', width: '16px', height: '16px', flexShrink: 0 }} />
+                              <span style={{ fontSize: '13px', color: '#4b5563' }}>{label}</span>
+                            </label>
+                            {help && <div style={{ fontSize: '11px', color: '#6b7280', margin: '2px 0 0 26px', lineHeight: 1.4 }}>{help}</div>}
+                          </div>
                         ))}
                       </div>
 
-                      <div style={{ marginBottom: '1.5rem' }}>
-                        <label style={s.label}>Constraints / Notes</label>
-                        <textarea value={laForm.constraints_notes || ''} onChange={e => setLaForm(f => ({ ...f, constraints_notes: e.target.value }))} style={{ ...s.input, minHeight: '70px', resize: 'vertical' }} placeholder="Blockers, dependencies, or other notes" />
+                      <div style={{ marginBottom: '1rem' }}>
+                        <label style={s.label}>Constraints</label>
+                        <textarea value={laForm.constraints || ''} onChange={e => setLaForm(f => ({ ...f, constraints: e.target.value }))} style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} placeholder="Blockers or dependencies: approvals, materials, weather" />
                       </div>
+                      <div style={{ marginBottom: '1.5rem' }}>
+                        <label style={s.label}>Notes</label>
+                        <textarea value={laForm.constraints_notes || ''} onChange={e => setLaForm(f => ({ ...f, constraints_notes: e.target.value }))} style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} placeholder="Anything else the crew should know" />
+                      </div>
+
+                      {laError && (
+                        <div style={{ marginBottom: '1rem', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
+                          Could not save: {laError}
+                        </div>
+                      )}
 
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={() => setShowLAModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '10px', color: '#6b7280', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>

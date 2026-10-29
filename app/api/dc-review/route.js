@@ -191,6 +191,15 @@ export async function POST(request) {
     return Response.json({ ok: true })
   }
 
+  // ── REOPEN (undo reject → pending) ──────────────────────────────────────────
+  if (action === 'reopen') {
+    if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    if (cost.status !== 'rejected') return Response.json({ error: 'Only rejected costs can be reopened' }, { status: 422 })
+    const error = await dcUpdate({ status: 'pending', rejection_reason: null, rejected_at: null, rejected_by: null }, id)
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    return Response.json({ ok: true })
+  }
+
   // ── EDIT ─────────────────────────────────────────────────────────────────────
   if (action === 'edit') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })

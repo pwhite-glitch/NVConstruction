@@ -834,6 +834,13 @@ function ResidentialJobDetailInner() {
     setUpdatingCostId(null)
   }
 
+  async function unrejectCost(costId) {
+    setUpdatingCostId(costId)
+    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status: 'pending', rejection_reason: null, rejected_at: null, rejected_by: null }) })
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
   async function approveAllAssigned() {
     const toApprove = directCosts.filter(c => c.status === 'pending' && c.budget_item_id)
     if (toApprove.length === 0) return
@@ -1555,6 +1562,11 @@ function ResidentialJobDetailInner() {
                             )}
                             {c.status === 'approved' && profile?.role === 'pm' && (
                               <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => updateDCStatus(c.id, 'rejected')}>Undo</button>
+                            )}
+                            {c.status === 'rejected' && ['pm', 'apm', 'admin'].includes(profile?.role) && (
+                              <button style={{ ...s.btnSmGray, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d' }} disabled={updatingCostId === c.id} onClick={() => unrejectCost(c.id)}>
+                                {updatingCostId === c.id ? '...' : 'Undo reject'}
+                              </button>
                             )}
                             {profile?.role === 'pm' && (
                               <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => { if (confirm('Delete this cost?')) updateDCStatus(c.id, 'deleted') }}>Delete</button>

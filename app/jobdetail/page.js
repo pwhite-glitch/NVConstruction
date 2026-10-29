@@ -1190,6 +1190,14 @@ function JobDetailInner() {
     setUpdatingCostId(null)
   }
 
+  async function unrejectCost(costId) {
+    setUpdatingCostId(costId)
+    const result = await callDcReview('reopen', costId)
+    if (result.error) alert('Failed: ' + result.error)
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
   async function rejectCost(costId, rejection_reason) {
     if (!rejection_reason.trim()) { alert('A rejection reason is required.'); return }
     setUpdatingCostId(costId)
@@ -10011,6 +10019,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {c.status === 'approved' && canReview && (
                           <button style={s.btnSmallRed} disabled={updatingCostId === c.id} onClick={() => unapproveCost(c.id)}>
                             {updatingCostId === c.id ? '...' : 'Undo approve'}
+                          </button>
+                        )}
+                        {c.status === 'rejected' && canReview && (
+                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' }} disabled={updatingCostId === c.id} onClick={() => unrejectCost(c.id)}>
+                            {updatingCostId === c.id ? '...' : 'Undo reject'}
                           </button>
                         )}
                         <button

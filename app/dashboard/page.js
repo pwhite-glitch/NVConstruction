@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { mondayOf } from '../../lib/lookahead-dates'
+import { stageLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { openStorageFile } from '../../lib/open-file'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { sameCompany } from '../../lib/company-name'
@@ -304,6 +306,10 @@ export default function Dashboard() {
   const [pmNotifications, setPmNotifications] = useState([])
   const [pmNotifUnread, setPmNotifUnread] = useState(0)
   const [pmNotifLoaded, setPmNotifLoaded] = useState(false)
+  // Lookahead tab: submitted lookaheads waiting for review (also the nav badge) and this week's per job
+  const [lookaheadReview, setLookaheadReview] = useState([])
+  const [lookaheadThisWeek, setLookaheadThisWeek] = useState(null)
+  const [lookaheadSearch, setLookaheadSearch] = useState('')
 
   // Per-sub assign-to-job state
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
@@ -549,6 +555,9 @@ export default function Dashboard() {
       }
       await loadAll(jobIds)
       loadTeamData()
+      loadLookaheadReview()
+      // /dashboard?tab=lookahead opens the Lookahead tab
+      if (new URLSearchParams(window.location.search).get('tab') === 'lookahead') setActiveTabValue('lookahead')
       setLoading(false)
     }
     load()
@@ -581,7 +590,26 @@ export default function Dashboard() {
     if (activeTab === 'permissions') loadAllPermissions()
     if (activeTab === 'my-work' && !myWork && !myWorkLoading) loadMyWork()
     if (activeTab === 'notifications' && !pmNotifLoaded) loadPmNotifications()
+    if (activeTab === 'lookahead') { loadLookaheadReview(); if (!lookaheadThisWeek) loadLookaheadThisWeek() }
   }, [activeTab])
+
+  async function loadLookaheadReview() {
+    try {
+      const res = await authFetch('/api/lookaheads?status=submitted&summary=1')
+      if (!res.ok) return
+      const { data } = await res.json()
+      setLookaheadReview(Array.isArray(data) ? data : [])
+    } catch {}
+  }
+
+  async function loadLookaheadThisWeek() {
+    try {
+      const res = await authFetch(`/api/lookaheads?week_start=${mondayOf(new Date().toISOString().slice(0, 10))}&summary=1`)
+      if (!res.ok) return
+      const { data } = await res.json()
+      setLookaheadThisWeek(Array.isArray(data) ? data : [])
+    } catch { setLookaheadThisWeek([]) }
+  }
 
   async function loadAllPermissions() {
     setPermsLoading(true)
@@ -3341,6 +3369,9 @@ ${estimate.notes ? `
   const myWorkTotal = myWork ? ((myWork.salesTasks?.length || 0) + (myWork.rfis?.length || 0) + (myWork.billing?.length || 0) + (myWork.actionItems?.length || 0) + (myWork.milestones?.length || 0)) : null
   const myWorkBadge = myWorkTotal || null
   const notifBadge = pmNotifUnread || null
+  const visibleJobIds = new Set(jobs.map(j => j.id))
+  const lookaheadsToReview = lookaheadReview.filter(l => visibleJobIds.has(l.job_id))
+  const lookaheadBadge = lookaheadsToReview.length || null
 
   // p() checks the permissions table when loaded, falls back to role-based defaults while loading
   const p = userPerms
@@ -3359,6 +3390,7 @@ ${estimate.notes ? `
       items: [
         { tab: 'jobs',        label: 'Commercial',  icon: <IconBriefcase /> },
         { tab: 'residential', label: 'Residential', icon: <IconResidential /> },
+        { tab: 'lookahead',   label: 'Lookahead',   icon: <IconCal />, badge: lookaheadBadge },
       ]
     },
     {
@@ -3690,6 +3722,11 @@ ${estimate.notes ? `
                   return <p style={s.ovSub}>{over60 > 0 ? `${over60} over 60d · ` : ''}{over30 > 0 ? `${over30} over 30d · ` : ''}click to review</p>
                 })()}
               </div>
+              <div className="nv-stat-card" style={{ ...s.ovCard, cursor: 'pointer' }} onClick={() => setActiveTab('lookahead')}>
+                <p style={s.ovLabel}>Lookaheads to review</p>
+                <div style={s.ovValue(lookaheadsToReview.length ? '#16a34a' : null)}>{lookaheadsToReview.length}</div>
+                <p style={s.ovSub}>Open 2-week lookahead →</p>
+              </div>
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending applications</p>
                 <div style={s.ovValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
@@ -3824,6 +3861,65 @@ ${estimate.notes ? `
               )
             })()}
 
+            {/* ── LOOKAHEAD ── */}
+            {activeTab === 'lookahead' && (() => {
+              const thisMonday = mondayOf(new Date().toISOString().slice(0, 10))
+              const open = (jobId, week) => router.push(`/jobdetail?id=${jobId}&tab=lookahead${week ? `&week=${week}` : ''}`)
+              const fmtWeek = w => new Date(w + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+              const byJob = Object.fromEntries((lookaheadThisWeek || []).map(l => [l.job_id, l]))
+              const q = lookaheadSearch.trim().toLowerCase()
+              const list = activeJobs
+                .filter(j => !q || j.project_name?.toLowerCase().includes(q) || String(j.job_number || '').includes(q))
+                .sort((a, b) => String(a.job_number || '').localeCompare(String(b.job_number || ''), undefined, { numeric: true }))
+              const pill = la => {
+                const st = lookaheadStage(la)
+                const c = !la ? ['#9ca3af', '#f9fafb', '#e5e7eb'] : st === 'draft' ? ['#b45309', '#fffbeb', '#fde68a'] : ['#15803d', '#f0fdf4', '#bbf7d0']
+                return <span style={{ fontSize: '11px', fontWeight: '700', color: c[0], background: c[1], border: `1px solid ${c[2]}`, borderRadius: '99px', padding: '2px 9px', whiteSpace: 'nowrap' }}>{la ? stageLabel(la) : 'Not started'}</span>
+              }
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>2-Week Lookahead</h2>
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>Pick a job to open its lookahead</span>
+                  </div>
+
+                  {lookaheadsToReview.length > 0 && (
+                    <div style={{ marginBottom: '1.75rem' }}>
+                      <p style={{ ...s.ovSectionTitle, margin: '0 0 0.75rem' }}>Submitted — awaiting your review</p>
+                      <div style={s.sectionCard}>
+                        {lookaheadsToReview.map((l, i) => (
+                          <div key={l.id} className="nv-table-row" onClick={() => open(l.job_id, l.week_start_date)} style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', borderBottom: i < lookaheadsToReview.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                            <div>
+                              <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>#{l.jobs?.job_number} · {l.jobs?.project_name}</p>
+                              <span style={{ fontSize: '12px', color: '#6b7280' }}>Week of {fmtWeek(l.week_start_date)}{l.submitted_by_name ? ` · by ${l.submitted_by_name}` : ''}{l.submitted_at ? ` · ${new Date(l.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}</span>
+                            </div>
+                            <span style={{ fontSize: '12px', color: '#16a34a', flexShrink: 0 }}>Review →</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                    <p style={{ ...s.ovSectionTitle, margin: 0 }}>Active jobs — week of {fmtWeek(thisMonday)}</p>
+                    {activeJobs.length > 8 && <input type="search" placeholder="Search jobs…" value={lookaheadSearch} onChange={e => setLookaheadSearch(e.target.value)} style={{ padding: '7px 12px', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '13px', minWidth: '200px' }} />}
+                  </div>
+                  <div style={s.sectionCard}>
+                    {list.length === 0 && <p style={{ margin: 0, padding: '1.5rem', color: '#6b7280', fontSize: '14px', textAlign: 'center' }}>No active jobs.</p>}
+                    {list.map((j, i) => (
+                      <div key={j.id} className="nv-table-row" onClick={() => open(j.id, thisMonday)} style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', borderBottom: i < list.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>#{j.job_number} · {j.project_name}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                          {lookaheadThisWeek === null ? <span style={{ fontSize: '12px', color: '#9ca3af' }}>…</span> : pill(byJob[j.id])}
+                          <span style={{ fontSize: '12px', color: '#e8590c' }}>Open →</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )
+            })()}
+
             {/* ── NOTIFICATIONS ── */}
             {activeTab === 'notifications' && (
               <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
@@ -3840,8 +3936,8 @@ ${estimate.notes ? `
                   )}
                   {pmNotifications.map(n => {
                     const isUnread = !n.read_at
-                    const typeColor = n.type === 'billing_approved' ? '#16a34a' : n.type === 'billing_rejected' ? '#dc2626' : n.type === 'punch_assigned' ? '#e8590c' : '#2563eb'
-                    const typeLabel = { billing_approved: 'Approved', billing_rejected: 'Returned', punch_assigned: 'Punch list', rfi_answered: 'RFI answered' }[n.type] || n.type
+                    const typeColor = n.type === 'billing_approved' || n.type === 'lookahead_submitted' ? '#16a34a' : n.type === 'billing_rejected' ? '#dc2626' : n.type === 'punch_assigned' ? '#e8590c' : '#2563eb'
+                    const typeLabel = { billing_approved: 'Approved', billing_rejected: 'Returned', punch_assigned: 'Punch list', rfi_answered: 'RFI answered', lookahead_submitted: 'Lookahead to review' }[n.type] || n.type
                     const ago = (() => {
                       const d = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
                       if (d < 60) return `${d}m ago`
@@ -3849,7 +3945,7 @@ ${estimate.notes ? `
                       return `${Math.floor(d / 1440)}d ago`
                     })()
                     return (
-                      <div key={n.id} className="nv-table-row" onClick={() => { if (isUnread) markPmNotifRead(n.id); if (n.job_id) router.push(`/jobdetail?id=${n.job_id}`) }} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6', cursor: n.job_id ? 'pointer' : 'default', opacity: isUnread ? 1 : 0.55, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <div key={n.id} className="nv-table-row" onClick={() => { if (isUnread) markPmNotifRead(n.id); if (n.link?.startsWith('/')) router.push(n.link); else if (n.job_id) router.push(`/jobdetail?id=${n.job_id}`) }} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6', cursor: n.job_id ? 'pointer' : 'default', opacity: isUnread ? 1 : 0.55, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                         {isUnread && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: typeColor, marginTop: '5px', flexShrink: 0 }} />}
                         {!isUnread && <div style={{ width: '7px', height: '7px', flexShrink: 0 }} />}
                         <div style={{ flex: 1 }}>

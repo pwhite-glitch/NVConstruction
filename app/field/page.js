@@ -2,7 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { uniqueSubOptions, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
+import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
+import { addDays, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
+import { rainFlagged } from '../../lib/lookahead-weather'
+import { openLookaheadPrint } from '../../lib/lookahead-print'
+import * as lookaheadApi from '../../lib/lookahead-client'
+import { StatusChip, DayWeather, RainTag, WorkflowBar, ActivityDateFields, FormHint, MoveToDaySelect, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
 
 const WEATHER = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain', 'Heavy Rain', 'Thunderstorm', 'Snow', 'Windy', 'Extreme Heat', 'Fog']
 
@@ -92,6 +97,7 @@ export default function Field() {
   const [assignedJobs, setAssignedJobs] = useState([])
   const [selectedJobId, setSelectedJobId] = useState('')
   const [activeTab, setActiveTab] = useState('')
+  const [pendingTab, setPendingTab] = useState('') // tab to open once a project is picked (header Lookahead link)
   const [coverUrls, setCoverUrls] = useState({})
   const [jobSearch, setJobSearch] = useState('')
 
@@ -228,6 +234,8 @@ export default function Field() {
   const [submittingLA, setSubmittingLA] = useState(false)
   const [newLACoName, setNewLACoName] = useState('')
   const [newLACoManpower, setNewLACoManpower] = useState('')
+  const [copyingLA, setCopyingLA] = useState(false)
+  const laForecast = useLookaheadForecast(activeTab === 'lookahead' ? selectedJobId : null)
 
   useEffect(() => {
     async function load() {
@@ -249,6 +257,15 @@ export default function Field() {
       }
       setAssignedJobs(jobs)
       loadCoverUrls(jobs)
+      // Bookmarkable links: /field?job=<id>&tab=lookahead&week=YYYY-MM-DD
+      const params = new URLSearchParams(window.location.search)
+      const pJob = params.get('job')
+      const pTab = params.get('tab')
+      const pWeek = params.get('week')
+      if (pWeek && /^\d{4}-\d{2}-\d{2}$/.test(pWeek)) setLookaheadWeekStart(mondayOf(pWeek))
+      const linkedJob = jobs.find(j => j.id === pJob) || (pTab && jobs.length === 1 ? jobs[0] : null)
+      if (linkedJob) { setSelectedJobId(linkedJob.id); if (pTab) setActiveTab(pTab) }
+      else if (pTab) setPendingTab(pTab)
       await loadAssignedVehicles(session.user.id)
       await loadMyTools(session.user.id)
     }
@@ -260,6 +277,26 @@ export default function Field() {
   }, [])
 
   useEffect(() => { if (selectedJobId) checkTodayReport() }, [selectedJobId])
+
+  // Keep the project, tab and lookahead week in the URL so the view can be bookmarked
+  useEffect(() => {
+    if (!profile) return
+    const params = new URLSearchParams()
+    if (selectedJobId) params.set('job', selectedJobId)
+    if (activeTab) params.set('tab', activeTab)
+    else if (pendingTab) params.set('tab', pendingTab)
+    if ((activeTab || pendingTab) === 'lookahead') params.set('week', lookaheadWeekStart)
+    const qs = params.toString()
+    const next = window.location.pathname + (qs ? `?${qs}` : '')
+    if (next !== window.location.pathname + window.location.search) window.history.replaceState(window.history.state, '', next)
+  }, [profile, selectedJobId, activeTab, pendingTab, lookaheadWeekStart])
+
+  // Header "Lookahead" link: straight to the lookahead, picking a project first if needed
+  function openLookaheadNav() {
+    if (selectedJobId) { setActiveTab('lookahead'); return }
+    if (assignedJobs.length === 1) { setSelectedJobId(assignedJobs[0].id); setActiveTab('lookahead'); return }
+    setPendingTab('lookahead')
+  }
 
   useEffect(() => { if (activeTab === 'daily') setWizardStep(1) }, [activeTab])
 
@@ -676,7 +713,7 @@ export default function Field() {
   function openAddLAActivity(date) {
     setEditingLAActivity(null)
     setLaForm({
-      planned_date: date, description: '', location: '',
+      planned_date: date, end_date: '', description: '', location: '',
       responsible_type: 'own_crew', sub_id: '', other_company_name: '',
       manpower: '', equipment: '', additional_companies: [],
       materials_status: 'needed', inspection_required: false,
@@ -691,7 +728,7 @@ export default function Field() {
 
   function openEditLAActivity(act) {
     setEditingLAActivity(act)
-    setLaForm({ ...act, additional_companies: act.additional_companies || [] })
+    setLaForm({ ...act, end_date: act.end_date || '', additional_companies: act.additional_companies || [] })
     setNewLACoName('')
     setNewLACoManpower('')
     setLaError('')
@@ -699,7 +736,7 @@ export default function Field() {
   }
 
   async function saveLAActivity() {
-    if (!laForm.description) return
+    if (activityProblem(laForm)) return
     setSavingLA(true)
     setLaError('')
     try {
@@ -739,25 +776,45 @@ export default function Field() {
   async function submitLookaheadFromField() {
     if (!lookahead) return
     setSubmittingLA(true)
-    try {
-      const res = await fetch('/api/lookaheads', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: lookahead.id, status: 'submitted' }),
-      })
-      const { data } = await res.json()
-      if (data) setLookahead(prev => ({ ...prev, ...data }))
-    } catch {
-      alert('Failed to submit lookahead. Please try again.')
-    } finally {
-      setSubmittingLA(false)
+    const { data, error, warning } = await lookaheadApi.setLookaheadStatus(lookahead.id, 'submitted')
+    setSubmittingLA(false)
+    if (data) setLookahead(prev => ({ ...prev, ...data }))
+    if (error) alert(`Failed to submit lookahead: ${error}`)
+    else if (warning) alert(warning)
+  }
+
+  async function copyLAFromLastWeek() {
+    setCopyingLA(true)
+    const { data, added, error, warning } = await lookaheadApi.copyFromLastWeek(selectedJobId, lookaheadWeekStart, user?.id)
+    setCopyingLA(false)
+    if (error) { alert(error); return }
+    setLookahead(data)
+    setLookaheadActivities(data?.lookahead_activities || [])
+    alert(warning || (added ? `Copied ${added} unfinished activit${added === 1 ? 'y' : 'ies'} from last week.` : 'Nothing to copy: last week has no unfinished activities that aren\'t already here.'))
+  }
+
+  // Status chip and Move to day: save just those fields, show the change at once
+  async function patchLAActivity(act, fields) {
+    setLookaheadActivities(prev => prev.map(a => a.id === act.id ? { ...a, ...fields } : a))
+    const { data, error, warning } = await lookaheadApi.updateActivity(act.id, fields)
+    if (error) {
+      setLookaheadActivities(prev => prev.map(a => a.id === act.id ? act : a))
+      alert(`Could not save: ${error}`)
+      return
     }
+    setLookaheadActivities(prev => prev.map(a => a.id === act.id ? data : a))
+    if (warning) alert(warning)
+  }
+
+  async function duplicateLAActivity(act) {
+    const { data, error, warning } = await lookaheadApi.duplicateActivity(act)
+    if (error) { alert(`Could not duplicate: ${error}`); return }
+    setLookaheadActivities(prev => [...prev, data])
+    if (warning) alert(warning)
   }
 
   function shiftLookaheadWeek(delta) {
-    const d = new Date(lookaheadWeekStart + 'T12:00:00Z')
-    d.setDate(d.getDate() + delta * 7)
-    const newStart = d.toISOString().split('T')[0]
+    const newStart = addDays(lookaheadWeekStart, delta * 7)
     setLookaheadWeekStart(newStart)
     setLookahead(null)
     setLookaheadActivities([])
@@ -767,81 +824,7 @@ export default function Field() {
   function printLookahead() {
     if (!lookahead) return
     const selectedJob = assignedJobs.find(j => j.id === selectedJobId)
-    const jobName = selectedJob?.name || selectedJob?.address || 'Project'
-    const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
-    const weekEnd = new Date(wkBase.getTime() + 11 * 86400000)
-    const dateRange = wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
-    const weekDays = []
-    for (let w = 0; w < 2; w++) for (let d = 0; d < 5; d++) { const day = new Date(wkBase); day.setDate(day.getDate() + w * 7 + d); weekDays.push(day.toISOString().split('T')[0]) }
-    const todayStr = new Date().toISOString().split('T')[0]
-    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>2-Week Lookahead — ${jobName}</title><style>
-      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:32px;font-size:13px}
-      h1{font-size:20px;font-weight:800;margin:0 0 4px}
-      .sub{color:#666;font-size:13px;margin:0 0 28px}
-      .week{margin-bottom:32px;page-break-inside:avoid}
-      .week-header{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px}
-      .week-title{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#555}
-      .week-stats{font-size:11px;color:#888;display:flex;gap:12px}
-      .day{margin-bottom:12px}
-      .day-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-      .day-name{font-size:13px;font-weight:700}
-      .day-date{font-size:11px;color:#888}
-      .today .day-name{color:#e8590c}
-      .activity{border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;margin-bottom:5px}
-      .act-own{border-left:3px solid #22c55e}
-      .act-sub{border-left:3px solid #38bdf8}
-      .act-other{border-left:3px solid #fb923c}
-      .act-title{font-size:13px;font-weight:600;margin-bottom:4px}
-      .act-meta{display:flex;flex-wrap:wrap;gap:5px;font-size:11px;color:#555;align-items:center}
-      .tag{padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap}
-      .tag-own{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
-      .tag-sub{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
-      .tag-other{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
-      .tag-inspect{background:#fffbeb;color:#b45309;border:1px solid #fde68a}
-      .tag-commit{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-      .act-notes{font-size:11px;color:#888;margin-top:5px;font-style:italic;padding-top:5px;border-top:1px solid #f3f4f6}
-      .empty{font-size:12px;color:#ccc;padding:4px 0 6px}
-      @media print{body{padding:16px}@page{margin:1.5cm}}
-    </style></head><body>
-    <h1>2-Week Lookahead</h1>
-    <p class="sub">${jobName} · ${dateRange}${lookahead.status === 'submitted' ? ' · Submitted' : ' · Draft'}</p>
-    ${[0, 1].map(w => {
-      const wkStart = new Date(wkBase.getTime() + w * 7 * 86400000)
-      const wkDays = weekDays.slice(w * 5, w * 5 + 5)
-      const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
-      const totalManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
-      const inspections = wkActs.filter(a => a.inspection_required).length
-      return '<div class="week"><div class="week-header"><span class="week-title">Week ' + (w + 1) + ' — ' + wkStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + '</span><span class="week-stats">' + (totalManpower > 0 ? '<span>' + totalManpower + ' workers</span>' : '') + (inspections > 0 ? '<span>⚠️ ' + inspections + ' inspection' + (inspections > 1 ? 's' : '') + '</span>' : '') + (wkActs.length > 0 ? '<span>' + wkActs.length + ' activities</span>' : '') + '</span></div>' +
-        dayNames.map((dayName, di) => {
-          const dateStr = wkDays[di]
-          const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
-          const dateLabel = new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
-          const isToday = dateStr === todayStr
-          return '<div class="day' + (isToday ? ' today' : '') + '"><div class="day-header"><span class="day-name">' + dayName + '</span><span class="day-date">' + dateLabel + (isToday ? ' · TODAY' : '') + '</span></div>' +
-            (dayActs.length === 0 ? '<div class="empty">No activities scheduled</div>' :
-              dayActs.map(act => {
-                const type = act.responsible_type === 'sub' ? 'sub' : act.responsible_type === 'other' ? 'other' : 'own'
-                const responsible = type === 'sub' ? (lookaheadContracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'
-                const mp = parseInt(act.manpower) || 0
-                const addlCos = (act.additional_companies || [])
-                return '<div class="activity act-' + type + '"><div class="act-title">' + act.description + '</div><div class="act-meta"><span class="tag tag-' + type + '">' + responsible + '</span>' +
-                  (mp > 0 ? '<span>' + mp + ' workers</span>' : '') +
-                  (act.location ? '<span>📍 ' + act.location + '</span>' : '') +
-                  (act.equipment ? '<span>⚙️ ' + act.equipment + '</span>' : '') +
-                  (act.inspection_required ? '<span class="tag tag-inspect">Inspection Required</span>' : '') +
-                  (act.inspection_scheduled ? '<span class="tag tag-inspect">Scheduled</span>' : '') +
-                  (act.committed ? '<span class="tag tag-commit">Committed</span>' : '') +
-                  (act.preceding_work_complete ? '<span class="tag tag-commit">Preceding ✓</span>' : '') +
-                  addlCos.map(co => '<span class="tag tag-other">+' + co.name + (co.manpower ? ' (' + co.manpower + ')' : '') + '</span>').join('') +
-                  '</div>' + (act.constraints ? '<div class="act-notes">⚠ ' + act.constraints + '</div>' : '') + (act.constraints_notes ? '<div class="act-notes">' + act.constraints_notes + '</div>' : '') + '</div>'
-              }).join('')
-            ) + '</div>'
-        }).join('') + '</div>'
-    }).join('')}
-    <script>window.onload=()=>window.print()</script></body></html>`
-    const w = window.open('', '_blank')
-    if (w) { w.document.write(html); w.document.close() }
+    openLookaheadPrint({ job: selectedJob, lookahead, weekStart: lookaheadWeekStart, activities: lookaheadActivities, contracts: lookaheadContracts, forecast: laForecast })
   }
 
   async function loadToolLogsForTool(toolId) {
@@ -1082,7 +1065,14 @@ export default function Field() {
               <div style={s.logoSub}>{profile?.full_name || 'Field Portal'}</div>
             </div>
           </div>
-          <button style={s.signOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {assignedJobs.length > 0 && (
+              <button onClick={openLookaheadNav} style={{ ...s.signOut, display: 'flex', alignItems: 'center', gap: '6px', color: activeTab === 'lookahead' ? '#e8590c' : '#374151', borderColor: activeTab === 'lookahead' ? '#fdba74' : '#e5e7eb', fontWeight: 600 }}>
+                <span style={{ display: 'flex', transform: 'scale(0.8)' }}>{IC.lookahead}</span>Lookahead
+              </button>
+            )}
+            <button style={s.signOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+          </div>
         </div>
       </header>
 
@@ -1095,6 +1085,12 @@ export default function Field() {
               <>
                 <div style={{ marginBottom: '1.25rem' }}>
                   <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#111827' }}>Your Projects</h2>
+                  {pendingTab === 'lookahead' && (
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: '#c2410c', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      Pick a project to open its 2-week lookahead.
+                      <button onClick={() => setPendingTab('')} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Cancel</button>
+                    </div>
+                  )}
                 </div>
                 {assignedJobs.length > 1 && (
                   <input type="search" placeholder="Search projects..." value={jobSearch} onChange={e => setJobSearch(e.target.value)} style={{ ...s.input, marginBottom: '1rem' }} />
@@ -1103,7 +1099,7 @@ export default function Field() {
                   {assignedJobs
                     .filter(j => !jobSearch || j.project_name?.toLowerCase().includes(jobSearch.toLowerCase()) || String(j.job_number || '').includes(jobSearch))
                     .map(j => (
-                      <div key={j.id} onClick={() => { setSelectedJobId(j.id); setJobSearch('') }} style={{ cursor: 'pointer', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                      <div key={j.id} onClick={() => { setSelectedJobId(j.id); setJobSearch(''); if (pendingTab) { setActiveTab(pendingTab); setPendingTab('') } }} style={{ cursor: 'pointer', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                         <div style={{ position: 'relative', paddingBottom: '58%', background: '#f3f4f6', overflow: 'hidden' }}>
                           {coverUrls[j.id]
                             ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -2609,27 +2605,24 @@ export default function Field() {
 
                 {/* 2-WEEK LOOKAHEAD */}
                 {activeTab === 'lookahead' && (() => {
-                  const weekDays = []
-                  const wkBase = new Date(lookaheadWeekStart + 'T12:00:00Z')
-                  for (let w = 0; w < 2; w++) {
-                    for (let d = 0; d < 5; d++) {
-                      const day = new Date(wkBase)
-                      day.setDate(wkBase.getDate() + w * 7 + d)
-                      weekDays.push(day.toISOString().split('T')[0])
-                    }
-                  }
-                  const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+                  const weekDays = lookaheadDays(lookaheadWeekStart)
                   const todayStr = new Date().toISOString().split('T')[0]
-                  const week2Start = new Date(wkBase); week2Start.setDate(wkBase.getDate() + 7)
+                  const fmtShort = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+                  const smallBtn = { background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }
+                  const copyBtn = (
+                    <button onClick={copyLAFromLastWeek} disabled={copyingLA} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: copyingLA ? 'default' : 'pointer' }}>
+                      {copyingLA ? 'Copying...' : 'Copy from last week'}
+                    </button>
+                  )
                   return (
                     <div>
                       {/* Week navigation */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                         <button onClick={() => shiftLookaheadWeek(-1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.arrowL} Prev</button>
                         <span style={{ fontSize: '12px', fontWeight: '700', color: '#666', textAlign: 'center' }}>
-                          {wkBase.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                          {fmtShort(weekDays[0])}
                           {' – '}
-                          {new Date(wkBase.getTime() + 11 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
+                          {new Date(weekDays[9] + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                         </span>
                         <button onClick={() => shiftLookaheadWeek(1)} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>Next {IC.arrowR}</button>
                       </div>
@@ -2637,77 +2630,89 @@ export default function Field() {
                       {!lookahead ? (
                         <div style={s.card}>
                           <p style={{ color: '#666', fontSize: '14px', marginBottom: '1rem', textAlign: 'center', margin: '0 0 1rem' }}>No lookahead created for this week yet.</p>
-                          <button onClick={createLookahead} style={{ ...s.btn, width: '100%', textAlign: 'center' }}>Start This Week's Lookahead</button>
+                          <button onClick={createLookahead} style={{ ...s.btn, width: '100%', textAlign: 'center', marginBottom: '8px' }}>Start This Week's Lookahead</button>
+                          <div style={{ display: 'flex', justifyContent: 'center' }}>{copyBtn}</div>
                         </div>
                       ) : (
                         <>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', gap: '10px', flexWrap: 'wrap' }}>
-                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: lookahead.status === 'submitted' ? '#0a2a0a' : '#1a1a0a', color: lookahead.status === 'submitted' ? '#4ade80' : '#f59e0b', border: `1px solid ${lookahead.status === 'submitted' ? '#1a4a1a' : '#3a3a0a'}` }}>
-                              {lookahead.status === 'submitted' ? '✓ Submitted to PM' : 'Draft'}
-                            </span>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <div style={{ marginBottom: '1rem' }}>
+                            <WorkflowBar lookahead={lookahead} />
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
                               <button onClick={printLookahead} style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.dnload} Download PDF</button>
+                              {copyBtn}
                               <button
                                 onClick={submitLookaheadFromField}
                                 disabled={submittingLA || lookaheadActivities.length === 0}
                                 style={{ padding: '7px 16px', background: submittingLA || lookaheadActivities.length === 0 ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '8px', color: submittingLA || lookaheadActivities.length === 0 ? '#555' : '#fff', fontSize: '13px', fontWeight: '700', cursor: submittingLA || lookaheadActivities.length === 0 ? 'default' : 'pointer' }}
                               >
-                                {submittingLA ? 'Submitting...' : lookahead.status === 'submitted' ? 'Re-submit' : 'Submit to PM'}
+                                {submittingLA ? 'Submitting...' : lookahead.status === 'draft' || !lookahead.status ? 'Submit to PM' : 'Re-submit to PM'}
                               </button>
                             </div>
                           </div>
 
                           {[0, 1].map(w => {
                             const wkDays = weekDays.slice(w * 5, w * 5 + 5)
-                            const wkActs = lookaheadActivities.filter(a => wkDays.includes(a.planned_date))
+                            const wkActs = activitiesInDays(lookaheadActivities, wkDays)
                             const wkManpower = wkActs.reduce((s, a) => s + (parseInt(a.manpower) || 0) + (a.additional_companies || []).reduce((s2, co) => s2 + (parseInt(co.manpower) || 0), 0), 0)
                             const wkInspections = wkActs.filter(a => a.inspection_required).length
+                            const wkConstraints = wkActs.filter(hasOpenConstraint).length
                             return (
                             <div key={w} style={{ marginBottom: '1.25rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #f3f4f6' }}>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} — {(w === 0 ? wkBase : week2Start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Week {w + 1} — {fmtShort(wkDays[0])}</span>
                                 <span style={{ display: 'flex', gap: '10px' }}>
                                   {wkManpower > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{wkManpower} workers</span>}
                                   {wkInspections > 0 && <span style={{ fontSize: '11px', color: '#f59e0b' }}>⚠ {wkInspections} inspection{wkInspections > 1 ? 's' : ''}</span>}
+                                  {wkConstraints > 0 && <span style={{ fontSize: '11px', color: '#b91c1c' }}>{wkConstraints} open constraint{wkConstraints > 1 ? 's' : ''}</span>}
                                 </span>
                               </div>
-                              {DAY_LABELS.map((dayLabel, di) => {
-                                const dateStr = weekDays[w * 5 + di]
-                                const dayActs = lookaheadActivities.filter(a => a.planned_date === dateStr)
+                              {wkDays.map(dateStr => {
+                                const dayActs = activitiesForDay(lookaheadActivities, dateStr)
                                 const isToday = dateStr === todayStr
+                                const wx = laForecast[dateStr]
                                 return (
                                   <div key={dateStr} style={{ background: '#ffffff', border: `1px solid ${isToday ? '#3a2200' : '#222'}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dayActs.length ? '10px' : 0 }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: '700', color: isToday ? '#e8590c' : '#aaa' }}>{dayLabel}</span>
-                                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dayActs.length ? '10px' : 0, gap: '8px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '13px', fontWeight: '700', color: isToday ? '#e8590c' : '#aaa' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}</span>
+                                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtShort(dateStr)}</span>
                                         {isToday && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '99px', padding: '1px 6px' }}>TODAY</span>}
+                                        <DayWeather day={wx} align="flex-start" />
                                       </div>
-                                      <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px' }}>+ Add</button>
+                                      <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px', flexShrink: 0 }}>+ Add</button>
                                     </div>
                                     {dayActs.map(act => {
                                       const tc = act.responsible_type === 'sub' ? { bg: '#eff6ff', fg: '#1d4ed8', bd: '#bfdbfe' } : act.responsible_type === 'other' ? { bg: '#fff7ed', fg: '#c2410c', bd: '#fed7aa' } : { bg: '#f0fdf4', fg: '#15803d', bd: '#bbf7d0' }
+                                      const rain = rainFlagged(act, wx)
+                                      const span = dayOfRange(act, dateStr)
                                       return (
-                                        <div key={act.id} style={{ background: tc.bg, border: `1px solid ${tc.bd}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '6px' }}>
+                                        <div key={act.id} style={{ background: tc.bg, border: `1px solid ${rain ? '#fca5a5' : tc.bd}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '6px', opacity: act.status === 'done' ? 0.65 : 1 }}>
                                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>{act.description}</div>
+                                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', marginBottom: '4px', textDecoration: act.status === 'done' ? 'line-through' : 'none' }}>{act.description}</div>
                                               {act.location && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px' }}>{act.location}</div>}
                                               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                                                <StatusChip status={act.status} onChange={status => patchLAActivity(act, { status })} />
+                                                {span && <span style={{ fontSize: '10px', color: '#4b5563', padding: '2px 7px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{span}</span>}
+                                                {rain && <RainTag />}
                                                 <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
-                                                  {act.responsible_type === 'sub' ? (lookaheadContracts.find(c => c.id === act.sub_id)?.vendor_name || 'Sub') : act.responsible_type === 'other' ? (act.other_company_name || 'Other') : 'Own Crew'}
+                                                  {responsibleLabel(act, lookaheadContracts)}
                                                 </span>
                                                 {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563', padding: '2px 7px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{act.manpower} people</span>}
                                                 {act.inspection_required && <span style={{ fontSize: '10px', color: '#b45309', padding: '2px 7px', borderRadius: '99px', background: '#fffbeb', border: '1px solid #fde68a' }}>Inspection</span>}
                                                 {act.committed && <span style={{ fontSize: '10px', color: '#15803d', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>Committed</span>}
                                                 {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7e22ce', padding: '2px 7px', borderRadius: '99px', background: '#faf5ff', border: '1px solid #e9d5ff' }}>+{act.additional_companies.length} co</span>}
                                               </div>
-                                              {act.constraints && <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '6px' }}>⚠ {act.constraints}</div>}
+                                              {act.constraints && <div style={{ fontSize: '11px', color: hasOpenConstraint(act) ? '#b91c1c' : '#6b7280', marginTop: '6px' }}>⚠ {act.constraints}</div>}
                                               {act.constraints_notes && <div style={{ fontSize: '11px', color: '#4b5563', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
                                             </div>
-                                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                                              <button onClick={() => openEditLAActivity(act)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>Edit</button>
-                                              <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', color: '#dc2626', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0, alignItems: 'flex-end' }}>
+                                              <div style={{ display: 'flex', gap: '4px' }}>
+                                                <button onClick={() => openEditLAActivity(act)} style={smallBtn}>Edit</button>
+                                                <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', color: '#dc2626', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
+                                              </div>
+                                              <button onClick={() => duplicateLAActivity(act)} style={smallBtn}>Duplicate</button>
+                                              <MoveToDaySelect days={weekDays} current={act.planned_date} onMove={d => patchLAActivity(act, moveActivityTo(act, d))} />
                                             </div>
                                           </div>
                                         </div>
@@ -2738,6 +2743,9 @@ export default function Field() {
                         <input value={laForm.description || ''} onChange={e => setLaForm(f => ({ ...f, description: e.target.value }))} style={s.input} placeholder="What work is being done?" />
                       </div>
                       <div style={{ marginBottom: '1rem' }}>
+                        <ActivityDateFields form={laForm} setForm={setLaForm} labelStyle={s.label} inputStyle={s.input} />
+                      </div>
+                      <div style={{ marginBottom: '1rem' }}>
                         <label style={s.label}>Location</label>
                         <input value={laForm.location || ''} onChange={e => setLaForm(f => ({ ...f, location: e.target.value }))} style={s.input} placeholder="Area / zone on site" />
                       </div>
@@ -2751,10 +2759,10 @@ export default function Field() {
                       </div>
                       {laForm.responsible_type === 'sub' && (
                         <div style={{ marginBottom: '1rem' }}>
-                          <label style={s.label}>Subcontractor</label>
+                          <label style={s.label}>Subcontractor *</label>
                           <select value={laForm.sub_id || ''} onChange={e => setLaForm(f => ({ ...f, sub_id: e.target.value }))} style={s.input}>
                             <option value="">Select subcontractor...</option>
-                            {uniqueSubOptions(lookaheadContracts, laForm.sub_id).map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                            {uniqueSubOptions(lookaheadContracts, laForm.sub_id).map(c => <option key={c.id} value={c.id}>{subName(c)}</option>)}
                           </select>
                         </div>
                       )}
@@ -2829,12 +2837,13 @@ export default function Field() {
                         <button onClick={() => setShowLAModal(false)} style={{ flex: 1, padding: '12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '10px', color: '#6b7280', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
                         <button
                           onClick={saveLAActivity}
-                          disabled={savingLA || !laForm.description}
-                          style={{ flex: 2, padding: '12px', background: savingLA || !laForm.description ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '10px', color: savingLA || !laForm.description ? '#555' : '#fff', fontSize: '14px', fontWeight: '700', cursor: savingLA || !laForm.description ? 'default' : 'pointer' }}
+                          disabled={savingLA || !!activityProblem(laForm)}
+                          style={{ flex: 2, padding: '12px', background: savingLA || activityProblem(laForm) ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '10px', color: savingLA || activityProblem(laForm) ? '#555' : '#fff', fontSize: '14px', fontWeight: '700', cursor: savingLA || activityProblem(laForm) ? 'default' : 'pointer' }}
                         >
                           {savingLA ? 'Saving...' : editingLAActivity ? 'Update Activity' : 'Add Activity'}
                         </button>
                       </div>
+                      <FormHint problem={activityProblem(laForm)} />
                     </div>
                   </div>
                 )}

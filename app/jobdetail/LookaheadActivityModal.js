@@ -1,11 +1,13 @@
 'use client'
 import React, { useState } from 'react'
-import { uniqueSubOptions, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
+import { uniqueSubOptions, subName, activityProblem, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
+import { rangeLabel } from '../../lib/lookahead-dates'
+import { ActivityDateFields, FormHint } from '../components/lookahead/LookaheadShared'
 
 // Add/Edit Activity form for the job page Lookahead tab. The form state lives here,
 // not in the job page, so typing re-renders only this modal.
 // onSave(form) resolves to { error } on failure (the form stays open with the input kept).
-export default function LookaheadActivityModal({ s, initialForm, editing, contracts, companyEquipment, onSave, onDelete, onClose }) {
+export default function LookaheadActivityModal({ s, initialForm, editing, contracts, companyEquipment, onSave, onDelete, onDuplicate, onClose }) {
   const [activityForm, setActivityForm] = useState(initialForm)
   const [newCoName, setNewCoName] = useState('')
   const [newCoManpower, setNewCoManpower] = useState('')
@@ -13,6 +15,7 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
   const [error, setError] = useState('')
 
   const subOptions = uniqueSubOptions(contracts, activityForm.sub_id)
+  const problem = activityProblem(activityForm)
   const help = { fontSize: '11px', color: '#6b7280', margin: '2px 0 0 24px', lineHeight: 1.4 }
   const checkRow = { display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', color: '#374151', cursor: 'pointer' }
 
@@ -24,7 +27,7 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
   }
 
   async function save() {
-    if (!activityForm.description) return
+    if (problem) return
     setSaving(true)
     setError('')
     const result = await onSave(activityForm)
@@ -37,7 +40,7 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{editing ? 'Edit Activity' : 'Add Activity'} — {new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#111827' }}>{editing ? 'Edit Activity' : 'Add Activity'} — {(activityForm.planned_date && rangeLabel(activityForm)) || new Date((activityForm.planned_date || '') + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -45,6 +48,7 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
             <label style={s.label}>Description *</label>
             <input style={s.input} value={activityForm.description || ''} onChange={e => setActivityForm(f => ({ ...f, description: e.target.value }))} placeholder="Pour slab, set steel, frame walls..." />
           </div>
+          <ActivityDateFields form={activityForm} setForm={setActivityForm} labelStyle={s.label} inputStyle={s.input} />
           <div>
             <label style={s.label}>Location on Site</label>
             <input style={s.input} value={activityForm.location || ''} onChange={e => setActivityForm(f => ({ ...f, location: e.target.value }))} placeholder="Level 2 west, Grid B–D..." />
@@ -61,10 +65,10 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
             <div>
               {activityForm.responsible_type === 'sub' ? (
                 <>
-                  <label style={s.label}>Subcontractor</label>
+                  <label style={s.label}>Subcontractor *</label>
                   <select style={{ ...s.input, padding: '8px 10px' }} value={activityForm.sub_id || ''} onChange={e => setActivityForm(f => ({ ...f, sub_id: e.target.value }))}>
                     <option value="">— Select —</option>
-                    {subOptions.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                    {subOptions.map(c => <option key={c.id} value={c.id}>{subName(c)}</option>)}
                   </select>
                 </>
               ) : activityForm.responsible_type === 'other' ? (
@@ -185,19 +189,24 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-          <div>
+          <div style={{ display: 'flex', gap: '8px' }}>
             {editing && (
               <button onClick={() => { onDelete(editing.id); onClose() }}
                 style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', padding: '8px 14px', cursor: 'pointer', fontSize: '13px' }}>Delete</button>
             )}
+            {editing && onDuplicate && (
+              <button onClick={() => { onDuplicate(editing); onClose() }}
+                style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#4b5563', padding: '8px 14px', cursor: 'pointer', fontSize: '13px' }}>Duplicate</button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={onClose} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', padding: '8px 16px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
-            <button onClick={save} disabled={saving || !activityForm.description} style={{ ...s.btn, opacity: !activityForm.description ? 0.5 : 1 }}>
+            <button onClick={save} disabled={saving || !!problem} style={{ ...s.btn, opacity: problem ? 0.5 : 1 }}>
               {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Activity'}
             </button>
           </div>
         </div>
+        <FormHint problem={problem} />
       </div>
     </div>
   )

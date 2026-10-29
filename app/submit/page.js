@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { notifyBidSubmitted } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { workingDaysOf, rangeLabel } from '../../lib/lookahead-dates'
 import { openStorageFile } from '../../lib/open-file'
 import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
 
@@ -2367,10 +2368,15 @@ export default function Submit() {
         )}
 
         {activeTab === 'upcoming' && (() => {
+          // A multi-day activity is listed on each of its working days in the next 14 days
+          const today = new Date().toISOString().split('T')[0]
+          const twoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
           const grouped = {}
           myLookaheadActivities.forEach(a => {
-            if (!grouped[a.planned_date]) grouped[a.planned_date] = []
-            grouped[a.planned_date].push(a)
+            workingDaysOf(a).filter(d => d >= today && d <= twoWeeks).forEach(d => {
+              if (!grouped[d]) grouped[d] = []
+              grouped[d].push(a)
+            })
           })
           const sortedDates = Object.keys(grouped).sort()
           const mColor = { needed: '#ef4444', ordered: '#f59e0b', on_site: '#4ade80' }
@@ -2400,6 +2406,7 @@ export default function Submit() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{act.description}</div>
+                              {rangeLabel(act) && <div style={{ fontSize: '12px', color: '#1d4ed8', marginBottom: '4px' }}>{rangeLabel(act)}</div>}
                               {act.location && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{act.location}</div>}
                               <div style={{ fontSize: '11px', color: '#6b7280' }}>{act.lookaheads?.jobs?.project_name}{act.lookaheads?.jobs?.job_number ? ` · Job #${act.lookaheads.jobs.job_number}` : ''}</div>
                             </div>
@@ -2452,7 +2459,7 @@ export default function Submit() {
             {notifications.map(n => {
               const isUnread = !n.read_at
               const typeColor = n.type === 'billing_approved' ? '#16a34a' : n.type === 'billing_rejected' ? '#dc2626' : n.type === 'punch_assigned' ? '#e8590c' : '#2563eb'
-              const typeLabel = n.type === 'billing_approved' ? 'Approved' : n.type === 'billing_rejected' ? 'Returned' : n.type === 'punch_assigned' ? 'Punch list' : n.type === 'rfi_answered' ? 'RFI answered' : n.type
+              const typeLabel = n.type === 'billing_approved' ? 'Approved' : n.type === 'billing_rejected' ? 'Returned' : n.type === 'punch_assigned' ? 'Punch list' : n.type === 'rfi_answered' ? 'RFI answered' : n.type === 'lookahead_sent' ? '2-week lookahead' : n.type
               const ago = (() => {
                 const d = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
                 if (d < 60) return `${d}m ago`

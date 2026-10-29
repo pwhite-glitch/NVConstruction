@@ -1,5 +1,8 @@
 import { describe, it, expect } from '@jest/globals'
-import { cleanActivity, withoutNew033, uniqueSubOptions } from '../lib/lookahead-fields'
+import {
+  cleanActivity, uniqueSubOptions, activityProblem, validateActivity, writeWithFallback, droppedWarning, missingColumn,
+  subName, responsibleLabel, hasOpenConstraint, copyableActivity, lookaheadStage, stageHistory,
+} from '../lib/lookahead-fields'
 
 // What the Add Activity form sends before anything is picked
 const blank = {
@@ -40,8 +43,14 @@ describe('cleanActivity', () => {
     expect(cleanActivity({ committed: true })).toEqual({ committed: true })
   })
 
-  it('drops the migration 033 column for the pre-migration retry', () => {
-    expect(withoutNew033({ constraints: 'x', constraints_notes: 'y' })).toEqual({ constraints_notes: 'y' })
+  it('trims the description', () => {
+    expect(cleanActivity({ ...blank, description: '  Grade pad  ' }).description).toBe('Grade pad')
+  })
+
+  it('a one-day activity keeps end_date null', () => {
+    expect(cleanActivity({ ...blank, end_date: '' }).end_date).toBeNull()
+    expect(cleanActivity({ ...blank, end_date: '2026-11-02' }).end_date).toBeNull()
+    expect(cleanActivity({ ...blank, end_date: '2026-11-04' }).end_date).toBe('2026-11-04')
   })
 })
 
@@ -56,5 +65,125 @@ describe('uniqueSubOptions', () => {
 
   it('keeps the duplicate that is already selected on the activity', () => {
     expect(uniqueSubOptions([ab1, jj, ab2], 'c2')).toEqual([ab2, jj])
+  })
+})
+
+describe('activityProblem (form hint) and validateActivity (server)', () => {
+  it('a description of only spaces is blank', () => {
+    expect(activityProblem({ ...blank, description: '   ' })).toMatch(/description/i)
+    expect(validateActivity(cleanActivity({ ...blank, description: '   ' }))).toMatch(/description/i)
+  })
+
+  it('Subcontractor needs a sub picked', () => {
+    expect(activityProblem({ ...blank, responsible_type: 'sub' })).toMatch(/subcontractor/i)
+    expect(validateActivity(cleanActivity({ ...blank, responsible_type: 'sub' }))).toMatch(/subcontractor/i)
+    expect(validateActivity(cleanActivity({ ...blank, responsible_type: 'sub', sub_id: 'c1' }))).toBeNull()
+  })
+
+  it('end date before start is rejected', () => {
+    expect(activityProblem({ ...blank, end_date: '2026-11-01' })).toMatch(/end date/i)
+    expect(validateActivity(cleanActivity({ ...blank, end_date: '2026-11-01' }))).toMatch(/end date/i)
+  })
+
+  it('a valid form has no problem', () => {
+    expect(activityProblem(blank)).toBeNull()
+    expect(validateActivity(cleanActivity(blank))).toBeNull()
+  })
+
+  it('partial updates (status tap, move) only check what is sent', () => {
+    expect(validateActivity({ status: 'done' }, { partial: true })).toBeNull()
+    expect(validateActivity({ status: 'finished' }, { partial: true })).toMatch(/status/i)
+    expect(validateActivity({ planned_date: '2026-11-03', end_date: null }, { partial: true })).toBeNull()
+    expect(validateActivity({ description: '' }, { partial: true })).toMatch(/description/i)
+  })
+})
+
+describe('sub names and labels', () => {
+  const contracts = [{ id: 'c1', vendor_name: 'SFS ' }, { id: 'c2', vendor_name: 'Paladino-Nash Inc. ' }]
+  it('trims trailing spaces', () => {
+    expect(contracts.map(subName)).toEqual(['SFS', 'Paladino-Nash Inc.'])
+    expect(responsibleLabel({ responsible_type: 'sub', sub_id: 'c2' }, contracts)).toBe('Paladino-Nash Inc.')
+  })
+  it('legacy sub activity with no sub says so', () => {
+    expect(responsibleLabel({ responsible_type: 'sub', sub_id: null }, contracts)).toBe('Sub (not picked)')
+  })
+})
+
+describe('open constraints', () => {
+  it('a constraint is open until the activity is Done', () => {
+    expect(hasOpenConstraint({ constraints: 'Waiting on permit', status: 'in_progress' })).toBe(true)
+    expect(hasOpenConstraint({ constraints: 'Waiting on permit', status: 'done' })).toBe(false)
+    expect(hasOpenConstraint({ constraints: '  ' })).toBe(false)
+  })
+})
+
+describe('copyableActivity (Duplicate)', () => {
+  it('drops id and lookahead link, resets status', () => {
+    const copy = copyableActivity({ ...blank, id: 'a1', status: 'done', carried_from_id: 'x' })
+    expect(copy).not.toHaveProperty('id')
+    expect(copy).not.toHaveProperty('lookahead_id')
+    expect(copy).not.toHaveProperty('carried_from_id')
+    expect(copy).toMatchObject({ status: 'not_started', description: 'Grade pad', planned_date: '2026-11-02' })
+  })
+})
+
+describe('writeWithFallback (migrations not applied yet)', () => {
+  const missing = col => ({ message: `Could not find the '${col}' column of 'lookahead_activities' in the schema cache` })
+
+  it('reads the missing column out of the error', () => {
+    expect(missingColumn(missing('end_date').message)).toBe('end_date')
+    expect(missingColumn('some other error')).toBeNull()
+  })
+
+  it('drops missing columns one at a time and retries', async () => {
+    const seen = []
+    const write = async row => {
+      seen.push(Object.keys(row))
+      if ('end_date' in row) return { error: missing('end_date') }
+      if ('status' in row) return { error: missing('status') }
+      return { data: row, error: null }
+    }
+    const { data, error, dropped } = await writeWithFallback(write, { description: 'x', end_date: '2026-11-04', status: 'done' })
+    expect(error).toBeNull()
+    expect(dropped).toEqual(['end_date', 'status'])
+    expect(data).toEqual({ description: 'x' })
+    expect(seen).toHaveLength(3)
+  })
+
+  it('works on an array of rows', async () => {
+    const write = async rows => rows.some(r => 'carried_from_id' in r) ? { error: missing('carried_from_id') } : { data: rows, error: null }
+    const { data } = await writeWithFallback(write, [{ a: 1, carried_from_id: 'x' }, { a: 2, carried_from_id: 'y' }])
+    expect(data).toEqual([{ a: 1 }, { a: 2 }])
+  })
+
+  it('does not retry for columns that are not pending migrations', async () => {
+    let calls = 0
+    const { error } = await writeWithFallback(async () => { calls++; return { error: missing('bogus') } }, { bogus: 1 })
+    expect(error).toBeTruthy()
+    expect(calls).toBe(1)
+  })
+
+  it('warns only about values that were actually lost', () => {
+    expect(droppedWarning(['end_date', 'status'], { end_date: null, status: 'not_started' })).toBeUndefined()
+    expect(droppedWarning(['end_date'], { end_date: '2026-11-04' })).toMatch(/End date was not saved \(migration 035/)
+    expect(droppedWarning(['constraints', 'status'], { constraints: 'x', status: 'done' })).toMatch(/033, 035/)
+  })
+})
+
+describe('lookahead workflow stage', () => {
+  it('Draft > Submitted > Approved > Sent', () => {
+    expect(lookaheadStage({ status: 'draft' })).toBe('draft')
+    expect(lookaheadStage({ status: 'submitted' })).toBe('submitted')
+    expect(lookaheadStage({ status: 'approved', approved_at: '2026-11-02T10:00:00+00:00' })).toBe('approved')
+    expect(lookaheadStage({ status: 'approved', approved_at: '2026-11-02T10:00:00+00:00', sent_to_subs_at: '2026-11-02T11:00:00+00:00' })).toBe('sent')
+  })
+
+  it('re-approved after a send shows Approved again', () => {
+    expect(lookaheadStage({ status: 'approved', sent_to_subs_at: '2026-11-02T11:00:00+00:00', approved_at: '2026-11-03T09:00:00+00:00' })).toBe('approved')
+  })
+
+  it('history lists who and when', () => {
+    const h = stageHistory({ status: 'approved', submitted_at: 't1', submitted_by_name: 'Landon', approved_at: 't2', approved_by_name: 'Peyton' })
+    expect(h.map(x => [x.label, x.who])).toEqual([['Submitted', 'Landon'], ['Approved', 'Peyton']])
   })
 })

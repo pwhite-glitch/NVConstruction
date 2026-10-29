@@ -1,14 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { Resend } from 'resend'
+import { DC_APPROVER_ROLES as APPROVER_ROLES } from '../../../lib/direct-cost-queue'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
-
-const APPROVER_ROLES = new Set(['pm', 'apm', 'admin'])
 
 // Columns added in migration 022 — may not exist yet if migration hasn't been run.
 const NEW_022_COLS = new Set(['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at'])

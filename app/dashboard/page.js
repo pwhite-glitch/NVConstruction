@@ -7,6 +7,7 @@ import { authFetch } from '../../lib/client-fetch'
 import { mondayOf } from '../../lib/lookahead-dates'
 import { stageLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { openStorageFile } from '../../lib/open-file'
+import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount } from '../../lib/direct-cost-queue'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { sameCompany } from '../../lib/company-name'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
@@ -227,6 +228,7 @@ const PERM_GROUPS = [
 const IconBox      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
 const IconResidential = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10.5z"/><path d="M9 22V14h6v8"/><path d="M15 3v3"/></svg>
 const IconClipboard = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+const IconReceipt   = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 2v20l3-2 3 2 2-2 2 2 3-2 3 2V2l-3 2-3-2-2 2-2-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg>
 const IconBell      = () => <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
 
 export default function Dashboard() {
@@ -310,6 +312,14 @@ export default function Dashboard() {
   const [lookaheadReview, setLookaheadReview] = useState([])
   const [lookaheadThisWeek, setLookaheadThisWeek] = useState(null)
   const [lookaheadSearch, setLookaheadSearch] = useState('')
+  // Costs to Approve tab: pending direct costs across visible jobs (also the nav badge and Overview tile)
+  const [dcQueue, setDcQueue] = useState(null)
+  const [dcQueueJob, setDcQueueJob] = useState('all')
+  const [dcSelected, setDcSelected] = useState(new Set())
+  const [dcBusy, setDcBusy] = useState(false)
+  const [dcRejectingId, setDcRejectingId] = useState(null)
+  const [dcRejectNote, setDcRejectNote] = useState('')
+  const [dcQueueMsg, setDcQueueMsg] = useState(null)
 
   // Per-sub assign-to-job state
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
@@ -556,8 +566,10 @@ export default function Dashboard() {
       await loadAll(jobIds)
       loadTeamData()
       loadLookaheadReview()
-      // /dashboard?tab=lookahead opens the Lookahead tab
-      if (new URLSearchParams(window.location.search).get('tab') === 'lookahead') setActiveTabValue('lookahead')
+      loadDcQueue()
+      // /dashboard?tab=lookahead or ?tab=direct-costs opens that tab
+      const urlTab = new URLSearchParams(window.location.search).get('tab')
+      if (urlTab === 'lookahead' || urlTab === 'direct-costs') setActiveTabValue(urlTab)
       setLoading(false)
     }
     load()
@@ -591,7 +603,63 @@ export default function Dashboard() {
     if (activeTab === 'my-work' && !myWork && !myWorkLoading) loadMyWork()
     if (activeTab === 'notifications' && !pmNotifLoaded) loadPmNotifications()
     if (activeTab === 'lookahead') { loadLookaheadReview(); if (!lookaheadThisWeek) loadLookaheadThisWeek() }
+    if (activeTab === 'direct-costs') loadDcQueue()
   }, [activeTab])
+
+  async function loadDcQueue() {
+    try {
+      const res = await authFetch('/api/direct-costs?status=pending')
+      const json = await res.json()
+      if (!res.ok) { setDcQueueMsg({ type: 'error', text: json.error || 'Could not load pending costs.' }); return }
+      const list = Array.isArray(json.data) ? json.data : []
+      setDcQueue(list)
+      // Drop selections that are no longer pending
+      setDcSelected(prev => new Set(list.filter(c => prev.has(c.id)).map(c => c.id)))
+    } catch { setDcQueueMsg({ type: 'error', text: 'Could not load pending costs.' }) }
+  }
+
+  // Same endpoint and actions the job page uses (/api/dc-review)
+  async function dcReview(action, id, extra = {}) {
+    try {
+      const res = await authFetch('/api/dc-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, id, ...extra }),
+      })
+      const json = await res.json().catch(() => ({}))
+      return res.ok && !json.error ? { ok: true } : { error: json.error || `Request failed (${res.status})` }
+    } catch (e) { return { error: e.message } }
+  }
+
+  async function approveDcCosts(costs) {
+    if (!costs.length) return
+    const total = queueTotal(costs)
+    const noReceipt = costs.filter(c => !c.receipt_url).length
+    const msg = costs.length === 1
+      ? (noReceipt ? 'This cost has no receipt attached. Approve without one?' : null)
+      : `Approve ${costs.length} costs totaling ${fmtMoney(total)}?${noReceipt ? `\n\n${noReceipt} of them have no receipt attached.` : ''}`
+    if (msg && !window.confirm(msg)) return
+    setDcBusy(true); setDcQueueMsg(null)
+    const results = await Promise.all(costs.map(c => dcReview('approve', c.id).then(r => ({ c, ...r }))))
+    const failed = results.filter(r => r.error)
+    const done = results.length - failed.length
+    setDcQueueMsg(failed.length
+      ? { type: 'error', text: `${done} approved, ${failed.length} failed: ${failed.map(f => `${f.c.description || 'cost'} (${f.error})`).join('; ')}` }
+      : { type: 'success', text: `${done} cost${done !== 1 ? 's' : ''} approved.` })
+    await loadDcQueue()
+    setDcBusy(false)
+  }
+
+  async function rejectDcCost(c) {
+    const rejection_reason = dcRejectNote.trim()
+    if (!rejection_reason) return
+    setDcBusy(true); setDcQueueMsg(null)
+    const r = await dcReview('reject', c.id, { rejection_reason })
+    if (r.error) setDcQueueMsg({ type: 'error', text: 'Reject failed: ' + r.error })
+    else { setDcRejectingId(null); setDcRejectNote(''); setDcQueueMsg({ type: 'success', text: 'Cost rejected. The submitter has been notified.' }) }
+    await loadDcQueue()
+    setDcBusy(false)
+  }
 
   async function loadLookaheadReview() {
     try {
@@ -3372,6 +3440,9 @@ ${estimate.notes ? `
   const visibleJobIds = new Set(jobs.map(j => j.id))
   const lookaheadsToReview = lookaheadReview.filter(l => visibleJobIds.has(l.job_id))
   const lookaheadBadge = lookaheadsToReview.length || null
+  const canApproveDc = DC_APPROVER_ROLES.has(profile?.role)
+  const dcPending = dcQueue || []
+  const dcBadge = (canApproveDc && dcPending.length) || null
 
   // p() checks the permissions table when loaded, falls back to role-based defaults while loading
   const p = userPerms
@@ -3397,6 +3468,7 @@ ${estimate.notes ? `
       label: 'Financials',
       items: [
         { tab: 'billing', label: 'Billing', icon: <IconDollar />, badge: billingBadge },
+        ...(canApproveDc ? [{ tab: 'direct-costs', label: 'Costs to Approve', icon: <IconReceipt />, badge: dcBadge }] : []),
         { tab: 'orders',  label: 'Orders',  icon: <IconBox /> },
       ]
     },
@@ -3460,6 +3532,23 @@ ${estimate.notes ? `
         .nv-sidebar-shimmer { height: 2px; background: rgba(232,89,12,0.5); margin: 0.5rem 0 0.25rem; border-radius: 2px; }
         /* Mobile more drawer */
         @media (max-width: 768px) { .rx-more-drawer { display: block !important; } }
+
+        /* Costs to Approve: table on wide screens, stacked cards on narrow ones */
+        .dcq-row { display: grid; grid-template-columns: 28px minmax(130px,1.3fr) minmax(90px,1fr) minmax(130px,1.6fr) minmax(90px,1fr) 100px 86px minmax(90px,1fr) 64px 230px; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
+        .dcq-head { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.6px; background: #f9fafb; }
+        .dcq-lbl { display: none; }
+        .dcq-num { text-align: right; font-variant-numeric: tabular-nums; }
+        .dcq-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+        @media (max-width: 1100px) {
+          .dcq-head { display: none; }
+          .dcq-row { grid-template-columns: 28px 1fr 1fr; gap: 6px 12px; padding: 14px; }
+          .dcq-row > .dcq-check { grid-row: span 6; align-self: start; }
+          .dcq-row > .dcq-wide { grid-column: 2 / -1; }
+          .dcq-lbl { display: block; font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; }
+          .dcq-num { text-align: left; }
+          .dcq-actions { justify-content: flex-start; }
+          .dcq-actions button { flex: 1 1 auto; min-height: 40px; }
+        }
 
         /* Buttons */
         .nv-btn { transition: opacity 0.12s ease !important; }
@@ -3727,6 +3816,13 @@ ${estimate.notes ? `
                 <div style={s.ovValue(lookaheadsToReview.length ? '#16a34a' : null)}>{lookaheadsToReview.length}</div>
                 <p style={s.ovSub}>Open 2-week lookahead →</p>
               </div>
+              {canApproveDc && (
+                <div className="nv-stat-card" style={{ ...s.ovCard, cursor: 'pointer' }} onClick={() => setActiveTab('direct-costs')}>
+                  <p style={s.ovLabel}>Direct costs to approve</p>
+                  <div style={s.ovValue(dcPending.length ? '#e8590c' : null)}>{dcQueue === null ? '…' : dcPending.length}</div>
+                  <p style={s.ovSub}>{dcPending.length ? `${fmtMoney(queueTotal(dcPending))} · oldest ${daysWaiting(dcPending[0]) ?? '—'}d` : 'Nothing waiting'} →</p>
+                </div>
+              )}
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending applications</p>
                 <div style={s.ovValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
@@ -3915,6 +4011,103 @@ ${estimate.notes ? `
                         </div>
                       </div>
                     ))}
+                  </div>
+                </>
+              )
+            })()}
+
+            {/* ── COSTS TO APPROVE ── */}
+            {activeTab === 'direct-costs' && canApproveDc && (() => {
+              const jobOptions = Object.values(dcPending.reduce((m, c) => {
+                m[c.job_id] = m[c.job_id] || { id: c.job_id, label: `#${c.job_number ?? '—'} · ${c.project_name || 'Unknown job'}`, num: String(c.job_number ?? ''), count: 0 }
+                m[c.job_id].count++
+                return m
+              }, {})).sort((a, b) => a.num.localeCompare(b.num, undefined, { numeric: true }))
+              const list = dcQueueJob === 'all' ? dcPending : dcPending.filter(c => c.job_id === dcQueueJob)
+              const selected = list.filter(c => dcSelected.has(c.id))
+              const allSelected = list.length > 0 && selected.length === list.length
+              const toggle = id => setDcSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+              const toggleAll = () => setDcSelected(allSelected ? new Set() : new Set(list.map(c => c.id)))
+              const btn = (bg, color, border) => ({ padding: '5px 10px', fontSize: '12px', fontWeight: '600', borderRadius: '6px', cursor: dcBusy ? 'default' : 'pointer', background: bg, color, border: `1px solid ${border}`, opacity: dcBusy ? 0.6 : 1, whiteSpace: 'nowrap' })
+              const waitColor = d => d == null ? '#6b7280' : d >= 14 ? '#dc2626' : d >= 7 ? '#d97706' : '#374151'
+              const money = c => (c.is_credit ? '−' : '') + fmtMoney(c.amount)
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>Direct Costs to Approve</h2>
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                      {dcQueue === null ? 'Loading…' : `${list.length} pending · ${fmtMoney(queueTotal(list))} total${dcQueueJob !== 'all' ? ` (of ${dcPending.length} · ${fmtMoney(queueTotal(dcPending))} on all jobs)` : ''}`}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                    <select value={dcQueueJob} onChange={e => { setDcQueueJob(e.target.value); setDcSelected(new Set()) }} style={{ padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: '6px', fontSize: '13px', maxWidth: '100%' }}>
+                      <option value="all">All jobs ({dcPending.length})</option>
+                      {jobOptions.map(j => <option key={j.id} value={j.id}>{j.label} ({j.count})</option>)}
+                    </select>
+                    {list.length > 0 && <button style={btn('#fff', '#374151', '#e5e7eb')} disabled={dcBusy} onClick={toggleAll}>{allSelected ? 'Clear selection' : `Select all (${list.length})`}</button>}
+                    {selected.length > 0 && (
+                      <button style={btn('#16a34a', '#fff', '#16a34a')} disabled={dcBusy} onClick={() => approveDcCosts(selected)}>
+                        {dcBusy ? 'Working…' : `Approve selected (${selected.length}) · ${fmtMoney(queueTotal(selected))}`}
+                      </button>
+                    )}
+                  </div>
+
+                  {dcQueueMsg && (
+                    <div style={{ marginBottom: '0.75rem', padding: '9px 12px', borderRadius: '6px', fontSize: '13px', background: dcQueueMsg.type === 'error' ? '#fef2f2' : '#f0fdf4', color: dcQueueMsg.type === 'error' ? '#b91c1c' : '#15803d', border: `1px solid ${dcQueueMsg.type === 'error' ? '#fecaca' : '#bbf7d0'}` }}>{dcQueueMsg.text}</div>
+                  )}
+
+                  <div style={s.sectionCard}>
+                    {dcQueue !== null && list.length === 0 && <p style={{ margin: 0, padding: '1.5rem', color: '#6b7280', fontSize: '14px', textAlign: 'center' }}>No direct costs waiting for approval.</p>}
+                    {list.length > 0 && (
+                      <div className="dcq-row dcq-head">
+                        <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={dcBusy} aria-label="Select all" />
+                        <span>Job</span><span>Vendor</span><span>Description</span><span>Cost code</span>
+                        <span className="dcq-num">Amount</span><span>Date</span><span>Submitted by</span><span className="dcq-num">Waiting</span><span />
+                      </div>
+                    )}
+                    {list.map(c => {
+                      const days = daysWaiting(c)
+                      const isRejecting = dcRejectingId === c.id
+                      return (
+                        <div key={c.id} style={{ background: dcSelected.has(c.id) ? '#fff7ed' : undefined }}>
+                          <div className="dcq-row" style={{ borderBottom: isRejecting ? 'none' : undefined }}>
+                            <input className="dcq-check" type="checkbox" checked={dcSelected.has(c.id)} onChange={() => toggle(c.id)} disabled={dcBusy} aria-label="Select cost" style={{ width: '18px', height: '18px' }} />
+                            <div className="dcq-wide">
+                              <span className="dcq-lbl">Job</span>
+                              <a href={`/jobdetail?id=${c.job_id}&tab=costs`} style={{ color: '#111827', fontWeight: '600', textDecoration: 'none' }}>#{c.job_number ?? '—'} · {c.project_name || 'Unknown job'}</a>
+                            </div>
+                            <div className="dcq-wide"><span className="dcq-lbl">Vendor</span>{c.vendor || '—'}</div>
+                            <div className="dcq-wide">
+                              <span className="dcq-lbl">Description</span>
+                              {c.description || '—'}
+                              {c.is_credit && <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: '700', color: '#dc2626' }}>Credit</span>}
+                            </div>
+                            <div><span className="dcq-lbl">Cost code</span>{c.cost_code ? `${c.cost_code}${c.budget_line ? ' ' + c.budget_line : ''}` : <span style={{ color: '#9ca3af' }}>{c.category || 'Unassigned'}</span>}</div>
+                            <div className="dcq-num"><span className="dcq-lbl">Amount</span><span style={{ fontWeight: '700', color: signedAmount(c) < 0 ? '#dc2626' : '#111827' }}>{money(c)}</span></div>
+                            <div><span className="dcq-lbl">Date</span>{fmtDate(c.cost_date)}</div>
+                            <div><span className="dcq-lbl">Submitted by</span>{c.submitted_by_name || '—'}</div>
+                            <div className="dcq-num"><span className="dcq-lbl">Waiting</span><span style={{ fontWeight: '600', color: waitColor(days) }}>{days == null ? '—' : `${days}d`}</span></div>
+                            <div className="dcq-actions dcq-wide">
+                              {c.receipt_url
+                                ? <button style={btn('#fff', '#374151', '#e5e7eb')} onClick={() => openStorageFile(supabase, 'receipts', c.receipt_url, 60)}>View receipt</button>
+                                : <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700', alignSelf: 'center' }}>No receipt</span>}
+                              <button style={btn('#f0fdf4', '#15803d', '#bbf7d0')} disabled={dcBusy} onClick={() => approveDcCosts([c])}>{c.receipt_url ? 'Approve' : 'Approve anyway'}</button>
+                              <button style={btn('#fef2f2', '#dc2626', '#fecaca')} disabled={dcBusy} onClick={() => { setDcRejectingId(isRejecting ? null : c.id); setDcRejectNote('') }}>{isRejecting ? 'Cancel' : 'Reject'}</button>
+                            </div>
+                          </div>
+                          {isRejecting && (
+                            <div style={{ padding: '10px 14px 14px', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+                              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#dc2626', marginBottom: '6px' }}>Rejection reason * <span style={{ fontWeight: '400', color: '#7f1d1d' }}>(sent to the submitter)</span></label>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <input autoFocus value={dcRejectNote} onChange={e => setDcRejectNote(e.target.value)} placeholder="Describe specifically what needs to be corrected..." style={{ flex: '1 1 220px', padding: '8px 10px', border: '1px solid #fca5a5', borderRadius: '6px', fontSize: '14px' }} />
+                                <button style={{ ...btn('#dc2626', '#fff', '#dc2626'), opacity: dcBusy || !dcRejectNote.trim() ? 0.5 : 1, minHeight: '36px' }} disabled={dcBusy || !dcRejectNote.trim()} onClick={() => rejectDcCost(c)}>{dcBusy ? '…' : 'Confirm reject'}</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </>
               )

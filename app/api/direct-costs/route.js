@@ -1,13 +1,40 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { DC_APPROVER_ROLES, buildApprovalQueue } from '../../../lib/direct-cost-queue'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// Pending costs across every job the caller can see (dashboard "Costs to Approve").
+// PM/admin see all jobs; APMs only the jobs in pm_job_assignments, like the dashboard.
+async function pendingQueue(auth) {
+  let q = adminSupabase.from('direct_costs').select('*').eq('status', 'pending')
+  if (auth.role === 'apm') {
+    const { data: assigns, error } = await adminSupabase.from('pm_job_assignments').select('job_id').eq('user_id', auth.userId)
+    if (error) return { error }
+    const ids = (assigns || []).map(a => a.job_id)
+    if (ids.length === 0) return { data: [] }
+    q = q.in('job_id', ids)
+  }
+  const { data: costs, error } = await q
+  if (error) return { error }
+  if (!costs?.length) return { data: [] }
+
+  const uniq = key => [...new Set(costs.map(c => c[key]).filter(Boolean))]
+  const jobIds = uniq('job_id'), biIds = uniq('budget_item_id'), userIds = uniq('submitted_by')
+  const [jobsRes, biRes, profRes] = await Promise.all([
+    adminSupabase.from('jobs').select('id, job_number, project_name').in('id', jobIds),
+    biIds.length ? adminSupabase.from('budget_items').select('id, cost_code, description').in('id', biIds) : { data: [] },
+    userIds.length ? adminSupabase.from('profiles').select('id, full_name').in('id', userIds) : { data: [] },
+  ])
+  return { data: buildApprovalQueue(costs, { jobs: jobsRes.data || [], budgetItems: biRes.data || [], profiles: profRes.data || [] }) }
+}
+
 // GET: fetch direct costs for a job, or generate a signed receipt URL
 // ?job_id=uuid  → list of costs
+// ?status=pending (no job_id) → pending costs across visible jobs, oldest first (approvers only)
 // ?receipt_path=... → { url } signed URL (valid 5 min)
 export async function GET(request) {
   const auth = await requirePM(request)
@@ -21,6 +48,12 @@ export async function GET(request) {
       return Response.json({ url: data.signedUrl })
     }
     const job_id = searchParams.get('job_id')
+    if (!job_id && searchParams.get('status') === 'pending') {
+      if (!DC_APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      const { data, error } = await pendingQueue(auth)
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      return Response.json({ data })
+    }
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
     const { data, error } = await adminSupabase
       .from('direct_costs')

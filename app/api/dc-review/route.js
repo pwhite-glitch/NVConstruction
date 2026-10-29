@@ -92,6 +92,7 @@ export async function POST(request) {
   if (action === 'approve') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
     if (cost.status !== 'pending') return Response.json({ error: 'Only pending costs can be approved' }, { status: 422 })
+    if (!cost.budget_item_id) return Response.json({ error: 'A budget line must be assigned before approving.' }, { status: 422 })
     const error = await dcUpdate({ status: 'approved', reviewed_by: auth.userId, reviewed_at: now }, id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

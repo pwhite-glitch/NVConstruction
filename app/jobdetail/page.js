@@ -1157,6 +1157,8 @@ function JobDetailInner() {
   }
 
   async function approveCost(costId) {
+    const cost = directCosts.find(c => c.id === costId)
+    if (!cost?.budget_item_id) { alert('Assign a budget line before approving.'); return }
     setUpdatingCostId(costId)
     const result = await callDcReview('approve', costId)
     if (result.error) alert('Approve failed: ' + result.error)
@@ -1214,6 +1216,7 @@ function JobDetailInner() {
     const editResult = await callDcReview('edit', costId, reviewForm)
     if (editResult.error) { setReviewMsg('Save failed: ' + editResult.error); setSavingReview(false); return }
     if (andApprove) {
+      if (!reviewForm.budget_item_id) { setReviewMsg('Assign a budget line before approving.'); setSavingReview(false); return }
       const cost = directCosts.find(c => c.id === costId)
       if (!cost?.receipt_url && !reviewForm.receipt_url) {
         setReviewMsg('Attach a receipt before approving.'); setSavingReview(false); return

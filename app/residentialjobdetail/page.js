@@ -1554,6 +1554,7 @@ function ResidentialJobDetailInner() {
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                                 {!c.receipt_url && <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700' }}>No receipt</span>}
                                 <button style={s.btnGreen} disabled={updatingCostId === c.id} onClick={() => {
+                                  if (!c.budget_item_id) { alert('Assign a budget line before approving.'); return }
                                   if (!c.receipt_url && !window.confirm('This cost has no receipt attached. Approve without one?')) return
                                   updateDCStatus(c.id, 'approved')
                                 }}>{c.receipt_url ? 'Approve' : 'Approve Anyway'}</button>

@@ -2666,61 +2666,65 @@ export default function Field() {
                                   {wkConstraints > 0 && <span style={{ fontSize: '11px', color: '#b91c1c' }}>{wkConstraints} open constraint{wkConstraints > 1 ? 's' : ''}</span>}
                                 </span>
                               </div>
-                              {wkDays.map(dateStr => {
-                                const dayActs = activitiesForDay(lookaheadActivities, dateStr)
-                                const isToday = dateStr === todayStr
-                                const wx = laForecast[dateStr]
-                                return (
-                                  <div key={dateStr} style={{ background: '#ffffff', border: `1px solid ${isToday ? '#3a2200' : '#222'}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: dayActs.length ? '10px' : 0, gap: '8px' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: '13px', fontWeight: '700', color: isToday ? '#e8590c' : '#aaa' }}>{new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}</span>
-                                        <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtShort(dateStr)}</span>
-                                        {isToday && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '99px', padding: '1px 6px' }}>TODAY</span>}
-                                        <DayWeather day={wx} align="flex-start" />
-                                      </div>
-                                      <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', color: '#6b7280', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '4px 10px', flexShrink: 0 }}>+ Add</button>
-                                    </div>
-                                    {dayActs.map(act => {
-                                      const tc = act.responsible_type === 'sub' ? { bg: '#eff6ff', fg: '#1d4ed8', bd: '#bfdbfe' } : act.responsible_type === 'other' ? { bg: '#fff7ed', fg: '#c2410c', bd: '#fed7aa' } : { bg: '#f0fdf4', fg: '#15803d', bd: '#bbf7d0' }
-                                      const rain = rainFlagged(act, wx)
-                                      const span = dayOfRange(act, dateStr)
-                                      return (
-                                        <div key={act.id} style={{ background: tc.bg, border: `1px solid ${rain ? '#fca5a5' : tc.bd}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '6px', opacity: act.status === 'done' ? 0.65 : 1 }}>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', marginBottom: '4px', textDecoration: act.status === 'done' ? 'line-through' : 'none' }}>{act.description}</div>
-                                              {act.location && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px' }}>{act.location}</div>}
-                                              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                                                <StatusChip status={act.status} onChange={status => patchLAActivity(act, { status })} />
-                                                {span && <span style={{ fontSize: '10px', color: '#4b5563', padding: '2px 7px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{span}</span>}
-                                                {rain && <RainTag />}
-                                                <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
-                                                  {responsibleLabel(act, lookaheadContracts)}
-                                                </span>
-                                                {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563', padding: '2px 7px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{act.manpower} people</span>}
-                                                {act.inspection_required && <span style={{ fontSize: '10px', color: '#b45309', padding: '2px 7px', borderRadius: '99px', background: '#fffbeb', border: '1px solid #fde68a' }}>Inspection</span>}
-                                                {act.committed && <span style={{ fontSize: '10px', color: '#15803d', padding: '2px 7px', borderRadius: '99px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>Committed</span>}
-                                                {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7e22ce', padding: '2px 7px', borderRadius: '99px', background: '#faf5ff', border: '1px solid #e9d5ff' }}>+{act.additional_companies.length} co</span>}
-                                              </div>
-                                              {act.constraints && <div style={{ fontSize: '11px', color: hasOpenConstraint(act) ? '#b91c1c' : '#6b7280', marginTop: '6px' }}>⚠ {act.constraints}</div>}
-                                              {act.constraints_notes && <div style={{ fontSize: '11px', color: '#4b5563', marginTop: '6px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
+                              <div style={{ overflowX: 'auto', marginBottom: '0.5rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(160px, 1fr))', gap: '8px', minWidth: '800px' }}>
+                                  {wkDays.map(dateStr => {
+                                    const dayActs = activitiesForDay(lookaheadActivities, dateStr)
+                                    const isToday = dateStr === todayStr
+                                    const wx = laForecast[dateStr]
+                                    return (
+                                      <div key={dateStr} style={{ background: '#ffffff', border: `1px solid ${isToday ? '#fdba74' : '#e5e7eb'}`, borderRadius: '10px', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '4px', gap: '4px' }}>
+                                          <div>
+                                            <div style={{ fontSize: '12px', fontWeight: '700', color: isToday ? '#e8590c' : '#374151' }}>
+                                              {new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}
+                                              {' '}<span style={{ fontWeight: '400', color: '#9ca3af' }}>{fmtShort(dateStr)}</span>
                                             </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0, alignItems: 'flex-end' }}>
-                                              <div style={{ display: 'flex', gap: '4px' }}>
-                                                <button onClick={() => openEditLAActivity(act)} style={smallBtn}>Edit</button>
-                                                <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '5px', color: '#dc2626', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }}>✕</button>
-                                              </div>
-                                              <button onClick={() => duplicateLAActivity(act)} style={smallBtn}>Duplicate</button>
-                                              <MoveToDaySelect days={weekDays} current={act.planned_date} onMove={d => patchLAActivity(act, moveActivityTo(act, d))} />
-                                            </div>
+                                            {isToday && <div style={{ fontSize: '9px', fontWeight: '700', color: '#e8590c', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Today</div>}
+                                            <DayWeather day={wx} align="flex-start" />
                                           </div>
+                                          <button onClick={() => openAddLAActivity(dateStr)} style={{ background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#6b7280', fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: '3px 7px', flexShrink: 0 }}>+</button>
                                         </div>
-                                      )
-                                    })}
-                                  </div>
-                                )
-                              })}
+                                        {dayActs.length === 0 && <div style={{ fontSize: '11px', color: '#d1d5db', textAlign: 'center', padding: '8px 0' }}>—</div>}
+                                        {dayActs.map(act => {
+                                          const tc = act.responsible_type === 'sub' ? { bg: '#eff6ff', fg: '#1d4ed8', bd: '#bfdbfe' } : act.responsible_type === 'other' ? { bg: '#fff7ed', fg: '#c2410c', bd: '#fed7aa' } : { bg: '#f0fdf4', fg: '#15803d', bd: '#bbf7d0' }
+                                          const rain = rainFlagged(act, wx)
+                                          const span = dayOfRange(act, dateStr)
+                                          return (
+                                            <div key={act.id} style={{ background: tc.bg, border: `1px solid ${rain ? '#fca5a5' : tc.bd}`, borderRadius: '8px', padding: '8px', opacity: act.status === 'done' ? 0.65 : 1 }}>
+                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#111827', marginBottom: '4px', textDecoration: act.status === 'done' ? 'line-through' : 'none', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
+                                                  {act.location && <div style={{ fontSize: '10px', color: '#6b7280', marginBottom: '4px' }}>{act.location}</div>}
+                                                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                    <StatusChip status={act.status} onChange={status => patchLAActivity(act, { status })} />
+                                                    {span && <span style={{ fontSize: '10px', color: '#4b5563', padding: '1px 6px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{span}</span>}
+                                                    {rain && <RainTag />}
+                                                    <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 6px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
+                                                      {responsibleLabel(act, lookaheadContracts)}
+                                                    </span>
+                                                    {act.manpower > 0 && <span style={{ fontSize: '10px', color: '#4b5563', padding: '1px 6px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{act.manpower} ppl</span>}
+                                                    {act.inspection_required && <span style={{ fontSize: '10px', color: '#b45309', padding: '1px 6px', borderRadius: '99px', background: '#fffbeb', border: '1px solid #fde68a' }}>Insp</span>}
+                                                    {act.committed && <span style={{ fontSize: '10px', color: '#15803d', padding: '1px 6px', borderRadius: '99px', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>✓</span>}
+                                                    {(act.additional_companies || []).length > 0 && <span style={{ fontSize: '10px', color: '#7e22ce', padding: '1px 6px', borderRadius: '99px', background: '#faf5ff', border: '1px solid #e9d5ff' }}>+{act.additional_companies.length}</span>}
+                                                  </div>
+                                                  {act.constraints && <div style={{ fontSize: '10px', color: hasOpenConstraint(act) ? '#b91c1c' : '#6b7280', marginTop: '4px' }}>⚠ {act.constraints}</div>}
+                                                  {act.constraints_notes && <div style={{ fontSize: '10px', color: '#4b5563', marginTop: '4px', fontStyle: 'italic' }}>{act.constraints_notes}</div>}
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flexShrink: 0 }}>
+                                                  <button onClick={() => openEditLAActivity(act)} style={smallBtn}>Edit</button>
+                                                  <button onClick={() => deleteLAActivity(act.id)} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', color: '#dc2626', fontSize: '10px', cursor: 'pointer', padding: '2px 5px' }}>✕</button>
+                                                  <button onClick={() => duplicateLAActivity(act)} style={smallBtn}>Copy</button>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
                             </div>
                           )})}
                         </>

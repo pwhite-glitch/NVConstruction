@@ -375,6 +375,7 @@ function JobDetailInner() {
   const [showNewAia, setShowNewAia] = useState(false)
   const [newAiaForm, setNewAiaForm] = useState({ app_number: '1', period_from: '', period_to: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
   const [savingAia, setSavingAia] = useState(false)
+  const [creatingRetainage, setCreatingRetainage] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
   const [relinkDrawOpen, setRelinkDrawOpen] = useState(false)
   const [relinkDrawId, setRelinkDrawId] = useState('')
@@ -1654,6 +1655,55 @@ function JobDetailInner() {
     const created = updatedApps.find(a => a.id === newApp.id) || newApp
     await openAiaApp(created)
     setSavingAia(false)
+  }
+
+  async function createRetainageRelease() {
+    const prevApp = aiaApplications[0] // most recent (desc by app_number)
+    if (!prevApp) return
+    const r2 = n => Math.round(n * 100) / 100
+    const { data: prevLines } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
+    const lines = prevLines || []
+    const prevRetPct = Math.max(0, Math.min(100, parseFloat(prevApp.retainage_pct) || 0)) / 100
+    const totalRetainageHeld = r2(lines.reduce((a, l) => {
+      const bi = budgetItems.find(b => b.id === l.budget_item_id)
+      const bAmt = bi ? Number(bi.owner_amount ?? bi.budget_amount ?? 0) : 0
+      const dollarPrev = l.dollar_prev != null ? Number(l.dollar_prev) : bAmt * ((parseFloat(l.pct_prev) || 0) / 100)
+      const dollarThis = l.dollar_this_period != null ? Number(l.dollar_this_period) : bAmt * ((parseFloat(l.pct_this_period) || 0) / 100)
+      return a + r2((dollarPrev + dollarThis) * prevRetPct)
+    }, 0))
+    const fmtAmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    if (!window.confirm(`Create a retainage release application for ${fmtAmt(totalRetainageHeld)}?\n\nThis creates a new draw at 0% retainage with no new work billed, releasing the ${prevApp.retainage_pct}% retainage held across all previous applications.`)) return
+    setCreatingRetainage(true)
+    const { data: { session } } = await supabase.auth.getSession()
+    const today = new Date().toISOString().split('T')[0]
+    const [yr, mo] = today.split('-').map(Number)
+    const periodFrom = `${String(yr).padStart(4, '0')}-${String(mo).padStart(2, '0')}-01`
+    const { data: newApp, error } = await supabase.from('aia_applications').insert({
+      job_id: id,
+      app_number: aiaApplications.length + 1,
+      period_from: periodFrom,
+      period_to: today,
+      retainage_pct: 0,
+      markup_pct: parseFloat(prevApp.markup_pct) || 0,
+      created_by: session.user.id,
+    }).select().single()
+    if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setCreatingRetainage(false); return }
+    if (budgetItems.length > 0) {
+      const lineInserts = budgetItems.map(b => {
+        const prevLine = lines.find(l => l.budget_item_id === b.id)
+        const bAmt = Number(b.owner_amount ?? b.budget_amount ?? 0)
+        const prevDollarPrev = prevLine?.dollar_prev != null ? Number(prevLine.dollar_prev) : bAmt * ((parseFloat(prevLine?.pct_prev || 0)) / 100)
+        const prevDollarThis = prevLine?.dollar_this_period != null ? Number(prevLine.dollar_this_period) : bAmt * ((parseFloat(prevLine?.pct_this_period || 0)) / 100)
+        const newDollarPrev = prevLine ? r2(prevDollarPrev + prevDollarThis) : 0
+        const newPctPrev = bAmt > 0 ? newDollarPrev / bAmt * 100 : 0
+        return { application_id: newApp.id, budget_item_id: b.id, pct_prev: newPctPrev, dollar_prev: newDollarPrev, pct_this_period: 0, dollar_this_period: 0 }
+      })
+      await supabase.from('aia_application_lines').insert(lineInserts)
+    }
+    const updatedApps = await loadAiaApplications()
+    const created = updatedApps.find(a => a.id === newApp.id) || newApp
+    await openAiaApp(created)
+    setCreatingRetainage(false)
   }
 
   async function createNvSubAiaApplication(e, sc) {
@@ -10377,10 +10427,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {job.billing_type === 'draw_request' ? `Draw Requests (${aiaApplications.length})` : `AIA Applications (${aiaApplications.length})`}
                     </p>
                     {!showNewAia && (
-                      <button style={s.btnSmallOrange} onClick={() => {
-                        setShowNewAia(true)
-                        setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
-                      }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button style={s.btnSmallOrange} onClick={() => {
+                          setShowNewAia(true)
+                          setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
+                        }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
+                        {aiaApplications.length > 0 && (
+                          <button
+                            style={{ ...s.btnSmallGreen, opacity: creatingRetainage ? 0.6 : 1 }}
+                            disabled={creatingRetainage}
+                            onClick={createRetainageRelease}>
+                            {creatingRetainage ? 'Creating…' : 'Bill for Retainage'}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   {showNewAia && (() => {

@@ -2137,7 +2137,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (!id) return
     if (activeTab === 'details') { loadNvSubcontracts() }
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob(); reloadSubs() }
-    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations(); loadNvSubcontracts() }
+    if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadAllCOs(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations(); loadNvSubcontracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
     if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
     if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }

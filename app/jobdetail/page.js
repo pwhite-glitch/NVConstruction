@@ -7249,6 +7249,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const attachments = [c.bid_proposal_url && 'Bid proposal', c.signed_contract_url && 'Signed contract'].filter(Boolean)
                 const scopeIsLong = (c.description || '').length > 160 || (c.description || '').split('\n').length > 3
                 const scopeExpanded = expandedScopeIds.has(c.id)
+                const contractApproved = billingSubmissions
+                  .filter(b => b.status === 'approved' && (
+                    (c.sub_id && b.sub_id === c.sub_id) ||
+                    (c.vendor_name && b.company_name && b.company_name.toLowerCase() === c.vendor_name.toLowerCase())
+                  ))
+                  .reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+                const contractRemaining = Number(c.adjusted_contract_value) - contractApproved
 
                 return (
                   <div key={c.id} style={{ ...s.contractRow, ...(isDraft ? { borderStyle: 'dashed', borderColor: '#f59e0b' } : {}) }}>
@@ -7294,7 +7301,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Remaining</div>
-                          <div style={{ fontSize: '14px', fontWeight: '700', color: Number(c.remaining_balance) < 0 ? '#dc2626' : '#aaa' }}>${Number(c.remaining_balance).toLocaleString()}</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: contractRemaining < 0 ? '#dc2626' : '#aaa' }}>${contractRemaining.toLocaleString()}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Retainage</div>
@@ -7486,7 +7493,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue('#e8590c')}>{fmtC(c.adjusted_contract_value)}</div></div>
                             <div style={s.statCard}><div style={s.statLabel}>Billed (Approved)</div><div style={s.statValue('#2563eb')}>{fmtC(totalApproved)}</div></div>
                             <div style={s.statCard}><div style={s.statLabel}>Retainage Held</div><div style={s.statValue('#d97706')}>{fmtC(totalRetHeld)}</div></div>
-                            <div style={s.statCard}><div style={s.statLabel}>Net Paid</div><div style={s.statValue('#16a34a')}>{fmtC(totalApproved - totalRetHeld)}</div></div>
+                            <div style={s.statCard}><div style={s.statLabel}>Net Approved</div><div style={s.statValue('#16a34a')}>{fmtC(totalApproved - totalRetHeld)}</div></div>
                             <div style={s.statCard}><div style={s.statLabel}>Remaining to Bill</div><div style={s.statValue(remainingToBill < 0 ? '#dc2626' : undefined)}>{fmtC(remainingToBill)}</div></div>
                           </div>
 

@@ -2948,10 +2948,13 @@ export default function Field() {
                       </div>
                       <div style={{ marginBottom: '14px' }}>
                         <label style={s.label}>Equipment <span style={{ color: '#dc2626' }}>*</span></label>
-                        <input list="mx-equipment-list" style={s.input} value={maintenanceForm.equipment_name} onChange={e => setMaintenanceForm(f => ({ ...f, equipment_name: e.target.value }))} placeholder="e.g. Excavator, Skid Steer, John Deere 310..." required />
-                        <datalist id="mx-equipment-list">
-                          {allVehicles.map(v => <option key={v.id} value={v.name} />)}
-                        </datalist>
+                        <select style={s.input} value={maintenanceForm.equipment_name} onChange={e => setMaintenanceForm(f => ({ ...f, equipment_name: e.target.value }))} required>
+                          <option value="">Select equipment…</option>
+                          <option>Cat Mini Excavator 2025 Model 304-07 Serial AN405295</option>
+                          <option>Cat Telehandler 2020 TL943D Serial MLJ01178</option>
+                          <option>Cat Telehandler 2018 TL943D Serial MLJ00675</option>
+                          <option>Cat Compact Track Loader 2021 259D3 Serial CW909438</option>
+                        </select>
                       </div>
                       <div style={{ marginBottom: '14px' }}>
                         <label style={s.label}>Work Performed <span style={{ color: '#dc2626' }}>*</span></label>

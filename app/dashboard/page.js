@@ -13,6 +13,7 @@ import { sameCompany } from '../../lib/company-name'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
+import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -479,6 +480,15 @@ export default function Dashboard() {
   // Vehicles state (PM-only)
   const [vehicles, setVehicles] = useState([])
   const [vehiclesLoaded, setVehiclesLoaded] = useState(false)
+
+  // Maintenance report state (Landon Moore only)
+  const [mxReports, setMxReports] = useState([])
+  const [mxForm, setMxForm] = useState({ report_date: '', equipment_name: '', current_hours: '', description: '' })
+  const [mxPhotos, setMxPhotos] = useState([])
+  const [mxPhotoUrls, setMxPhotoUrls] = useState({})
+  const [uploadingMxPhoto, setUploadingMxPhoto] = useState(false)
+  const [submittingMx, setSubmittingMx] = useState(false)
+  const [mxLoaded, setMxLoaded] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
   const [vehicleForm, setVehicleForm] = useState({ name: '', make: '', model: '', year: '', vin: '', license_plate: '', color: '', assigned_to: '', notes: '' })
   const [savingVehicle, setSavingVehicle] = useState(false)
@@ -602,6 +612,7 @@ export default function Dashboard() {
     if (activeTab === 'permissions') loadAllPermissions()
     if (activeTab === 'my-work' && !myWork && !myWorkLoading) loadMyWork()
     if (activeTab === 'notifications' && !pmNotifLoaded) loadPmNotifications()
+    if (activeTab === 'maintenance' && !mxLoaded) { loadMxReports(); if (!vehiclesLoaded) loadVehicles() }
     if (activeTab === 'lookahead') { loadLookaheadReview(); if (!lookaheadThisWeek) loadLookaheadThisWeek() }
     if (activeTab === 'direct-costs') loadDcQueue()
   }, [activeTab])
@@ -3086,6 +3097,66 @@ ${estimate.notes ? `
     setVehiclesLoaded(true)
   }
 
+  async function loadMxReports() {
+    const res = await authFetch('/api/maintenance-reports')
+    const json = await res.json()
+    const reports = json.data || []
+    setMxReports(reports)
+    const paths = reports.flatMap(r => (r.photos || []).map(p => p.path || p)).filter(Boolean)
+    if (paths.length) {
+      const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(paths, 3600)
+      const map = {}
+      data?.forEach(u => { map[u.path] = u.signedUrl })
+      setMxPhotoUrls(map)
+    }
+    setMxLoaded(true)
+  }
+
+  async function uploadMxPhoto(file) {
+    setUploadingMxPhoto(true)
+    const ext = file.name.split('.').pop()
+    const path = `maintenance/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
+    if (!error) {
+      const { data: su } = await supabase.storage.from('daily-report-photos').createSignedUrl(path, 3600)
+      setMxPhotos(prev => [...prev, { path, name: file.name }])
+      if (su?.signedUrl) setMxPhotoUrls(prev => ({ ...prev, [path]: su.signedUrl }))
+    }
+    setUploadingMxPhoto(false)
+  }
+
+  async function submitMxReport(e) {
+    e.preventDefault()
+    setSubmittingMx(true)
+    const res = await authFetch('/api/maintenance-reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...mxForm, current_hours: mxForm.current_hours || null, photos: mxPhotos }),
+    })
+    if (res.ok) {
+      setMxForm({ report_date: '', equipment_name: '', current_hours: '', description: '' })
+      setMxPhotos([])
+      await loadMxReports()
+    }
+    setSubmittingMx(false)
+  }
+
+  async function deleteMxReport(id) {
+    if (!confirm('Delete this report?')) return
+    await authFetch(`/api/maintenance-reports?id=${id}`, { method: 'DELETE' })
+    setMxReports(prev => prev.filter(r => r.id !== id))
+  }
+
+  async function printMxReport(report) {
+    const paths = (report.photos || []).map(p => p.path || p).filter(Boolean)
+    let signedUrls = {}
+    if (paths.length) {
+      const { data } = await supabase.storage.from('daily-report-photos').createSignedUrls(paths, 3600)
+      data?.forEach(u => { signedUrls[u.path] = u.signedUrl })
+    }
+    openMaintenanceReportPrint(report, signedUrls)
+  }
+
   async function loadVehicleLogs(vehicleId) {
     const res = await fetch(`/api/vehicle-logs?vehicle_id=${vehicleId}`)
     const json = await res.json()
@@ -3429,6 +3500,7 @@ ${estimate.notes ? `
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
   const firstName = profile?.full_name?.split(' ')[0] || 'there'
+  const isLandon = profile?.full_name?.toLowerCase() === 'landon moore'
   const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
   const pendingTotal = pending.reduce((sum, sub) => sum + (sub.amount_billed || 0), 0)
   const unsignedWaivers = submissions.filter(s => s.status === 'approved' && !s.lien_waiver_signed_at)
@@ -3485,6 +3557,7 @@ ${estimate.notes ? `
       items: [
         { tab: 'vehicles', label: profile?.role === 'apm' ? 'My Vehicle' : 'Fleet', icon: <IconTruck /> },
         ...(can('tab.tools', ['pm', 'apm'].includes(profile?.role)) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
+        ...(isLandon ? [{ tab: 'maintenance', label: 'Maintenance Report', icon: <IconWrench /> }] : []),
       ]
     }] : []),
     {
@@ -3734,12 +3807,17 @@ ${estimate.notes ? `
 
       {/* ── BOTTOM NAV (mobile only) ── */}
       <div className="rx-bottom-nav" style={{ display: 'none' }}>
-        {[
+        {(isLandon ? [
+          { tab: 'overview',     icon: <IconHome />,       label: 'Home' },
+          { tab: 'jobs',         icon: <IconBriefcase />,  label: 'Jobs' },
+          { tab: 'billing',      icon: <IconDollar />,     label: 'Billing' },
+          { tab: 'maintenance',  icon: <IconWrench />,     label: 'Maintenance' },
+        ] : [
           { tab: 'overview',  icon: <IconHome />,       label: 'Home' },
           { tab: 'jobs',      icon: <IconBriefcase />,  label: 'Jobs' },
           { tab: 'billing',   icon: <IconDollar />,     label: 'Billing' },
           { tab: 'directory', icon: <IconUsers />,      label: 'Subs' },
-        ].map(({ tab, icon, label }) => (
+        ]).map(({ tab, icon, label }) => (
           <button key={tab}
             onClick={() => { setActiveTab(tab); setMobileMoreOpen(false) }}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: activeTab === tab ? '#e8590c' : '#9ca3af', cursor: 'pointer', gap: '3px', fontSize: '10px', fontWeight: activeTab === tab ? '700' : '400', padding: '8px 0' }}>
@@ -3756,7 +3834,7 @@ ${estimate.notes ? `
       {mobileMoreOpen && (
         <div style={{ position: 'fixed', bottom: 'calc(60px + env(safe-area-inset-bottom))', left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', zIndex: 200, display: 'none' }} className="rx-more-drawer">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
-            {navItems.filter(n => !['overview','jobs','billing','directory'].includes(n.tab)).map(({ tab, icon, label, badge }) => (
+            {navItems.filter(n => !(isLandon ? ['overview','jobs','billing','maintenance'] : ['overview','jobs','billing','directory']).includes(n.tab)).map(({ tab, icon, label, badge }) => (
               <button key={tab} onClick={() => { setActiveTab(tab); setMobileMoreOpen(false) }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '14px 8px', background: 'none', border: 'none', cursor: 'pointer', color: activeTab === tab ? '#e8590c' : '#374151', fontSize: '11px', fontWeight: activeTab === tab ? '700' : '400', position: 'relative' }}>
                 {icon}
                 {label}
@@ -8999,6 +9077,92 @@ ${estimate.notes ? `
                     </table>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'maintenance' && isLandon && (
+              <div style={{ maxWidth: '720px' }}>
+                <h2 style={{ margin: '0 0 1.25rem', fontSize: '18px', fontWeight: '800', color: '#111827' }}>Maintenance Report <span style={{ fontSize: '11px', color: '#9a3412', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '99px', padding: '2px 8px', fontWeight: '700', verticalAlign: 'middle', marginLeft: '6px' }}>JaxEm Fabrication LLC</span></h2>
+
+                <form onSubmit={submitMxReport} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#111827', marginBottom: '16px', letterSpacing: '-0.2px' }}>New Report</div>
+                  <div style={s.grid2}>
+                    <div>
+                      <label style={s.label}>Date *</label>
+                      <input type="date" style={s.input} value={mxForm.report_date} onChange={e => setMxForm(f => ({ ...f, report_date: e.target.value }))} required />
+                    </div>
+                    <div>
+                      <label style={s.label}>Current Hours</label>
+                      <input type="number" style={s.input} value={mxForm.current_hours} onChange={e => setMxForm(f => ({ ...f, current_hours: e.target.value }))} placeholder="e.g. 1842" min="0" step="0.1" />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '14px', marginTop: '14px' }}>
+                    <label style={s.label}>Equipment *</label>
+                    <input list="mx-equip-dash" style={s.input} value={mxForm.equipment_name} onChange={e => setMxForm(f => ({ ...f, equipment_name: e.target.value }))} placeholder="e.g. Excavator, Skid Steer, John Deere 310..." required />
+                    <datalist id="mx-equip-dash">
+                      {vehicles.map(v => <option key={v.id} value={v.name} />)}
+                    </datalist>
+                  </div>
+                  <div style={{ marginBottom: '14px' }}>
+                    <label style={s.label}>Work Performed *</label>
+                    <textarea style={{ ...s.input, minHeight: '110px', resize: 'vertical' }} value={mxForm.description} onChange={e => setMxForm(f => ({ ...f, description: e.target.value }))} placeholder="Oil change, filter replacement, greased fittings, inspected tracks…" required />
+                  </div>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={s.label}>Photos</label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: uploadingMxPhoto ? '#f3f4f6' : '#fff', color: uploadingMxPhoto ? '#9ca3af' : '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingMxPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                      {uploadingMxPhoto ? 'Uploading...' : '+ Add Photos'}
+                      <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingMxPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadMxPhoto(f)); e.target.value = '' }} />
+                    </label>
+                    {mxPhotos.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                        {mxPhotos.map((p, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4b5563' }}>
+                            {mxPhotoUrls[p.path] && <img src={mxPhotoUrls[p.path]} alt="" style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px' }} />}
+                            <span>{p.name}</span>
+                            <button type="button" onClick={() => setMxPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0, lineHeight: 1 }}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button type="submit" disabled={submittingMx} style={{ padding: '10px 22px', background: submittingMx ? '#e5e7eb' : '#e8590c', color: submittingMx ? '#9ca3af' : '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: submittingMx ? 'default' : 'pointer' }}>
+                    {submittingMx ? 'Saving...' : 'Save Report'}
+                  </button>
+                </form>
+
+                <div style={{ fontSize: '11px', fontWeight: '800', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
+                  Past Reports ({mxReports.length})
+                </div>
+                {mxReports.length === 0 && (
+                  <div style={{ color: '#9ca3af', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>No reports yet.</div>
+                )}
+                {mxReports.map(r => (
+                  <div key={r.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <div>
+                        <div style={{ fontWeight: '800', fontSize: '15px', color: '#111827' }}>{r.equipment_name}</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                          {new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                          {r.current_hours != null && <span style={{ marginLeft: '10px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '99px', padding: '1px 8px', fontSize: '11px', fontWeight: '700' }}>{Number(r.current_hours).toLocaleString()} hrs</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => printMxReport(r)} style={s.btnSm('orange')}>Export PDF</button>
+                        <button onClick={() => deleteMxReport(r.id)} style={{ background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap', background: '#f9fafb', borderRadius: '6px', padding: '10px 12px', marginBottom: (r.photos || []).length ? '10px' : 0 }}>{r.description}</div>
+                    {(r.photos || []).length > 0 && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        {(r.photos || []).map((p, i) => {
+                          const path = p.path || p
+                          const url = mxPhotoUrls[path]
+                          return url ? <img key={i} src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e5e7eb', cursor: 'pointer' }} onClick={() => window.open(url, '_blank')} /> : null
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 

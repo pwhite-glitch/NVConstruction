@@ -128,7 +128,7 @@ const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'p
 const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [] }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: false }
+const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: false, nv_reimbursement: false }
 
 function CoAttachmentLink({ path, supabase }) {
   const [url, setUrl] = useState(null)
@@ -4614,6 +4614,7 @@ ${attachmentHtml}
       billing_period: createBillingForm.billing_period ? createBillingForm.billing_period + '-01' : null,
       draw_request_id: createBillingForm.draw_request_id || null,
       sub_id: createBillingForm.sub_id || null,
+      nv_reimbursement: createBillingForm.nv_reimbursement || false,
       status,
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
@@ -4665,6 +4666,7 @@ ${attachmentHtml}
       billing_period: editBillingForm.billing_period ? editBillingForm.billing_period + '-01' : null,
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
+      nv_reimbursement: editBillingForm.nv_reimbursement || false,
     }
     let res
     if (editBillingFile) {
@@ -4696,6 +4698,7 @@ ${attachmentHtml}
       billing_period: b.billing_period ? b.billing_period.slice(0, 7) : '',
       status: b.status,
       doc_url: b.doc_url || null,
+      nv_reimbursement: b.nv_reimbursement || false,
     }
   }
 
@@ -9081,6 +9084,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       Approve immediately (skip pending queue)
                     </label>
                   </div>
+                  <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input type="checkbox" id="nvReimbursement" checked={createBillingForm.nv_reimbursement} onChange={e => setCreateBillingForm(f => ({ ...f, nv_reimbursement: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#7c3aed' }} />
+                    <label htmlFor="nvReimbursement" style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
+                      NV Reimbursement (direct cost paid on NV credit card)
+                    </label>
+                  </div>
                   {(!createBillingForm.company_name || !createBillingForm.amount_billed) && (
                     <p style={{ fontSize: '12px', color: '#e8590c', marginBottom: '10px' }}>
                       {!createBillingForm.company_name ? 'Select a contractor or enter a company name. ' : ''}{!createBillingForm.amount_billed ? 'Enter the amount billed.' : ''}
@@ -9127,6 +9136,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={s.coBadge(b.status)}>{b.status}</span>
                           {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
                           {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
+                          {b.nv_reimbursement && <span style={{ fontSize: '10px', color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV REIMBURSEMENT</span>}
                           {b.status === 'approved' && b.lien_waiver_signed_at
                             ? <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER SIGNED</span>
                             : b.status === 'approved' && b.lien_waiver_sent_at
@@ -9319,6 +9329,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <option value="approved">Approved</option>
                             <option value="rejected">Rejected</option>
                           </select>
+                        </div>
+                        <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input type="checkbox" id={`nvReimb-${b.id}`} checked={editBillingForm.nv_reimbursement} onChange={e => setEditBillingForm(f => ({ ...f, nv_reimbursement: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#7c3aed' }} />
+                          <label htmlFor={`nvReimb-${b.id}`} style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>NV Reimbursement (direct cost / credit card)</label>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button style={s.btnSmallOrange} onClick={updateBillingEntry}>Save changes</button>

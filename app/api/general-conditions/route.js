@@ -11,7 +11,7 @@ async function uploadGCDoc(file, jobId) {
   const path = `${jobId}/${Date.now()}.${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
   const { error } = await adminSupabase.storage
-    .from('gc-docs')
+    .from('receipts')
     .upload(path, buffer, { contentType: file.type })
   if (error) throw new Error('File upload failed: ' + error.message)
   return path

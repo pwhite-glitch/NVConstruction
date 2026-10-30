@@ -156,6 +156,10 @@ function ResidentialJobDetailInner() {
   const [dcTypeFilter, setDcTypeFilter] = useState('all')
   const [updatingCostId, setUpdatingCostId] = useState(null)
   const [approvingAll, setApprovingAll] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiMessages, setAiMessages] = useState([])
+  const [aiInput, setAiInput] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
   const [rejectingCostId, setRejectingCostId] = useState(null)
   const [costRejectNote, setCostRejectNote] = useState('')
 
@@ -839,6 +843,29 @@ function ResidentialJobDetailInner() {
     await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status: 'pending', rejection_reason: null, rejected_at: null, rejected_by: null }) })
     await loadDirectCosts()
     setUpdatingCostId(null)
+  }
+
+  async function sendAiMessage(inputOverride) {
+    const text = (inputOverride ?? aiInput).trim()
+    if (!text || aiLoading) return
+    const userMsg = { role: 'user', content: text }
+    const next = [...aiMessages, userMsg]
+    setAiMessages(next)
+    setAiInput('')
+    setAiLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/ask-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ job_id: id, messages: next }),
+      })
+      const data = await res.json()
+      setAiMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error || 'No response.' }])
+    } catch {
+      setAiMessages(prev => [...prev, { role: 'assistant', content: 'Connection error — please try again.' }])
+    }
+    setAiLoading(false)
   }
 
   async function approveAllAssigned() {
@@ -2451,6 +2478,108 @@ function ResidentialJobDetailInner() {
           </div>{/* /content */}
         </div>{/* /sidebar+content row */}
       </main>
+
+      {/* ── AI Job Assistant ─────────────────────────────────────────────── */}
+      <button
+        onClick={() => setAiOpen(o => !o)}
+        title="AI Job Assistant"
+        style={{
+          position: 'fixed', bottom: '24px', right: '24px', zIndex: 1100,
+          width: '52px', height: '52px', borderRadius: '50%',
+          background: aiOpen ? '#1a1a2e' : '#e8590c', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.35)', transition: 'background 0.2s',
+          color: '#fff', fontSize: '22px',
+        }}
+      >
+        {aiOpen ? '✕' : '✦'}
+      </button>
+
+      {aiOpen && (
+        <div style={{
+          position: 'fixed', bottom: '88px', right: '24px', zIndex: 1099,
+          width: '360px', maxHeight: '520px',
+          background: '#0f0f1a', border: '1px solid #2a2a3e', borderRadius: '16px',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.55)',
+        }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid #2a2a3e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: '#e8590c', fontSize: '16px' }}>✦</span>
+            <div>
+              <div style={{ color: '#f1f1f1', fontWeight: 700, fontSize: '13px', lineHeight: 1 }}>AI Job Assistant</div>
+              <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '2px' }}>Powered by Gemini</div>
+            </div>
+            {aiMessages.length > 0 && (
+              <button onClick={() => setAiMessages([])} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#4b5563', fontSize: '11px', cursor: 'pointer', padding: '2px 6px', borderRadius: '4px' }}>
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {aiMessages.length === 0 && (
+              <div style={{ color: '#4b5563', fontSize: '12px', textAlign: 'center', paddingTop: '20px', lineHeight: 1.6 }}>
+                Ask anything about this job — budget, costs, billing, subcontracts, or profitability.
+              </div>
+            )}
+            {aiMessages.map((m, i) => (
+              <div key={i} style={{
+                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '88%',
+                background: m.role === 'user' ? '#e8590c' : '#1e1e30',
+                color: m.role === 'user' ? '#fff' : '#d1d5db',
+                borderRadius: m.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                padding: '9px 12px', fontSize: '13px', lineHeight: 1.55, whiteSpace: 'pre-wrap',
+              }}>
+                {m.content}
+              </div>
+            ))}
+            {aiLoading && (
+              <div style={{ alignSelf: 'flex-start', background: '#1e1e30', borderRadius: '12px 12px 12px 2px', padding: '9px 14px', color: '#6b7280', fontSize: '13px' }}>
+                Thinking…
+              </div>
+            )}
+          </div>
+
+          {aiMessages.length === 0 && (
+            <div style={{ display: 'flex', gap: '6px', padding: '0 14px 8px', flexWrap: 'wrap' }}>
+              {['What\'s the budget status?', 'Any pending costs?', 'How much have we billed?'].map(q => (
+                <button key={q} onClick={() => sendAiMessage(q)}
+                  style={{ background: '#1e1e30', border: '1px solid #2a2a3e', color: '#9ca3af', borderRadius: '20px', padding: '4px 10px', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div style={{ padding: '10px 12px', borderTop: '1px solid #2a2a3e', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+            <textarea
+              value={aiInput}
+              onChange={e => setAiInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage() } }}
+              placeholder="Ask about this job…"
+              rows={1}
+              style={{
+                flex: 1, background: '#1e1e30', border: '1px solid #2a2a3e', borderRadius: '10px',
+                color: '#f1f1f1', fontSize: '13px', padding: '8px 10px', resize: 'none',
+                lineHeight: 1.4, maxHeight: '80px', overflowY: 'auto', outline: 'none',
+              }}
+            />
+            <button
+              onClick={() => sendAiMessage()}
+              disabled={!aiInput.trim() || aiLoading}
+              style={{
+                background: !aiInput.trim() || aiLoading ? '#2a2a3e' : '#e8590c',
+                border: 'none', borderRadius: '10px', color: '#fff',
+                cursor: !aiInput.trim() || aiLoading ? 'default' : 'pointer',
+                padding: '8px 12px', fontSize: '16px', transition: 'background 0.15s', flexShrink: 0,
+              }}
+            >
+              ↑
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

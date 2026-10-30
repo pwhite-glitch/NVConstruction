@@ -238,6 +238,7 @@ export default function Field() {
   const [maintenancePhotos, setMaintenancePhotos] = useState([]) // { path, name }
   const [uploadingMxPhoto, setUploadingMxPhoto] = useState(false)
   const [submittingMx, setSubmittingMx] = useState(false)
+  const [sendingMxReport, setSendingMxReport] = useState(null)
   const [allVehicles, setAllVehicles] = useState([])
   const [mxPhotoUrls, setMxPhotoUrls] = useState({})
 
@@ -750,6 +751,26 @@ export default function Field() {
       if (data) paths.forEach((path, i) => { if (data[i]?.signedUrl) urls[path] = data[i].signedUrl })
     }
     openMaintenanceReportPrint(report, urls)
+  }
+
+  async function sendMaintenanceReport(report) {
+    if (sendingMxReport) return
+    setSendingMxReport(report.id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/maintenance-reports/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ report_id: report.id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Send failed')
+      alert('Report sent to vivek@nvim.co and pwhite@nvim.co')
+    } catch (e) {
+      alert('Error sending report: ' + e.message)
+    } finally {
+      setSendingMxReport(null)
+    }
   }
 
   async function deleteMxReport(id) {
@@ -3001,6 +3022,7 @@ export default function Field() {
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button onClick={() => printMaintenanceReport(r)} style={{ ...s.btnSm('orange'), fontSize: '11px' }}>Export PDF</button>
+                            <button onClick={() => sendMaintenanceReport(r)} disabled={!!sendingMxReport} style={{ ...s.btnSm('gray'), fontSize: '11px', opacity: sendingMxReport ? 0.6 : 1 }}>{sendingMxReport === r.id ? 'Sending…' : 'Send Report'}</button>
                             <button onClick={() => deleteMxReport(r.id)} style={{ background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
                           </div>
                         </div>

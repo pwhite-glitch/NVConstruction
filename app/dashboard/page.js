@@ -488,6 +488,7 @@ export default function Dashboard() {
   const [mxPhotoUrls, setMxPhotoUrls] = useState({})
   const [uploadingMxPhoto, setUploadingMxPhoto] = useState(false)
   const [submittingMx, setSubmittingMx] = useState(false)
+  const [sendingMxReport, setSendingMxReport] = useState(null)
   const [mxLoaded, setMxLoaded] = useState(false)
   const [showAddVehicle, setShowAddVehicle] = useState(false)
   const [vehicleForm, setVehicleForm] = useState({ name: '', make: '', model: '', year: '', vin: '', license_plate: '', color: '', assigned_to: '', notes: '' })
@@ -3139,6 +3140,25 @@ ${estimate.notes ? `
       await loadMxReports()
     }
     setSubmittingMx(false)
+  }
+
+  async function sendMxReport(report) {
+    if (sendingMxReport) return
+    setSendingMxReport(report.id)
+    try {
+      const res = await authFetch('/api/maintenance-reports/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report_id: report.id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Send failed')
+      alert('Report sent to vivek@nvim.co and pwhite@nvim.co')
+    } catch (e) {
+      alert('Error sending report: ' + e.message)
+    } finally {
+      setSendingMxReport(null)
+    }
   }
 
   async function deleteMxReport(id) {
@@ -9151,6 +9171,7 @@ ${estimate.notes ? `
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={() => printMxReport(r)} style={s.btnSm('orange')}>Export PDF</button>
+                        <button onClick={() => sendMxReport(r)} disabled={!!sendingMxReport} style={{ ...s.btnSm('gray'), opacity: sendingMxReport ? 0.6 : 1 }}>{sendingMxReport === r.id ? 'Sending…' : 'Send Report'}</button>
                         <button onClick={() => deleteMxReport(r.id)} style={{ background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
                       </div>
                     </div>

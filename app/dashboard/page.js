@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
-import { mondayOf } from '../../lib/lookahead-dates'
+import { localToday, mondayOf } from '../../lib/lookahead-dates'
 import { stageLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { openStorageFile } from '../../lib/open-file'
 import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount } from '../../lib/direct-cost-queue'
@@ -672,7 +672,7 @@ export default function Dashboard() {
 
   async function loadLookaheadThisWeek() {
     try {
-      const res = await authFetch(`/api/lookaheads?week_start=${mondayOf(new Date().toISOString().slice(0, 10))}&summary=1`)
+      const res = await authFetch(`/api/lookaheads?week_start=${mondayOf(localToday())}&summary=1`)
       if (!res.ok) return
       const { data } = await res.json()
       setLookaheadThisWeek(Array.isArray(data) ? data : [])
@@ -3959,7 +3959,7 @@ ${estimate.notes ? `
 
             {/* ── LOOKAHEAD ── */}
             {activeTab === 'lookahead' && (() => {
-              const thisMonday = mondayOf(new Date().toISOString().slice(0, 10))
+              const thisMonday = mondayOf(localToday())
               const open = (jobId, week) => router.push(`/jobdetail?id=${jobId}&tab=lookahead${week ? `&week=${week}` : ''}`)
               const fmtWeek = w => new Date(w + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
               const byJob = Object.fromEntries((lookaheadThisWeek || []).map(l => [l.job_id, l]))

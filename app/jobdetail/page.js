@@ -15,7 +15,7 @@ import NewPOForm from './NewPOForm'
 import LookaheadActivityModal from './LookaheadActivityModal'
 import { StatusChip, DayWeather, RainTag, WorkflowBar, SendToSubsDialog, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
 import { hasOpenConstraint, responsibleLabel, lookaheadStage } from '../../lib/lookahead-fields'
-import { addDays, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, shiftActivity, dayOfRange } from '../../lib/lookahead-dates'
+import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, shiftActivity, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged } from '../../lib/lookahead-weather'
 import { openLookaheadPrint } from '../../lib/lookahead-print'
 import * as lookaheadApi from '../../lib/lookahead-client'
@@ -557,13 +557,7 @@ function JobDetailInner() {
   // Lookahead state
   const [lookahead, setLookahead] = useState(null)
   const [lookaheadActivities, setLookaheadActivities] = useState([])
-  const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => {
-    const d = new Date()
-    const day = d.getDay()
-    const daysUntilNextMon = day === 0 ? 1 : day === 1 ? 7 : 8 - day
-    const mon = new Date(d); mon.setDate(d.getDate() + daysUntilNextMon)
-    return mon.toISOString().split('T')[0]
-  })
+  const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => addDays(mondayOf(localToday()), 7)) // next Monday
   const [showActivityModal, setShowActivityModal] = useState(false)
   const [editingActivity, setEditingActivity] = useState(null)
   const [activityForm, setActivityForm] = useState({})

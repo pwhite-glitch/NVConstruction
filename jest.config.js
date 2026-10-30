@@ -1,3 +1,6 @@
+// Run in US Central (where the app is used) so tests catch UTC-vs-local date bugs.
+process.env.TZ = 'America/Chicago'
+
 /** @type {import('jest').Config} */
 const config = {
   testEnvironment: 'node',

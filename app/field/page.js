@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
-import { addDays, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
+import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged } from '../../lib/lookahead-weather'
 import { openLookaheadPrint } from '../../lib/lookahead-print'
 import * as lookaheadApi from '../../lib/lookahead-client'
@@ -102,7 +102,7 @@ export default function Field() {
   const [jobSearch, setJobSearch] = useState('')
 
   const [dailyReports, setDailyReports] = useState([])
-  const [dailyForm, setDailyForm] = useState({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
+  const [dailyForm, setDailyForm] = useState({ report_date: localToday(), weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
   const [crewLog, setCrewLog] = useState([{ name: '', company: '', trade: '', hours: '' }])
   const [equipmentLog, setEquipmentLog] = useState([])
   const [materialsLog, setMaterialsLog] = useState([])
@@ -139,7 +139,7 @@ export default function Field() {
   const [contactSuccess, setContactSuccess] = useState(false)
 
   const [directCosts, setDirectCosts] = useState([])
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
+  const [dcForm, setDcForm] = useState({ cost_date: localToday(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
   const [dcFile, setDcFile] = useState(null)
   const [dcFileError, setDcFileError] = useState('')
   const [resubmitCostId, setResubmitCostId] = useState(null)
@@ -161,7 +161,7 @@ export default function Field() {
   const [vehicleLogs, setVehicleLogs] = useState({})
   const [expandedVehicleId, setExpandedVehicleId] = useState(null)
   const [showVehicleLogForm, setShowVehicleLogForm] = useState(null)
-  const [vehicleLogForm, setVehicleLogForm] = useState({ log_type: 'Mileage Update', log_date: new Date().toISOString().split('T')[0], mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+  const [vehicleLogForm, setVehicleLogForm] = useState({ log_type: 'Mileage Update', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
   const [vehicleLogFile, setVehicleLogFile] = useState(null)
   const [submittingVehicleLog, setSubmittingVehicleLog] = useState(false)
   const [vehicleLogMsg, setVehicleLogMsg] = useState('')
@@ -172,12 +172,12 @@ export default function Field() {
   const [toolLogsField, setToolLogsField] = useState({})
   const [expandedToolFieldId, setExpandedToolFieldId] = useState(null)
   const [showToolLogForm, setShowToolLogForm] = useState(null)
-  const [toolLogForm, setToolLogForm] = useState({ log_type: 'checkin', log_date: new Date().toISOString().split('T')[0], notes: '' })
+  const [toolLogForm, setToolLogForm] = useState({ log_type: 'checkin', log_date: localToday(), notes: '' })
   const [submittingToolLog, setSubmittingToolLog] = useState(false)
   const [toolLogMsg, setToolLogMsg] = useState('')
   const [toolLogError, setToolLogError] = useState('')
   const [showPurchaseToolForm, setShowPurchaseToolForm] = useState(false)
-  const [purchaseToolForm, setPurchaseToolForm] = useState({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: new Date().toISOString().split('T')[0], notes: '' })
+  const [purchaseToolForm, setPurchaseToolForm] = useState({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: localToday(), notes: '' })
   const [purchaseToolFile, setPurchaseToolFile] = useState(null)
   const [purchasingTool, setPurchasingTool] = useState(false)
   const [purchaseToolMsg, setPurchaseToolMsg] = useState('')
@@ -219,13 +219,7 @@ export default function Field() {
   const [lookahead, setLookahead] = useState(null)
   const [lookaheadActivities, setLookaheadActivities] = useState([])
   const [lookaheadContracts, setLookaheadContracts] = useState([])
-  const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => {
-    const d = new Date()
-    const day = d.getDay()
-    const daysToMon = day === 0 ? -6 : 1 - day
-    const mon = new Date(d); mon.setDate(d.getDate() + daysToMon)
-    return mon.toISOString().split('T')[0]
-  })
+  const [lookaheadWeekStart, setLookaheadWeekStart] = useState(() => mondayOf(localToday()))
   const [showLAModal, setShowLAModal] = useState(false)
   const [editingLAActivity, setEditingLAActivity] = useState(null)
   const [laForm, setLaForm] = useState({})
@@ -326,7 +320,7 @@ export default function Field() {
   }
 
   async function checkTodayReport() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = localToday()
     const { data } = await supabase.from('daily_reports').select('id').eq('job_id', selectedJobId).eq('report_date', today).maybeSingle()
     setTodayReportStatus(data ? 'submitted' : 'none')
   }
@@ -610,7 +604,7 @@ export default function Field() {
         return
       }
       setDcSuccess(true)
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
+      setDcForm({ cost_date: localToday(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '' })
       setDcFile(null)
       setDcFileError('')
       setShowDcForm(false)
@@ -852,7 +846,7 @@ export default function Field() {
     if (toolLogForm.log_type === 'checkin') {
       setMyTools(prev => prev.filter(t => t.id !== tool.id))
     }
-    setToolLogForm({ log_type: 'checkin', log_date: new Date().toISOString().split('T')[0], notes: '' })
+    setToolLogForm({ log_type: 'checkin', log_date: localToday(), notes: '' })
     setShowToolLogForm(null)
     setToolLogMsg('Saved.')
     setTimeout(() => setToolLogMsg(''), 3000)
@@ -891,7 +885,7 @@ export default function Field() {
     json = await res.json()
     if (json.error) { setVehicleLogError(json.error); setSubmittingVehicleLog(false); return }
     setVehicleLogs(prev => ({ ...prev, [vehicleId]: [json.data, ...(prev[vehicleId] || [])] }))
-    setVehicleLogForm({ log_type: 'Mileage Update', log_date: new Date().toISOString().split('T')[0], mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+    setVehicleLogForm({ log_type: 'Mileage Update', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
     setVehicleLogFile(null)
     setShowVehicleLogForm(null)
     setVehicleLogMsg('Log saved.')
@@ -965,7 +959,7 @@ export default function Field() {
         )
       }
       setDailySuccess(true)
-      setDailyForm({ report_date: new Date().toISOString().split('T')[0], weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
+      setDailyForm({ report_date: localToday(), weather: '', weather_temp: '', weather_delay: false, crew_count: '', work_performed: '', issues: '', safety_observations: '', toolbox_talk: '' })
       setCrewLog([{ name: '', company: '', trade: '', hours: '' }])
       setEquipmentLog([])
       setMaterialsLog([])
@@ -1029,14 +1023,14 @@ export default function Field() {
 
   async function markDeliveryReceived(id) {
     setUpdatingDelivery(id)
-    await supabase.from('deliveries').update({ status: 'received', received_date: new Date().toISOString().split('T')[0] }).eq('id', id)
+    await supabase.from('deliveries').update({ status: 'received', received_date: localToday() }).eq('id', id)
     await loadDeliveries()
     setUpdatingDelivery(null)
   }
 
   async function completeMilestone(id) {
     setCompletingMilestone(id)
-    await supabase.from('milestones').update({ status: 'complete', completed_date: new Date().toISOString().split('T')[0] }).eq('id', id)
+    await supabase.from('milestones').update({ status: 'complete', completed_date: localToday() }).eq('id', id)
     await loadMilestones()
     setCompletingMilestone(null)
   }
@@ -2476,7 +2470,7 @@ export default function Field() {
                                 if (!costRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
                               }
                               setPurchaseToolMsg(`${purchaseToolForm.name} logged.${purchaseToolForm.purchase_cost && selectedJobId ? ' Cost posted to job.' : ''}`)
-                              setPurchaseToolForm({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: new Date().toISOString().split('T')[0], notes: '' })
+                              setPurchaseToolForm({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: localToday(), notes: '' })
                               setPurchaseToolFile(null)
                               setShowPurchaseToolForm(false)
                               setTimeout(() => setPurchaseToolMsg(''), 4000)
@@ -2606,7 +2600,7 @@ export default function Field() {
                 {/* 2-WEEK LOOKAHEAD */}
                 {activeTab === 'lookahead' && (() => {
                   const weekDays = lookaheadDays(lookaheadWeekStart)
-                  const todayStr = new Date().toISOString().split('T')[0]
+                  const todayStr = localToday()
                   const fmtShort = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
                   const smallBtn = { background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '5px', color: '#777', fontSize: '11px', cursor: 'pointer', padding: '3px 8px' }
                   const copyBtn = (

@@ -4,7 +4,7 @@ import { requirePM } from '../../../lib/server-auth'
 import { notify } from '../../../lib/notify'
 import { escapeHtml } from '../../../lib/email'
 import { writeWithFallback, droppedWarning } from '../../../lib/lookahead-fields'
-import { addDays, planCopyForward } from '../../../lib/lookahead-dates'
+import { addDays, mondayOf, planCopyForward } from '../../../lib/lookahead-dates'
 import { jobPmUserIds } from '../../../lib/lookahead-recipients'
 
 const adminSupabase = createClient(
@@ -13,6 +13,10 @@ const adminSupabase = createClient(
 )
 
 const OFFICE_ROLES = new Set(['pm', 'apm', 'admin'])
+
+// Lookaheads always start on a Monday; snap any other 'YYYY-MM-DD' to its week's
+// Monday. Anything else is returned as-is.
+const weekStartOf = s => (/^\d{4}-\d{2}-\d{2}$/.test(s || '') ? mondayOf(s) : s)
 
 async function userName(userId) {
   const { data } = await adminSupabase.from('profiles').select('full_name').eq('id', userId).maybeSingle()
@@ -27,7 +31,7 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
     const jobId = searchParams.get('job_id')
-    const weekStart = searchParams.get('week_start')
+    const weekStart = weekStartOf(searchParams.get('week_start'))
     const status = searchParams.get('status')
     const summary = searchParams.get('summary')
     let query = adminSupabase
@@ -52,7 +56,8 @@ export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const { action, job_id, week_start_date, submitted_by, notes } = await request.json()
+    const { action, job_id, week_start_date: rawWeek, submitted_by, notes } = await request.json()
+    const week_start_date = weekStartOf(rawWeek)
     if (!job_id || !week_start_date) return Response.json({ error: 'job_id and week_start_date required' }, { status: 400 })
     const create = () => adminSupabase
       .from('lookaheads')

@@ -1160,22 +1160,8 @@ export default function Field() {
           <div style={s.empty}>You have not been assigned to any jobs yet.<br />Contact NV Construction to get started.</div>
         ) : (
           <>
-            {!selectedJobId && activeTab === 'maintenance' && profile?.full_name?.toLowerCase() === 'landon moore' && null /* rendered below */}
             {!selectedJobId && (
               <>
-                {profile?.full_name?.toLowerCase() === 'landon moore' && (
-                  <button
-                    onClick={() => { loadMaintenanceReports(); loadAllVehicles(); setActiveTab('maintenance') }}
-                    style={{ width: '100%', background: '#fff7ed', border: '2px solid #e8590c', borderRadius: '12px', padding: '14px 18px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '1.25rem' }}
-                  >
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8590c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41"/><path d="M3 12h1M20 12h1M12 3v1M12 20v1M5.63 5.63l1.41 1.41M16.95 16.95l1.41 1.41M5.63 18.37l1.41-1.41M16.95 7.05l1.41-1.41"/></svg>
-                    <div>
-                      <div style={{ fontWeight: '800', fontSize: '14px', color: '#c2410c' }}>Maintenance Report</div>
-                      <div style={{ fontSize: '11px', color: '#9a3412', marginTop: '2px' }}>JaxEm Fabrication LLC · Log equipment maintenance</div>
-                    </div>
-                    {maintenanceReports.length > 0 && <span style={{ marginLeft: 'auto', background: '#e8590c', color: '#fff', borderRadius: '99px', padding: '2px 10px', fontSize: '12px', fontWeight: '800' }}>{maintenanceReports.length}</span>}
-                  </button>
-                )}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#111827' }}>Your Projects</h2>
                   {pendingTab === 'lookahead' && (
@@ -1242,6 +1228,7 @@ export default function Field() {
                       { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
                       { key: 'tools', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>, label: 'My Tools', count: myTools.length || null },
                       { key: 'lookahead', icon: IC.lookahead, label: '2-Week Lookahead', count: lookaheadActivities.length || null },
+                      ...(profile?.full_name?.toLowerCase() === 'landon moore' ? [{ key: 'maintenance', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41"/><path d="M3 12h1M20 12h1M12 3v1M12 20v1M5.63 5.63l1.41 1.41M16.95 16.95l1.41 1.41M5.63 18.37l1.41-1.41M16.95 7.05l1.41-1.41"/></svg>, label: 'Maintenance Report', count: maintenanceReports.length || null }] : []),
                     ].map(item => (
                       <button key={item.key} onClick={() => setActiveTab(item.key)} style={{ background: '#ffffff', border: `1px solid ${item.alert ? '#4a2200' : '#222'}`, borderRadius: '12px', padding: '1.25rem', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={{ color: item.alert ? '#e8590c' : '#555', display: 'flex', lineHeight: 1 }}>{item.icon}</span>
@@ -2945,211 +2932,93 @@ export default function Field() {
                   </div>
                 )}
 
-          {activeTab === 'maintenance' && null /* rendered outside job block below */}
-          {false && (
-            <div style={{ padding: '0 0 2rem' }}>
-
-              {/* New report form */}
-              <form onSubmit={submitMaintenanceReport} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
-                <div style={{ fontSize: '13px', fontWeight: '800', color: '#111827', marginBottom: '16px', letterSpacing: '-0.2px' }}>New Maintenance Report</div>
-
-                <div style={{ ...s.grid2, marginBottom: '14px' }} className="rx-grid-2">
-                  <div>
-                    <label style={s.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
-                    <input type="date" style={s.input} value={maintenanceForm.report_date} onChange={e => setMaintenanceForm(f => ({ ...f, report_date: e.target.value }))} required />
-                  </div>
-                  <div>
-                    <label style={s.label}>Current Hours</label>
-                    <input type="number" style={s.input} value={maintenanceForm.current_hours} onChange={e => setMaintenanceForm(f => ({ ...f, current_hours: e.target.value }))} placeholder="e.g. 1842" min="0" step="0.1" />
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={s.label}>Equipment <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input
-                    list="mx-equipment-list"
-                    style={s.input}
-                    value={maintenanceForm.equipment_name}
-                    onChange={e => setMaintenanceForm(f => ({ ...f, equipment_name: e.target.value }))}
-                    placeholder="e.g. Excavator, Skid Steer, John Deere 310..."
-                    required
-                  />
-                  <datalist id="mx-equipment-list">
-                    {allVehicles.map(v => <option key={v.id} value={v.name} />)}
-                  </datalist>
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={s.label}>Work Performed <span style={{ color: '#dc2626' }}>*</span></label>
-                  <textarea
-                    style={{ ...s.input, minHeight: '110px', resize: 'vertical' }}
-                    value={maintenanceForm.description}
-                    onChange={e => setMaintenanceForm(f => ({ ...f, description: e.target.value }))}
-                    placeholder="Oil change, filter replacement, greased fittings, inspected tracks…"
-                    required
-                  />
-                </div>
-
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={s.label}>Photos</label>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', background: uploadingMxPhoto ? '#f3f4f6' : '#fff', color: uploadingMxPhoto ? '#9ca3af' : '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingMxPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                    {uploadingMxPhoto ? 'Uploading...' : '+ Add Photos'}
-                    <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingMxPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadMaintenancePhoto(f)); e.target.value = '' }} />
-                  </label>
-                  {maintenancePhotos.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-                      {maintenancePhotos.map((p, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4b5563' }}>
-                          {mxPhotoUrls[p.path] && <img src={mxPhotoUrls[p.path]} alt="" style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px' }} />}
-                          <span>{p.name}</span>
-                          <button type="button" onClick={() => setMaintenancePhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0, lineHeight: 1 }}>×</button>
+                {activeTab === 'maintenance' && profile?.full_name?.toLowerCase() === 'landon moore' && (
+                  <div style={{ padding: '0 0 2rem' }}>
+                    <form onSubmit={submitMaintenanceReport} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '800', color: '#111827', marginBottom: '16px', letterSpacing: '-0.2px' }}>New Maintenance Report</div>
+                      <div style={{ ...s.grid2, marginBottom: '14px' }} className="rx-grid-2">
+                        <div>
+                          <label style={s.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
+                          <input type="date" style={s.input} value={maintenanceForm.report_date} onChange={e => setMaintenanceForm(f => ({ ...f, report_date: e.target.value }))} required />
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <button type="submit" disabled={submittingMx} style={{ ...s.btn, opacity: submittingMx ? 0.6 : 1 }}>
-                  {submittingMx ? 'Saving...' : 'Save Report'}
-                </button>
-              </form>
-
-              {/* Past reports */}
-              <div style={{ fontSize: '12px', fontWeight: '800', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
-                Past Reports ({maintenanceReports.length})
-              </div>
-
-              {maintenanceReports.length === 0 && (
-                <div style={{ color: '#9ca3af', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>No reports yet.</div>
-              )}
-
-              {maintenanceReports.map(r => (
-                <div key={r.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                    <div>
-                      <div style={{ fontWeight: '800', fontSize: '15px', color: '#111827' }}>{r.equipment_name}</div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                        {new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                        {r.current_hours != null && <span style={{ marginLeft: '10px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '99px', padding: '1px 8px', fontSize: '11px', fontWeight: '700' }}>{Number(r.current_hours).toLocaleString()} hrs</span>}
+                        <div>
+                          <label style={s.label}>Current Hours</label>
+                          <input type="number" style={s.input} value={maintenanceForm.current_hours} onChange={e => setMaintenanceForm(f => ({ ...f, current_hours: e.target.value }))} placeholder="e.g. 1842" min="0" step="0.1" />
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => printMaintenanceReport(r)} style={{ ...s.btnSm('orange'), fontSize: '11px' }}>Export PDF</button>
-                      <button onClick={() => deleteMxReport(r.id)} style={{ background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap', background: '#f9fafb', borderRadius: '6px', padding: '10px 12px', marginBottom: r.photos?.length ? '10px' : 0 }}>{r.description}</div>
-                  {(r.photos || []).length > 0 && (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                      {(r.photos || []).map((p, i) => {
-                        const path = p.path || p
-                        const url = mxPhotoUrls[path]
-                        return url ? (
-                          <img key={i} src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e5e7eb', cursor: 'pointer' }} onClick={() => window.open(url, '_blank')} />
-                        ) : null
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={s.label}>Equipment <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input list="mx-equipment-list" style={s.input} value={maintenanceForm.equipment_name} onChange={e => setMaintenanceForm(f => ({ ...f, equipment_name: e.target.value }))} placeholder="e.g. Excavator, Skid Steer, John Deere 310..." required />
+                        <datalist id="mx-equipment-list">
+                          {allVehicles.map(v => <option key={v.id} value={v.name} />)}
+                        </datalist>
+                      </div>
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={s.label}>Work Performed <span style={{ color: '#dc2626' }}>*</span></label>
+                        <textarea style={{ ...s.input, minHeight: '110px', resize: 'vertical' }} value={maintenanceForm.description} onChange={e => setMaintenanceForm(f => ({ ...f, description: e.target.value }))} placeholder="Oil change, filter replacement, greased fittings, inspected tracks…" required />
+                      </div>
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={s.label}>Photos</label>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', background: uploadingMxPhoto ? '#f3f4f6' : '#fff', color: uploadingMxPhoto ? '#9ca3af' : '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingMxPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                          {uploadingMxPhoto ? 'Uploading...' : '+ Add Photos'}
+                          <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingMxPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadMaintenancePhoto(f)); e.target.value = '' }} />
+                        </label>
+                        {maintenancePhotos.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                            {maintenancePhotos.map((p, i) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4b5563' }}>
+                                {mxPhotoUrls[p.path] && <img src={mxPhotoUrls[p.path]} alt="" style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px' }} />}
+                                <span>{p.name}</span>
+                                <button type="button" onClick={() => setMaintenancePhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0, lineHeight: 1 }}>×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button type="submit" disabled={submittingMx} style={{ ...s.btn, opacity: submittingMx ? 0.6 : 1 }}>
+                        {submittingMx ? 'Saving...' : 'Save Report'}
+                      </button>
+                    </form>
 
-          </>
-        )}
-
-        {/* MAINTENANCE REPORT — job-independent, visible from home screen */}
-        {activeTab === 'maintenance' && profile?.full_name?.toLowerCase() === 'landon moore' && (
-          <div style={{ padding: '0 0 2rem' }}>
-            {/* Back bar */}
-            <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#f9fafb', borderBottom: '1px solid #f3f4f6', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
-              <button style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => { setActiveTab(''); setSelectedJobId('') }}>{IC.arrowL} Back</button>
-              <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827' }}>Maintenance Report</span>
-              <span style={{ fontSize: '11px', color: '#9a3412', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '99px', padding: '2px 8px', fontWeight: '700' }}>JaxEm Fabrication LLC</span>
-            </div>
-
-            {/* New report form */}
-            <form onSubmit={submitMaintenanceReport} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
-              <div style={{ fontSize: '13px', fontWeight: '800', color: '#111827', marginBottom: '16px', letterSpacing: '-0.2px' }}>New Maintenance Report</div>
-              <div style={{ ...s.grid2, marginBottom: '14px' }} className="rx-grid-2">
-                <div>
-                  <label style={s.label}>Date <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input type="date" style={s.input} value={maintenanceForm.report_date} onChange={e => setMaintenanceForm(f => ({ ...f, report_date: e.target.value }))} required />
-                </div>
-                <div>
-                  <label style={s.label}>Current Hours</label>
-                  <input type="number" style={s.input} value={maintenanceForm.current_hours} onChange={e => setMaintenanceForm(f => ({ ...f, current_hours: e.target.value }))} placeholder="e.g. 1842" min="0" step="0.1" />
-                </div>
-              </div>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={s.label}>Equipment <span style={{ color: '#dc2626' }}>*</span></label>
-                <input list="mx-equipment-list" style={s.input} value={maintenanceForm.equipment_name} onChange={e => setMaintenanceForm(f => ({ ...f, equipment_name: e.target.value }))} placeholder="e.g. Excavator, Skid Steer, John Deere 310..." required />
-                <datalist id="mx-equipment-list">
-                  {allVehicles.map(v => <option key={v.id} value={v.name} />)}
-                </datalist>
-              </div>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={s.label}>Work Performed <span style={{ color: '#dc2626' }}>*</span></label>
-                <textarea style={{ ...s.input, minHeight: '110px', resize: 'vertical' }} value={maintenanceForm.description} onChange={e => setMaintenanceForm(f => ({ ...f, description: e.target.value }))} placeholder="Oil change, filter replacement, greased fittings, inspected tracks…" required />
-              </div>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={s.label}>Photos</label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', background: uploadingMxPhoto ? '#f3f4f6' : '#fff', color: uploadingMxPhoto ? '#9ca3af' : '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingMxPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                  {uploadingMxPhoto ? 'Uploading...' : '+ Add Photos'}
-                  <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingMxPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadMaintenancePhoto(f)); e.target.value = '' }} />
-                </label>
-                {maintenancePhotos.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-                    {maintenancePhotos.map((p, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', color: '#4b5563' }}>
-                        {mxPhotoUrls[p.path] && <img src={mxPhotoUrls[p.path]} alt="" style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px' }} />}
-                        <span>{p.name}</span>
-                        <button type="button" onClick={() => setMaintenancePhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0, lineHeight: 1 }}>×</button>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
+                      Past Reports ({maintenanceReports.length})
+                    </div>
+                    {maintenanceReports.length === 0 && (
+                      <div style={{ color: '#9ca3af', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>No reports yet.</div>
+                    )}
+                    {maintenanceReports.map(r => (
+                      <div key={r.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                          <div>
+                            <div style={{ fontWeight: '800', fontSize: '15px', color: '#111827' }}>{r.equipment_name}</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                              {new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                              {r.current_hours != null && <span style={{ marginLeft: '10px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '99px', padding: '1px 8px', fontSize: '11px', fontWeight: '700' }}>{Number(r.current_hours).toLocaleString()} hrs</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => printMaintenanceReport(r)} style={{ ...s.btnSm('orange'), fontSize: '11px' }}>Export PDF</button>
+                            <button onClick={() => deleteMxReport(r.id)} style={{ background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap', background: '#f9fafb', borderRadius: '6px', padding: '10px 12px', marginBottom: r.photos?.length ? '10px' : 0 }}>{r.description}</div>
+                        {(r.photos || []).length > 0 && (
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                            {(r.photos || []).map((p, i) => {
+                              const path = p.path || p
+                              const url = mxPhotoUrls[path]
+                              return url ? <img key={i} src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e5e7eb', cursor: 'pointer' }} onClick={() => window.open(url, '_blank')} /> : null
+                            })}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
-              <button type="submit" disabled={submittingMx} style={{ ...s.btn, opacity: submittingMx ? 0.6 : 1 }}>
-                {submittingMx ? 'Saving...' : 'Save Report'}
-              </button>
-            </form>
 
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '12px' }}>
-              Past Reports ({maintenanceReports.length})
-            </div>
-            {maintenanceReports.length === 0 && (
-              <div style={{ color: '#9ca3af', fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>No reports yet.</div>
-            )}
-            {maintenanceReports.map(r => (
-              <div key={r.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                  <div>
-                    <div style={{ fontWeight: '800', fontSize: '15px', color: '#111827' }}>{r.equipment_name}</div>
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                      {new Date(r.report_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                      {r.current_hours != null && <span style={{ marginLeft: '10px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '99px', padding: '1px 8px', fontSize: '11px', fontWeight: '700' }}>{Number(r.current_hours).toLocaleString()} hrs</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => printMaintenanceReport(r)} style={{ ...s.btnSm('orange'), fontSize: '11px' }}>Export PDF</button>
-                    <button onClick={() => deleteMxReport(r.id)} style={{ background: 'none', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', padding: '5px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: '700' }}>Delete</button>
-                  </div>
-                </div>
-                <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap', background: '#f9fafb', borderRadius: '6px', padding: '10px 12px', marginBottom: r.photos?.length ? '10px' : 0 }}>{r.description}</div>
-                {(r.photos || []).length > 0 && (
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                    {(r.photos || []).map((p, i) => {
-                      const path = p.path || p
-                      const url = mxPhotoUrls[path]
-                      return url ? <img key={i} src={url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e5e7eb', cursor: 'pointer' }} onClick={() => window.open(url, '_blank')} /> : null
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          </>
         )}
+
       </main>
 
       {/* FLOATING CAMERA BUTTON */}

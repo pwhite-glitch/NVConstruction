@@ -1414,7 +1414,7 @@ export default function Field() {
                             <label style={s.label}>Attach photos</label>
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
                               {uploadingPhoto ? 'Uploading...' : 'Add Photos'}
-                              <input type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadReportPhoto(f)); e.target.value = '' }} />
+                              <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadReportPhoto(f)); e.target.value = '' }} />
                             </label>
                             {reportPhotos.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
@@ -1724,7 +1724,7 @@ export default function Field() {
                             <div>
                               <label style={s.label}>Category *</label>
                               <select style={s.input} required value={dcForm.category} onChange={e => setDcForm(f => ({ ...f, category: e.target.value }))}>
-                                {['Materials', 'Tools', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+                                {['Materials', 'Tools', 'Labor', 'Equipment', 'Fuel', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
                               </select>
                             </div>
                             <div>
@@ -1851,7 +1851,7 @@ export default function Field() {
                               <div>
                                 <label style={s.label}>Category</label>
                                 <select style={s.input} value={resubmitForm.category || 'Materials'} onChange={e => setResubmitForm(f => ({ ...f, category: e.target.value }))}>
-                                  {['Materials', 'Tools', 'Labor', 'Equipment', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(cat => <option key={cat}>{cat}</option>)}
+                                  {['Materials', 'Tools', 'Labor', 'Equipment', 'Fuel', 'Subcontractor', 'Permits', 'Fees', 'Meals/Entertainment', 'Other'].map(cat => <option key={cat}>{cat}</option>)}
                                 </select>
                               </div>
                               <div>
@@ -2222,7 +2222,7 @@ export default function Field() {
                           </div>
                           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 20px', background: uploadingGalleryPhoto ? '#111' : '#e8590c', color: '#fff', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: uploadingGalleryPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', flexShrink: 0 }}>
                             {uploadingGalleryPhoto ? 'Uploading...' : '+ Add Photo'}
-                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={uploadingGalleryPhoto} multiple onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadGalleryPhoto(f, undefined, undefined); e.target.value = '' }} />
+                            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingGalleryPhoto} multiple onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadGalleryPhoto(f, undefined, undefined); e.target.value = '' }} />
                           </label>
                         </div>
                       </div>
@@ -2875,7 +2875,6 @@ export default function Field() {
                   ref={fabInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   style={{ display: 'none' }}
                   disabled={uploadingGalleryPhoto}
                   onChange={async e => {

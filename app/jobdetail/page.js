@@ -10179,13 +10179,29 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
                     )}
 
-                    {!isReviewing && (
-                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ ...s.label, margin: 0, whiteSpace: 'nowrap' }}>Budget line</label>
+                    {canReview && !c.budget_item_id && !isReviewing && (
+                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '12px', background: '#fffbeb', borderTop: '1px solid #fde68a' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#92400e', whiteSpace: 'nowrap' }}>Assign budget line</span>
                         <select
-                          style={{ ...s.input, flex: 1, opacity: assigningCostId === c.id ? 0.6 : 1 }}
+                          style={{ ...s.input, flex: 1, fontSize: '12px', opacity: assigningCostId === c.id ? 0.6 : 1 }}
                           disabled={assigningCostId === c.id}
-                          value={c.budget_item_id || ''}
+                          value=""
+                          onChange={e => { if (e.target.value) assignDcBudgetItem(c.id, e.target.value) }}>
+                          <option value="">— Select a budget line —</option>
+                          {budgetItems.map(b => (
+                            <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>
+                          ))}
+                        </select>
+                        {assigningCostId === c.id && <span style={{ fontSize: '11px', color: '#92400e' }}>Saving…</span>}
+                      </div>
+                    )}
+                    {canReview && c.budget_item_id && !isReviewing && (
+                      <div style={{ ...s.billingEntryExpanded, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', whiteSpace: 'nowrap' }}>Budget line</span>
+                        <select
+                          style={{ ...s.input, flex: 1, fontSize: '12px', opacity: assigningCostId === c.id ? 0.6 : 1 }}
+                          disabled={assigningCostId === c.id}
+                          value={c.budget_item_id}
                           onChange={e => assignDcBudgetItem(c.id, e.target.value)}>
                           <option value="">— Unassigned —</option>
                           {budgetItems.map(b => (

@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
 import { openFile, openStorageFile } from '../../lib/open-file'
+import { isPartner } from '../../lib/partners'
+import BotAccessPanel from './BotAccessPanel'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -248,7 +250,8 @@ export default function AdminPortal() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       const devRole = localStorage.getItem('nvc_dev_role')
       const devIsAdminOverride = devRole === 'admin' && prof?.role === 'pm'
-      if (!devIsAdminOverride && (!prof || prof.role !== 'admin')) { router.push('/login'); return }
+      // Partners may open /admin for the Bot Access tab whatever their role
+      if (!devIsAdminOverride && (!prof || (prof.role !== 'admin' && !isPartner(prof.id)))) { router.push('/login'); return }
       setProfile(devIsAdminOverride ? { ...prof, role: 'admin' } : prof)
       const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, membersRes] = await Promise.all([
         supabase.from('jobs').select('id, job_number, project_name, payment_type').order('created_at', { ascending: false }),
@@ -761,6 +764,7 @@ export default function AdminPortal() {
     { tab: 'coi',         label: 'Companies',     icon: <IconUsers /> },
     { tab: 'liens',        label: 'Lien Waivers',  icon: <IconLien /> },
     { tab: 'permissions',  label: 'Permissions',   icon: <IconKey /> },
+    ...(isPartner(profile?.id) ? [{ tab: 'bots', label: 'Bot Access', icon: <IconKey /> }] : []),
   ]
 
   return (
@@ -1782,6 +1786,9 @@ export default function AdminPortal() {
                 )}
               </div>
             )}
+
+            {/* ── BOT ACCESS (partners only) ── */}
+            {activeTab === 'bots' && isPartner(profile?.id) && <BotAccessPanel />}
 
       </div>
     </div>

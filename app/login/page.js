@@ -52,7 +52,14 @@ export default function Login() {
     setError('')
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
-    const { data: prof } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
+    // select('*'): works before and after migration 036 adds is_bot
+    const { data: prof } = await supabase.from('profiles').select('*').eq('id', data.user.id).single()
+    if (prof?.is_bot) {
+      await supabase.auth.signOut()
+      setError('This is a bot account. It can only be used through the Bot API.')
+      setLoading(false)
+      return
+    }
     const role = prof?.role
     if (role === 'admin') router.push('/admin')
     else if (role === 'pm' || role === 'apm' || role === 'super') router.push('/dashboard')

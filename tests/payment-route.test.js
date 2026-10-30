@@ -17,17 +17,15 @@ describe('poPaymentRoute', () => {
 })
 
 describe('directCostPaymentRoute', () => {
-  it('matches the Reimbursements tab (unbilled + invoiced bill_to_owner costs)', () => {
-    expect(directCostPaymentRoute({ bill_to_owner: true, billing_route: null })).toBe(REIMBURSEMENT)
-    expect(directCostPaymentRoute({ bill_to_owner: true, billing_route: 'reimbursement' })).toBe(REIMBURSEMENT)
+  it('all direct costs are reimbursement to NV (credit card purchases)', () => {
+    expect(directCostPaymentRoute({ bill_to_owner: true })).toBe(REIMBURSEMENT)
+    expect(directCostPaymentRoute({ bill_to_owner: false })).toBe(REIMBURSEMENT)
+    expect(directCostPaymentRoute({})).toBe(REIMBURSEMENT)
+    expect(directCostPaymentRoute(null)).toBe(REIMBURSEMENT)
   })
-  it('bill_to_owner costs routed to a pay app or CO are not reimbursements', () => {
-    expect(isReimbursableDirectCost({ bill_to_owner: true, billing_route: 'pay_app' })).toBe(false)
-    expect(isReimbursableDirectCost({ bill_to_owner: true, billing_route: 'change_order' })).toBe(false)
-  })
-  it('everything else is check to vendor', () => {
-    expect(directCostPaymentRoute({ bill_to_owner: false })).toBe(CHECK_TO_VENDOR)
-    expect(directCostPaymentRoute({})).toBe(CHECK_TO_VENDOR)
+  it('isReimbursableDirectCost is always true', () => {
+    expect(isReimbursableDirectCost({ bill_to_owner: true, billing_route: 'pay_app' })).toBe(true)
+    expect(isReimbursableDirectCost({})).toBe(true)
   })
 })
 

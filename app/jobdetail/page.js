@@ -9,6 +9,7 @@ import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, coLineRow, insertCoLine } from '../../lib/sov-lines'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
+import { contractSumToDate as calcContractSumToDate, totalCompletedToDate, contractCap, contractCapMessage } from '../../lib/contract-cap'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
@@ -1792,6 +1793,13 @@ function JobDetailInner() {
 
   async function saveAiaLines() {
     if (!activeAia) return
+    // Lump sum: lines may run over, but the pay app as a whole can't bill past the contract.
+    // Every way of entering amounts (typed, Apply to G703, pinned) lands here before it is stored.
+    const cap = contractCap(
+      calcContractSumToDate({ job, app: activeAia, primeCOs, nvSubcontracts, lines: aiaLines }),
+      totalCompletedToDate(aiaLines)
+    )
+    if (cap.isOver) { alert(contractCapMessage(cap)); return false }
     setSavingAia(true)
     const saveErrors = []
 
@@ -1935,16 +1943,8 @@ function JobDetailInner() {
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-    const subNvTotal = nvSubcontracts.reduce((a, s) => {
-      const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
-      return a + Number(s.contract_value || 0) + coAdj
-    }, 0)
     const baseContract = Number(job.contract_value || 0)
-    const contractSumToDate = app.nv_subcontract_id
-      ? aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
-      : job.nv_role === 'sub'
-        ? (subNvTotal > 0 ? subNvTotal : baseContract)
-        : baseContract + approvedCOsVal
+    const contractSumToDate = calcContractSumToDate({ job, app, primeCOs, nvSubcontracts, lines: aiaLines })
     const origContract = (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
 
     const isDraft = !app.period_to
@@ -11143,16 +11143,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                                 {(() => {
                                   const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(activeAia.retainage_pct)) ? 10 : parseFloat(activeAia.retainage_pct))) / 100
-                                  const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
-                                  const subNvTotalAia = nvSubcontracts.reduce((a, s) => {
-                                    const coAdj = (s.change_orders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + Number(co.amount || 0), 0)
-                                    return a + Number(s.contract_value || 0) + coAdj
-                                  }, 0)
                                   const isSubAia = job.nv_role === 'sub'
-                                  const isNvSubApp = !!activeAia?.nv_subcontract_id
                                   const baseContractAia = Number(job.contract_value || 0)
                                   const totalSov = aiaLines.reduce((a, l) => a + Number(l.budget_amount || 0), 0)
-                                  const contractSumToDate = isNvSubApp ? totalSov : isSubAia ? (subNvTotalAia > 0 ? subNvTotalAia : baseContractAia) : baseContractAia + approvedCOsVal
+                                  const contractSumToDate = calcContractSumToDate({ job, app: activeAia, primeCOs, nvSubcontracts, lines: aiaLines })
+                                  const cap = contractCap(contractSumToDate, totalCompletedToDate(aiaLines))
                                   const sovMismatch = Math.abs(totalSov - contractSumToDate) > 0.01
                                   const r2 = n => Math.round(n * 100) / 100
                                   const totalCompleted = aiaLines.reduce((a, line) => {
@@ -11217,6 +11212,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                           <span style={{ color: '#6b7280' }}>Contract sum to date</span><span style={{ color: '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${contractSumToDate.toLocaleString()}</span>
                                           <span style={{ color: '#6b7280' }}>SOV total (G703)</span><span style={{ color: sovMismatch ? '#dc2626' : '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${totalSov.toLocaleString()}</span>
                                           <span style={{ color: '#6b7280' }}>Total completed</span><span style={{ color: '#111827', textAlign: 'right', fontFamily: 'monospace' }}>${totalCompleted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span style={{ color: cap.isOver ? '#dc2626' : '#6b7280', fontWeight: cap.isOver ? '700' : '400' }}>
+                                            {cap.isOver ? 'Over contract — reduce before saving' : 'Remaining to bill on contract'}
+                                          </span>
+                                          <span style={{ color: cap.isOver ? '#dc2626' : '#16a34a', textAlign: 'right', fontFamily: 'monospace', fontWeight: '700' }}>
+                                            {cap.enforced
+                                              ? `${cap.remaining < 0 ? '-' : ''}$${Math.abs(cap.remaining).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                              : 'No contract value set'}
+                                          </span>
                                           <span style={{ color: '#6b7280' }}>Retainage ({activeAia.retainage_pct}%)</span><span style={{ color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }}>(${totalRetainage.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
                                           <span style={{ color: '#6b7280' }}>Less previous certificates</span><span style={{ color: '#6b7280', textAlign: 'right', fontFamily: 'monospace' }}>(${prevCerts.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
                                           <span style={{ color: '#111827', fontWeight: '700' }}>Current payment due</span><span style={{ color: '#e8590c', textAlign: 'right', fontFamily: 'monospace', fontWeight: '800', fontSize: '15px' }}>${currentDue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

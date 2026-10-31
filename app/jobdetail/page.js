@@ -8,6 +8,7 @@ import { openStorageFile, openHtml } from '../../lib/open-file'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, coLineRow, insertCoLine } from '../../lib/sov-lines'
+import { rollupGeneralConditions } from '../../lib/gc-rollup'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
@@ -1648,6 +1649,8 @@ function JobDetailInner() {
       markup_pct: parseFloat(newAiaForm.markup_pct) || 0,
       created_by: session.user.id,
       linked_draw_request_id: linkedDraw?.id || null,
+      // Snapshot so this app reprints the same even if the job setting changes later
+      ...(job.rollup_general_conditions ? { rollup_gc: true } : {}),
     }).select().single()
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setSavingAia(false); return }
     if (budgetItems.length > 0) {
@@ -1708,6 +1711,7 @@ function JobDetailInner() {
       retainage_pct: 0,
       markup_pct: parseFloat(prevApp.markup_pct) || 0,
       created_by: session.user.id,
+      ...(job.rollup_general_conditions ? { rollup_gc: true } : {}),
     }).select().single()
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000); setCreatingRetainage(false); return }
     if (budgetItems.length > 0) {
@@ -1981,7 +1985,11 @@ function JobDetailInner() {
     const currentPaymentDue = totalEarnedLessRet - prevCertificates
     const balanceToFinish = contractSumToDate - totalCompleted
     const overallPct      = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
-    const overbilledLines = sovLines.filter(l => l.isOverbilled)
+    // Owner sees flagged GC lines as one "General Conditions" row; G702 totals are unaffected.
+    const pdfLines = app.rollup_gc && !app.nv_subcontract_id
+      ? rollupGeneralConditions(sovLines, new Set(budgetItems.filter(b => b.roll_into_gc).map(b => b.id)))
+      : sovLines
+    const overbilledLines = pdfLines.filter(l => l.isOverbilled)
 
     if (!override && Math.abs(totalScheduled - contractSumToDate) > 0.01) {
       const diff = contractSumToDate - totalScheduled
@@ -1993,7 +2001,7 @@ function JobDetailInner() {
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
 
-    const visibleSovLines = sovLines.filter(l => l.scheduled > 0)
+    const visibleSovLines = pdfLines.filter(l => l.scheduled > 0)
 
     w.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
@@ -4252,6 +4260,14 @@ ${attachmentHtml}
     await loadBudgetItems()
   }
 
+  async function toggleRollIntoGc(item) {
+    const res = await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      id: item.id, fields: { roll_into_gc: !item.roll_into_gc },
+    }) })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('Save failed: ' + (j.error || res.status)); setTimeout(() => setErrMsg(''), 6000) }
+    await loadBudgetItems()
+  }
+
   async function deleteBudgetItem(itemId) {
     if (!window.confirm('Delete this budget line?')) return
     await fetch('/api/budget-items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: itemId }) })
@@ -5029,7 +5045,7 @@ ${(budgets || []).length > 0 ? `
     e.preventDefault()
     setSaving(true)
     // Columns that may not exist yet in the DB if a migration hasn't been run.
-    const JOB_OPT_COLS = new Set(['nv_role', 'billing_type', 'pm_email',
+    const JOB_OPT_COLS = new Set(['nv_role', 'billing_type', 'pm_email', 'rollup_general_conditions',
       'sub_billing_start', 'sub_billing_frequency', 'sub_billing_due', 'sub_billing_anchor',
       'owner_billing_start', 'owner_billing_frequency', 'owner_billing_due', 'owner_billing_anchor'])
     let jobFields = {
@@ -5055,6 +5071,7 @@ ${(budgets || []).length > 0 ? `
       permit_number: form.permit_number, permit_date: form.permit_date || null, scope_notes: form.scope_notes,
       pm_email: form.pm_email || null,
       billing_type: form.billing_type || 'aia',
+      rollup_general_conditions: !!form.rollup_general_conditions,
       nv_role: form.nv_role || 'gc',
     }
     let { error } = await supabase.from('jobs').update(jobFields).eq('id', id)
@@ -5873,6 +5890,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </select>
                   </div>
                 </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151', marginBottom: '12px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.rollup_general_conditions} onChange={e => update('rollup_general_conditions', e.target.checked)} />
+                  Roll up General Conditions on pay app
+                  <span style={{ fontSize: '11px', color: '#6b7280' }}>— owner sees one "General Conditions" line; pick the lines on the Budget tab</span>
+                </label>
                 <div style={{ marginBottom: '12px' }}><label style={s.label}>Scope notes</label><textarea style={s.textarea} value={form.scope_notes || ''} onChange={e => update('scope_notes', e.target.value)} placeholder="Project description, scope of work, special requirements..." /></div>
                 <div style={{ maxWidth: '360px' }}>
                   <label style={s.label}>PM contact (for RFI &amp; billing emails)</label>
@@ -6666,6 +6688,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               </span>
                             )}
                           </div>
+                          {job.rollup_general_conditions && (
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: item.roll_into_gc ? '#2563eb' : '#6b7280', marginTop: '4px', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={!!item.roll_into_gc} onChange={() => toggleRollIntoGc(item)} />
+                              Roll into General Conditions
+                            </label>
+                          )}
                           <div style={{ height: '4px', background: '#f0f0f0', borderRadius: '2px', marginTop: '8px' }}>
                             <div style={{ height: '100%', width: Math.min(100, pct) + '%', background: over ? '#dc2626' : pct > 85 ? '#e8590c' : '#16a34a', borderRadius: '2px' }} />
                           </div>

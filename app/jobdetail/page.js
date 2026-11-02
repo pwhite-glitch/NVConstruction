@@ -2277,7 +2277,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   // ── Purchase Orders ──────────────────────────────────────────
   async function loadPurchaseOrders() {
-    const res = await fetch(`/api/purchase-orders?job_id=${id}`)
+    const res = await authFetch(`/api/purchase-orders?job_id=${id}`)
     const data = await res.json()
     setPurchaseOrders(data.purchase_orders || [])
   }
@@ -2303,9 +2303,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       const fd = new FormData()
       fd.append('file', poFile)
       fd.append('data', JSON.stringify(payload))
-      res = await fetch('/api/purchase-orders', { method: 'POST', body: fd })
+      res = await authFetch('/api/purchase-orders', { method: 'POST', body: fd })
     } else {
-      res = await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      res = await authFetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}))
@@ -2326,7 +2326,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   async function updatePOStatus(poId, status) {
     setUpdatingPOId(poId)
-    await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId, status }) })
+    await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId, status }) })
     await loadPurchaseOrders()
     await loadBudgetItems()
     setUpdatingPOId(null)
@@ -2350,9 +2350,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       const fd = new FormData()
       fd.append('file', editPOFile)
       fd.append('data', JSON.stringify(payload))
-      editRes = await fetch('/api/purchase-orders', { method: 'PUT', body: fd })
+      editRes = await authFetch('/api/purchase-orders', { method: 'PUT', body: fd })
     } else {
-      editRes = await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      editRes = await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     }
     if (!editRes.ok) {
       const j = await editRes.json().catch(() => ({}))
@@ -2371,7 +2371,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
   }
 
   async function openPOAttachment(attachmentUrl) {
-    const res = await fetch(`/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
+    const res = await authFetch(`/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
     const json = await res.json()
     if (json.signedUrl) window.open(json.signedUrl, '_blank')
     else alert('Could not open attachment: ' + (json.error || 'Unknown error'))
@@ -2379,7 +2379,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   async function deletePO(poId) {
     if (!window.confirm('Delete this purchase order?')) return
-    await fetch('/api/purchase-orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId }) })
+    await authFetch('/api/purchase-orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId }) })
     await loadPurchaseOrders()
     await loadBudgetItems()
   }
@@ -8840,7 +8840,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <button
                                     style={{ fontSize: '11px', padding: '3px 8px', background: '#fef2f2', border: '1px solid #3a1a1a', color: '#dc2626', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
-                                      await fetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: po.id, draw_request_id: null, drawn_at: null }) })
+                                      await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: po.id, draw_request_id: null, drawn_at: null }) })
                                       await loadPurchaseOrders()
                                     }}
                                   >Remove</button>

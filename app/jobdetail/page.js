@@ -723,20 +723,38 @@ function JobDetailInner() {
     const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url, bid_proposal_url, onedrive_url, status, company_id').eq('job_id', id)
     // Separate query: these columns come from migration 031 and this errors (gen = null) until it is applied
     const { data: gen } = await supabase.from('subcontracts').select('id, generated_contract_path, generated_at').eq('job_id', id)
-    const merged = summary.map(c => ({
-      ...c,
-      budget_item_id: raw?.find(r => r.id === c.id)?.budget_item_id ?? null,
-      budget_allocations: raw?.find(r => r.id === c.id)?.budget_allocations ?? [],
-      vendor_name: raw?.find(r => r.id === c.id)?.vendor_name ?? null,
-      retainage_pct: raw?.find(r => r.id === c.id)?.retainage_pct ?? 10,
-      signed_contract_url: raw?.find(r => r.id === c.id)?.signed_contract_url ?? null,
-      bid_proposal_url: raw?.find(r => r.id === c.id)?.bid_proposal_url ?? null,
-      onedrive_url: raw?.find(r => r.id === c.id)?.onedrive_url ?? null,
-      status: raw?.find(r => r.id === c.id)?.status ?? c.status,
-      company_id: raw?.find(r => r.id === c.id)?.company_id ?? c.company_id ?? null,
-      generated_contract_path: gen?.find(r => r.id === c.id)?.generated_contract_path ?? null,
-      generated_at: gen?.find(r => r.id === c.id)?.generated_at ?? null,
-    }))
+    // Fetch SOV line budget assignments so committedForItem can use them when no explicit budget_allocations are set
+    const contractIds = summary.map(c => c.id)
+    const { data: sovLines } = contractIds.length
+      ? await supabase.from('subcontract_sov_lines').select('subcontract_id, budget_item_id, scheduled_value').in('subcontract_id', contractIds).not('budget_item_id', 'is', null)
+      : { data: [] }
+    // Group SOV lines into per-contract allocation arrays: [{ budget_item_id, amount }]
+    const sovAllocByContract = {}
+    for (const l of sovLines || []) {
+      if (!sovAllocByContract[l.subcontract_id]) sovAllocByContract[l.subcontract_id] = {}
+      sovAllocByContract[l.subcontract_id][l.budget_item_id] = (sovAllocByContract[l.subcontract_id][l.budget_item_id] || 0) + Number(l.scheduled_value || 0)
+    }
+    const merged = summary.map(c => {
+      const rawRow = raw?.find(r => r.id === c.id)
+      const explicitAllocs = rawRow?.budget_allocations ?? []
+      // If no explicit budget_allocations, derive them from SOV lines that have budget items set
+      const sovAllocs = Object.entries(sovAllocByContract[c.id] || {}).map(([budget_item_id, amount]) => ({ budget_item_id, amount }))
+      const genRow = gen?.find(r => r.id === c.id)
+      return {
+        ...c,
+        budget_item_id: rawRow?.budget_item_id ?? null,
+        budget_allocations: explicitAllocs.length > 0 ? explicitAllocs : sovAllocs,
+        vendor_name: rawRow?.vendor_name ?? null,
+        retainage_pct: rawRow?.retainage_pct ?? 10,
+        signed_contract_url: rawRow?.signed_contract_url ?? null,
+        bid_proposal_url: rawRow?.bid_proposal_url ?? null,
+        onedrive_url: rawRow?.onedrive_url ?? null,
+        status: rawRow?.status ?? c.status,
+        company_id: rawRow?.company_id ?? c.company_id ?? null,
+        generated_contract_path: genRow?.generated_contract_path ?? null,
+        generated_at: genRow?.generated_at ?? null,
+      }
+    })
     setContracts(merged)
     return merged
   }

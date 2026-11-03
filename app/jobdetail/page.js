@@ -7522,7 +7522,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <button style={s.btnSmall} onClick={() => setEditContractForm(f => ({ ...f, budget_allocations: [...(f.budget_allocations || []), { budget_item_id: '', amount: '' }] }))}>+ Add line</button>
                               </div>
                               {allocs.length === 0 && (
-                                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px' }}>No allocation — click Add line to split across budget items.</p>
+                                <select style={{ ...s.input, padding: '8px 10px', marginBottom: '4px' }} value={editContractForm.budget_item_id || ''} onChange={e => setEditContractForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                                  <option value="">— No budget line —</option>
+                                  {budgetItems.map(item => <option key={item.id} value={item.id}>{item.cost_code ? `${item.cost_code} · ` : ''}{item.description} (${Number(item.budget_amount || 0).toLocaleString()})</option>)}
+                                </select>
                               )}
                               {allocs.map((alloc, idx) => (
                                 <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 28px', gap: '6px', marginBottom: '6px', alignItems: 'center' }}>

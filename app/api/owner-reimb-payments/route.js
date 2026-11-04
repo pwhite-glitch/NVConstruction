@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
+import { isBeforeTodayCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,7 +9,7 @@ const adminSupabase = createClient(
 
 function computeInvoiceStatus(totalBilled, totalPaid, dueDate) {
   if (totalPaid <= 0) {
-    if (dueDate && new Date(dueDate) < new Date()) return 'overdue'
+    if (isBeforeTodayCentral(dueDate)) return 'overdue'
     return 'issued'
   }
   if (totalPaid >= totalBilled - 0.005) return 'paid'

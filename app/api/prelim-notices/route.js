@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { todayCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,7 +29,7 @@ export async function POST(request) {
   if (!job_id || !from_company) return Response.json({ error: 'job_id and from_company required' }, { status: 400 })
   const { data: notice, error } = await adminSupabase
     .from('prelim_notices')
-    .insert({ job_id, from_company, amount_claimed: amount_claimed || null, received_at: received_at || new Date().toISOString().split('T')[0], notes: notes || null })
+    .insert({ job_id, from_company, amount_claimed: amount_claimed || null, received_at: received_at || todayCentral(), notes: notes || null })
     .select()
     .single()
   if (error) return Response.json({ error: error.message }, { status: 500 })

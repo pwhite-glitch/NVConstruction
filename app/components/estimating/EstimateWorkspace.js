@@ -5,6 +5,8 @@ import { openStorageFile } from '../../../lib/open-file'
 import {
   estimateSavePayload, shouldOfferDraft, initialSaveState, saveStateReducer, shouldAutoSave, STALE_MESSAGE,
 } from '../../../lib/estimate-save'
+import { JOB_LINK_ROLES } from '../../../lib/estimate-to-job'
+import LinkToJobPanel from './LinkToJobPanel'
 
 const STAGE_OPTS = [
   { key: 'lead',        label: 'Lead' },
@@ -94,6 +96,8 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const [showConvert, setShowConvert] = useState(false)
   const [cvtForm,     setCvtForm]     = useState({ job_number: '', start_date: '' })
   const [converting,  setConverting]  = useState(false)
+  const [cvtErr,      setCvtErr]      = useState('')
+  const [showLink,    setShowLink]    = useState(false)
   const [draftMsg,    setDraftMsg]    = useState('')
   const [hasDraft,    setHasDraft]    = useState(false)
   const [draftSnap,   setDraftSnap]   = useState(null)
@@ -113,6 +117,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
 
   const canEdit = ['pm', 'apm'].includes(profile?.role)
   const isPM    = profile?.role === 'pm'
+  const canLink = JOB_LINK_ROLES.has(profile?.role)
 
   function markEdited() {
     setRestoredMsg(false)
@@ -269,30 +274,48 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     onUpdated({ ...estimate, ...form, status, estimate_line_items: lines })
   }
 
+  async function postToJob(payload) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/estimates/to-job', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      body: JSON.stringify(payload),
+    })
+    let result = null
+    try { result = await res.json() } catch {}
+    return { res, result }
+  }
+
+  function goToJobBudget(jobId) {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    onDeleted(estimate.id)
+    window.location.href = `/jobdetail?id=${jobId}&tab=budget`
+  }
+
+  // Server-side, one transaction: job + budget lines + contract value + links.
+  // Uses the saved estimate, so unsaved edits must be saved first.
   async function convertToJob() {
     if (!cvtForm.job_number.trim()) return
+    if (dirty) { setCvtErr('Save your changes first. Convert uses the saved estimate.'); return }
     setConverting(true)
+    setCvtErr('')
     try {
-      const { data: job, error } = await supabase.from('jobs').insert({
-        job_number:   cvtForm.job_number.trim(),
-        project_name: form.project_name,
-        owner_name:   form.owner_name   || null,
-        start_date:   cvtForm.start_date || null,
-        status:       'active',
-        billing_type: 'aia',
-        nv_role:      'gc',
-        job_type:     'commercial',
-      }).select().single()
-      if (error) throw error
-      const budgetItems = lines
-        .filter(l => l.description)
-        .map((l, i) => ({ job_id: job.id, description: l.description, amount: Number(l.amount || 0), category: 'estimate', sort_order: i }))
-      if (budgetItems.length) await supabase.from('budget_items').insert(budgetItems)
-      await supabase.from('estimates').update({ status: 'won' }).eq('id', estimate.id)
-      onDeleted(estimate.id)
-      window.location.href = `/jobdetail?id=${job.id}&tab=budget`
+      const { res, result } = await postToJob({
+        action: 'convert',
+        id: estimate.id,
+        expected_updated_at: saveStateRef.current.base ?? null,
+        job_number: cvtForm.job_number.trim(),
+        start_date: cvtForm.start_date || null,
+      })
+      if (!res.ok || !result?.job_id) {
+        if (result?.code === 'stale') dispatchSave({ type: 'conflict' })
+        setCvtErr(result?.error || `Convert failed (${res.status})`)
+        setConverting(false)
+        return
+      }
+      goToJobBudget(result.job_id)
     } catch (e) {
-      console.error(e)
+      setCvtErr(e?.message || 'Convert failed — check connection')
       setConverting(false)
     }
   }
@@ -640,14 +663,43 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
             </button>
           </div>
 
-          {canEdit && !isArchived && (
+          {form.job_id && (
+            <div style={s.box}>
+              <p style={s.sec}>Job</p>
+              <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 0.875rem' }}>
+                This estimate is linked to a job. Later edits here do not change the job&apos;s budget.
+              </p>
+              <a href={`/jobdetail?id=${form.job_id}&tab=budget`} style={{ ...s.btnSm(), textDecoration: 'none' }}>Open job budget →</a>
+            </div>
+          )}
+
+          {/* Also offered on a Won estimate that has no job yet (e.g. a revised
+              estimate for an existing job), so it can still be linked. */}
+          {canLink && !form.job_id && (!isArchived || form.status === 'won') && (
             <div style={s.box}>
               <p style={s.sec}>Convert to Job</p>
               <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 0.875rem' }}>
-                Creates a commercial job from this estimate, copies line items as budget items, and marks the estimate as Won.
+                Creates a commercial job from this estimate (or links it to an existing job), copies line items into the job budget
+                (cost as budget, price with markup as owner amount), sets the contract value, and marks the estimate as Won.
+                Later edits to this estimate won&apos;t flow to the job.
               </p>
-              {!showConvert
-                ? <button style={s.btnSm('green')} onClick={() => setShowConvert(true)}>Convert to job →</button>
+              {showLink ? (
+                <LinkToJobPanel
+                  estimateId={estimate.id}
+                  getBase={() => saveStateRef.current.base}
+                  dirty={dirty}
+                  postToJob={postToJob}
+                  onConflict={() => dispatchSave({ type: 'conflict' })}
+                  onLinked={goToJobBudget}
+                  onCancel={() => setShowLink(false)}
+                />
+              ) : !showConvert
+                ? (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button style={s.btnSm('green')} onClick={() => { setCvtErr(''); setShowConvert(true) }}>Convert to job →</button>
+                    <button style={s.btnSm()} onClick={() => setShowLink(true)}>Link to existing job →</button>
+                  </div>
+                )
                 : (
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                     <div>
@@ -658,10 +710,12 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                       <label style={s.lbl}>Start date</label>
                       <input type="date" style={{ ...s.inp, width: '155px' }} value={cvtForm.start_date} onChange={e => setCvtForm(f => ({ ...f, start_date: e.target.value }))} />
                     </div>
-                    <button style={{ ...s.btn, opacity: converting || !cvtForm.job_number.trim() ? 0.6 : 1 }} disabled={converting || !cvtForm.job_number.trim()} onClick={convertToJob}>
+                    <button style={{ ...s.btn, opacity: converting || dirty || !cvtForm.job_number.trim() ? 0.6 : 1 }} disabled={converting || dirty || conflict || !cvtForm.job_number.trim()} onClick={convertToJob}>
                       {converting ? 'Creating…' : 'Create job'}
                     </button>
-                    <button style={s.btnGr} onClick={() => setShowConvert(false)}>Cancel</button>
+                    <button style={s.btnGr} onClick={() => setShowConvert(false)} disabled={converting}>Cancel</button>
+                    {dirty && <p style={{ flexBasis: '100%', fontSize: '12px', color: '#92400e', margin: 0 }}>Save your changes first. Convert uses the saved estimate.</p>}
+                    {cvtErr && <p role="alert" style={{ flexBasis: '100%', fontSize: '12px', color: '#dc2626', margin: 0 }}>{cvtErr}</p>}
                   </div>
                 )
               }

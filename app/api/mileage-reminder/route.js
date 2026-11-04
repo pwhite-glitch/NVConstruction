@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { verifyCronSecret } from '../../../lib/server-auth'
+import { todayCentral } from '../../../lib/central-date'
+import { mondayOf } from '../../../lib/lookahead-dates'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -31,11 +33,7 @@ export async function GET(request) {
       if (authUser?.user?.email) userEmails[uid] = authUser.user.email
     }
 
-    const today = new Date()
-    const day = today.getDay()
-    const monday = new Date(today)
-    monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1))
-    const weekStart = monday.toISOString().split('T')[0]
+    const weekStart = mondayOf(todayCentral())
 
     let sent = 0
     for (const v of vehicles) {

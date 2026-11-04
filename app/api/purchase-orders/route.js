@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { isMissingPaymentTypeColumn, PAYMENT_TYPE_NOT_SAVED_WARNING } from '../../../lib/payment-route'
+import { todayCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -88,7 +89,7 @@ export async function POST(request) {
 
     const amount = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)
 
-    const insertRow = { job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? new Date().toISOString().split('T')[0] : null, created_by: created_by || null, attachment_url }
+    const insertRow = { job_id, po_number, vendor_name, description: description || null, budget_item_id: budget_item_id || null, notes: notes || null, status, amount, issued_date: status === 'issued' ? todayCentral() : null, created_by: created_by || null, attachment_url }
 
     // Try with payment_type first; if the column doesn't exist yet (migration 004), save the rest and warn
     if (payment_type) insertRow.payment_type = payment_type
@@ -147,7 +148,7 @@ export async function PUT(request) {
     const updates = {}
     if (fields.status !== undefined) {
       updates.status = fields.status
-      if (fields.status === 'issued' && !fields.issued_date) updates.issued_date = new Date().toISOString().split('T')[0]
+      if (fields.status === 'issued' && !fields.issued_date) updates.issued_date = todayCentral()
     }
     if (fields.vendor_name !== undefined) updates.vendor_name = fields.vendor_name
     if (fields.description !== undefined) updates.description = fields.description || null

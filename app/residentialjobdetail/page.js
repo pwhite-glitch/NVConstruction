@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
+import { todayCentral } from '../../lib/central-date'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -148,7 +149,7 @@ function ResidentialJobDetailInner() {
 
   // Direct costs tab
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
+  const [dcForm, setDcForm] = useState({ cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
   const [dcFile, setDcFile] = useState(null)
   const [submittingDc, setSubmittingDc] = useState(false)
   const [dcSearch, setDcSearch] = useState('')
@@ -695,7 +696,7 @@ function ResidentialJobDetailInner() {
   }
 
   async function updateMilestoneStatus(milestoneId, status) {
-    await supabase.from('milestones').update({ status, actual_date: status === 'done' ? new Date().toISOString().slice(0, 10) : null }).eq('id', milestoneId)
+    await supabase.from('milestones').update({ status, actual_date: status === 'done' ? todayCentral() : null }).eq('id', milestoneId)
     await loadMilestones()
   }
 
@@ -815,7 +816,7 @@ function ResidentialJobDetailInner() {
     }
     json = await res.json()
     if (!json.error) {
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
+      setDcForm({ cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '', budget_item_id: '', is_credit: false })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -926,7 +927,7 @@ function ResidentialJobDetailInner() {
   }
 
   async function updateInspectionResult(inspectionId, result) {
-    await supabase.from('res_inspections').update({ result, actual_date: result !== 'pending' ? new Date().toISOString().slice(0, 10) : null }).eq('id', inspectionId)
+    await supabase.from('res_inspections').update({ result, actual_date: result !== 'pending' ? todayCentral() : null }).eq('id', inspectionId)
     await loadInspections()
   }
 
@@ -949,7 +950,7 @@ function ResidentialJobDetailInner() {
 
   async function updateWaiverStatus(waiverId, status) {
     const update = { status }
-    if (status === 'received') update.waiver_date = new Date().toISOString().slice(0, 10)
+    if (status === 'received') update.waiver_date = todayCentral()
     await supabase.from('res_lien_waivers').update(update).eq('id', waiverId)
     await loadLienWaivers()
   }
@@ -974,8 +975,8 @@ function ResidentialJobDetailInner() {
 
   async function updateOwnerDrawStatus(drawId, status) {
     const update = { status }
-    if (status === 'submitted') update.submitted_date = new Date().toISOString().slice(0, 10)
-    if (status === 'funded') update.funded_date = new Date().toISOString().slice(0, 10)
+    if (status === 'submitted') update.submitted_date = todayCentral()
+    if (status === 'funded') update.funded_date = todayCentral()
     await supabase.from('res_owner_draws').update(update).eq('id', drawId)
     await loadOwnerDraws()
   }
@@ -999,7 +1000,7 @@ function ResidentialJobDetailInner() {
   }
 
   async function updatePunchStatus(itemId, status) {
-    await supabase.from('res_punch_list').update({ status, completed_date: status === 'done' ? new Date().toISOString().slice(0, 10) : null }).eq('id', itemId)
+    await supabase.from('res_punch_list').update({ status, completed_date: status === 'done' ? todayCentral() : null }).eq('id', itemId)
     await loadPunchList()
   }
 

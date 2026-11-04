@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { isBeforeTodayCentral } from '../../lib/central-date'
 
 const s = {
   root: { display: 'flex', minHeight: '100vh', background: '#f4f6f8', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -619,7 +620,7 @@ export default function OwnerPortal() {
                               </div>
                               {done ? (
                                 <span style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a' }}>COMPLETE</span>
-                              ) : m.due_date && new Date(m.due_date) < new Date() ? (
+                              ) : isBeforeTodayCentral(m.due_date) ? (
                                 <span style={{ fontSize: '11px', fontWeight: '700', color: '#dc2626' }}>OVERDUE</span>
                               ) : null}
                             </div>

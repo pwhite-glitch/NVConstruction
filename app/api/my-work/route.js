@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, PM_ROLES } from '../../../lib/server-auth'
+import { addDaysCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,7 +23,7 @@ export async function GET(request) {
     .single()
   const fullName = prof?.full_name || null
 
-  const in14 = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const in14 = addDaysCentral(14)
 
   const promises = [
     // Sales tasks assigned to this user — exclude tasks on preview/test orders

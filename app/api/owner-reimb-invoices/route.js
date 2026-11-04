@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
+import { isBeforeTodayCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,7 +39,7 @@ export async function GET(request) {
     const totalExpense = lines.reduce((a, l) => a + Number(l.expense_amount || 0), 0)
     const totalPaid = payments.reduce((a, p) => a + Number(p.amount || 0), 0)
     const outstanding = totalBilled - totalPaid
-    const isOverdue = inv.due_date && new Date(inv.due_date) < new Date() && outstanding > 0.005 && inv.status !== 'voided' && inv.status !== 'paid'
+    const isOverdue = isBeforeTodayCentral(inv.due_date) && outstanding > 0.005 && inv.status !== 'voided' && inv.status !== 'paid'
     return { ...inv, totalBilled, totalExpense, totalPaid, outstanding, isOverdue }
   })
 

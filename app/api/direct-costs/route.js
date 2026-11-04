@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
-import { DC_APPROVER_ROLES, buildApprovalQueue } from '../../../lib/direct-cost-queue'
+import { DC_APPROVER_ROLES, buildApprovalQueue, budgetLinesByJob } from '../../../lib/direct-cost-queue'
+import { jobAccessError, budgetLineError, accessibleJobIds } from '../../../lib/dc-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,28 +9,35 @@ const adminSupabase = createClient(
 )
 
 // Pending costs across every job the caller can see (dashboard "Costs to Approve").
-// PM/admin see all jobs; APMs only the jobs in pm_job_assignments, like the dashboard.
+// PM/admin see all jobs; APMs only the jobs they are on (pm_job_assignments or pm_email).
+// Also returns each job's budget lines (one query, keyed by job_id) for the line picker,
+// and marks each cost can_approve (admins: always; PM/APM: only on jobs they are on, same as jobAccessError).
 async function pendingQueue(auth) {
   let q = adminSupabase.from('direct_costs').select('*').eq('status', 'pending')
-  if (auth.role === 'apm') {
-    const { data: assigns, error } = await adminSupabase.from('pm_job_assignments').select('job_id').eq('user_id', auth.userId)
-    if (error) return { error }
-    const ids = (assigns || []).map(a => a.job_id)
-    if (ids.length === 0) return { data: [] }
-    q = q.in('job_id', ids)
+  const { ids: assigned, error: accessErr } = await accessibleJobIds(adminSupabase, auth)
+  if (accessErr) return { error: accessErr }
+  if (assigned) {
+    if (auth.role === 'apm') {
+      if (assigned.size === 0) return { data: [], budgetLines: {} }
+      q = q.in('job_id', [...assigned])
+    }
   }
   const { data: costs, error } = await q
   if (error) return { error }
-  if (!costs?.length) return { data: [] }
+  if (!costs?.length) return { data: [], budgetLines: {} }
 
   const uniq = key => [...new Set(costs.map(c => c[key]).filter(Boolean))]
-  const jobIds = uniq('job_id'), biIds = uniq('budget_item_id'), userIds = uniq('submitted_by')
+  const jobIds = uniq('job_id'), userIds = uniq('submitted_by')
   const [jobsRes, biRes, profRes] = await Promise.all([
     adminSupabase.from('jobs').select('id, job_number, project_name').in('id', jobIds),
-    biIds.length ? adminSupabase.from('budget_items').select('id, cost_code, description').in('id', biIds) : { data: [] },
+    adminSupabase.from('budget_items').select('id, job_id, cost_code, description').in('job_id', jobIds),
     userIds.length ? adminSupabase.from('profiles').select('id, full_name').in('id', userIds) : { data: [] },
   ])
-  return { data: buildApprovalQueue(costs, { jobs: jobsRes.data || [], budgetItems: biRes.data || [], profiles: profRes.data || [] }) }
+  if (biRes.error) return { error: biRes.error }
+  const budgetItems = biRes.data || []
+  const data = buildApprovalQueue(costs, { jobs: jobsRes.data || [], budgetItems, profiles: profRes.data || [] })
+    .map(c => ({ ...c, can_approve: assigned === null || assigned.has(c.job_id) }))
+  return { data, budgetLines: budgetLinesByJob(budgetItems) }
 }
 
 // GET: fetch direct costs for a job, or generate a signed receipt URL
@@ -50,9 +58,9 @@ export async function GET(request) {
     const job_id = searchParams.get('job_id')
     if (!job_id && searchParams.get('status') === 'pending') {
       if (!DC_APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { data, error } = await pendingQueue(auth)
+      const { data, budgetLines, error } = await pendingQueue(auth)
       if (error) return Response.json({ error: error.message }, { status: 500 })
-      return Response.json({ data })
+      return Response.json({ data, budget_lines: budgetLines })
     }
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
     const { data, error } = await adminSupabase
@@ -141,6 +149,30 @@ export async function PUT(request) {
   try {
     const { id, ...fields } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+
+    const { data: cost, error: fetchErr } = await adminSupabase.from('direct_costs').select('id, job_id, budget_item_id').eq('id', id).maybeSingle()
+    if (fetchErr) return Response.json({ error: fetchErr.message }, { status: 500 })
+    if (!cost) return Response.json({ error: 'Cost not found' }, { status: 404 })
+
+    const denied = await jobAccessError(adminSupabase, auth, cost.job_id)
+    if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+
+    // Job moves (job detail "Move to job") need access to the target job too, and must not
+    // carry the old job's budget line along.
+    const targetJob = fields.job_id ?? cost.job_id
+    if (targetJob !== cost.job_id) {
+      const deniedTarget = await jobAccessError(adminSupabase, auth, targetJob)
+      if (deniedTarget) return Response.json({ error: deniedTarget.error }, { status: deniedTarget.status })
+      if (fields.budget_item_id === undefined && cost.budget_item_id) {
+        return Response.json({ error: 'Moving a cost to another job must clear or replace its budget line.' }, { status: 422 })
+      }
+    }
+    if (fields.budget_item_id === '') fields.budget_item_id = null
+    if (fields.budget_item_id) {
+      const badLine = await budgetLineError(adminSupabase, fields.budget_item_id, targetJob)
+      if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
+    }
+
     const { error } = await adminSupabase.from('direct_costs').update(fields).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

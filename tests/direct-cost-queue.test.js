@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@jest/globals'
 import {
   DC_APPROVER_ROLES, submittedAt, daysWaiting, signedAmount, queueTotal, buildApprovalQueue,
+  budgetLinesByJob, budgetLineLabel, suggestBudgetLine, splitForApproval,
 } from '../lib/direct-cost-queue'
 
 describe('DC_APPROVER_ROLES', () => {
@@ -53,5 +54,48 @@ describe('buildApprovalQueue', () => {
     expect(b).toMatchObject({ job_number: 101, project_name: 'Main St', cost_code: '03-300', budget_line: 'Concrete', submitted_by_name: 'Sam Super' })
     const a = q.find(c => c.id === 'a')
     expect(a).toMatchObject({ job_number: null, cost_code: null, submitted_by_name: null })
+  })
+})
+
+describe('budget line picking', () => {
+  const lines = [
+    { id: 'L1', cost_code: '03-300', description: 'Concrete' },
+    { id: 'L2', cost_code: '06-100', description: 'Rough carpentry & lumber' },
+    { id: 'L3', cost_code: '09-900', description: 'Paint' },
+  ]
+  it('groups lines by job, sorted by code', () => {
+    const g = budgetLinesByJob([
+      { id: 'b', job_id: 'j1', cost_code: '10-200', description: 'B', budget_amount: 5 },
+      { id: 'a', job_id: 'j1', cost_code: '2-100', description: 'A' },
+      { id: 'x', job_id: 'j2', cost_code: '01', description: 'X' },
+    ])
+    expect(g.j1).toEqual([{ id: 'a', cost_code: '2-100', description: 'A' }, { id: 'b', cost_code: '10-200', description: 'B' }])
+    expect(g.j2.map(b => b.id)).toEqual(['x'])
+  })
+  it('labels as code · description', () => {
+    expect(budgetLineLabel(lines[0])).toBe('03-300 · Concrete')
+    expect(budgetLineLabel({ cost_code: null, description: 'Misc' })).toBe('Misc')
+  })
+  it('suggests by description words, or nothing on no match or a tie', () => {
+    expect(suggestBudgetLine('2x4 lumber, Home Depot', lines)?.id).toBe('L2')
+    expect(suggestBudgetLine('Concrete pump', lines)?.id).toBe('L1')
+    expect(suggestBudgetLine('Fuel', lines)).toBeNull()
+    expect(suggestBudgetLine('Paint', [...lines, { id: 'L4', cost_code: '09-910', description: 'Paint touch-up' }])).toBeNull()
+  })
+  it('splits a bulk approve into ready, needs-line and not-allowed', () => {
+    const costs = [
+      { id: 'a', has_budget_line: true, can_approve: true },
+      { id: 'b', has_budget_line: false, can_approve: true },
+      { id: 'c', has_budget_line: false, can_approve: true },
+      { id: 'd', has_budget_line: true, can_approve: false },
+    ]
+    const r = splitForApproval(costs, { b: 'L1' })
+    expect(r.ready).toEqual([{ cost: costs[0], budget_item_id: null }, { cost: costs[1], budget_item_id: 'L1' }])
+    expect(r.needLine.map(c => c.id)).toEqual(['c'])
+    expect(r.notAllowed.map(c => c.id)).toEqual(['d'])
+  })
+  it('does not count a line from another job', () => {
+    const [c] = buildApprovalQueue([{ id: 'c', job_id: 'j1', budget_item_id: 'x' }], { budgetItems: [{ id: 'x', job_id: 'j2', cost_code: '01' }] })
+    expect(c).toMatchObject({ has_budget_line: false, cost_code: null })
   })
 })

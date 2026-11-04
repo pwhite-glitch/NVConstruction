@@ -23,6 +23,7 @@ import { openLookaheadPrint } from '../../lib/lookahead-print'
 import * as lookaheadApi from '../../lib/lookahead-client'
 import EditPOForm from './EditPOForm'
 import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
+import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/central-date'
 
 const s = {
   // ── Layout ──
@@ -130,7 +131,7 @@ const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'p
 const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [] }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
-const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', auto_approve: false, nv_reimbursement: false }
+const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', auto_approve: false, nv_reimbursement: false }
 
 function CoAttachmentLink({ path, supabase }) {
   const [url, setUrl] = useState(null)
@@ -287,7 +288,7 @@ function JobDetailInner() {
   const [invoiceSelectedCosts, setInvoiceSelectedCosts] = useState({})
   const [savingInvoice, setSavingInvoice] = useState(false)
   const [expandedInvoiceId, setExpandedInvoiceId] = useState(null)
-  const [reimbPaymentForm, setReimbPaymentForm] = useState({ invoice_id: '', received_date: new Date().toISOString().split('T')[0], amount: '', payment_method: '', reference: '', notes: '' })
+  const [reimbPaymentForm, setReimbPaymentForm] = useState({ invoice_id: '', received_date: todayCentral(), amount: '', payment_method: '', reference: '', notes: '' })
   const [savingReimbPayment, setSavingReimbPayment] = useState(false)
   const [showPaymentFormId, setShowPaymentFormId] = useState(null)
   const [reimbMsg, setReimbMsg] = useState('')
@@ -349,7 +350,7 @@ function JobDetailInner() {
   const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
-  const [dcForm, setDcForm] = useState({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
+  const [dcForm, setDcForm] = useState({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
 
@@ -388,9 +389,9 @@ function JobDetailInner() {
   const [relinkDrawId, setRelinkDrawId] = useState('')
   // Per-subcontract AIA (nv_role === 'sub')
   const [showNewNvSubAia, setShowNewNvSubAia] = useState(null) // nv_subcontract_id | null
-  const [newNvSubAiaForm, setNewNvSubAiaForm] = useState({ period_from: '', period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
+  const [newNvSubAiaForm, setNewNvSubAiaForm] = useState({ period_from: '', period_to: todayCentral().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
   const [savingNvSubAia, setSavingNvSubAia] = useState(false)
-  const [paymentForm, setPaymentForm] = useState({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
+  const [paymentForm, setPaymentForm] = useState({ appId: null, amount: '', received_at: todayCentral() })
   const [savingPayment, setSavingPayment] = useState(false)
   const [periodDirectCosts, setPeriodDirectCosts] = useState([])
   const [periodBilling, setPeriodBilling] = useState([])
@@ -451,7 +452,7 @@ function JobDetailInner() {
 
   // Meetings tab state
   const [meetings, setMeetings] = useState([])
-  const [meetingForm, setMeetingForm] = useState({ meeting_date: new Date().toISOString().slice(0, 10), title: '', attendees: '' })
+  const [meetingForm, setMeetingForm] = useState({ meeting_date: todayCentral(), title: '', attendees: '' })
   const [meetingTranscript, setMeetingTranscript] = useState('')
   const [parsedMeeting, setParsedMeeting] = useState(null)
   const [parsingMeeting, setParsingMeeting] = useState(false)
@@ -489,7 +490,7 @@ function JobDetailInner() {
   // Prelim notices state
   const [prelimNotices, setPrelimNotices] = useState([])
   const [showAddPrelim, setShowAddPrelim] = useState(false)
-  const [prelimForm, setPrelimForm] = useState({ from_company: '', amount_claimed: '', received_at: new Date().toISOString().split('T')[0], notes: '' })
+  const [prelimForm, setPrelimForm] = useState({ from_company: '', amount_claimed: '', received_at: todayCentral(), notes: '' })
   const [savingPrelim, setSavingPrelim] = useState(false)
 
   // Sub ratings state
@@ -520,7 +521,7 @@ function JobDetailInner() {
   const [savingNvSub, setSavingNvSub] = useState(false)
   const [expandedNvSubCOId, setExpandedNvSubCOId] = useState(null)
   const [showNvSubCOFormFor, setShowNvSubCOFormFor] = useState(null)
-  const [nvSubCOForm, setNvSubCOForm] = useState({ description: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '' })
+  const [nvSubCOForm, setNvSubCOForm] = useState({ description: '', amount: '', date: todayCentral(), notes: '' })
   const [savingNvSubCO, setSavingNvSubCO] = useState(false)
 
   // Warranty state
@@ -534,7 +535,7 @@ function JobDetailInner() {
   const [allOrderTemplates, setAllOrderTemplates] = useState([])
   const [jobOrdersLoaded, setJobOrdersLoaded] = useState(false)
   const [showAddOrder, setShowAddOrder] = useState(false)
-  const [addOrderForm, setAddOrderForm] = useState({ vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '', template_item_id: '' })
+  const [addOrderForm, setAddOrderForm] = useState({ vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: todayCentral(), notes: '', template_item_id: '' })
   const [savingJobOrder, setSavingJobOrder] = useState(false)
   const [orderingItemId, setOrderingItemId] = useState(null)
   const [orderingItemForm, setOrderingItemForm] = useState({ vendor: '', amount: '', tracking_number: '', carrier: 'UPS', notes: '' })
@@ -1093,7 +1094,7 @@ function JobDetailInner() {
       json = await res.json()
       if (json.error) { setDcSaveErr('Save failed: ' + json.error); setSubmittingDc(false); return }
       setDcSaveErr('')
-      setDcForm({ cost_date: new Date().toISOString().split('T')[0], description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
+      setDcForm({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
@@ -1267,7 +1268,13 @@ function JobDetailInner() {
 
   async function assignDcBudgetItem(costId, budgetItemId) {
     setAssigningCostId(costId)
-    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
+    try {
+      const res = await authFetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) alert('Could not save the budget line: ' + (json.error || `request failed (${res.status})`))
+    } catch (e) {
+      alert('Could not save the budget line: ' + e.message)
+    }
     await loadDirectCosts()
     setAssigningCostId(null)
   }
@@ -1719,7 +1726,7 @@ function JobDetailInner() {
     if (!window.confirm(`Create a retainage release application for ${fmtAmt(totalRetainageHeld)}?\n\nThis creates a new draw at 0% retainage with no new work billed, releasing the ${prevApp.retainage_pct}% retainage held across all previous applications.`)) return
     setCreatingRetainage(true)
     const { data: { session } } = await supabase.auth.getSession()
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayCentral()
     const [yr, mo] = today.split('-').map(Number)
     const periodFrom = `${String(yr).padStart(4, '0')}-${String(mo).padStart(2, '0')}-01`
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
@@ -1908,7 +1915,7 @@ function JobDetailInner() {
       await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null, amount_received: null }).eq('id', appId)
       await loadAiaApplications()
     } else {
-      setPaymentForm({ appId, amount: '', received_at: new Date().toISOString().split('T')[0] })
+      setPaymentForm({ appId, amount: '', received_at: todayCentral() })
     }
   }
 
@@ -1922,7 +1929,7 @@ function JobDetailInner() {
     }).eq('id', paymentForm.appId)
     setSavingPayment(false)
     if (error) { alert('Save failed: ' + error.message + '\n\nYou may need to run this SQL in Supabase:\nALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;'); return }
-    setPaymentForm({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })
+    setPaymentForm({ appId: null, amount: '', received_at: todayCentral() })
     await loadAiaApplications()
   }
 
@@ -2464,7 +2471,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     setSavingNvSubCO(false)
     if (error) { setErrMsg('Error saving CO: ' + error.message); setTimeout(() => setErrMsg(''), 4000); return }
     setShowNvSubCOFormFor(null)
-    setNvSubCOForm({ description: '', amount: '', date: new Date().toISOString().split('T')[0], notes: '' })
+    setNvSubCOForm({ description: '', amount: '', date: todayCentral(), notes: '' })
     await loadNvSubcontracts()
   }
 
@@ -2502,7 +2509,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
       const { data, error: err } = await res.json()
       if (err) { alert(err); return }
       setJobOrders(prev => [data, ...prev])
-      setAddOrderForm({ vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '', template_item_id: '' })
+      setAddOrderForm({ vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: todayCentral(), notes: '', template_item_id: '' })
       setShowAddOrder(false)
     } finally {
       setSavingJobOrder(false)
@@ -3013,7 +3020,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     if (!res.ok) { setMeetingMsg({ ok: false, text: data.error || 'Save failed' }); setSavingMeeting(false); return }
     setMeetingMsg({ ok: true, text: 'Meeting saved' })
     setShowNewMeeting(false)
-    setMeetingForm({ meeting_date: new Date().toISOString().slice(0, 10), title: '', attendees: '' })
+    setMeetingForm({ meeting_date: todayCentral(), title: '', attendees: '' })
     setMeetingTranscript('')
     setParsedMeeting(null)
     setSavingMeeting(false)
@@ -3184,7 +3191,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...prelimForm, job_id: id }),
     })
-    setPrelimForm({ from_company: '', amount_claimed: '', received_at: new Date().toISOString().split('T')[0], notes: '' })
+    setPrelimForm({ from_company: '', amount_claimed: '', received_at: todayCentral(), notes: '' })
     setShowAddPrelim(false)
     setSavingPrelim(false)
     await loadPrelimNotices()
@@ -5073,7 +5080,7 @@ ${(budgets || []).length > 0 ? `
       payment_type: form.payment_type || 'nv_pays',
       billing_frequency: form.billing_frequency || 'monthly',
       billing_due_day: form.billing_due_day !== undefined && form.billing_due_day !== '' ? parseInt(form.billing_due_day) : null,
-      billing_anchor_date: form.billing_frequency === 'biweekly' && form.billing_due_day !== '' && form.billing_due_day !== undefined && !form.billing_anchor_date ? (() => { const d = new Date(); const diff = (parseInt(form.billing_due_day) - d.getDay() + 7) % 7 || 7; d.setDate(d.getDate() + diff); return d.toISOString().split('T')[0] })() : (form.billing_anchor_date || null),
+      billing_anchor_date: form.billing_frequency === 'biweekly' && form.billing_due_day !== '' && form.billing_due_day !== undefined && !form.billing_anchor_date ? (() => { const dow = new Date(todayCentral() + 'T12:00:00Z').getUTCDay(); const diff = (parseInt(form.billing_due_day) - dow + 7) % 7 || 7; return addDaysCentral(diff) })() : (form.billing_anchor_date || null),
       start_date: form.start_date || null, status: form.status,
       sub_billing_start: form.sub_billing_start || null,
       sub_billing_frequency: form.sub_billing_frequency || 'monthly',
@@ -5626,7 +5633,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         {activeTab === 'overview' && (() => {
           const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
           const fmtDFull = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null
-          const isOverdue = d => d && new Date(d + 'T12:00:00') < new Date()
+          const isOverdue = d => isBeforeTodayCentral(d)
           const pending = overviewSummary?.billing?.filter(b => b.status === 'pending') || []
           const approved = overviewSummary?.billing?.filter(b => b.status === 'approved') || []
           const approvedTotal = approved.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
@@ -7049,7 +7056,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <p style={{ ...s.cardTitle, margin: 0 }}>Employee Labor — Against Profit</p>
                     <button style={s.btnSmallOrange} onClick={async () => {
                       if (!confirm(`Post $${totalAccrued.toLocaleString()} in employee labor to job costs?\n\nThis creates direct cost entries for each employee. Only do this at closeout or end of period.`)) return
-                      const today = new Date().toISOString().slice(0, 10)
+                      const today = todayCentral()
                       const results = await Promise.all(rows.map(r =>
                         fetch('/api/direct-costs', {
                           method: 'POST',
@@ -10444,7 +10451,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {!isShowingForm && (
                             <button style={s.btnSmallOrange} onClick={() => {
                               setShowNewNvSubAia(sc.id)
-                              setNewNvSubAiaForm({ period_to: new Date().toISOString().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
+                              setNewNvSubAiaForm({ period_to: todayCentral().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
                             }}>+ New application</button>
                           )}
                         </div>
@@ -11304,7 +11311,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <button style={{ ...s.btn, opacity: savingPayment || !paymentForm.amount ? 0.5 : 1 }} disabled={savingPayment || !paymentForm.amount} onClick={savePaymentReceived}>
                   {savingPayment ? 'Saving...' : 'Save payment'}
                 </button>
-                <button style={s.btnGray} onClick={() => setPaymentForm({ appId: null, amount: '', received_at: new Date().toISOString().split('T')[0] })}>Cancel</button>
+                <button style={s.btnGray} onClick={() => setPaymentForm({ appId: null, amount: '', received_at: todayCentral() })}>Cancel</button>
               </div>
             </div>
           </div>
@@ -11384,7 +11391,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             )}
 
             {parsedTasks && parsedTasks.length > 0 && (() => {
-              const today = new Date().toISOString().slice(0, 10)
+              const today = todayCentral()
               const upcoming = parsedTasks.filter(t => !t.summary && !t.milestone && t.pct < 100 && t.finish >= today)
               const overdue = parsedTasks.filter(t => !t.summary && !t.milestone && t.pct < 100 && t.finish < today)
               const inProgress = parsedTasks.filter(t => !t.summary && !t.milestone && t.pct > 0 && t.pct < 100)
@@ -11445,7 +11452,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).length > 0 && (
                       <>
                         <p style={{ fontSize: '12px', fontWeight: '700', color: '#2563eb', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px', marginTop: (overdue.length > 0 || inProgress.length > 0) ? '1rem' : 0 }}>Upcoming (next 30 days)</p>
-                        {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).filter(t => t.start <= new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)).slice(0, 10).map(t => (
+                        {upcoming.filter(t => !inProgress.find(ip => ip.uid === t.uid)).filter(t => t.start <= addDaysCentral(30)).slice(0, 10).map(t => (
                           <div key={t.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', marginBottom: '6px' }}>
                             <span style={{ fontSize: '13px', color: '#111827' }}>{t.name}</span>
                             <span style={{ fontSize: '12px', color: '#2563eb' }}>{t.start} → {t.finish}</span>
@@ -12533,7 +12540,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title}</span>
                         <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', color, background: color + '22', border: `1px solid ${color}44` }}>{item.status.replace('_', ' ')}</span>
                         {item.assigned_company && <span style={{ fontSize: '12px', color: '#6b7280' }}>{item.assigned_company}</span>}
-                        {item.due_date && <span style={{ fontSize: '11px', color: new Date(item.due_date) < new Date() && item.status !== 'approved' ? '#dc2626' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
+                        {item.due_date && <span style={{ fontSize: '11px', color: isBeforeTodayCentral(item.due_date) && item.status !== 'approved' ? '#dc2626' : '#555' }}>Due {new Date(item.due_date + 'T00:00:00').toLocaleDateString()}</span>}
                       </div>
                       {item.description && <p style={{ margin: 0, fontSize: '13px', color: '#4b5563' }}>{item.description}</p>}
                       {item.pm_notes && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>PM note: {item.pm_notes}</p>}
@@ -13742,7 +13749,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             if (json.error) { setReimbErr(json.error); setSavingReimbPayment(false); return }
             setReimbMsg('Payment recorded.'); setTimeout(() => setReimbMsg(''), 5000)
             setShowPaymentFormId(null)
-            setReimbPaymentForm({ invoice_id: '', received_date: new Date().toISOString().split('T')[0], amount: '', payment_method: '', reference: '', notes: '' })
+            setReimbPaymentForm({ invoice_id: '', received_date: todayCentral(), amount: '', payment_method: '', reference: '', notes: '' })
             await loadReimbursements()
             setSavingReimbPayment(false)
           }
@@ -13892,7 +13899,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Unbilled Reimbursable Expenses ({unbilledCosts.length})</p>
                   {unbilledCosts.length > 0 && (
-                    <button style={s.btnSmallOrange} onClick={() => { setShowCreateInvoice(v => !v); setInvoiceSelectedCosts({}); setInvoiceForm(f => ({ ...f, bill_to_name: job?.owner_company || job?.owner_name || '', issue_date: new Date().toISOString().split('T')[0] })) }}>
+                    <button style={s.btnSmallOrange} onClick={() => { setShowCreateInvoice(v => !v); setInvoiceSelectedCosts({}); setInvoiceForm(f => ({ ...f, bill_to_name: job?.owner_company || job?.owner_name || '', issue_date: todayCentral() })) }}>
                       {showCreateInvoice ? 'Cancel' : '+ Create Invoice'}
                     </button>
                   )}

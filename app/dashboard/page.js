@@ -8,13 +8,14 @@ import { localToday, mondayOf } from '../../lib/lookahead-dates'
 import { stageLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { openStorageFile } from '../../lib/open-file'
 import { generateEstimatePDF } from '../../lib/generate-estimate-pdf'
-import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount } from '../../lib/direct-cost-queue'
+import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount, budgetLineLabel, suggestBudgetLine, splitForApproval } from '../../lib/direct-cost-queue'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { sameCompany } from '../../lib/company-name'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
+import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -270,7 +271,7 @@ export default function Dashboard() {
   const [orderTemplates, setOrderTemplates] = useState([])
   const [ordersLoaded, setOrdersLoaded] = useState(false)
   const [showNewOrder, setShowNewOrder] = useState(false)
-  const [newOrderForm, setNewOrderForm] = useState({ job_id: '', vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '' })
+  const [newOrderForm, setNewOrderForm] = useState({ job_id: '', vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: todayCentral(), notes: '' })
   const [savingOrder, setSavingOrder] = useState(false)
   const [showNewTemplate, setShowNewTemplate] = useState(false)
   const [newTplForm, setNewTplForm] = useState({ name: '', description: '' })
@@ -322,6 +323,9 @@ export default function Dashboard() {
   const [dcRejectingId, setDcRejectingId] = useState(null)
   const [dcRejectNote, setDcRejectNote] = useState('')
   const [dcQueueMsg, setDcQueueMsg] = useState(null)
+  const [dcBudgetLines, setDcBudgetLines] = useState({}) // { [job_id]: [{ id, cost_code, description }] }
+  const [dcPicks, setDcPicks] = useState({})             // { [cost_id]: budget_item_id } picked, not yet saved
+  const [dcNeedLine, setDcNeedLine] = useState(new Set()) // cost ids skipped by bulk approve for lack of a line
 
   // Per-sub assign-to-job state
   const [assignTarget, setAssignTarget] = useState({}) // { [dirSubId]: jobId }
@@ -501,7 +505,7 @@ export default function Dashboard() {
   const [editingVehicleId, setEditingVehicleId] = useState(null)
   const [editVehicleForm, setEditVehicleForm] = useState({})
   const [savingVehicleEdit, setSavingVehicleEdit] = useState(false)
-  const [apmVehicleLogForm, setApmVehicleLogForm] = useState({ log_type: 'Weekly Miles', mileage: '', notes: '', log_date: new Date().toISOString().split('T')[0] })
+  const [apmVehicleLogForm, setApmVehicleLogForm] = useState({ log_type: 'Weekly Miles', mileage: '', notes: '', log_date: todayCentral() })
   const [loggingApmVehicle, setLoggingApmVehicle] = useState(false)
   const [apmVehicleLogMsg, setApmVehicleLogMsg] = useState(null)
 
@@ -627,8 +631,12 @@ export default function Dashboard() {
       if (!res.ok) { setDcQueueMsg({ type: 'error', text: json.error || 'Could not load pending costs.' }); return }
       const list = Array.isArray(json.data) ? json.data : []
       setDcQueue(list)
-      // Drop selections that are no longer pending
-      setDcSelected(prev => new Set(list.filter(c => prev.has(c.id)).map(c => c.id)))
+      setDcBudgetLines(json.budget_lines && typeof json.budget_lines === 'object' ? json.budget_lines : {})
+      // Drop selections, picks and highlights for costs that are no longer pending
+      const stillPending = new Set(list.map(c => c.id))
+      setDcSelected(prev => new Set([...prev].filter(id => stillPending.has(id))))
+      setDcNeedLine(prev => new Set([...prev].filter(id => stillPending.has(id))))
+      setDcPicks(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => stillPending.has(id))))
     } catch { setDcQueueMsg({ type: 'error', text: 'Could not load pending costs.' }) }
   }
 
@@ -645,21 +653,36 @@ export default function Dashboard() {
     } catch (e) { return { error: e.message } }
   }
 
+  // Only costs that already have a line on their own job, or just got one picked, are sent.
+  // The rest stay selected and highlighted so the approver can pick a line and retry.
   async function approveDcCosts(costs) {
     if (!costs.length) return
-    const total = queueTotal(costs)
-    const noReceipt = costs.filter(c => !c.receipt_url).length
+    const { ready, needLine, notAllowed } = splitForApproval(costs, dcPicks)
+    const plural = n => `${n} cost${n !== 1 ? 's' : ''}`
+    const skipNote = [
+      needLine.length ? `Pick a budget line for ${plural(needLine.length)}.` : '',
+      notAllowed.length ? `${plural(notAllowed.length)} skipped: you are not assigned to ${notAllowed.length === 1 ? 'that job' : 'those jobs'}.` : '',
+    ].filter(Boolean).join(' ')
+    setDcNeedLine(new Set(needLine.map(c => c.id)))
+    if (!ready.length) { setDcQueueMsg({ type: 'error', text: skipNote }); return }
+
+    const toSend = ready.map(r => r.cost)
+    const total = queueTotal(toSend)
+    const noReceipt = toSend.filter(c => !c.receipt_url).length
+    const skipped = needLine.length + notAllowed.length
     const msg = costs.length === 1
       ? (noReceipt ? 'This cost has no receipt attached. Approve without one?' : null)
-      : `Approve ${costs.length} costs totaling ${fmtMoney(total)}?${noReceipt ? `\n\n${noReceipt} of them have no receipt attached.` : ''}`
+      : `Approve ${plural(toSend.length)} totaling ${fmtMoney(total)}?${noReceipt ? `\n\n${noReceipt} of them have no receipt attached.` : ''}${skipped ? `\n\n${plural(skipped)} will be skipped. ${skipNote}` : ''}`
     if (msg && !window.confirm(msg)) return
     setDcBusy(true); setDcQueueMsg(null)
-    const results = await Promise.all(costs.map(c => dcReview('approve', c.id).then(r => ({ c, ...r }))))
+    const results = await Promise.all(ready.map(({ cost: c, budget_item_id }) =>
+      dcReview('approve', c.id, budget_item_id ? { budget_item_id } : {}).then(r => ({ c, ...r }))))
     const failed = results.filter(r => r.error)
     const done = results.length - failed.length
-    setDcQueueMsg(failed.length
-      ? { type: 'error', text: `${done} approved, ${failed.length} failed: ${failed.map(f => `${f.c.description || 'cost'} (${f.error})`).join('; ')}` }
-      : { type: 'success', text: `${done} cost${done !== 1 ? 's' : ''} approved.` })
+    const parts = [`${plural(done)} approved.`]
+    if (failed.length) parts.push(`${failed.length} failed: ${failed.map(f => `${f.c.description || 'cost'} (${f.error})`).join('; ')}`)
+    if (skipNote) parts.push(skipNote)
+    setDcQueueMsg({ type: failed.length || skipped ? 'error' : 'success', text: parts.join(' ') })
     await loadDcQueue()
     setDcBusy(false)
   }
@@ -792,7 +815,7 @@ export default function Dashboard() {
       const { data, error: err } = await res.json()
       if (err) { alert(err); return }
       setOrders(prev => [data, ...prev])
-      setNewOrderForm({ job_id: '', vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: new Date().toISOString().slice(0,10), notes: '' })
+      setNewOrderForm({ job_id: '', vendor: '', description: '', quantity: '1', unit: 'each', amount: '', po_number: '', tracking_number: '', carrier: 'UPS', status: 'ordered', ordered_at: todayCentral(), notes: '' })
       setShowNewOrder(false)
     } finally {
       setSavingOrder(false)
@@ -2100,7 +2123,7 @@ export default function Dashboard() {
       const ests = estimates.filter(e => getStage(e) === k)
       return ests.map(e => ({ ...e, _stage: k, _total: calcTotal(e) }))
     })
-    const activeJobs = (jobs || []).filter(j => j.status === 'active')
+    const activeJobs = (jobs || []).filter(j => j.status === 'active' && !j.is_preview_data)
     const showConstruction = !!enabledStages['under_construction']
     const constructionGCTotal = showConstruction ? activeJobs.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0) : 0
     const constructionSubTotal = showConstruction ? activeJobs.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0) : 0
@@ -2935,7 +2958,7 @@ ${planLinks.map(p => p.url
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to save')
       setApmVehicleLogMsg({ type: 'ok', text: 'Log entry saved.' })
-      setApmVehicleLogForm(f => ({ ...f, mileage: '', notes: '', log_date: new Date().toISOString().split('T')[0] }))
+      setApmVehicleLogForm(f => ({ ...f, mileage: '', notes: '', log_date: todayCentral() }))
       loadVehicleLogs(vehicleId)
     } catch (err) {
       setApmVehicleLogMsg({ type: 'err', text: err.message })
@@ -3006,7 +3029,7 @@ ${planLinks.map(p => p.url
     if (json.error) { setToolMsg({ type: 'err', text: json.error }); return }
     // log checkout if assigned
     if (json.data.assigned_to) {
-      await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: json.data.id, log_type: 'checkout', log_date: new Date().toISOString().split('T')[0], assigned_to: json.data.assigned_to, notes: 'Initial assignment' }) })
+      await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: json.data.id, log_type: 'checkout', log_date: todayCentral(), assigned_to: json.data.assigned_to, notes: 'Initial assignment' }) })
     }
     setTools(prev => [...prev, json.data].sort((a, b) => a.name.localeCompare(b.name)))
     setToolForm({ name: '', brand: '', model: '', serial_number: '', category: 'Power Tools', purchase_date: '', purchase_cost: '', condition: 'good', assigned_to: '', job_site: '', notes: '' })
@@ -3026,8 +3049,8 @@ ${planLinks.map(p => p.url
     // log reassignment if assigned_to changed
     const newAssignee = editToolForm.assigned_to || null
     if (orig?.assigned_to !== newAssignee) {
-      if (orig?.assigned_to) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkin', log_date: new Date().toISOString().split('T')[0], assigned_to: orig.assigned_to, notes: 'Returned / reassigned' }) })
-      if (newAssignee) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkout', log_date: new Date().toISOString().split('T')[0], assigned_to: newAssignee, notes: 'Assigned by PM' }) })
+      if (orig?.assigned_to) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkin', log_date: todayCentral(), assigned_to: orig.assigned_to, notes: 'Returned / reassigned' }) })
+      if (newAssignee) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkout', log_date: todayCentral(), assigned_to: newAssignee, notes: 'Assigned by PM' }) })
       if (toolLogs[editingToolId]) loadToolLogs(editingToolId)
     }
     setTools(prev => prev.map(t => t.id === editingToolId ? json.data : t))
@@ -3214,9 +3237,9 @@ ${planLinks.map(p => p.url
   const pending = submissions.filter(s => s.status === 'pending')
   const totalThisWeek = submissions.filter(s => new Date(s.submitted_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).reduce((a, s) => a + (s.amount_billed || 0), 0)
   const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-  const now = new Date()
-  const expiredCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration + 'T00:00:00') < now)
-  const expiringSoonCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && new Date(s.coi_expiration + 'T00:00:00') >= now && new Date(s.coi_expiration + 'T00:00:00') < thirtyDaysFromNow)
+  // A COI is still valid on its expiration date; expired starts the day after (Central), same as the directory list.
+  const expiredCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && isBeforeTodayCentral(s.coi_expiration))
+  const expiringSoonCOIs = directory.filter(s => s.status === 'approved' && s.coi_expiration && !isBeforeTodayCentral(s.coi_expiration) && new Date(s.coi_expiration + 'T00:00:00') < thirtyDaysFromNow)
   const missingCOIs = directory.filter(s => s.status === 'approved' && !s.coi_url)
   const expiringCOIs = [...expiredCOIs, ...expiringSoonCOIs]
   const filteredDir = directory.filter(s => {
@@ -3366,7 +3389,7 @@ ${planLinks.map(p => p.url
         @media (max-width: 768px) { .rx-more-drawer { display: block !important; } }
 
         /* Costs to Approve: table on wide screens, stacked cards on narrow ones */
-        .dcq-row { display: grid; grid-template-columns: 28px minmax(130px,1.3fr) minmax(90px,1fr) minmax(130px,1.6fr) minmax(90px,1fr) 100px 86px minmax(90px,1fr) 64px 230px; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
+        .dcq-row { display: grid; grid-template-columns: 28px minmax(130px,1.3fr) minmax(90px,1fr) minmax(130px,1.6fr) minmax(160px,1.4fr) 100px 86px minmax(90px,1fr) 64px 230px; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
         .dcq-head { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.6px; background: #f9fafb; }
         .dcq-lbl { display: none; }
         .dcq-num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -3375,7 +3398,7 @@ ${planLinks.map(p => p.url
           .dcq-head { display: none; }
           .dcq-row { grid-template-columns: 28px 1fr 1fr; gap: 6px 12px; padding: 14px; }
           .dcq-row > .dcq-check { grid-row: span 6; align-self: start; }
-          .dcq-row > .dcq-wide { grid-column: 2 / -1; }
+          .dcq-row > .dcq-wide, .dcq-row > .dcq-line { grid-column: 2 / -1; }
           .dcq-lbl { display: block; font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.6px; }
           .dcq-num { text-align: left; }
           .dcq-actions { justify-content: flex-start; }
@@ -3689,7 +3712,7 @@ ${planLinks.map(p => p.url
 
               const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
               const daysSince = (d) => Math.floor((Date.now() - new Date(d)) / (24*60*60*1000))
-              const isOverdue = (d) => d && new Date(d + 'T12:00:00') < new Date()
+              const isOverdue = (d) => isBeforeTodayCentral(d)
               const jobTag = (item) => item.jobs ? <span style={{ fontSize: '12px', color: '#6b7280' }}>#{item.jobs.job_number} · {item.jobs.project_name}</span> : null
 
               return (
@@ -3729,7 +3752,7 @@ ${planLinks.map(p => p.url
                               {task.order_number && <span style={{ fontSize: '12px', color: '#6b7280' }}>{task.order_number}</span>}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
-                              {task.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: new Date(task.due_date + 'T23:59:59') < new Date() ? '#dc2626' : '#374151' }}>Due {new Date(task.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                              {task.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: isBeforeTodayCentral(task.due_date) ? '#dc2626' : '#374151' }}>Due {new Date(task.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
                               <span style={{ fontSize: '12px', color: '#e8590c' }}>Open →</span>
                             </div>
                           </div>
@@ -3899,15 +3922,26 @@ ${planLinks.map(p => p.url
                     {list.length > 0 && (
                       <div className="dcq-row dcq-head">
                         <input type="checkbox" checked={allSelected} onChange={toggleAll} disabled={dcBusy} aria-label="Select all" />
-                        <span>Job</span><span>Vendor</span><span>Description</span><span>Cost code</span>
+                        <span>Job</span><span>Vendor</span><span>Description</span><span>Budget line</span>
                         <span className="dcq-num">Amount</span><span>Date</span><span>Submitted by</span><span className="dcq-num">Waiting</span><span />
                       </div>
                     )}
                     {list.map(c => {
                       const days = daysWaiting(c)
                       const isRejecting = dcRejectingId === c.id
+                      const lines = dcBudgetLines[c.job_id] || []
+                      const pick = dcPicks[c.id] || ''
+                      const lineReady = c.has_budget_line || !!pick
+                      const needsLine = dcNeedLine.has(c.id) && !lineReady
+                      const suggested = !c.has_budget_line && lines.length ? suggestBudgetLine(c.description, lines) : null
+                      const approveBlock = c.can_approve === false ? 'You are not assigned to this job'
+                        : !lineReady ? (lines.length ? 'Pick a budget line first' : 'This job has no budget lines yet') : ''
+                      const setPick = v => {
+                        setDcPicks(prev => { const n = { ...prev }; if (v) n[c.id] = v; else delete n[c.id]; return n })
+                        if (v) setDcNeedLine(prev => { if (!prev.has(c.id)) return prev; const n = new Set(prev); n.delete(c.id); return n })
+                      }
                       return (
-                        <div key={c.id} style={{ background: dcSelected.has(c.id) ? '#fff7ed' : undefined }}>
+                        <div key={c.id} style={{ background: needsLine ? '#fef2f2' : dcSelected.has(c.id) ? '#fff7ed' : undefined, boxShadow: needsLine ? 'inset 3px 0 0 #dc2626' : undefined }}>
                           <div className="dcq-row" style={{ borderBottom: isRejecting ? 'none' : undefined }}>
                             <input className="dcq-check" type="checkbox" checked={dcSelected.has(c.id)} onChange={() => toggle(c.id)} disabled={dcBusy} aria-label="Select cost" style={{ width: '18px', height: '18px' }} />
                             <div className="dcq-wide">
@@ -3920,7 +3954,32 @@ ${planLinks.map(p => p.url
                               {c.description || '—'}
                               {c.is_credit && <span style={{ marginLeft: '6px', fontSize: '11px', fontWeight: '700', color: '#dc2626' }}>Credit</span>}
                             </div>
-                            <div><span className="dcq-lbl">Cost code</span>{c.cost_code ? `${c.cost_code}${c.budget_line ? ' ' + c.budget_line : ''}` : <span style={{ color: '#9ca3af' }}>{c.category || 'Unassigned'}</span>}</div>
+                            <div className="dcq-line">
+                              <span className="dcq-lbl">Budget line</span>
+                              {c.has_budget_line ? budgetLineLabel({ cost_code: c.cost_code, description: c.budget_line }) || '—'
+                                : lines.length === 0 ? (
+                                  <span style={{ fontSize: '12px', color: '#b45309' }}>
+                                    No budget lines on this job.{' '}
+                                    <a href={`/jobdetail?id=${c.job_id}&tab=budget`} style={{ color: '#e8590c', fontWeight: '600' }}>Open budget</a>
+                                  </span>
+                                ) : (
+                                  <>
+                                    <select value={pick} disabled={dcBusy || c.can_approve === false} onChange={e => setPick(e.target.value)}
+                                      aria-label="Budget line"
+                                      style={{ width: '100%', padding: '5px 6px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${needsLine ? '#dc2626' : pick ? '#bbf7d0' : '#e5e7eb'}`, background: '#fff', color: pick ? '#111827' : '#6b7280' }}>
+                                      <option value="">Pick a budget line…</option>
+                                      {lines.map(b => <option key={b.id} value={b.id}>{budgetLineLabel(b) || '(unnamed line)'}</option>)}
+                                    </select>
+                                    {suggested && pick !== suggested.id && c.can_approve !== false && (
+                                      <button type="button" disabled={dcBusy} onClick={() => setPick(suggested.id)}
+                                        style={{ marginTop: '4px', padding: 0, border: 'none', background: 'none', color: '#2563eb', fontSize: '11px', cursor: 'pointer', textAlign: 'left' }}>
+                                        Suggested: {budgetLineLabel(suggested)}
+                                      </button>
+                                    )}
+                                    {c.budget_item_id && !pick && <div style={{ marginTop: '4px', fontSize: '11px', color: '#b45309' }}>Its current line is from another job.</div>}
+                                  </>
+                                )}
+                            </div>
                             <div className="dcq-num"><span className="dcq-lbl">Amount</span><span style={{ fontWeight: '700', color: signedAmount(c) < 0 ? '#dc2626' : '#111827' }}>{money(c)}</span></div>
                             <div><span className="dcq-lbl">Date</span>{fmtDate(c.cost_date)}</div>
                             <div><span className="dcq-lbl">Submitted by</span>{c.submitted_by_name || '—'}</div>
@@ -3929,7 +3988,7 @@ ${planLinks.map(p => p.url
                               {c.receipt_url
                                 ? <button style={btn('#fff', '#374151', '#e5e7eb')} onClick={() => openStorageFile(supabase, 'receipts', c.receipt_url, 60)}>View receipt</button>
                                 : <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '700', alignSelf: 'center' }}>No receipt</span>}
-                              <button style={btn('#f0fdf4', '#15803d', '#bbf7d0')} disabled={dcBusy} onClick={() => approveDcCosts([c])}>{c.receipt_url ? 'Approve' : 'Approve anyway'}</button>
+                              <button style={{ ...btn('#f0fdf4', '#15803d', '#bbf7d0'), ...(approveBlock ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={dcBusy || !!approveBlock} title={approveBlock || undefined} onClick={() => approveDcCosts([c])}>{c.receipt_url ? 'Approve' : 'Approve anyway'}</button>
                               <button style={btn('#fef2f2', '#dc2626', '#fecaca')} disabled={dcBusy} onClick={() => { setDcRejectingId(isRejecting ? null : c.id); setDcRejectNote('') }}>{isRejecting ? 'Cancel' : 'Reject'}</button>
                             </div>
                           </div>
@@ -4281,7 +4340,7 @@ ${planLinks.map(p => p.url
                       if (!group) return null
                       const effectiveKeepId = reviewKeepId || group[0].id
                       const fmtCoi = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null
-                      const coiExpired = d => d && new Date(d) < new Date()
+                      const coiExpired = d => isBeforeTodayCentral(d)
                       const coiExpiring = d => d && !coiExpired(d) && new Date(d) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
                       return (
                         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '20px', marginBottom: '1.5rem' }}>
@@ -4388,8 +4447,8 @@ ${planLinks.map(p => p.url
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {sub.coi_expiration && new Date(sub.coi_expiration) < thirtyDaysFromNow && (
-                              <span style={{ fontSize: '11px', color: new Date(sub.coi_expiration) < new Date() ? '#dc2626' : '#e8590c', fontWeight: '700', background: new Date(sub.coi_expiration) < new Date() ? '#fef2f2' : '#fff7ed', border: `1px solid ${new Date(sub.coi_expiration) < new Date() ? '#fecaca' : '#fed7aa'}`, borderRadius: '4px', padding: '2px 8px' }}>
-                                {new Date(sub.coi_expiration) < new Date() ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
+                              <span style={{ fontSize: '11px', color: isBeforeTodayCentral(sub.coi_expiration) ? '#dc2626' : '#e8590c', fontWeight: '700', background: isBeforeTodayCentral(sub.coi_expiration) ? '#fef2f2' : '#fff7ed', border: `1px solid ${isBeforeTodayCentral(sub.coi_expiration) ? '#fecaca' : '#fed7aa'}`, borderRadius: '4px', padding: '2px 8px' }}>
+                                {isBeforeTodayCentral(sub.coi_expiration) ? 'COI EXPIRED' : 'COI EXPIRING'} {new Date(sub.coi_expiration + 'T00:00:00').toLocaleDateString()}
                               </span>
                             )}
                             <span style={s.badge(sub.status)}>{sub.status}</span>
@@ -4687,7 +4746,7 @@ ${planLinks.map(p => p.url
                               <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingCoiFor === sub.id}
                                 onChange={e => { if (e.target.files?.[0]) uploadSubDoc(sub.id, 'coi', e.target.files[0]); e.target.value = '' }} />
                             </label>
-                            {(!sub.coi_url || new Date(sub.coi_expiration) < new Date()) && sub.email && (
+                            {(!sub.coi_url || isBeforeTodayCentral(sub.coi_expiration)) && sub.email && (
                               <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === `${sub.id}-coi` ? 0.6 : 1 }} disabled={!!requestingDoc} onClick={() => sendDocRequest(sub.id, 'coi')}>
                                 {docRequestSent[`${sub.id}-coi`] ? '✓ Sent' : requestingDoc === `${sub.id}-coi` ? '...' : 'Email Reminder'}
                               </button>
@@ -6661,20 +6720,29 @@ ${planLinks.map(p => p.url
                 return 'estimating'
               }
               const STAGES = [
-                { key: 'lead',        label: 'LEAD',        color: '#9ca3af', bg: '#111',    border: '#d1d5db', hdr: '#161616' },
-                { key: 'estimating',  label: 'ESTIMATING',  color: '#2563eb', bg: '#0a111e', border: '#1a2a3e', hdr: '#0d1828' },
-                { key: 'bid_out',     label: 'BID OUT',     color: '#e8590c', bg: '#1a0e00', border: '#3a1e00', hdr: '#1e1200' },
-                { key: 'negotiating', label: 'NEGOTIATING', color: '#a16207', bg: '#1a1400', border: '#3a2a00', hdr: '#1e1800' },
-                { key: 'won',         label: 'WON',         color: '#16a34a', bg: '#0a1a0e', border: '#1a3a1e', hdr: '#0d1e12' },
+                { key: 'lead',        label: 'LEAD',        color: '#9ca3af' },
+                { key: 'estimating',  label: 'ESTIMATING',  color: '#2563eb' },
+                { key: 'bid_out',     label: 'BID OUT',     color: '#e8590c' },
+                { key: 'negotiating', label: 'NEGOTIATING', color: '#d97706' },
+                { key: 'won',         label: 'WON',         color: '#16a34a' },
               ]
+              // Shared light-theme column styles; the 3px top stripe is the only stage color.
+              const colStyle = (color) => ({ minWidth: '230px', flex: '0 0 230px', background: 'var(--nv-surface)', border: '1px solid var(--nv-border)', borderTop: `3px solid ${color}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' })
+              const colHdrStyle = { background: 'var(--nv-surface-alt)', padding: '10px 14px', borderBottom: '1px solid var(--nv-border)', borderRadius: '8px 8px 0 0' }
+              const colLabelStyle = { fontSize: '11px', fontWeight: '800', color: '#374151', letterSpacing: '2px' }
+              const colCountStyle = { fontSize: '11px', fontWeight: '700', color: 'var(--nv-text-secondary)', background: 'var(--nv-surface)', border: '1px solid var(--nv-border)', borderRadius: '99px', padding: '1px 7px' }
+              const colTotalStyle = { fontSize: '14px', fontWeight: '800', color: 'var(--nv-text-primary)', marginTop: '3px', fontVariantNumeric: 'tabular-nums' }
+              const cardStyle = { background: 'var(--nv-surface-alt)', border: '1px solid var(--nv-border)', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }
+              const cardAmtStyle = { fontSize: '15px', fontWeight: '800', color: 'var(--nv-text-primary)', fontVariantNumeric: 'tabular-nums' }
+              const jobBadgeStyle = { fontSize: '10px', color: 'var(--nv-text-secondary)', background: 'var(--nv-surface)', border: '1px solid var(--nv-border)', borderRadius: '3px', padding: '2px 6px', display: 'inline-block', marginTop: '5px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase' }
               const NEXT = { lead: 'estimating', estimating: 'bid_out', bid_out: 'negotiating', negotiating: 'won' }
               const PREV = { estimating: 'lead', bid_out: 'estimating', negotiating: 'bid_out', won: 'negotiating' }
               const active = estimates.filter(e => !['lost','declined'].includes(e.status))
               const won = estimates.filter(e => ['won','accepted'].includes(e.status))
               const lost = estimates.filter(e => ['lost','declined'].includes(e.status))
               const pipeline = active.filter(e => !['won','accepted'].includes(e.status))
-              const completedJobs = (jobs || []).filter(j => j.status === 'complete')
-              const activeJobs = (jobs || []).filter(j => j.status === 'active')
+              const completedJobs = (jobs || []).filter(j => j.status === 'complete' && !j.is_preview_data)
+              const activeJobs = (jobs || []).filter(j => j.status === 'active' && !j.is_preview_data)
               const pipelineVal = pipeline.reduce((a, e) => a + calcTotal(e), 0)
               const wonVal = won.reduce((a, e) => a + calcTotal(e), 0)
               const completedVal = completedJobs.reduce((a, j) => a + Number(j.adjusted_contract_value || j.contract_value || 0), 0)
@@ -6716,8 +6784,8 @@ ${planLinks.map(p => p.url
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '12px', marginBottom: '1.75rem' }} className="rx-grid-4">
                     {[
                       { label: 'Pipeline Value', value: fmtK(pipelineVal), sub: `${pipeline.length} active estimate${pipeline.length !== 1 ? 's' : ''}`, color: '#111827', bg: '#f9fafb', border: '#e5e7eb' },
-                      { label: 'Under Construction', value: fmtK(activeVal), sub: `${activeJobs.length} active job${activeJobs.length !== 1 ? 's' : ''}`, color: '#38bdf8', bg: '#0a1520', border: '#1a3040' },
-                      { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} est. won · ${completedJobs.length} jobs complete`, color: '#16a34a', bg: '#0a1a0e', border: '#1a3a1e' },
+                      { label: 'Under Construction', value: fmtK(activeVal), sub: `${activeJobs.length} active job${activeJobs.length !== 1 ? 's' : ''}`, color: '#38bdf8', bg: '#f9fafb', border: '#e5e7eb' },
+                      { label: 'Won YTD', value: fmtK(wonVal), sub: `${won.length} est. won · ${completedJobs.length} jobs complete`, color: '#16a34a', bg: '#f9fafb', border: '#e5e7eb' },
                       { label: 'Win Rate', value: `${winRate}%`, sub: `${closed} closed · ${lost.length} lost`, color: winRate >= 50 ? '#16a34a' : winRate >= 25 ? '#d97706' : '#dc2626', bg: '#f9fafb', border: '#e5e7eb' },
                       { label: 'Avg $/SqFt', value: avgPsf ? `$${avgPsf}` : '—', sub: `${withSqft.length} estimate${withSqft.length !== 1 ? 's' : ''} with sqft`, color: '#e8590c', bg: '#f9fafb', border: '#e5e7eb' },
                     ].map(m => (
@@ -6730,20 +6798,20 @@ ${planLinks.map(p => p.url
                   </div>
 
                   {/* Kanban columns */}
-                  <style>{`.kanban-scroll::-webkit-scrollbar{height:5px}.kanban-scroll::-webkit-scrollbar-track{background:#0a0a0a;border-radius:3px}.kanban-scroll::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}.kanban-scroll::-webkit-scrollbar-thumb:hover{background:#e8590c}`}</style>
+                  <style>{`.kanban-scroll::-webkit-scrollbar{height:5px}.kanban-scroll::-webkit-scrollbar-track{background:#e5e7eb;border-radius:3px}.kanban-scroll::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}.kanban-scroll::-webkit-scrollbar-thumb:hover{background:#e8590c}`}</style>
                   <div className="kanban-scroll" style={{ transform: 'rotateX(180deg)', overflowX: 'auto', paddingTop: '8px' }}>
                   <div style={{ transform: 'rotateX(180deg)', display: 'flex', gap: '12px' }}>
                     {STAGES.map(stage => {
                       const cards = estimates.filter(e => getStage(e) === stage.key)
                       const colTotal = cards.reduce((a, e) => a + calcTotal(e), 0)
                       return (
-                        <div key={stage.key} style={{ minWidth: '230px', flex: '0 0 230px', background: stage.bg, border: `1px solid ${stage.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ background: stage.hdr, padding: '10px 14px', borderBottom: `1px solid ${stage.border}`, borderRadius: '10px 10px 0 0' }}>
+                        <div key={stage.key} style={colStyle(stage.color)}>
+                          <div style={colHdrStyle}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '9px', fontWeight: '800', color: stage.color, letterSpacing: '2px' }}>{stage.label}</span>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '99px', padding: '1px 7px' }}>{cards.length}</span>
+                              <span style={colLabelStyle}>{stage.label}</span>
+                              <span style={colCountStyle}>{cards.length}</span>
                             </div>
-                            {colTotal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(colTotal)}</div>}
+                            {colTotal > 0 && <div style={colTotalStyle}>{fmtK(colTotal)}</div>}
                           </div>
                           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
                             {cards.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>Empty</div>}
@@ -6751,26 +6819,26 @@ ${planLinks.map(p => p.url
                               const tot = calcTotal(est)
                               const psf = est.square_footage > 0 ? tot / est.square_footage : null
                               return (
-                                <div key={est.id} className="nv-kanban-card" style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
+                                <div key={est.id} className="nv-kanban-card" style={cardStyle}
                                   onClick={() => { setEstimatorInnerTab('estimates'); setExpandedEstimate(est.id) }}>
                                   <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '2px' }}>{est.project_name}</div>
                                   {(est.owner_company || est.owner_name) && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>{est.owner_company || est.owner_name}</div>}
-                                  <div style={{ fontSize: '15px', fontWeight: '800', color: stage.color, fontVariantNumeric: 'tabular-nums' }}>{fmtK(tot)}</div>
+                                  <div style={cardAmtStyle}>{fmtK(tot)}</div>
                                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
                                     {psf && <span style={{ fontSize: '11px', color: '#6b7280' }}>${Math.round(psf)}/sqft</span>}
                                     {est.project_type && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '3px', padding: '1px 5px' }}>{est.project_type}</span>}
                                   </div>
                                   <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
                                     {PREV[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '4px', color: '#6b7280', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, PREV[stage.key])}>← Back</button>}
-                                    {NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: `1px solid ${stage.border}`, borderRadius: '4px', color: stage.color, cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} →</button>}
+                                    {NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid var(--nv-border-strong)', borderRadius: '4px', color: '#374151', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} →</button>}
                                     {stage.key !== 'won' && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', color: '#16a34a', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'won')}>Won ✓</button>}
-                                    <button style={{ fontSize: '10px', padding: '2px 6px', background: '#fef2f2', border: '1px solid #3a1a1a', borderRadius: '4px', color: '#dc2626', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost ✗</button>
+                                    <button style={{ fontSize: '10px', padding: '2px 6px', background: '#fef2f2', border: '1px solid var(--nv-red-border)', borderRadius: '4px', color: '#dc2626', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost ✗</button>
                                   </div>
                                 </div>
                               )
                             })}
                             {stage.key === 'lead' && ['pm', 'apm'].includes(profile?.role) && (
-                              <button style={{ background: 'transparent', border: `1px dashed ${stage.border}`, borderRadius: '8px', color: '#374151', cursor: 'pointer', padding: '10px', fontSize: '12px', textAlign: 'center' }}
+                              <button style={{ background: 'transparent', border: '1px dashed var(--nv-border-strong)', borderRadius: '8px', color: '#374151', cursor: 'pointer', padding: '10px', fontSize: '12px', textAlign: 'center' }}
                                 onClick={() => { setEstimatorInnerTab('estimates'); setShowNewEstimate(true) }}>
                                 + New estimate
                               </button>
@@ -6782,25 +6850,24 @@ ${planLinks.map(p => p.url
 
                     {/* Active jobs column */}
                     {(() => {
-                      const stage = { color: '#38bdf8', bg: '#0a1520', border: '#1a3040', hdr: '#0d1825' }
                       return (
-                        <div style={{ minWidth: '230px', flex: '0 0 230px', background: stage.bg, border: `1px solid ${stage.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ background: stage.hdr, padding: '10px 14px', borderBottom: `1px solid ${stage.border}`, borderRadius: '10px 10px 0 0' }}>
+                        <div style={colStyle('#38bdf8')}>
+                          <div style={colHdrStyle}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '9px', fontWeight: '800', color: stage.color, letterSpacing: '2px' }}>UNDER CONSTRUCTION</span>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '99px', padding: '1px 7px' }}>{activeJobs.length}</span>
+                              <span style={colLabelStyle}>UNDER CONSTRUCTION</span>
+                              <span style={colCountStyle}>{activeJobs.length}</span>
                             </div>
-                            {activeVal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(activeVal)}</div>}
+                            {activeVal > 0 && <div style={colTotalStyle}>{fmtK(activeVal)}</div>}
                           </div>
                           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
                             {activeJobs.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>No active jobs</div>}
                             {activeJobs.map(job => (
-                              <div key={job.id} style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
+                              <div key={job.id} style={cardStyle}
                                 onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
                                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '2px' }}>{job.project_name}</div>
                                 {job.job_number && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>#{job.job_number}</div>}
-                                {job.contract_value > 0 && <div style={{ fontSize: '15px', fontWeight: '800', color: stage.color, fontVariantNumeric: 'tabular-nums' }}>{fmtK(Number(job.contract_value))}</div>}
-                                <div style={{ fontSize: '10px', color: '#0a2a3a', background: '#eff6ff', border: '1px solid #1a3a4a', borderRadius: '3px', padding: '2px 6px', display: 'inline-block', marginTop: '5px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase', color: stage.color }}>Active</div>
+                                {job.contract_value > 0 && <div style={cardAmtStyle}>{fmtK(Number(job.contract_value))}</div>}
+                                <div style={jobBadgeStyle}>Active</div>
                               </div>
                             ))}
                           </div>
@@ -6810,25 +6877,24 @@ ${planLinks.map(p => p.url
 
                     {/* Completed jobs column */}
                     {(() => {
-                      const stage = { color: '#7c3aed', bg: '#faf5ff', border: '#2a1a4a', hdr: '#130d1e' }
                       return (
-                        <div style={{ minWidth: '230px', flex: '0 0 230px', background: stage.bg, border: `1px solid ${stage.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ background: stage.hdr, padding: '10px 14px', borderBottom: `1px solid ${stage.border}`, borderRadius: '10px 10px 0 0' }}>
+                        <div style={colStyle('#7c3aed')}>
+                          <div style={colHdrStyle}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '9px', fontWeight: '800', color: stage.color, letterSpacing: '2px' }}>COMPLETED</span>
-                              <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '99px', padding: '1px 7px' }}>{completedJobs.length}</span>
+                              <span style={colLabelStyle}>COMPLETED</span>
+                              <span style={colCountStyle}>{completedJobs.length}</span>
                             </div>
-                            {completedVal > 0 && <div style={{ fontSize: '14px', fontWeight: '800', color: stage.color, marginTop: '3px', fontVariantNumeric: 'tabular-nums' }}>{fmtK(completedVal)}</div>}
+                            {completedVal > 0 && <div style={colTotalStyle}>{fmtK(completedVal)}</div>}
                           </div>
                           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: '100px' }}>
                             {completedJobs.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>No completed jobs</div>}
                             {completedJobs.map(job => (
-                              <div key={job.id} style={{ background: '#f9fafb', border: '1px solid #f0f0f0', borderRadius: '8px', padding: '10px 11px', cursor: 'pointer' }}
+                              <div key={job.id} style={cardStyle}
                                 onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
                                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '2px' }}>{job.project_name}</div>
                                 {job.job_number && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>#{job.job_number}</div>}
-                                {job.contract_value > 0 && <div style={{ fontSize: '15px', fontWeight: '800', color: stage.color, fontVariantNumeric: 'tabular-nums' }}>{fmtK(Number(job.contract_value))}</div>}
-                                <div style={{ fontSize: '10px', color: '#3a1a5a', background: '#faf5ff', border: '1px solid #2a1a3a', borderRadius: '3px', padding: '2px 6px', display: 'inline-block', marginTop: '5px', fontWeight: '700', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Complete</div>
+                                {job.contract_value > 0 && <div style={cardAmtStyle}>{fmtK(Number(job.contract_value))}</div>}
+                                <div style={jobBadgeStyle}>Complete</div>
                               </div>
                             ))}
                           </div>

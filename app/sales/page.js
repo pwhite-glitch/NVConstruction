@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { isBeforeTodayCentral } from '../../lib/central-date'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -249,7 +250,7 @@ function SalesPageInner() {
   const overdue = orders.filter(o => {
     if (['completed','cancelled'].includes(o.stage)) return false
     const d = o.confirmed_install_date || o.expected_install_date
-    return d && new Date(d) < new Date()
+    return isBeforeTodayCentral(d)
   })
 
   // Pipeline grouping

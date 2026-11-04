@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { notify } from '../../../lib/notify'
+import { todayCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -630,7 +631,7 @@ export async function POST(request) {
       // Mark lead won (only if genuinely won)
       if (lead.stage === 'won') {
         await adminSupabase.from(table)
-          .update({ stage: 'won', won_date: lead.won_date || new Date().toISOString().split('T')[0] })
+          .update({ stage: 'won', won_date: lead.won_date || todayCentral() })
           .eq('id', lead_id)
       }
 
@@ -696,7 +697,7 @@ export async function POST(request) {
         order_id:        id,
         payment_type:    payment_type || 'deposit',
         amount,
-        payment_date:    payment_date || new Date().toISOString().split('T')[0],
+        payment_date:    payment_date || todayCentral(),
         reference,
         notes,
         recorded_by:     auth.userId,

@@ -6,6 +6,7 @@ import { authFetch } from '../../lib/client-fetch'
 import { openFile, openStorageFile } from '../../lib/open-file'
 import { isPartner } from '../../lib/partners'
 import BotAccessPanel from './BotAccessPanel'
+import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -174,7 +175,7 @@ export default function AdminPortal() {
 
   // Direct costs state
   const [showAddCost, setShowAddCost] = useState(false)
-  const [costForm, setCostForm] = useState({ job_id: '', budget_item_id: '', cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+  const [costForm, setCostForm] = useState({ job_id: '', budget_item_id: '', cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '' })
   const [savingCost, setSavingCost] = useState(false)
   const [filterCostJob, setFilterCostJob] = useState('')
   const [filterCostLogged, setFilterCostLogged] = useState('')
@@ -184,7 +185,7 @@ export default function AdminPortal() {
   // Billing payment state
   const [expandedBill, setExpandedBill] = useState(null)
   const [payingId, setPayingId] = useState(null)
-  const [payForm, setPayForm] = useState({ paid_at: new Date().toISOString().split('T')[0], payment_amount: '', payment_method: 'Check', check_number: '', payment_notes: '' })
+  const [payForm, setPayForm] = useState({ paid_at: todayCentral(), payment_amount: '', payment_method: 'Check', check_number: '', payment_notes: '' })
   const [savingPay, setSavingPay] = useState(false)
   const [payMsg, setPayMsg] = useState('')
   const [editingBillId, setEditingBillId] = useState(null)
@@ -364,7 +365,7 @@ export default function AdminPortal() {
       submitted_by: session.user.id,
       status: 'approved',
     })
-    setCostForm({ job_id: '', budget_item_id: '', cost_date: new Date().toISOString().split('T')[0], description: '', category: 'Materials', amount: '', notes: '' })
+    setCostForm({ job_id: '', budget_item_id: '', cost_date: todayCentral(), description: '', category: 'Materials', amount: '', notes: '' })
     setShowAddCost(false)
     setSavingCost(false)
     await loadCosts()
@@ -717,9 +718,9 @@ export default function AdminPortal() {
 
   function coiStatus(exp) {
     if (!exp) return 'none'
-    const d = new Date(exp)
-    if (d < today) return 'expired'
-    if (d <= in30) return 'warning'
+    // Still valid on the expiration date itself; expired from the next day (Central).
+    if (isBeforeTodayCentral(exp)) return 'expired'
+    if (new Date(exp) <= in30) return 'warning'
     return 'active'
   }
 
@@ -1148,7 +1149,7 @@ export default function AdminPortal() {
                           </div>
                         ) : (
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: new Date().toISOString().split('T')[0], payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
+                            <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: todayCentral(), payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
                             {!sub.paid_at && <button style={s.btnSm('gray')} onClick={() => { setEditingBillId(sub.id); setEditBillForm({ invoice_number: sub.invoice_number || '', amount_billed: '', retainage_held: '', work_description: '' }) }}>Edit</button>}
                             {sub.doc_url && <button style={s.btnSm('blue')} onClick={() => openStorageFile(supabase, 'billing-docs', sub.doc_url, 3600)}>View Invoice</button>}
                           </div>

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { todayCentral } from '../../../lib/central-date'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -65,7 +66,7 @@ export async function POST(request) {
         description,
         amount: parseFloat(amount),
         category: category || 'general',
-        entry_date: entry_date || new Date().toISOString().split('T')[0],
+        entry_date: entry_date || todayCentral(),
         budget_item_id: budget_item_id || null,
         notes: notes || null,
         created_by: created_by || null,

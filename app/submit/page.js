@@ -7,6 +7,7 @@ import { authFetch } from '../../lib/client-fetch'
 import { workingDaysOf, rangeLabel } from '../../lib/lookahead-dates'
 import { openStorageFile } from '../../lib/open-file'
 import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
+import { todayCentral, addDaysCentral } from '../../lib/central-date'
 
 const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
@@ -121,7 +122,7 @@ export default function Submit() {
   const [expandedContract, setExpandedContract] = useState(null)
   const [uploadingSignedContract, setUploadingSignedContract] = useState(null)
   const [contractUploadMsg, setContractUploadMsg] = useState({})
-  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
+  const [form, setForm] = useState({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
   const [jobDrawRequests, setJobDrawRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -176,7 +177,7 @@ export default function Submit() {
 
   // RFI state
   const [rfis, setRfis] = useState([])
-  const [rfiForm, setRfiForm] = useState({ job_id: '', question: '', title: '' })
+  const [rfiForm, setRfiForm] = useState({ job_id: '', description: '', title: '' })
   const [submittingRfi, setSubmittingRfi] = useState(false)
   const [expandedRfiId, setExpandedRfiId] = useState(null)
 
@@ -263,7 +264,7 @@ export default function Submit() {
       const srRes = await fetch(`/api/signing-requests?sub_id=${session.user.id}`)
       if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
       await loadBidInvitations(session.user.email)
-      await loadMyRfis(session.user.id)
+      await loadMyRfis()
       const { data: dir } = await supabase.from('sub_directory').select('*').ilike('email', session.user.email).maybeSingle()
       if (dir) { setDirEntry(dir); setDocsCoiExpiry(dir.coi_expiration?.split('T')[0] || '') }
       const teamRes = await authFetch('/api/sub-team')
@@ -301,24 +302,37 @@ export default function Submit() {
     setBidInvitations(data || [])
   }
 
-  async function loadMyRfis(userId) {
-    const { data } = await supabase.from('rfis').select('*, jobs(job_number, project_name)').eq('sub_id', userId).order('created_at', { ascending: false })
+  async function loadMyRfis() {
+    const res = await authFetch('/api/rfis')
+    if (!res.ok) return
+    const { data } = await res.json()
     setRfis(data || [])
   }
 
   async function submitRfi() {
-    if (!rfiForm.job_id || !rfiForm.question || !rfiForm.title) return
+    if (!rfiForm.job_id || !rfiForm.description || !rfiForm.title) return
     setSubmittingRfi(true)
     setRfiError('')
-    const { data: existing } = await supabase.from('rfis').select('number').eq('job_id', rfiForm.job_id).order('number', { ascending: false }).limit(1)
-    const nextNum = ((existing?.[0]?.number) || 0) + 1
-    const { error: rfiInsertErr } = await supabase.from('rfis').insert({ job_id: rfiForm.job_id, sub_id: user.id, title: rfiForm.title, question: rfiForm.question, status: 'open', number: nextNum })
+    let errorMsg = null
+    try {
+      const res = await authFetch('/api/rfis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: rfiForm.job_id, title: rfiForm.title, description: rfiForm.description }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        errorMsg = body.error || `Submission failed (HTTP ${res.status}).`
+      }
+    } catch (e) {
+      errorMsg = `Submission failed: ${e.message}`
+    }
     setSubmittingRfi(false)
-    if (rfiInsertErr) { setRfiError('Submission failed. Please try again.'); return }
-    setRfiForm({ job_id: rfiForm.job_id, question: '', title: '' })
+    if (errorMsg) { setRfiError(errorMsg); return }
+    setRfiForm({ job_id: rfiForm.job_id, description: '', title: '' })
     setRfiSuccess(true)
     setTimeout(() => setRfiSuccess(false), 5000)
-    await loadMyRfis(user.id)
+    await loadMyRfis()
   }
 
   async function loadMessages(jobId) {
@@ -866,7 +880,7 @@ export default function Submit() {
     try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}
     setSuccess(true)
     setPrefillSub(null)
-    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
+    setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
     setSovForm([])
     setJobSovContracts([])
     setSovRetainageMap({})
@@ -888,7 +902,7 @@ export default function Submit() {
       work_description: sub.work_description || '',
       billing_period:   sub.billing_period
         ? sub.billing_period.slice(0, 7)
-        : new Date().toISOString().slice(0, 7),
+        : todayCentral().slice(0, 7),
       draw_request_id:  sub.draw_request_id || '',
       invoice_number:   sub.invoice_number || '',
       invoice_date:     sub.invoice_date || '',
@@ -932,8 +946,8 @@ export default function Submit() {
 
   async function loadMyLookahead() {
     if (!user) return
-    const today = new Date().toISOString().split('T')[0]
-    const twoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const today = todayCentral()
+    const twoWeeks = addDaysCentral(14)
     const res = await fetch(`/api/lookahead-activities?sub_user_id=${user.id}&from=${today}&to=${twoWeeks}`)
     if (!res.ok) return
     const { data } = await res.json()
@@ -1284,7 +1298,7 @@ export default function Submit() {
                 return hasDraft ? (
                   <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
                     <span style={{ fontSize: '13px', color: '#c2410c', fontWeight: '600' }}>Draft restored — your previous entries have been loaded.</span>
-                    <button type="button" onClick={() => { try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}; setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: new Date().toISOString().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' }) }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
+                    <button type="button" onClick={() => { try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}; setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' }) }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
                   </div>
                 ) : null
               })()}
@@ -2105,11 +2119,11 @@ export default function Submit() {
               </div>
               <div style={{ marginBottom: '12px' }}>
                 <label style={s.label}>Question</label>
-                <textarea style={{ ...s.input, resize: 'vertical' }} rows={3} value={rfiForm.question} onChange={e => setRfiForm(f => ({ ...f, question: e.target.value }))} placeholder="Describe your question in detail..." />
+                <textarea style={{ ...s.input, resize: 'vertical' }} rows={3} value={rfiForm.description} onChange={e => setRfiForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe your question in detail..." />
               </div>
               <button
-                style={{ ...s.btn, opacity: submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question ? 0.5 : 1 }}
-                disabled={submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.question}
+                style={{ ...s.btn, opacity: submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.description ? 0.5 : 1 }}
+                disabled={submittingRfi || !rfiForm.job_id || !rfiForm.title || !rfiForm.description}
                 onClick={submitRfi}
               >{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
               {rfiSuccess && <p style={{ fontSize: '13px', color: '#16a34a', marginTop: '10px', marginBottom: 0 }}>✓ RFI submitted — NV Construction will respond within 1–2 business days.</p>}
@@ -2130,7 +2144,7 @@ export default function Submit() {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
                         {rfi.number && <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: '700' }}>RFI #{rfi.number}</span>}
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title || rfi.question?.slice(0, 60)}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title || rfi.description?.slice(0, 60)}</span>
                         <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: statusBg, color: statusColor, border: `1px solid ${statusBorder}` }}>{rfi.status}</span>
                       </div>
                       <div style={{ fontSize: '12px', color: '#6b7280' }}>
@@ -2142,7 +2156,7 @@ export default function Submit() {
                   {isExp && (
                     <div style={s.contractRowExpanded}>
                       <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Your question</p>
-                      <p style={{ margin: '0 0 1rem', fontSize: '14px', color: '#374151', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.question}</p>
+                      <p style={{ margin: '0 0 1rem', fontSize: '14px', color: '#374151', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{rfi.description}</p>
                       {rfi.response ? (
                         <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 16px' }}>
                           <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#16a34a', textTransform: 'uppercase', letterSpacing: '1px' }}>Response from NV Construction</p>
@@ -2369,8 +2383,8 @@ export default function Submit() {
 
         {activeTab === 'upcoming' && (() => {
           // A multi-day activity is listed on each of its working days in the next 14 days
-          const today = new Date().toISOString().split('T')[0]
-          const twoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+          const today = todayCentral()
+          const twoWeeks = addDaysCentral(14)
           const grouped = {}
           myLookaheadActivities.forEach(a => {
             workingDaysOf(a).filter(d => d >= today && d <= twoWeeks).forEach(d => {

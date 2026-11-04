@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { Resend } from 'resend'
 import { DC_APPROVER_ROLES as APPROVER_ROLES } from '../../../lib/direct-cost-queue'
+import { jobAccessError, budgetLineError } from '../../../lib/dc-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,6 +26,24 @@ async function dcUpdate(updates, id) {
   }
   return error
 }
+
+// Approve only if the row is still pending on the same job, saving the budget line in the
+// same statement. Returns { error } or { rows } (rows empty = someone else got there first).
+async function dcApproveIfPending(updates, cost) {
+  const run = u => adminSupabase.from('direct_costs').update(u)
+    .eq('id', cost.id).eq('status', 'pending').eq('job_id', cost.job_id)
+    .select('id')
+  let { data, error } = await run(updates)
+  if (error && error.message && error.message.includes('schema cache')) {
+    const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => !NEW_022_COLS.has(k)))
+    ;({ data, error } = await run(safe))
+  }
+  if (error) return { error }
+  return { rows: data || [] }
+}
+
+const ALREADY_HANDLED = status =>
+  `This cost was already handled${status && status !== 'pending' ? ` (it is now ${status})` : ''}. Refresh the list.`
 
 // POST /api/dc-review
 // Handles all status transitions for direct cost entries.
@@ -91,10 +110,23 @@ export async function POST(request) {
   // ── APPROVE ──────────────────────────────────────────────────────────────────
   if (action === 'approve') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-    if (cost.status !== 'pending') return Response.json({ error: 'Only pending costs can be approved' }, { status: 422 })
-    if (!cost.budget_item_id) return Response.json({ error: 'A budget line must be assigned before approving.' }, { status: 422 })
-    const error = await dcUpdate({ status: 'approved', reviewed_by: auth.userId, reviewed_at: now }, id)
+    if (cost.status !== 'pending') return Response.json({ error: ALREADY_HANDLED(cost.status) }, { status: 409 })
+    const denied = await jobAccessError(adminSupabase, auth, cost.job_id)
+    if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+
+    // Optional budget_item_id picked in the approval queue; otherwise the one already on the cost.
+    const lineId = fields.budget_item_id || cost.budget_item_id
+    if (!lineId) return Response.json({ error: 'A budget line must be assigned before approving.' }, { status: 422 })
+    const badLine = await budgetLineError(adminSupabase, lineId, cost.job_id)
+    if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
+
+    const { rows, error } = await dcApproveIfPending(
+      { status: 'approved', budget_item_id: lineId, reviewed_by: auth.userId, reviewed_at: now }, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows.length) {
+      const { data: latest } = await adminSupabase.from('direct_costs').select('status').eq('id', id).maybeSingle()
+      return Response.json({ error: ALREADY_HANDLED(latest?.status) }, { status: 409 })
+    }
     return Response.json({ ok: true })
   }
 
@@ -203,6 +235,12 @@ export async function POST(request) {
   // ── EDIT ─────────────────────────────────────────────────────────────────────
   if (action === 'edit') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    const denied = await jobAccessError(adminSupabase, auth, cost.job_id)
+    if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+    if (fields.budget_item_id) {
+      const badLine = await budgetLineError(adminSupabase, fields.budget_item_id, cost.job_id)
+      if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
+    }
 
     const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes', 'budget_item_id', 'bill_to_owner', 'owner_auth_ref']
     const UUID_FIELDS = new Set(['budget_item_id'])

@@ -8,6 +8,9 @@ const STAGE_OPTS = [
   { key: 'estimating',  label: 'Estimating' },
   { key: 'bid_out',     label: 'Bid Out' },
   { key: 'negotiating', label: 'Negotiating' },
+  // Won here only sets estimates.status — it never creates a job. Use
+  // "Convert to Job" when a new job is needed.
+  { key: 'won',         label: 'Won' },
 ]
 
 const PROJECT_TYPES = ['Office TI','Retail TI','Restaurant','Medical','Industrial','Warehouse','Multifamily','Ground-up','Renovation','Other']
@@ -152,7 +155,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setLoadingDocs(false)
   }
 
-  async function save(auto = false) {
+  async function save(auto = false, statusOverride) {
     if (!auto) setSaving(true)
     if (!auto) setSaveMsg('')
     try {
@@ -169,7 +172,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         taxable:        !!form.taxable,
         square_footage: form.square_footage !== '' && form.square_footage != null ? Number(form.square_footage) : null,
         project_type:   form.project_type || null,
-        status:         form.status,
+        status:         statusOverride || form.status,
         updated_at:     new Date().toISOString(),
       }
       const validLines = lines.filter(l => l.description)
@@ -239,7 +242,15 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setDocs(prev => prev.filter(d => d.id !== doc.id))
   }
 
+  // Mark Won without creating a job (e.g. revised estimate on an existing job).
+  // Goes through the normal save path so pending edits are saved with it.
+  async function markWon() {
+    if (!window.confirm('Mark as Won without creating a job? It will move to Archive.')) return
+    await save(false, 'won')
+  }
+
   async function setStage(status) {
+    if (status === 'won') return markWon()
     await supabase.from('estimates').update({ status }).eq('id', estimate.id)
     setForm(f => ({ ...f, status }))
     onUpdated({ ...estimate, ...form, status, estimate_line_items: lines })
@@ -505,7 +516,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <label style={{ ...s.lbl, marginBottom: 0 }}>Stage</label>
-                  <select style={{ ...s.sel, width: 'auto' }} value={form.status || 'lead'} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+                  <select style={{ ...s.sel, width: 'auto' }} value={form.status || 'lead'} onChange={e => { const v = e.target.value; if (v === 'won') markWon(); else setForm(f => ({ ...f, status: v })) }}>
                     {STAGE_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
                   </select>
                 </div>

@@ -16,6 +16,7 @@ import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { isConverted } from '../../lib/estimate-pipeline'
 import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJobIds, homePathForRole } from '../../lib/roles'
 
 const TRADES = [
@@ -2133,7 +2134,8 @@ export default function Dashboard() {
 
     const stageKeys = Object.keys(STAGE_META).filter(k => enabledStages[k])
     const rows = stageKeys.flatMap(k => {
-      const ests = estimates.filter(e => getStage(e) === k)
+      // Won estimates already converted to a job appear only as that job.
+      const ests = estimates.filter(e => getStage(e) === k && !(k === 'won' && isConverted(e, jobs)))
       return ests.map(e => ({ ...e, _stage: k, _total: calcTotal(e) }))
     })
     const activeJobs = (jobs || []).filter(j => j.status === 'active' && !j.is_preview_data)
@@ -6816,7 +6818,8 @@ ${planLinks.map(p => p.url
                   <div className="kanban-scroll" style={{ transform: 'rotateX(180deg)', overflowX: 'auto', paddingTop: '8px' }}>
                   <div style={{ transform: 'rotateX(180deg)', display: 'flex', gap: '12px' }}>
                     {STAGES.map(stage => {
-                      const cards = estimates.filter(e => getStage(e) === stage.key)
+                      // Converted won estimates show only as their job (Under Construction / Completed).
+                      const cards = estimates.filter(e => getStage(e) === stage.key && !(stage.key === 'won' && isConverted(e, jobs)))
                       const colTotal = cards.reduce((a, e) => a + calcTotal(e), 0)
                       return (
                         <div key={stage.key} style={colStyle(stage.color)}>

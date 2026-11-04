@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { openStorageFile } from '../../../lib/open-file'
 
 const STAGE_OPTS = [
   { key: 'lead',        label: 'Lead' },
@@ -227,9 +228,8 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setUploading(false)
   }
 
-  async function openDoc(path) {
-    const { data } = await supabase.storage.from('estimate-docs').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  function openDoc(path) {
+    return openStorageFile(supabase, 'estimate-docs', path)
   }
 
   async function deleteDoc(doc) {

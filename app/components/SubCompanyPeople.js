@@ -317,12 +317,20 @@ export function CompanyEmailPanel({ companyId, companyName, people, job = null, 
     } else {
       for (const p of chosen) {
         const res = await authFetch('/api/invite-sub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: p.email, company_id: companyId || undefined, company_name: companyName, full_name: p.name || undefined }) })
-        if (res.ok) sent.push(p.email); else failed.push(p.email)
+        if (res.ok) sent.push(p.email); else {
+          const j = await res.json().catch(() => ({}))
+          failed.push({ email: p.email, reason: j.error || `HTTP ${res.status}` })
+        }
       }
     }
     setSending(false)
-    if (!sent.length) { setErr(`Nothing was sent${failed.length ? ` (failed: ${failed.join(', ')})` : ''}.`); return }
-    onSent?.(`${KINDS[kind].label} email sent to ${sent.join(', ')}.${failed.length ? ` Failed: ${failed.join(', ')}.` : ''}`)
+    if (!sent.length) {
+      const detail = failed.map(f => typeof f === 'string' ? f : `${f.email}: ${f.reason}`).join('; ')
+      setErr(`Nothing was sent${detail ? ` — ${detail}` : ''}.`)
+      return
+    }
+    const failedEmails = failed.map(f => typeof f === 'string' ? f : f.email).join(', ')
+    onSent?.(`${KINDS[kind].label} email sent to ${sent.join(', ')}.${failedEmails ? ` Failed: ${failedEmails}.` : ''}`)
   }
 
   return (

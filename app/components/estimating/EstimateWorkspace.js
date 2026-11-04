@@ -1,7 +1,10 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useReducer } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { openStorageFile } from '../../../lib/open-file'
+import {
+  estimateSavePayload, shouldOfferDraft, initialSaveState, saveStateReducer, shouldAutoSave, STALE_MESSAGE,
+} from '../../../lib/estimate-save'
 
 const STAGE_OPTS = [
   { key: 'lead',        label: 'Lead' },
@@ -91,28 +94,50 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const [showConvert, setShowConvert] = useState(false)
   const [cvtForm,     setCvtForm]     = useState({ job_number: '', start_date: '' })
   const [converting,  setConverting]  = useState(false)
-  const [dirty,       setDirty]       = useState(false)
   const [draftMsg,    setDraftMsg]    = useState('')
   const [hasDraft,    setHasDraft]    = useState(false)
   const [draftSnap,   setDraftSnap]   = useState(null)
+  const [restoredMsg, setRestoredMsg] = useState(false)
+
+  // dirty is set ONLY by markEdited() from user input handlers. Loads, refetches,
+  // draft restores and saves never mark dirty, so a save can't re-trigger itself.
+  const [saveState, dispatchSave] = useReducer(saveStateReducer, estimate.updated_at, initialSaveState)
+  const saveStateRef = useRef(saveState)
+  saveStateRef.current = saveState
+  const { dirty, conflict } = saveState
 
   const DRAFT_KEY    = `estimate_draft_${estimate.id}`
-  const isFirstRender = useRef(true)
   const autoSaveTimer = useRef(null)
+  const savingRef     = useRef(false)
+  const dbLineCount   = useRef((estimate.estimate_line_items || []).length)
 
   const canEdit = ['pm', 'apm'].includes(profile?.role)
   const isPM    = profile?.role === 'pm'
 
+  function markEdited() {
+    setRestoredMsg(false)
+    dispatchSave({ type: 'edit' })
+  }
+  function editForm(patch) {
+    setForm(f => ({ ...f, ...patch }))
+    markEdited()
+  }
+  function editLines(updater) {
+    setLines(updater)
+    markEdited()
+  }
+
   useEffect(() => { if (tab === 'docs') loadDocs() }, [tab])
 
-  // Check for a locally-saved draft newer than the DB on first load
+  // Offer a local draft only if it was made on top of the version the DB has
+  // now and contains real unsaved edits; otherwise drop it silently.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY)
       if (!raw) return
-      const draft = JSON.parse(raw)
-      const dbTime = new Date(estimate.updated_at || 0).getTime()
-      if (draft.savedAt > dbTime + 5000) {
+      let draft = null
+      try { draft = JSON.parse(raw) } catch {}
+      if (shouldOfferDraft(draft, estimate)) {
         setHasDraft(true)
         setDraftSnap(draft)
       } else {
@@ -121,32 +146,18 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     } catch {}
   }, [])
 
-  // Mark dirty on any form/lines change after initial mount
+  // Write draft to localStorage ~1.5s after the last real edit
   useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return }
-    setDirty(true)
-  }, [form, lines])
-
-  // Write draft to localStorage ~2s after last change
-  useEffect(() => {
-    if (!dirty) return
+    if (!dirty || conflict) return
     const t = setTimeout(() => {
       try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines, savedAt: Date.now() }))
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines, savedAt: Date.now(), base_updated_at: saveStateRef.current.base }))
         setDraftMsg('Draft saved locally')
         setTimeout(() => setDraftMsg(''), 2500)
       } catch {}
     }, 1500)
     return () => clearTimeout(t)
-  }, [form, lines, dirty])
-
-  // Auto-save to DB 30s after last change (resets on each keystroke)
-  useEffect(() => {
-    if (!dirty || !canEdit || isArchived) return
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    autoSaveTimer.current = setTimeout(() => save(true), 30000)
-    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
-  }, [dirty, form, lines])
+  }, [form, lines, dirty, conflict])
 
   async function loadDocs() {
     setLoadingDocs(true)
@@ -156,69 +167,71 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   }
 
   async function save(auto = false, statusOverride) {
+    // Never overlap saves, and never write once we know we're stale.
+    if (savingRef.current || saveStateRef.current.conflict) return
+    if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null }
+    savingRef.current = true
     if (!auto) setSaving(true)
-    if (!auto) setSaveMsg('')
+    setSaveMsg('')
     try {
-      const fields = {
-        project_name:   form.project_name,
-        address:        form.address        || null,
-        owner_name:     form.owner_name     || null,
-        owner_company:  form.owner_company  || null,
-        owner_email:    form.owner_email    || null,
-        owner_phone:    form.owner_phone    || null,
-        notes:          form.notes          || null,
-        markup_pct:     form.markup_pct  !== '' && form.markup_pct  != null ? Number(form.markup_pct)  : 0,
-        markup_flat:    form.markup_flat !== '' && form.markup_flat != null ? Number(form.markup_flat) : 0,
-        taxable:        !!form.taxable,
-        square_footage: form.square_footage !== '' && form.square_footage != null ? Number(form.square_footage) : null,
-        project_type:   form.project_type || null,
-        status:         statusOverride || form.status,
-        updated_at:     new Date().toISOString(),
-      }
-      const validLines = lines.filter(l => l.description)
-      const lineItems = validLines.map((l, i) => ({
-        estimate_id: estimate.id,
-        description: l.description || '',
-        amount:      l.amount !== '' ? Number(l.amount) : 0,
-        scope:       l.scope || null,
-        sort_order:  i,
-        markup_pct:  l.markup_pct  !== '' && l.markup_pct  != null ? Number(l.markup_pct)  : null,
-        markup_flat: l.markup_flat !== '' && l.markup_flat != null ? Number(l.markup_flat) : null,
-      }))
-      // Guard: if we have no lines now but the DB had some, confirm before wiping
-      const dbItemCount = (estimate.estimate_line_items || []).length
+      const { fields, line_items: lineItems } = estimateSavePayload(form, lines, estimate.id, statusOverride)
+      // Guard: if we have no lines now but the DB had some, confirm before wiping.
+      // Auto-save never wipes; the user has to confirm with a manual save.
+      const dbItemCount = dbLineCount.current
       if (lineItems.length === 0 && dbItemCount > 0) {
+        if (auto) { setSaveMsg('Error — not auto-saved: all line items removed. Click Save to confirm.'); return }
         const ok = window.confirm(`This will remove all ${dbItemCount} line item(s) from the estimate. Continue?`)
-        if (!ok) { setSaving(false); return }
+        if (!ok) return
       }
+      const seqAtStart = saveStateRef.current.editSeq
       const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/estimates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
-        body: JSON.stringify({ action: 'update', id: estimate.id, fields, line_items: lineItems }),
+        body: JSON.stringify({
+          action: 'update',
+          id: estimate.id,
+          expected_updated_at: saveStateRef.current.base ?? null,
+          fields,
+          line_items: lineItems,
+        }),
       })
-      if (!res.ok) {
-        let msg = 'Save failed'
-        try { const j = await res.json(); if (j?.error) msg = j.error } catch {}
-        throw new Error(msg)
+      let result = null
+      try { result = await res.json() } catch {}
+      if (res.status === 409) {
+        dispatchSave({ type: 'conflict' })
+        return
       }
+      if (!res.ok) throw new Error(result?.error || 'Save failed')
+
+      // Saved. From here on the server's updated_at is our base.
+      dispatchSave({ type: 'saved', updated_at: result?.updated_at ?? null, seqAtStart })
+      try { localStorage.removeItem(DRAFT_KEY) } catch {}
+      setHasDraft(false)
+      setRestoredMsg(false)
+      dbLineCount.current = lineItems.length
+      setSaveMsg(auto ? 'Auto-saved' : 'Saved')
+      setTimeout(() => setSaveMsg(m => (m === 'Saved' || m === 'Auto-saved' ? '' : m)), 2500)
+
+      // Refresh from the DB. This does NOT mark dirty. If the user typed while
+      // the save was in flight, keep their newer edits on screen instead.
       const { data: fresh } = await supabase
         .from('estimates').select('*, estimate_line_items(*)').eq('id', estimate.id).single()
       if (fresh) {
         const updated = { ...fresh, estimate_line_items: (fresh.estimate_line_items || []).sort((a, b) => a.sort_order - b.sort_order) }
-        setForm({ ...updated })
-        setLines(updated.estimate_line_items)
+        if (saveStateRef.current.editSeq === seqAtStart) {
+          setForm({ ...updated })
+          setLines(updated.estimate_line_items)
+        }
         onUpdated(updated)
-        try { localStorage.removeItem(DRAFT_KEY) } catch {}
-        setDirty(false)
-        setHasDraft(false)
-        setSaveMsg(auto ? 'Auto-saved' : 'Saved')
-        setTimeout(() => setSaveMsg(''), 2500)
       }
+      if (statusOverride) setForm(f => ({ ...f, status: statusOverride }))
     } catch (err) {
-      if (!auto) setSaveMsg('Error — ' + (err?.message || 'check connection'))
+      setSaveMsg('Error — ' + (auto ? 'auto-save failed: ' : '') + (err?.message || 'check connection'))
+    } finally {
+      savingRef.current = false
+      if (!auto) setSaving(false)
     }
-    if (!auto) setSaving(false)
   }
 
   async function uploadDoc(file) {
@@ -301,16 +314,27 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const stageCfg = STAGE_MAP[form.status] || { label: form.status, color: '#374151', bg: '#f3f4f6', border: '#e5e7eb' }
   const isArchived = ['won','lost','accepted','declined'].includes(form.status)
 
+  // Auto-save to DB 30s after the last real edit (resets on each keystroke).
+  // Never runs from loads/refetches/saves (those don't mark dirty) or after a conflict.
+  useEffect(() => {
+    if (!shouldAutoSave(saveState, { canEdit, isArchived })) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => save(true), 30000)
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [saveState, form, lines, canEdit, isArchived])
+
   function updateLine(idx, key, val) {
-    setLines(l => l.map((x, i) => i === idx ? { ...x, [key]: val } : x))
+    editLines(l => l.map((x, i) => i === idx ? { ...x, [key]: val } : x))
   }
 
+  // Restoring a draft does not mark dirty or start auto-save; the user saves it
+  // explicitly (or makes another edit, which then auto-saves as usual).
   function restoreDraft() {
     if (!draftSnap) return
     setForm(draftSnap.form)
     setLines(draftSnap.lines || [])
     setHasDraft(false)
-    setDirty(true)
+    setRestoredMsg(true)
   }
 
   function dismissDraft() {
@@ -321,8 +345,23 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   return (
     <div style={s.page}>
 
+      {/* ── Stale / conflict banner ── */}
+      {conflict && (
+        <div role="alert" style={{ background: '#fef2f2', borderBottom: '1px solid #fca5a5', padding: '10px 1.5rem', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: '#991b1b' }}>
+          <span style={{ flex: 1, fontWeight: '500' }}>{STALE_MESSAGE}</span>
+          <button onClick={() => window.location.reload()} style={{ padding: '5px 14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Reload</button>
+        </div>
+      )}
+
+      {/* ── Draft restored notice ── */}
+      {restoredMsg && !conflict && (
+        <div style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d', padding: '10px 1.5rem', fontSize: '13px', color: '#92400e' }}>
+          Draft restored. It is not saved yet. Click Save to keep it.
+        </div>
+      )}
+
       {/* ── Draft restore banner ── */}
-      {hasDraft && (
+      {hasDraft && !conflict && (
         <div style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d', padding: '10px 1.5rem', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: '#92400e' }}>
           <span style={{ flex: 1 }}>A locally-saved draft from your last session was found. Restore it to pick up where you left off.</span>
           <button onClick={restoreDraft} style={{ padding: '5px 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '5px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Restore draft</button>
@@ -349,7 +388,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
           {draftMsg && !saving && !saveMsg && <span style={{ fontSize: '12px', color: '#6b7280' }}>{draftMsg}</span>}
           {dirty    && !saving && !saveMsg && !draftMsg && <span style={{ fontSize: '12px', color: '#9ca3af' }}>Unsaved changes</span>}
           {canEdit && !isArchived && (
-            <button style={{ ...s.btn, padding: '6px 14px', fontSize: '13px' }} onClick={() => save()} disabled={saving}>
+            <button style={{ ...s.btn, padding: '6px 14px', fontSize: '13px' }} onClick={() => save()} disabled={saving || conflict}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           )}
@@ -376,43 +415,43 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
               <div style={s.g2} className="rx-grid-2">
                 <div>
                   <label style={s.lbl}>Project name</label>
-                  <input style={s.inp} value={form.project_name || ''} onChange={e => setForm(f => ({ ...f, project_name: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input style={s.inp} value={form.project_name || ''} onChange={e => editForm({ project_name: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
                 <div>
                   <label style={s.lbl}>Address</label>
-                  <input style={s.inp} value={form.address || ''} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input style={s.inp} value={form.address || ''} onChange={e => editForm({ address: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
                 <div>
                   <label style={s.lbl}>Owner / Contact</label>
-                  <input style={s.inp} value={form.owner_name || ''} onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input style={s.inp} value={form.owner_name || ''} onChange={e => editForm({ owner_name: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
                 <div>
                   <label style={s.lbl}>Company</label>
-                  <input style={s.inp} value={form.owner_company || ''} onChange={e => setForm(f => ({ ...f, owner_company: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input style={s.inp} value={form.owner_company || ''} onChange={e => editForm({ owner_company: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
                 <div>
                   <label style={s.lbl}>Email</label>
-                  <input type="email" style={s.inp} value={form.owner_email || ''} onChange={e => setForm(f => ({ ...f, owner_email: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input type="email" style={s.inp} value={form.owner_email || ''} onChange={e => editForm({ owner_email: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
                 <div>
                   <label style={s.lbl}>Phone</label>
-                  <input style={s.inp} value={form.owner_phone || ''} onChange={e => setForm(f => ({ ...f, owner_phone: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input style={s.inp} value={form.owner_phone || ''} onChange={e => editForm({ owner_phone: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
                 <div>
                   <label style={s.lbl}>Project type</label>
-                  <select style={s.sel} value={form.project_type || ''} onChange={e => setForm(f => ({ ...f, project_type: e.target.value }))} disabled={!canEdit || isArchived}>
+                  <select style={s.sel} value={form.project_type || ''} onChange={e => editForm({ project_type: e.target.value })} disabled={!canEdit || isArchived}>
                     <option value="">— Select —</option>
                     {PROJECT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={s.lbl}>Square footage</label>
-                  <input type="number" min="0" style={s.inp} value={form.square_footage || ''} onChange={e => setForm(f => ({ ...f, square_footage: e.target.value }))} disabled={!canEdit || isArchived} />
+                  <input type="number" min="0" style={s.inp} value={form.square_footage || ''} onChange={e => editForm({ square_footage: e.target.value })} disabled={!canEdit || isArchived} />
                 </div>
               </div>
               <div>
                 <label style={s.lbl}>Scope of work / notes</label>
-                <textarea style={s.ta} value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} disabled={!canEdit || isArchived} />
+                <textarea style={s.ta} value={form.notes || ''} onChange={e => editForm({ notes: e.target.value })} disabled={!canEdit || isArchived} />
               </div>
             </div>
 
@@ -421,7 +460,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
                 <p style={{ ...s.sec, margin: 0 }}>Schedule of Values</p>
                 {canEdit && !isArchived && (
-                  <button style={s.btnSm('green')} onClick={() => setLines(l => [...l, { description: '', amount: '', scope: '', markup_pct: '', markup_flat: '' }])}>
+                  <button style={s.btnSm('green')} onClick={() => editLines(l => [...l, { description: '', amount: '', scope: '', markup_pct: '', markup_flat: '' }])}>
                     + Add line
                   </button>
                 )}
@@ -471,7 +510,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                         disabled={!canEdit || isArchived}
                       />
                       {canEdit && !isArchived
-                        ? <button style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '18px', padding: 0, width: '36px', textAlign: 'center' }} onClick={() => setLines(l => l.filter((_, i) => i !== idx))}>×</button>
+                        ? <button style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '18px', padding: 0, width: '36px', textAlign: 'center' }} onClick={() => editLines(l => l.filter((_, i) => i !== idx))}>×</button>
                         : <div />
                       }
                     </div>
@@ -495,16 +534,16 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                 <div style={{ marginTop: '1rem', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <label style={{ ...s.lbl, marginBottom: 0, whiteSpace: 'nowrap' }}>Global markup %</label>
-                    <input type="number" step="0.1" min="0" style={{ ...s.inp, width: '75px' }} value={form.markup_pct ?? ''} onChange={e => setForm(f => ({ ...f, markup_pct: e.target.value }))} placeholder="0" />
+                    <input type="number" step="0.1" min="0" style={{ ...s.inp, width: '75px' }} value={form.markup_pct ?? ''} onChange={e => editForm({ markup_pct: e.target.value })} placeholder="0" />
                     <span style={{ fontSize: '11px', color: '#9ca3af' }}>default for lines without a per-line %</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <label style={{ ...s.lbl, marginBottom: 0, whiteSpace: 'nowrap' }}>Global markup $</label>
-                    <input type="number" step="1" min="0" style={{ ...s.inp, width: '95px' }} value={form.markup_flat ?? ''} onChange={e => setForm(f => ({ ...f, markup_flat: e.target.value }))} placeholder="0" />
+                    <input type="number" step="1" min="0" style={{ ...s.inp, width: '95px' }} value={form.markup_flat ?? ''} onChange={e => editForm({ markup_flat: e.target.value })} placeholder="0" />
                     <span style={{ fontSize: '11px', color: '#9ca3af' }}>added to total</span>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '12px', color: '#374151' }}>
-                    <input type="checkbox" checked={!!form.taxable} onChange={e => setForm(f => ({ ...f, taxable: e.target.checked }))} />
+                    <input type="checkbox" checked={!!form.taxable} onChange={e => editForm({ taxable: e.target.checked })} />
                     Sales tax (8.25%)
                   </label>
                 </div>
@@ -516,11 +555,11 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <label style={{ ...s.lbl, marginBottom: 0 }}>Stage</label>
-                  <select style={{ ...s.sel, width: 'auto' }} value={form.status || 'lead'} onChange={e => { const v = e.target.value; if (v === 'won') markWon(); else setForm(f => ({ ...f, status: v })) }}>
+                  <select style={{ ...s.sel, width: 'auto' }} value={form.status || 'lead'} onChange={e => { const v = e.target.value; if (v === 'won') markWon(); else editForm({ status: v }) }}>
                     {STAGE_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
                   </select>
                 </div>
-                <button style={s.btn} onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+                <button style={s.btn} onClick={() => save()} disabled={saving || conflict}>{saving ? 'Saving…' : 'Save changes'}</button>
               </div>
             )}
           </div>

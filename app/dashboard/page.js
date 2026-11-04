@@ -435,6 +435,7 @@ export default function Dashboard() {
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [editingEstimate, setEditingEstimate] = useState(null)
   const [editEstimateForm, setEditEstimateForm] = useState({})
+  const [editEstimateBase, setEditEstimateBase] = useState(null) // updated_at the edit form was loaded from
   const [editEstimateLines, setEditEstimateLines] = useState([])
   const [savingEstimateEdit, setSavingEstimateEdit] = useState(false)
   const [estimatorInnerTab, setEstimatorInnerTab] = useState('estimates')
@@ -2003,6 +2004,7 @@ export default function Dashboard() {
       body: JSON.stringify({
         action: 'update',
         id: editingEstimate,
+        expected_updated_at: editEstimateBase,
         fields: {
           project_name: editEstimateForm.project_name,
           address: editEstimateForm.address || null,
@@ -2017,7 +2019,6 @@ export default function Dashboard() {
           square_footage: parseFloat(editEstimateForm.square_footage) || null,
           project_type: editEstimateForm.project_type || null,
           status: editEstimateForm.status,
-          updated_at: new Date().toISOString(),
         },
         line_items: validLines.map((l, i) => ({
           estimate_id: editingEstimate,
@@ -2030,12 +2031,20 @@ export default function Dashboard() {
         })),
       }),
     })
-    const result = await res.json()
-    if (result.error) {
-      alert('Save failed: ' + result.error)
+    let result = {}
+    try { result = await res.json() } catch {}
+    if (res.status === 409) {
+      alert('Someone else saved this estimate. Reload to see the latest.')
+      await loadEstimates()
       setSavingEstimateEdit(false)
       return
     }
+    if (!res.ok || result.error) {
+      alert('Save failed: ' + (result.error || res.status))
+      setSavingEstimateEdit(false)
+      return
+    }
+    setEditEstimateBase(result.updated_at ?? null)
     setEditingEstimate(null)
     await loadEstimates()
     setSavingEstimateEdit(false)
@@ -7250,6 +7259,7 @@ ${planLinks.map(p => p.url
                                 {['pm', 'apm'].includes(profile?.role) && <>
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
+                                    setEditEstimateBase(est.updated_at ?? null)
                                     setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), markup_flat: String(est.markup_flat || ''), taxable: !!est.taxable, square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
                                     setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '', markup_pct: l.markup_pct !== null && l.markup_pct !== undefined ? String(l.markup_pct) : '', markup_flat: l.markup_flat !== null && l.markup_flat !== undefined ? String(l.markup_flat) : '' })))
                                   }}>Edit</button>

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
+import { sameUpdatedAt } from '../../../lib/estimate-save'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -55,25 +56,48 @@ export async function POST(request) {
     if (body.action === 'update') {
       const { id, fields, line_items } = body
 
+      const { data: est } = await adminSupabase
+        .from('estimates').select('created_by, allowed_users, updated_at').eq('id', id).maybeSingle()
+      if (!est) return Response.json({ error: 'Not found' }, { status: 404 })
+
       // Verify ownership or PM role before allowing update
       if (!isPM(auth.role)) {
-        const { data: est } = await adminSupabase.from('estimates').select('created_by, allowed_users').eq('id', id).maybeSingle()
-        if (!est) return Response.json({ error: 'Not found' }, { status: 404 })
         const allowed = est.created_by === auth.userId || (est.allowed_users || []).includes(auth.userId)
         if (!allowed) return Response.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      let updateErr
-      const { error: e1 } = await adminSupabase.from('estimates').update(fields).eq('id', id)
-      updateErr = e1
+      // Stale-write guard: the caller must send the updated_at it loaded, and it
+      // must still be current. Otherwise reject and change nothing.
+      const stale = () => Response.json({ error: 'stale', current_updated_at: est.updated_at ?? null }, { status: 409 })
+      const hasExpected = Object.prototype.hasOwnProperty.call(body, 'expected_updated_at')
+      if (!hasExpected || !sameUpdatedAt(body.expected_updated_at, est.updated_at)) return stale()
+
+      // The server owns updated_at; ignore any client-supplied value.
+      const { updated_at: _clientUpdatedAt, ...cleanFields } = fields || {}
+      const newUpdatedAt = new Date().toISOString()
+
+      // Compare-and-swap on updated_at so a write that lands between our read
+      // and this update is also caught.
+      const casUpdate = f => {
+        let q = adminSupabase.from('estimates').update({ ...f, updated_at: newUpdatedAt }).eq('id', id)
+        q = est.updated_at == null ? q.is('updated_at', null) : q.eq('updated_at', est.updated_at)
+        return q.select('updated_at')
+      }
+
+      let { data: updatedRows, error: updateErr } = await casUpdate(cleanFields)
 
       if (updateErr?.message?.includes('markup_flat')) {
-        const { markup_flat, ...fieldsWithout } = fields
-        const { error: e2 } = await adminSupabase.from('estimates').update(fieldsWithout).eq('id', id)
-        updateErr = e2
+        const { markup_flat, ...fieldsWithout } = cleanFields
+        ;({ data: updatedRows, error: updateErr } = await casUpdate(fieldsWithout))
       }
 
       if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
+
+      if (!updatedRows || updatedRows.length === 0) {
+        const { data: now } = await adminSupabase.from('estimates').select('updated_at').eq('id', id).maybeSingle()
+        return Response.json({ error: 'stale', current_updated_at: now?.updated_at ?? null }, { status: 409 })
+      }
+      const savedUpdatedAt = updatedRows[0].updated_at ?? newUpdatedAt
 
       // Only replace line items when the caller sends at least one. An empty
       // array most likely means the client loaded before items were fetched —
@@ -92,7 +116,7 @@ export async function POST(request) {
         }
       }
 
-      return Response.json({ ok: true })
+      return Response.json({ ok: true, updated_at: savedUpdatedAt })
     }
 
     // ── Delete ───────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { denyJob, isJobLimited } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,20 +24,23 @@ export async function POST(request) {
 
   // Check user is PM/admin or assigned super for this job
   const { data: profile } = await adminSupabase.from('profiles').select('role').eq('id', user.id).single()
-  const isPmOrAdmin = profile?.role === 'pm' || profile?.role === 'admin'
+  const isPmOrAdmin = profile?.role === 'principal' || profile?.role === 'pm' || profile?.role === 'admin'
   const isSuper = profile?.role === 'super'
 
   if (!isPmOrAdmin && !isSuper) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   // Verify job access
   if (isPmOrAdmin) {
-    const { data: assign } = await adminSupabase.from('pm_job_assignments').select('id').eq('job_id', jobId).eq('user_id', user.id).maybeSingle()
-    // Also allow admins who may not be assigned
-    if (!assign && profile?.role !== 'admin') {
-      // Check if pm via jobs table pm_email
-      const { data: job } = await adminSupabase.from('jobs').select('pm_email').eq('id', jobId).single()
-      const { data: prof2 } = await adminSupabase.from('profiles').select('email').eq('id', user.id).single()
-      if (job?.pm_email !== prof2?.email) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    // PM: assigned or jobs.pm_email (any case). Admin: any job.
+    const auth = { userId: user.id, email: user.email, role: profile.role }
+    const denied = await denyJob(adminSupabase, auth, jobId)
+    if (denied) return denied
+    // The photo itself must be on that job
+    if (isJobLimited(profile.role)) {
+      const { data: owner } = fromReport && reportId
+        ? await adminSupabase.from('daily_reports').select('job_id').eq('id', reportId).maybeSingle()
+        : await adminSupabase.from('job_photos').select('job_id').eq('storage_path', path).limit(1).maybeSingle()
+      if (!owner || owner.job_id !== jobId) return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
   }
   if (isSuper) {

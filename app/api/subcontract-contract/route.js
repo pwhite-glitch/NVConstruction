@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 import { CONTRACT_BUCKET, isUuid, saveGeneratedContract, latestGeneratedContractPath } from '../../../lib/generated-contract'
 
 const adminSupabase = createClient(
@@ -14,8 +15,10 @@ export async function POST(request) {
   try {
     const { subcontract_id, html } = await request.json()
     if (!isUuid(subcontract_id) || !html) return Response.json({ error: 'subcontract_id and html required' }, { status: 400 })
-    const { data: sc } = await adminSupabase.from('subcontracts').select('id').eq('id', subcontract_id).maybeSingle()
+    const { data: sc } = await adminSupabase.from('subcontracts').select('id, job_id').eq('id', subcontract_id).maybeSingle()
     if (!sc) return Response.json({ error: 'Subcontract not found' }, { status: 404 })
+    const denied = await denyJob(adminSupabase, auth, sc.job_id)
+    if (denied) return denied
     const saved = await saveGeneratedContract(adminSupabase, { subcontractId: subcontract_id, html, userId: auth.userId })
     return Response.json({ data: saved })
   } catch (e) {
@@ -32,6 +35,8 @@ export async function GET(request) {
   const subcontract_id = searchParams.get('subcontract_id')
   const kind = searchParams.get('kind') || 'generated'
   if (!isUuid(subcontract_id)) return Response.json({ error: 'subcontract_id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id)
+  if (denied) return denied
 
   let path = null
   if (kind === 'signed') {

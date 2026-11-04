@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
+import { denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,6 +29,13 @@ async function subOwnsPath(auth, path, dir) {
   const m = path.match(/^contracts\/([^/]+)\//)
   if (!m) return false
   return (await getSubContracts(auth)).some(c => c.id === m[1])
+}
+
+// Office PM/APM: a contracts/<subcontract id>/ path must be on one of their jobs.
+// Other documents-bucket paths (sub directory W-9/COI files) are company-wide.
+async function denyContractPath(auth, path) {
+  const m = String(path || '').match(/^contracts\/([^/]+)\//)
+  return m ? denyJobOf(adminSupabase, auth, 'subcontracts', m[1]) : null
 }
 
 // Office staff: every action. Sub users: upload / view their own documents and
@@ -77,6 +85,10 @@ export async function POST(request) {
   if (action === 'upload-url') {
     if (!body.path) return Response.json({ error: 'path required' }, { status: 400 })
     if (!office && !(await subOwnsPath(auth, body.path, dir))) return forbidden()
+    if (office) {
+      const denied = await denyContractPath(auth, body.path)
+      if (denied) return denied
+    }
     const { data, error } = await adminSupabase.storage.from('documents').createSignedUploadUrl(body.path)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ signedUrl: data.signedUrl })
@@ -85,6 +97,10 @@ export async function POST(request) {
   if (action === 'signed-url') {
     if (!file_path) return Response.json({ error: 'file_path required' }, { status: 400 })
     if (!office && !(await subOwnsPath(auth, file_path, dir))) return forbidden()
+    if (office) {
+      const denied = await denyContractPath(auth, file_path)
+      if (denied) return denied
+    }
     const opts = body.download ? { download: true } : undefined
     const { data, error } = await adminSupabase.storage.from('documents').createSignedUrl(file_path, 3600, opts)
     if (error) return Response.json({ error: error.message }, { status: 500 })

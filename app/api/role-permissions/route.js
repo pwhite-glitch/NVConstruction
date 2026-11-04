@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM } from '../../../lib/server-auth'
 import { invalidateCache } from '../../../lib/permissions'
+import { isPrincipal } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -52,12 +53,14 @@ export async function GET(request) {
   return Response.json({ matrix })
 }
 
-// PATCH /api/role-permissions — update a single cell (pm role only, not apm/super/admin)
+// PATCH /api/role-permissions — update a single cell (Owner/principal only; not pm/apm/super/admin)
 // Body: { role, feature_key, enabled }
+// 'principal' is not in ALL_ROLES on purpose: owners always have every feature, so they
+// cannot be locked out from the matrix.
 export async function PATCH(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
-  if (auth.role !== 'pm') return Response.json({ error: 'Only Project Managers can edit permissions.' }, { status: 403 })
+  if (!isPrincipal(auth.role)) return Response.json({ error: 'Only Owners can edit permissions.' }, { status: 403 })
 
   const { role, feature_key, enabled } = await request.json()
   if (!role || !feature_key || typeof enabled !== 'boolean') {
@@ -79,11 +82,12 @@ export async function PATCH(request) {
   return Response.json({ ok: true })
 }
 
-// POST /api/role-permissions/reset — reset a role to seed defaults (PM only)
+// POST /api/role-permissions/reset — reset a role to seed defaults (Owner/principal only)
 // Body: { role }
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  if (!isPrincipal(auth.role)) return Response.json({ error: 'Only Owners can edit permissions.' }, { status: 403 })
 
   const { role } = await request.json()
   if (!role || !ALL_ROLES.includes(role)) {

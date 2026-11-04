@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
 import { CO_LINE_PREFIX, isCoLine, coLineRow, insertCoLine } from '../../../lib/sov-lines'
+import { denyJobs, isJobLimited } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,6 +23,12 @@ export async function POST(request) {
     if (isSub(auth.role)) {
       const mine = new Set((await getSubContracts(auth)).map(c => c.id))
       if (subcontract_ids.some(id => !mine.has(id))) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    } else if (isJobLimited(auth.role)) {
+      // PM/APM: every contract must be on one of their jobs
+      const { data: scs, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id').in('id', subcontract_ids)
+      if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
+      const denied = await denyJobs(adminSupabase, auth, (scs || []).map(c => c.job_id))
+      if (denied) return denied
     }
 
     const [{ data: approvedCOs }, { data: lineRows }] = await Promise.all([

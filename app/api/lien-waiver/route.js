@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -23,6 +24,8 @@ export async function POST(request) {
     .single()
 
   if (subErr || !sub) return Response.json({ error: 'Submission not found' }, { status: 404 })
+  const denied = await denyJob(adminSupabase, auth, sub.job_id)
+  if (denied) return denied
 
   // Fall back to profile email if sub_email is missing
   let recipientEmail = sub.sub_email

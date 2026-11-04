@@ -6,7 +6,7 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const SALES_ROLES = new Set(['pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'])
+const SALES_ROLES = new Set(['principal', 'pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'])
 const BUCKET = 'sales-docs'
 
 export async function GET(request) {
@@ -119,7 +119,7 @@ export async function POST(request) {
 
     // ── Delete ────────────────────────────────────────────────────────────────
     if (action === 'delete') {
-      if (!['pm', 'apm', 'admin'].includes(auth.role)) {
+      if (!['principal', 'pm', 'apm', 'admin'].includes(auth.role)) {
         return Response.json({ error: 'Forbidden' }, { status: 403 })
       }
       const { id } = body

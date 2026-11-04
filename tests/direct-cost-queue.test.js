@@ -5,8 +5,8 @@ import {
 } from '../lib/direct-cost-queue'
 
 describe('DC_APPROVER_ROLES', () => {
-  it('is PM, APM and admin only', () => {
-    expect([...DC_APPROVER_ROLES].sort()).toEqual(['admin', 'apm', 'pm'])
+  it('is principal (Owner), PM, APM and admin only', () => {
+    expect([...DC_APPROVER_ROLES].sort()).toEqual(['admin', 'apm', 'pm', 'principal'])
     expect(DC_APPROVER_ROLES.has('super')).toBe(false)
   })
 })

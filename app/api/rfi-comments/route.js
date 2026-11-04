@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM, requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,7 +10,15 @@ const adminSupabase = createClient(
 // Office staff: any RFI. Owners (owner portal): RFIs on jobs whose owner_email
 // is their login email, matching how /owner lists their jobs.
 async function checkAccess(auth, { rfi_id, job_id }) {
-  if (isPM(auth.role)) return null
+  if (isPM(auth.role)) {
+    // PM/APM: only RFIs on their jobs (no-op for other staff roles)
+    if (rfi_id) {
+      const denied = await denyJobOf(adminSupabase, auth, 'rfis', rfi_id)
+      if (denied) return denied
+    }
+    if (job_id) return denyJob(adminSupabase, auth, job_id)
+    return null
+  }
   const forbidden = Response.json({ error: 'Forbidden' }, { status: 403 })
   if (auth.role !== 'owner' || !auth.email) return forbidden
   let jobId = job_id
@@ -34,6 +43,12 @@ export async function GET(request) {
   let query = adminSupabase.from('rfi_comments').select('*').order('created_at', { ascending: true })
   if (rfi_id) query = query.eq('rfi_id', rfi_id)
   if (job_id) query = query.eq('job_id', job_id)
+  if (!rfi_id && !job_id && isJobLimited(auth.role)) {
+    const { ids, error: accErr } = await accessibleJobIds(adminSupabase, auth)
+    if (accErr) return Response.json({ error: accErr.message }, { status: 500 })
+    if (!ids.size) return Response.json({ comments: [] })
+    query = query.in('job_id', [...ids])
+  }
   const { data, error } = await query
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ comments: data || [] })
@@ -72,6 +87,11 @@ export async function DELETE(request) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  if (isJobLimited(auth.role)) {
+    const { data: c } = await adminSupabase.from('rfi_comments').select('rfi_id').eq('id', id).maybeSingle()
+    const denied = await denyJobOf(adminSupabase, auth, 'rfis', c?.rfi_id)
+    if (denied) return denied
+  }
   const { error } = await adminSupabase.from('rfi_comments').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

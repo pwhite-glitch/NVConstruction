@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { isBeforeTodayCentral } from '../../../lib/central-date'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,6 +26,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const invoice_id = searchParams.get('invoice_id')
   if (!invoice_id) return Response.json({ error: 'invoice_id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'owner_reimb_invoices', invoice_id)
+  if (denied) return denied
 
   const { data, error } = await adminSupabase
     .from('owner_reimb_payments')
@@ -61,11 +64,13 @@ export async function POST(request) {
   // Fetch invoice to validate status and get total billed
   const { data: inv, error: invErr } = await adminSupabase
     .from('owner_reimb_invoices')
-    .select('id, status, due_date, owner_reimb_invoice_lines(billed_amount), owner_reimb_payments(amount, voided)')
+    .select('id, job_id, status, due_date, owner_reimb_invoice_lines(billed_amount), owner_reimb_payments(amount, voided)')
     .eq('id', invoice_id)
     .maybeSingle()
 
   if (invErr || !inv) return Response.json({ error: 'Invoice not found' }, { status: 404 })
+  const denied = await denyJob(adminSupabase, auth, inv.job_id)
+  if (denied) return denied
   if (inv.status === 'voided') return Response.json({ error: 'Cannot record payment on a voided invoice' }, { status: 422 })
   if (inv.status === 'draft') return Response.json({ error: 'Issue the invoice before recording payments' }, { status: 422 })
 
@@ -124,6 +129,8 @@ export async function DELETE(request) {
 
   if (pErr || !payment) return Response.json({ error: 'Payment not found' }, { status: 404 })
   if (payment.voided) return Response.json({ error: 'Payment already voided' }, { status: 409 })
+  const denied = await denyJobOf(adminSupabase, auth, 'owner_reimb_invoices', payment.invoice_id)
+  if (denied) return denied
 
   await adminSupabase
     .from('owner_reimb_payments')

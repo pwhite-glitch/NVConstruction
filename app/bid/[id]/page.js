@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
+import { atLeastPM } from '../../../lib/roles'
 
 // ── Section definitions ───────────────────────────────────────────────────────
 
@@ -1441,8 +1442,8 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
   const [newStatus, setNewStatus] = useState(pkg?.status || 'open')
   const [savingStatus, setSavingStatus] = useState(false)
 
-  const canEdit = ['pm', 'apm'].includes(profile?.role)
-  const isPM    = profile?.role === 'pm'
+  const canEdit = ['principal', 'pm', 'apm'].includes(profile?.role)
+  const isPM    = atLeastPM(profile?.role)
   const awarded = submissions.find(s => s.status === 'awarded')
 
   useEffect(() => {
@@ -1668,7 +1669,7 @@ export default function BidWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const canEdit = ['pm', 'apm'].includes(profile?.role)
+  const canEdit = ['principal', 'pm', 'apm'].includes(profile?.role)
 
   const loadAll = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()

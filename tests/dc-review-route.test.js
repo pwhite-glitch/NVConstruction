@@ -202,14 +202,15 @@ describe('jobs.pm_email counts as on the job (no pm_job_assignments row)', () =>
     mockAuth = { userId: 'pm2', email: 'peyton_@nvim.co', role: 'pm', error: null }
     expect((await put({ id: 'c2', budget_item_id: 'X1' })).status).toBe(403)
     const json = await (await directCosts.GET(new Request('http://x/api/direct-costs?status=pending'))).json()
-    expect(json.data.find(c => c.id === 'c2')).toMatchObject({ can_approve: false })
+    // PMs are limited to their jobs, so the other job's cost is not listed at all
+    expect(json.data.find(c => c.id === 'c2')).toBeUndefined()
   })
 
   test('the pending queue marks pm_email jobs approvable, and an APM sees them', async () => {
     let json = await (await directCosts.GET(new Request('http://x/api/direct-costs?status=pending'))).json()
     let byId = Object.fromEntries(json.data.map(c => [c.id, c]))
     expect(byId.c2).toMatchObject({ can_approve: true })
-    expect(byId.c1).toMatchObject({ can_approve: false })
+    expect(byId.c1).toBeUndefined() // PM limited to their jobs: J1 is not theirs
     mockAuth = { ...mockAuth, userId: 'apm2', role: 'apm' }
     json = await (await directCosts.GET(new Request('http://x/api/direct-costs?status=pending'))).json()
     expect(json.data.map(c => c.id)).toEqual(['c2'])
@@ -274,10 +275,20 @@ describe('GET /api/direct-costs?status=pending', () => {
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.budget_lines.J1.map(b => b.id)).toEqual(['L0', 'L1', 'L2'])
-    expect(json.budget_lines.J2.map(b => b.id)).toEqual(['X1'])
+    // PM is limited to their jobs: J2 (not theirs) is not in the queue or the line picker
+    expect(json.budget_lines.J2).toBeUndefined()
     expect(json.budget_lines.J1[0]).toEqual({ id: 'L0', cost_code: '01-500', description: 'Temp facilities' })
     const byId = Object.fromEntries(json.data.map(c => [c.id, c]))
     expect(byId.c1).toMatchObject({ can_approve: true, has_budget_line: false })
-    expect(byId.c2).toMatchObject({ can_approve: false })
+    expect(byId.c2).toBeUndefined()
+  })
+
+  test('a principal (Owner) sees every job and can approve all of them, with no assignment', async () => {
+    mockAuth = { userId: 'owner1', email: 'owner@nvim.co', role: 'principal', error: null }
+    const json = await (await directCosts.GET(new Request('http://x/api/direct-costs?status=pending'))).json()
+    const byId = Object.fromEntries(json.data.map(c => [c.id, c]))
+    expect(byId.c1).toMatchObject({ can_approve: true })
+    expect(byId.c2).toMatchObject({ can_approve: true })
+    expect(json.budget_lines.J2.map(b => b.id)).toEqual(['X1'])
   })
 })

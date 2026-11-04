@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
 import { escapeHtml } from '../../../lib/email'
 import { writeWithFallback, droppedWarning } from '../../../lib/lookahead-fields'
@@ -12,7 +13,7 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const OFFICE_ROLES = new Set(['pm', 'apm', 'admin'])
+const OFFICE_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
 
 // Lookaheads always start on a Monday; snap any other 'YYYY-MM-DD' to its week's
 // Monday. Anything else is returned as-is.
@@ -38,7 +39,16 @@ export async function GET(request) {
       .from('lookaheads')
       .select(summary ? '*, jobs(id, job_number, project_name, status)' : '*, lookahead_activities(*)')
       .order('week_start_date', { ascending: false })
-    if (jobId) query = query.eq('job_id', jobId)
+    if (jobId) {
+      const denied = await denyJob(adminSupabase, auth, jobId)
+      if (denied) return denied
+      query = query.eq('job_id', jobId)
+    } else if (isJobLimited(auth.role)) {
+      const { ids, error: accErr } = await accessibleJobIds(adminSupabase, auth)
+      if (accErr) return Response.json({ error: accErr.message }, { status: 500 })
+      if (!ids.size) return Response.json({ data: [] })
+      query = query.in('job_id', [...ids])
+    }
     if (weekStart) query = query.eq('week_start_date', weekStart)
     if (status) query = query.eq('status', status)
     const { data, error } = await query
@@ -59,6 +69,8 @@ export async function POST(request) {
     const { action, job_id, week_start_date: rawWeek, submitted_by, notes } = await request.json()
     const week_start_date = weekStartOf(rawWeek)
     if (!job_id || !week_start_date) return Response.json({ error: 'job_id and week_start_date required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
     const create = () => adminSupabase
       .from('lookaheads')
       .insert({ job_id, week_start_date, submitted_by: submitted_by || null, notes: notes || null, status: 'draft' })
@@ -109,6 +121,8 @@ export async function PUT(request) {
     const body = await request.json()
     const { id, status, notes } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'lookaheads', id)
+    if (denied) return denied
     const updates = {}
     if (notes !== undefined) updates.notes = notes
     const now = new Date().toISOString()

@@ -11,7 +11,7 @@ export async function GET(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
 
-  const pmRoles = new Set(['pm', 'apm', 'admin'])
+  const pmRoles = new Set(['principal', 'pm', 'apm', 'admin'])
   let query = adminSupabase
     .from('maintenance_reports')
     .select('*')
@@ -72,7 +72,7 @@ export async function DELETE(request) {
     .maybeSingle()
 
   if (!existing) return Response.json({ error: 'Not found' }, { status: 404 })
-  if (existing.performed_by !== auth.userId && !['pm', 'apm', 'admin'].includes(auth.role)) {
+  if (existing.performed_by !== auth.userId && !['principal', 'pm', 'apm', 'admin'].includes(auth.role)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 

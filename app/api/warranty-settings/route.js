@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -12,6 +13,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ setting: null })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data } = await adminSupabase.from('warranty_settings').select('*').eq('job_id', job_id).single()
   return Response.json({ setting: data || null })
 }
@@ -21,6 +24,8 @@ export async function POST(request) {
   if (auth.error) return auth.error
   const { job_id, start_date, end_date, coverage_notes } = await request.json()
   if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data, error } = await adminSupabase
     .from('warranty_settings')
     .upsert({ job_id, start_date: start_date || null, end_date: end_date || null, coverage_notes: coverage_notes || null }, { onConflict: 'job_id' })

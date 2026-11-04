@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { buildZip } from '../../../lib/zip-builder'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,6 +39,8 @@ export async function POST(request) {
     .maybeSingle()
 
   if (invErr || !inv) return Response.json({ error: 'Invoice not found' }, { status: 404 })
+  const denied = await denyJob(adminSupabase, auth, inv.job_id)
+  if (denied) return denied
 
   const zipFiles = []
   const failures = []

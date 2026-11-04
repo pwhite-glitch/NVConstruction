@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../../lib/server-auth'
+import { denyJobOf } from '../../../../lib/roles'
 import { notify } from '../../../../lib/notify'
 import { escapeHtml, emailWrap } from '../../../../lib/email'
 import { writeWithFallback, lookaheadStage } from '../../../../lib/lookahead-fields'
@@ -12,7 +13,7 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const OFFICE_ROLES = new Set(['pm', 'apm', 'admin'])
+const OFFICE_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
 
 // The PM's manual "Send to subs". Nothing here runs on its own: GET only shows who
 // would receive it; POST sends, and is only called after the PM confirms that list.
@@ -41,6 +42,8 @@ export async function GET(request) {
   if (auth.error) return auth.error
   const id = new URL(request.url).searchParams.get('id')
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'lookaheads', id)
+  if (denied) return denied
   const { la, subs, error } = await load(id)
   if (error) return Response.json({ error }, { status: 404 })
   return Response.json({ stage: lookaheadStage(la), recipients: preview(subs) })
@@ -53,6 +56,8 @@ export async function POST(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'lookaheads', id)
+    if (denied) return denied
     const { la, subs, error } = await load(id)
     if (error) return Response.json({ error }, { status: 404 })
     if (la.status !== 'approved') return Response.json({ error: 'Mark the lookahead Reviewed / Approved before sending it to subs.' }, { status: 400 })

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { subCanSeeJob } from '../../../lib/sub-access'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -27,6 +28,8 @@ export async function GET(request) {
     return Response.json({ draws: data || [] })
   }
   if (!isPM(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data, error } = await adminSupabase
     .from('draw_requests')
     .select('*')
@@ -41,6 +44,8 @@ export async function POST(request) {
   if (auth.error) return auth.error
   const { job_id, title, dc_ids, po_ids, gc_ids } = await request.json()
   if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   // Auto-increment draw_number for this job
   const { data: existing } = await adminSupabase
@@ -79,6 +84,8 @@ export async function PATCH(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   const { id, status, title, add_dc_ids, remove_dc_ids, add_po_ids, remove_po_ids, add_gc_ids, remove_gc_ids, add_billing_ids, remove_billing_ids } = await request.json()
+  const denied = await denyJobOf(adminSupabase, auth, 'draw_requests', id)
+  if (denied) return denied
   const updates = {}
   if (status !== undefined) updates.status = status
   if (title !== undefined) updates.title = title
@@ -118,6 +125,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
+  const denied = await denyJobOf(adminSupabase, auth, 'draw_requests', id)
+  if (denied) return denied
   await adminSupabase.from('direct_costs').update({ draw_request_id: null }).eq('draw_request_id', id)
   await adminSupabase.from('purchase_orders').update({ draw_request_id: null, drawn_at: null }).eq('draw_request_id', id)
   await adminSupabase.from('general_conditions').update({ draw_request_id: null, drawn_at: null }).eq('draw_request_id', id)

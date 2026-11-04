@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { todayCentral } from '../../../lib/central-date'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -13,6 +14,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ notices: [] })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data, error } = await adminSupabase
     .from('prelim_notices')
     .select('*')
@@ -27,6 +30,8 @@ export async function POST(request) {
   if (auth.error) return auth.error
   const { job_id, from_company, amount_claimed, received_at, notes } = await request.json()
   if (!job_id || !from_company) return Response.json({ error: 'job_id and from_company required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data: notice, error } = await adminSupabase
     .from('prelim_notices')
     .insert({ job_id, from_company, amount_claimed: amount_claimed || null, received_at: received_at || todayCentral(), notes: notes || null })
@@ -41,6 +46,8 @@ export async function PATCH(request) {
   if (auth.error) return auth.error
   const { id, status, notes } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'prelim_notices', id)
+  if (denied) return denied
   const updates = {}
   if (status !== undefined) updates.status = status
   if (notes !== undefined) updates.notes = notes
@@ -54,6 +61,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
+  const denied = await denyJobOf(adminSupabase, auth, 'prelim_notices', id)
+  if (denied) return denied
   const { error } = await adminSupabase.from('prelim_notices').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

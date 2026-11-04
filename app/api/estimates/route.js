@@ -7,7 +7,8 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const EDIT_ROLES = new Set(['pm', 'apm'])
+// Editing in the Estimator is Owner (principal) only. PM/APM can still view estimates.
+const EDIT_ROLES = new Set(['principal'])
 
 export async function POST(request) {
   const auth = await requireAuth(request)

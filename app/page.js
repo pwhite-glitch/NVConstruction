@@ -15,7 +15,7 @@ export default function Home() {
       if (session) {
         supabase.from('profiles').select('role').eq('id', session.user.id).single().then(({ data: prof }) => {
           if (prof?.role === 'admin') { router.push('/admin'); return }
-        router.push(prof?.role === 'pm' || prof?.role === 'apm' || prof?.role === 'super' ? '/dashboard' : '/submit')
+        router.push(prof?.role === 'principal' || prof?.role === 'pm' || prof?.role === 'apm' || prof?.role === 'super' ? '/dashboard' : '/submit')
         })
       } else {
         router.push('/login')

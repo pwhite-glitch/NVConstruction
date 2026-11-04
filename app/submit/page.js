@@ -235,9 +235,9 @@ export default function Submit() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       const devRole = localStorage.getItem('nvc_dev_role')
       const subRoles = ['subcontractor', 'sub_pm', 'sub_admin', 'sub_estimator']
-      const devIsSubOverride = devRole && subRoles.includes(devRole) && (prof?.role === 'pm' || prof?.role === 'apm')
+      const devIsSubOverride = devRole && subRoles.includes(devRole) && prof?.role === 'principal'
       if (!devIsSubOverride) {
-        if (prof?.role === 'pm' || prof?.role === 'apm') { router.push('/dashboard'); return }
+        if (prof?.role === 'principal' || prof?.role === 'pm' || prof?.role === 'apm' || prof?.role === 'admin') { router.push('/dashboard'); return }
         if (prof?.role === 'super') { router.push('/field'); return }
       }
       setProfile(devIsSubOverride ? { ...prof, role: devRole } : prof)

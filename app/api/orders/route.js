@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,15 +15,24 @@ export async function GET(request) {
   const all = searchParams.get('all')
 
   if (all) {
-    const { data, error } = await adminSupabase
+    let allQuery = adminSupabase
       .from('job_orders')
       .select('*, jobs(job_number, project_name), ordered_by_profile:profiles!job_orders_ordered_by_fkey(full_name)')
       .order('created_at', { ascending: false })
+    if (isJobLimited(auth.role)) {
+      const { ids, error: idsErr } = await accessibleJobIds(adminSupabase, auth)
+      if (idsErr) return Response.json({ error: idsErr.message }, { status: 500 })
+      if (ids.size === 0) return Response.json({ data: [] })
+      allQuery = allQuery.in('job_id', [...ids])
+    }
+    const { data, error } = await allQuery
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ data: data || [] })
   }
 
   if (!job_id) return Response.json({ error: 'job_id or all required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const [ordersRes, assignRes] = await Promise.all([
     adminSupabase.from('job_orders').select('*, ordered_by_profile:profiles!job_orders_ordered_by_fkey(full_name)').eq('job_id', job_id).order('created_at', { ascending: false }),
@@ -44,6 +54,8 @@ export async function POST(request) {
   if (body.assign_template) {
     const { job_id, template_id } = body
     if (!job_id || !template_id) return Response.json({ error: 'job_id and template_id required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
     const { data, error } = await adminSupabase.from('job_template_assignments').insert({ job_id, template_id, assigned_by: body.assigned_by || null }).select('id, template_id, order_templates(id, name, description, order_template_items(id, item_name, category, default_qty, unit, sort_order))').single()
     if (error) {
       if (error.code === '23505') return Response.json({ error: 'already_assigned' }, { status: 409 })
@@ -54,6 +66,8 @@ export async function POST(request) {
 
   const { job_id, vendor, description, quantity, unit, amount, po_number, tracking_number, carrier, status, notes, ordered_at, template_item_id, ordered_by } = body
   if (!job_id || !description) return Response.json({ error: 'job_id and description required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data, error } = await adminSupabase
     .from('job_orders')
@@ -71,6 +85,8 @@ export async function PATCH(request) {
   const body = await request.json()
   const { id, ...updates } = body
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'job_orders', id)
+  if (denied) return denied
 
   // Only allow updating safe fields
   const allowed = ['vendor', 'description', 'quantity', 'unit', 'amount', 'po_number', 'tracking_number', 'carrier', 'status', 'notes', 'ordered_at']
@@ -87,12 +103,16 @@ export async function DELETE(request) {
   const body = await request.json()
 
   if (body.assignment_id) {
+    const deniedAssign = await denyJobOf(adminSupabase, auth, 'job_template_assignments', body.assignment_id)
+    if (deniedAssign) return deniedAssign
     const { error } = await adminSupabase.from('job_template_assignments').delete().eq('id', body.assignment_id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   }
 
   if (!body.id) return Response.json({ error: 'id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'job_orders', body.id)
+  if (denied) return denied
   const { error } = await adminSupabase.from('job_orders').delete().eq('id', body.id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

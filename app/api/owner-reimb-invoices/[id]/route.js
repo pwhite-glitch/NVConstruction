@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../../lib/server-auth'
+import { denyJob } from '../../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -30,6 +31,8 @@ export async function PUT(request, { params }) {
     .maybeSingle()
 
   if (fetchErr || !inv) return Response.json({ error: 'Invoice not found' }, { status: 404 })
+  const denied = await denyJob(adminSupabase, auth, inv.job_id)
+  if (denied) return denied
 
   if (body.action === 'void') {
     if (inv.status === 'voided') return Response.json({ error: 'Already voided' }, { status: 409 })

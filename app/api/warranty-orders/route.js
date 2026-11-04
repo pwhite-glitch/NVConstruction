@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,6 +15,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ orders: [] })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data, error } = await adminSupabase
     .from('warranty_orders')
     .select('*')
@@ -28,6 +31,8 @@ export async function POST(request) {
   if (auth.error) return auth.error
   const { job_id, title, description, due_date, assigned_employee_id, assigned_employee_name, assigned_sub_id, assigned_company } = await request.json()
   if (!job_id || !title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data: order, error } = await adminSupabase
     .from('warranty_orders')
     .insert({
@@ -50,6 +55,8 @@ export async function PATCH(request) {
   if (auth.error) return auth.error
   const { id, status, is_billable, billable_amount, resolution_notes, photos, assigned_employee_id, assigned_employee_name, assigned_sub_id, assigned_company, due_date, title, description } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'warranty_orders', id)
+  if (denied) return denied
 
   const updates = {}
   if (status !== undefined) {
@@ -117,6 +124,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
+  const denied = await denyJobOf(adminSupabase, auth, 'warranty_orders', id)
+  if (denied) return denied
   const { error } = await adminSupabase.from('warranty_orders').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ releases: [] })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data, error } = await adminSupabase
     .from('retainage_releases')
@@ -33,6 +36,8 @@ export async function POST(request) {
   if (!job_id || !amount || !company_name) {
     return Response.json({ error: 'job_id, amount, and company_name required' }, { status: 400 })
   }
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const releaseAmount = parseFloat(amount)
   if (!isFinite(releaseAmount) || releaseAmount <= 0) {
@@ -113,6 +118,8 @@ export async function DELETE(request) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'retainage_releases', id)
+  if (denied) return denied
 
   const { error } = await adminSupabase.from('retainage_releases').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })

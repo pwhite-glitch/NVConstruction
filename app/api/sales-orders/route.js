@@ -8,9 +8,9 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const SALES_ROLES   = new Set(['pm','apm','admin','metal_rep','roofing_rep'])
-const FINANCE_ROLES = new Set(['pm','apm','admin'])
-const ADMIN_ROLES   = new Set(['pm','apm','admin'])
+const SALES_ROLES   = new Set(['principal','pm','apm','admin','metal_rep','roofing_rep'])
+const FINANCE_ROLES = new Set(['principal','pm','apm','admin'])
+const ADMIN_ROLES   = new Set(['principal','pm','apm','admin'])
 
 const VALID_STAGES = [
   'lead','quoted','contract_signed','order_placed',
@@ -129,7 +129,7 @@ async function getSalesStaff() {
   const { data } = await adminSupabase
     .from('profiles')
     .select('id, full_name, role')
-    .in('role', ['pm','apm','admin','metal_rep','roofing_rep'])
+    .in('role', ['principal','pm','apm','admin','metal_rep','roofing_rep'])
     .order('full_name')
   return data || []
 }

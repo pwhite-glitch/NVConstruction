@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useReducer } from 'react'
+import { isPrincipal } from '../../../lib/roles'
 import { supabase } from '../../../lib/supabase'
 import { openStorageFile } from '../../../lib/open-file'
 import {
@@ -115,8 +116,9 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const savingRef     = useRef(false)
   const dbLineCount   = useRef((estimate.estimate_line_items || []).length)
 
-  const canEdit = ['pm', 'apm'].includes(profile?.role)
-  const isPM    = profile?.role === 'pm'
+  // Editing estimates is Owner (principal) only; PM/APM can still view.
+  const canEdit = isPrincipal(profile?.role)
+  const isPM    = isPrincipal(profile?.role) // delete estimate: Owner only
   const canLink = JOB_LINK_ROLES.has(profile?.role)
 
   function markEdited() {

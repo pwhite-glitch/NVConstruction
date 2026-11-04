@@ -62,7 +62,7 @@ export default function Login() {
     }
     const role = prof?.role
     if (role === 'admin') router.push('/admin')
-    else if (role === 'pm' || role === 'apm' || role === 'super') router.push('/dashboard')
+    else if (role === 'principal' || role === 'pm' || role === 'apm' || role === 'super') router.push('/dashboard')
     else if (role === 'owner') router.push('/owner')
     else router.push('/submit')
   }

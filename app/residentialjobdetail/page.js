@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
+import { atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { todayCentral } from '../../lib/central-date'
 
 const supabase = createClient(
@@ -80,6 +81,7 @@ function ResidentialJobDetailInner() {
   const [jobErrMsg, setJobErrMsg] = useState(null)
   const [profile, setProfile] = useState(null)
   const [profileLoadError, setProfileLoadError] = useState(false)
+  const [notAssigned, setNotAssigned] = useState(false)
   const [job, setJob] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('details')
@@ -227,6 +229,11 @@ function ResidentialJobDetailInner() {
       supabase.from('jobs').select('*').eq('id', id).single(),
     ])
     if (profileRes.data) { setProfile(profileRes.data) } else { setProfileLoadError(true) }
+    // PM/APM may only open their jobs (assignment OR pm_email); principal/admin see every job
+    if (isJobLimited(profileRes.data?.role)) {
+      const access = await isOnJob(supabase, { role: profileRes.data.role, userId: session.user.id, email: session.user.email }, id)
+      if (!access.ok) { setNotAssigned(true); setLoading(false); return }
+    }
     if (jobRes.error || !jobRes.data) {
       setJobErrMsg(`Job not found (id: ${id}) — ${jobRes.error ? jobRes.error.code + ': ' + jobRes.error.message : 'no data returned'}`)
       setLoading(false)
@@ -1078,6 +1085,15 @@ function ResidentialJobDetailInner() {
       <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
     </div>
   )
+  if (notAssigned) return (
+    <div style={{ ...s.page, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '1rem', padding: '0 16px' }}>
+      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '20px 24px', borderRadius: '8px', fontSize: '14px', maxWidth: '460px', textAlign: 'center', lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '6px' }}>{NOT_ASSIGNED_MESSAGE}</div>
+        Only the PM/APM assigned to this job (or listed as its PM) can open it. Ask an Owner to assign you if you need access.
+      </div>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+    </div>
+  )
   if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#6b7280' }}>Project not found.</div></div>
 
   const approvedCOs = changeOrders.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount), 0)
@@ -1589,15 +1605,15 @@ function ResidentialJobDetailInner() {
                                 <button style={s.btnRed} onClick={() => setRejectingCostId(isRejecting ? null : c.id)}>{isRejecting ? 'Cancel' : 'Reject'}</button>
                               </div>
                             )}
-                            {c.status === 'approved' && profile?.role === 'pm' && (
+                            {c.status === 'approved' && atLeastPM(profile?.role) && (
                               <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => updateDCStatus(c.id, 'rejected')}>Undo</button>
                             )}
-                            {c.status === 'rejected' && ['pm', 'apm', 'admin'].includes(profile?.role) && (
+                            {c.status === 'rejected' && ['principal', 'pm', 'apm', 'admin'].includes(profile?.role) && (
                               <button style={{ ...s.btnSmGray, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d' }} disabled={updatingCostId === c.id} onClick={() => unrejectCost(c.id)}>
                                 {updatingCostId === c.id ? '...' : 'Undo reject'}
                               </button>
                             )}
-                            {profile?.role === 'pm' && (
+                            {atLeastPM(profile?.role) && (
                               <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => { if (confirm('Delete this cost?')) updateDCStatus(c.id, 'deleted') }}>Delete</button>
                             )}
                           </div>
@@ -1780,7 +1796,7 @@ function ResidentialJobDetailInner() {
                         <span style={s.badge(statusColor[co.status] || 'gray')}>{co.status}</span>
                       </div>
                     </div>
-                    {co.status === 'pending' && profile?.role === 'pm' && (
+                    {co.status === 'pending' && atLeastPM(profile?.role) && (
                       <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                         <button style={s.btnGreen} onClick={() => updateCOStatus(co.id, 'approved')}>Approve</button>
                         <button style={s.btnRed} onClick={() => updateCOStatus(co.id, 'rejected')}>Reject</button>
@@ -1865,7 +1881,7 @@ function ResidentialJobDetailInner() {
                               {b.retainage_held ? <div style={{ fontSize: '11px', color: '#6b7280' }}>-${fmt(b.retainage_held)} ret.</div> : null}
                             </div>
                             <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status}</span>
-                            {profile?.role === 'pm' && b.status === 'pending' && (<>
+                            {atLeastPM(profile?.role) && b.status === 'pending' && (<>
                               <button onClick={() => updateBillingStatus(b.id, 'approved')} style={s.btnGreen}>Approve</button>
                               <button onClick={() => updateBillingStatus(b.id, 'rejected')} style={s.btnRed}>Reject</button>
                             </>)}
@@ -1920,7 +1936,7 @@ function ResidentialJobDetailInner() {
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <span style={s.badge(dr.status === 'open' ? 'orange' : 'gray')}>{dr.status}</span>
                             <button style={s.btnSmGray} onClick={e => { e.stopPropagation(); printDraw(dr) }}>Download</button>
-                            {profile?.role === 'pm' && (
+                            {atLeastPM(profile?.role) && (
                               <>
                                 {dr.status === 'open'
                                   ? <button style={s.btnSmGray} onClick={e => { e.stopPropagation(); updateDrawStatus(dr.id, 'closed') }}>Close</button>

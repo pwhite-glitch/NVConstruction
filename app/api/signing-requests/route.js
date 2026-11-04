@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
 import { isUuid, saveGeneratedContract } from '../../../lib/generated-contract'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -20,6 +21,9 @@ export async function POST(request) {
   if (!job_id || !signer_email || !document_html) {
     return Response.json({ error: 'job_id, signer_email, and document_html are required' }, { status: 400 })
   }
+  const denied = await denyJob(adminSupabase, auth, job_id) ||
+    (subcontract_id ? await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id) : null)
+  if (denied) return denied
 
   const { data: row, error: insertErr } = await adminSupabase
     .from('signing_requests')
@@ -129,6 +133,8 @@ export async function GET(request) {
   // PM sees all for a given job — token included for PM management
   if (!isPM(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
   if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data, error } = await adminSupabase
     .from('signing_requests')

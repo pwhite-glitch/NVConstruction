@@ -142,9 +142,9 @@ function SalesPageInner() {
   const [lbTo,      setLbTo]      = useState('')
   const [lbDiv,     setLbDiv]     = useState(divisionParam)
 
-  const canEdit = profile && ['pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'].includes(profile.role)
-  const showFinancials = profile && ['pm', 'apm', 'admin'].includes(profile.role)
-  const isAdmin = profile && ['pm', 'apm', 'admin'].includes(profile.role)
+  const canEdit = profile && ['principal', 'pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'].includes(profile.role)
+  const showFinancials = profile && ['principal', 'pm', 'apm', 'admin'].includes(profile.role)
+  const isAdmin = profile && ['principal', 'pm', 'apm', 'admin'].includes(profile.role)
 
   // Auth + initial load
   useEffect(() => {
@@ -153,7 +153,7 @@ function SalesPageInner() {
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle()
       const role = prof?.role
-      const allowed = ['pm','apm','admin','super','metal_rep','roofing_rep']
+      const allowed = ['principal','pm','apm','admin','super','metal_rep','roofing_rep']
       if (!allowed.includes(role)) { router.push('/dashboard'); return }
       setProfile({ ...prof, id: session.user.id, email: session.user.email })
 

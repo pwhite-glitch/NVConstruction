@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM } from '../../../lib/server-auth'
+import { denyJob, isJobLimited } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,7 +17,7 @@ export async function POST(request) {
 
     if (action === 'upload-url') {
       // Only PMs can upload drawings
-      if (!['pm', 'apm', 'super'].includes(auth.role)) {
+      if (!['principal', 'pm', 'apm', 'super'].includes(auth.role)) {
         return Response.json({ error: 'Forbidden' }, { status: 403 })
       }
       if (!filePath) return Response.json({ error: 'path required' }, { status: 400 })
@@ -35,10 +36,20 @@ export async function POST(request) {
 
     if (action === 'delete') {
       // Only PMs can delete drawings
-      if (!['pm', 'apm', 'super'].includes(auth.role)) {
+      if (!['principal', 'pm', 'apm', 'super'].includes(auth.role)) {
         return Response.json({ error: 'Forbidden' }, { status: 403 })
       }
       const { storage_path, drawing_id } = body
+      if (isJobLimited(auth.role)) {
+        // PM/APM: the drawing (by id, else by storage path) must be on one of their jobs
+        const q = adminSupabase.from('drawings').select('job_id, storage_path')
+        const { data: row } = drawing_id
+          ? await q.eq('id', drawing_id).maybeSingle()
+          : await q.eq('storage_path', storage_path || '').limit(1).maybeSingle()
+        const denied = await denyJob(adminSupabase, auth, row?.job_id)
+        if (denied) return denied
+        if (storage_path && row.storage_path !== storage_path) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      }
       if (storage_path) await adminSupabase.storage.from('drawings').remove([storage_path])
       if (drawing_id) await adminSupabase.from('drawings').delete().eq('id', drawing_id)
       return Response.json({ ok: true })

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { canAccessSubcontract } from '../../../lib/sub-access'
 import { logChange } from '../../../lib/change-log'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -29,9 +30,13 @@ export async function GET(request) {
     if (id) {
       const { data, error } = await adminSupabase.from('subcontracts').select('*').eq('id', id).single()
       if (error) return Response.json({ error: error.message }, { status: 500 })
+      const denied = await denyJob(adminSupabase, auth, data?.job_id)
+      if (denied) return denied
       return Response.json({ row: data })
     }
     if (job_id) {
+      const denied = await denyJob(adminSupabase, auth, job_id)
+      if (denied) return denied
       let q = adminSupabase.from('subcontracts').select('*').eq('job_id', job_id)
       if (vendor_name) q = q.ilike('vendor_name', vendor_name)
       const { data, error } = await q
@@ -49,6 +54,8 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = pick(await request.json())
+    const denied = await denyJob(adminSupabase, auth, body.job_id)
+    if (denied) return denied
     const { error, data } = await adminSupabase.from('subcontracts').insert(body).select('id').single()
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true, id: data.id })
@@ -88,6 +95,9 @@ export async function PUT(request) {
 
     // Fetch current values for auditing changed fields
     const { data: current } = await adminSupabase.from('subcontracts').select('contract_value, status, vendor_name, job_id, signed_contract_url').eq('id', id).single()
+    const denied = await denyJob(adminSupabase, auth, current?.job_id) ||
+      (fields.job_id && fields.job_id !== current?.job_id ? await denyJob(adminSupabase, auth, fields.job_id) : null)
+    if (denied) return denied
 
     // Draft → active is the "Activate" step; stamp who did it and when
     if (fields.status === 'active' && current?.status === 'draft') {
@@ -131,6 +141,8 @@ export async function DELETE(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'subcontracts', id)
+    if (denied) return denied
     const { error } = await adminSupabase.from('subcontracts').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

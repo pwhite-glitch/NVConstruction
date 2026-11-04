@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,6 +15,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const jobId = searchParams.get('job_id')
   if (!jobId) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, jobId)
+  if (denied) return denied
 
   const { data, error } = await adminSupabase
     .from('change_log')

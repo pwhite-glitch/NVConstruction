@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf, denyJobs, isJobLimited } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,6 +15,8 @@ export async function POST(request) {
     const { job_id, sub_email, sub_id, company_id, invited_at, billing_enabled } = body
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
     if (!sub_email && !company_id) return Response.json({ error: 'sub_email or company_id required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
 
     const row = { job_id }
     if (sub_email) row.sub_email = sub_email.toLowerCase().trim()
@@ -54,6 +57,12 @@ export async function PATCH(request) {
     const { ids, billing_enabled } = await request.json()
     if (!Array.isArray(ids) || ids.length === 0) return Response.json({ error: 'ids required' }, { status: 400 })
     if (typeof billing_enabled !== 'boolean') return Response.json({ error: 'billing_enabled must be true or false' }, { status: 400 })
+    if (isJobLimited(auth.role)) {
+      const { data: rows, error: rowsErr } = await adminSupabase.from('job_assignments').select('job_id').in('id', ids)
+      if (rowsErr) return Response.json({ error: rowsErr.message }, { status: 500 })
+      const denied = await denyJobs(adminSupabase, auth, (rows || []).map(r => r.job_id))
+      if (denied) return denied
+    }
     const { error } = await adminSupabase.from('job_assignments').update({
       billing_enabled,
       billing_enabled_at: billing_enabled ? new Date().toISOString() : null,
@@ -71,6 +80,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   try {
     const { id, job_id } = await request.json()
+    const denied = id ? await denyJobOf(adminSupabase, auth, 'job_assignments', id) : (job_id ? await denyJob(adminSupabase, auth, job_id) : null)
+    if (denied) return denied
     if (id) {
       await adminSupabase.from('job_assignments').delete().eq('id', id)
     } else if (job_id) {

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -45,6 +46,8 @@ export async function GET(request) {
   }
 
   if (!job_id) return Response.json({ submittals: [] })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data, error } = await adminSupabase
     .from('submittals')
     .select('*')
@@ -62,15 +65,20 @@ export async function POST(request) {
     let fields = {}
     let newFiles = []
 
+    let files = []
+
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const files = formData.getAll('file')
+      files = formData.getAll('file')
       fields = JSON.parse(formData.get('data') || '{}')
-      for (const file of files) {
-        if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
-      }
     } else {
       fields = await request.json()
+    }
+
+    const denied = await denyJob(adminSupabase, auth, fields.job_id)
+    if (denied) return denied
+    for (const file of files) {
+      if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
     }
 
     const { job_id, title, type, spec_section, submitted_by_sub_id, submitted_by_company, notes } = fields
@@ -117,15 +125,26 @@ export async function PATCH(request) {
     let fields = {}
     let newFiles = []
 
+    let files = []
+
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const files = formData.getAll('file')
+      files = formData.getAll('file')
       fields = JSON.parse(formData.get('data') || '{}')
-      for (const file of files) {
-        if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
-      }
     } else {
       fields = await request.json()
+    }
+
+    if (fields.id) {
+      const denied = await denyJobOf(adminSupabase, auth, 'submittals', fields.id)
+      if (denied) return denied
+    }
+    if (fields.job_id) {
+      const deniedJob = await denyJob(adminSupabase, auth, fields.job_id)
+      if (deniedJob) return deniedJob
+    }
+    for (const file of files) {
+      if (file && file.size > 0) newFiles.push(await uploadSubmittalDoc(file, fields.job_id))
     }
 
     const { id, status, notes, reviewer_id, title, spec_section, job_id, remove_file_path } = fields
@@ -181,6 +200,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
+  const denied = await denyJobOf(adminSupabase, auth, 'submittals', id)
+  if (denied) return denied
   const { error } = await adminSupabase.from('submittals').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

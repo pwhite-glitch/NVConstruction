@@ -145,7 +145,7 @@ export async function POST(request) {
     const { data: profile } = await adminSupabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
     const role = profile?.role
 
-    const STAFF_ROLES = new Set(['pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'])
+    const STAFF_ROLES = new Set(['principal', 'pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'])
     if (!STAFF_ROLES.has(role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
     // ── Invite customer ────────────────────────────────────────────────────────

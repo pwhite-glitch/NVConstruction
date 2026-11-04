@@ -8,6 +8,7 @@
 
 let db
 let writes
+let mockRole = 'principal'
 
 function mockQuery(table) {
   const filters = []
@@ -51,8 +52,8 @@ jest.mock('@supabase/supabase-js', () => ({
   createClient: () => ({ from: table => mockQuery(table) }),
 }))
 jest.mock('../lib/server-auth', () => ({
-  requireAuth: async () => ({ userId: 'u1', role: 'pm' }),
-  isPM: role => role === 'pm',
+  requireAuth: async () => ({ userId: 'u1', role: mockRole }),
+  isPM: role => ['principal', 'pm', 'apm', 'super', 'admin'].includes(role),
 }))
 
 const route = require('../app/api/estimates/route')
@@ -89,6 +90,25 @@ function expectNothingWritten() {
   expect(db.estimates[0].updated_at).toBe(LOADED)
   expect(db.estimate_line_items).toEqual([{ estimate_id: ID, description: 'Site work', amount: 1000, sort_order: 0 }])
 }
+
+describe('/api/estimates: editing is Owner (principal) only', () => {
+  beforeEach(seed)
+  afterEach(() => { mockRole = 'principal' })
+
+  test.each(['pm', 'apm', 'admin', 'super'])('%s cannot create, update or delete -> 403, nothing written', async role => {
+    mockRole = role
+    for (const body of [updateBody({ expected_updated_at: LOADED }), { action: 'create', fields: { project_name: 'X' } }, { action: 'delete', id: ID }]) {
+      const res = await post(body)
+      expect(res.status).toBe(403)
+    }
+    expectNothingWritten()
+  })
+
+  test('principal can update', async () => {
+    const res = await post(updateBody({ expected_updated_at: LOADED }))
+    expect(res.status).toBe(200)
+  })
+})
 
 describe('/api/estimates update: stale-write guard', () => {
   beforeEach(seed)

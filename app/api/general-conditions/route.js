@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { todayCentral } from '../../../lib/central-date'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -24,6 +25,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ entries: [] })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data, error } = await adminSupabase
     .from('general_conditions')
@@ -42,14 +45,12 @@ export async function POST(request) {
     const contentType = request.headers.get('content-type') || ''
     let body = {}
     let doc_url = null
+    let file = null
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      file = formData.get('file')
       body = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        doc_url = await uploadGCDoc(file, body.job_id)
-      }
     } else {
       body = await request.json()
     }
@@ -57,6 +58,11 @@ export async function POST(request) {
     const { job_id, description, amount, category, entry_date, budget_item_id, notes, created_by, draw_request_id } = body
     if (!job_id || !description || !amount) {
       return Response.json({ error: 'job_id, description, and amount are required' }, { status: 400 })
+    }
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
+    if (file && file.size > 0) {
+      doc_url = await uploadGCDoc(file, job_id)
     }
 
     const { data, error } = await adminSupabase
@@ -91,20 +97,23 @@ export async function PUT(request) {
     const contentType = request.headers.get('content-type') || ''
     let body = {}
     let doc_url = undefined
+    let file = null
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      file = formData.get('file')
       body = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        doc_url = await uploadGCDoc(file, body.job_id)
-      }
     } else {
       body = await request.json()
     }
 
     const { id, ...fields } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'general_conditions', id)
+    if (denied) return denied
+    if (file && file.size > 0) {
+      doc_url = await uploadGCDoc(file, body.job_id)
+    }
 
     const updates = {}
     if (fields.description !== undefined) updates.description = fields.description
@@ -131,6 +140,8 @@ export async function DELETE(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'general_conditions', id)
+    if (denied) return denied
     const { error } = await adminSupabase.from('general_conditions').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { isMissingPaymentTypeColumn, PAYMENT_TYPE_NOT_SAVED_WARNING } from '../../../lib/payment-route'
 import { todayCentral } from '../../../lib/central-date'
+import { denyJob, denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -26,6 +27,13 @@ export async function GET(request) {
 
   const sign = searchParams.get('sign')
   if (sign) {
+    if (isJobLimited(auth.role)) {
+      const { data: po, error: poErr } = await adminSupabase.from('purchase_orders').select('job_id').eq('attachment_url', sign).limit(1).maybeSingle()
+      if (poErr) return Response.json({ error: poErr.message }, { status: 500 })
+      if (!po) return Response.json({ error: 'Not found.' }, { status: 404 })
+      const denied = await denyJob(adminSupabase, auth, po.job_id)
+      if (denied) return denied
+    }
     const { data, error } = await adminSupabase.storage.from('purchase-order-docs').createSignedUrl(sign, 3600)
     if (error || !data?.signedUrl) return Response.json({ error: error?.message || 'Could not generate URL' }, { status: 500 })
     return Response.json({ signedUrl: data.signedUrl })
@@ -35,13 +43,23 @@ export async function GET(request) {
 
   // No job_id: list POs across all jobs (admin Purchase Orders tab)
   if (!job_id) {
-    const { data: pos, error } = await adminSupabase
+    let listQuery = adminSupabase
       .from('purchase_orders')
       .select('*, jobs(job_number, project_name)')
       .order('created_at', { ascending: false })
+    if (isJobLimited(auth.role)) {
+      const { ids, error: idsErr } = await accessibleJobIds(adminSupabase, auth)
+      if (idsErr) return Response.json({ error: idsErr.message }, { status: 500 })
+      if (ids.size === 0) return Response.json({ purchase_orders: [] })
+      listQuery = listQuery.in('job_id', [...ids])
+    }
+    const { data: pos, error } = await listQuery
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ purchase_orders: pos || [] })
   }
+
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data: pos, error } = await adminSupabase
     .from('purchase_orders')
@@ -66,14 +84,12 @@ export async function POST(request) {
     const contentType = request.headers.get('content-type') || ''
     let body = {}
     let attachment_url = null
+    let file = null
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      file = formData.get('file')
       body = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        attachment_url = await uploadPOAttachment(file, body.job_id)
-      }
     } else {
       body = await request.json()
     }
@@ -81,6 +97,11 @@ export async function POST(request) {
     const { job_id, vendor_name, description, budget_item_id, notes, payment_type, status = 'draft', items = [], created_by } = body
 
     if (!job_id || !vendor_name) return Response.json({ error: 'job_id and vendor_name required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
+    if (file && file.size > 0) {
+      attachment_url = await uploadPOAttachment(file, job_id)
+    }
 
     const { data: jobRow } = await adminSupabase.from('jobs').select('job_number').eq('id', job_id).single()
     const { count } = await adminSupabase.from('purchase_orders').select('id', { count: 'exact', head: true }).eq('job_id', job_id)
@@ -130,20 +151,23 @@ export async function PUT(request) {
     const contentType = request.headers.get('content-type') || ''
     let body = {}
     let newAttachmentUrl = undefined
+    let file = null
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      file = formData.get('file')
       body = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) {
-        newAttachmentUrl = await uploadPOAttachment(file, body.job_id)
-      }
     } else {
       body = await request.json()
     }
 
     const { id, items, ...fields } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'purchase_orders', id)
+    if (denied) return denied
+    if (file && file.size > 0) {
+      newAttachmentUrl = await uploadPOAttachment(file, body.job_id)
+    }
 
     const updates = {}
     if (fields.status !== undefined) {
@@ -201,6 +225,8 @@ export async function DELETE(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'purchase_orders', id)
+    if (denied) return denied
     await adminSupabase.from('purchase_orders').delete().eq('id', id)
     return Response.json({ ok: true })
   } catch (e) {

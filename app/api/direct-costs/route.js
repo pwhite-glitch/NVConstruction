@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { DC_APPROVER_ROLES, buildApprovalQueue, budgetLinesByJob } from '../../../lib/direct-cost-queue'
 import { jobAccessError, budgetLineError, accessibleJobIds } from '../../../lib/dc-guards'
+import { isJobLimited, denyJob, denyJobs, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,7 +10,7 @@ const adminSupabase = createClient(
 )
 
 // Pending costs across every job the caller can see (dashboard "Costs to Approve").
-// PM/admin see all jobs; APMs only the jobs they are on (pm_job_assignments or pm_email).
+// Principal/admin see all jobs; PM/APM only the jobs they are on (pm_job_assignments or pm_email).
 // Also returns each job's budget lines (one query, keyed by job_id) for the line picker,
 // and marks each cost can_approve (admins: always; PM/APM: only on jobs they are on, same as jobAccessError).
 async function pendingQueue(auth) {
@@ -17,7 +18,7 @@ async function pendingQueue(auth) {
   const { ids: assigned, error: accessErr } = await accessibleJobIds(adminSupabase, auth)
   if (accessErr) return { error: accessErr }
   if (assigned) {
-    if (auth.role === 'apm') {
+    if (isJobLimited(auth.role)) {
       if (assigned.size === 0) return { data: [], budgetLines: {} }
       q = q.in('job_id', [...assigned])
     }
@@ -63,6 +64,8 @@ export async function GET(request) {
       return Response.json({ data, budget_lines: budgetLines })
     }
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
     const { data, error } = await adminSupabase
       .from('direct_costs')
       .select('*')
@@ -89,11 +92,15 @@ export async function POST(request) {
     let fileAttached = false
 
     const authRole = auth.role
+    // PM/APM: every inserted row must be on one of their jobs
+    const denyRows = r => Array.isArray(r) ? denyJobs(adminSupabase, auth, r.map(x => x?.job_id)) : denyJob(adminSupabase, auth, r?.job_id)
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
       const file = formData.get('file')
       row = JSON.parse(formData.get('data') || '{}')
+      const denied = await denyRows(row)
+      if (denied) return denied
 
       if (file && file.size > 0) {
         fileAttached = true
@@ -110,6 +117,8 @@ export async function POST(request) {
       }
     } else {
       row = await request.json()
+      const denied = await denyRows(row)
+      if (denied) return denied
     }
 
     // Enforce receipt for field submissions (super role, status=pending)
@@ -189,6 +198,8 @@ export async function DELETE(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'direct_costs', id)
+    if (denied) return denied
     const { error } = await adminSupabase.from('direct_costs').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

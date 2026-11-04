@@ -249,7 +249,7 @@ export default function Field() {
       setUser(session.user)
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       const devRole = localStorage.getItem('nvc_dev_role')
-      const devIsSuperOverride = devRole === 'super' && (prof?.role === 'pm' || prof?.role === 'apm')
+      const devIsSuperOverride = devRole === 'super' && prof?.role === 'principal'
       if (!devIsSuperOverride && (!prof || (prof.role !== 'super' && prof.role !== 'apm'))) { router.push('/login'); return }
       setProfile(devIsSuperOverride ? { ...prof, role: 'super' } : prof)
       let jobs

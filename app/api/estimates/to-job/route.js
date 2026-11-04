@@ -4,6 +4,7 @@ import { sameUpdatedAt } from '../../../../lib/estimate-save'
 import {
   JOB_LINK_ROLES, mapEstimateLinesToBudget, estimateTotal, findDuplicates, planLink, budgetSnapshot,
 } from '../../../../lib/estimate-to-job'
+import { denyJob, accessibleJobIds, isJobLimited } from '../../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -118,7 +119,13 @@ export async function POST(request) {
       const { data: jobs, error } = await fetchAll(() =>
         adminSupabase.from('jobs').select(JOB_COLS).eq('status', 'active').is('source_estimate_id', null).order('job_number', { ascending: true }))
       if (error) return json({ error: error.message }, 500)
-      const eligible = jobs.filter(j => !j.is_preview_data && !j.archived)
+      let eligible = jobs.filter(j => !j.is_preview_data && !j.archived)
+      // PM/APM: only jobs they are on
+      if (isJobLimited(auth.role)) {
+        const { ids: mine, error: accErr } = await accessibleJobIds(adminSupabase, auth)
+        if (accErr) return json({ error: accErr.message }, 500)
+        eligible = eligible.filter(j => mine.has(j.id))
+      }
       const ids = eligible.map(j => j.id)
       const totals = {}
       for (let i = 0; i < ids.length; i += 200) {
@@ -149,6 +156,8 @@ export async function POST(request) {
       if (!body.job_id) return json({ error: 'job_id is required' }, 400)
       const jl = await loadJob(body.job_id)
       if (jl.res) return jl.res
+      const denied = await denyJob(adminSupabase, auth, jl.job.id)
+      if (denied) return denied
 
       const newLines = mapEstimateLinesToBudget(e.est, e.lines)
       let references = []
@@ -195,7 +204,22 @@ export async function POST(request) {
         p_user_name: await userName(auth.userId),
       })
       if (error) return rpcErrorResponse(error)
-      return json({ ok: true, ...data })
+
+      // A PM who creates a job must be on it. The SQL function assigns APMs
+      // only, and does not set pm_email, so add the PM's assignment here.
+      // The job already exists, so a failure is reported, not fatal.
+      let assignment_error
+      if (isJobLimited(auth.role) && auth.role !== 'apm' && data?.job_id) {
+        try {
+          const { error: aErr } = await adminSupabase.from('pm_job_assignments')
+            .insert({ job_id: data.job_id, user_id: auth.userId, assigned_by: auth.userId })
+          if (aErr && aErr.code !== '23505') assignment_error = aErr.message
+        } catch (err) {
+          assignment_error = err?.message || 'Could not assign you to the new job.'
+        }
+        if (assignment_error) console.error('estimates/to-job convert: could not assign PM to job:', assignment_error)
+      }
+      return json({ ok: true, ...data, ...(assignment_error ? { assignment_error } : {}) })
     }
 
     // ── Link to an existing job ─────────────────────────────────────────────
@@ -211,6 +235,8 @@ export async function POST(request) {
 
       const jl = await loadJob(body.job_id)
       if (jl.res) return jl.res
+      const denied = await denyJob(adminSupabase, auth, jl.job.id)
+      if (denied) return denied
 
       // Refuse if the job changed since the user previewed it. The Postgres
       // function repeats this check under a row lock.

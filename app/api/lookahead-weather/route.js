@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 import { jobCoords, jobPlace, geocodeUrl, forecastUrl, pickGeocodeResult, parseForecast } from '../../../lib/lookahead-weather'
 
 const adminSupabase = createClient(
@@ -26,6 +27,8 @@ export async function GET(request) {
   if (auth.error) return auth.error
   const jobId = new URL(request.url).searchParams.get('job_id')
   if (!jobId) return Response.json({ days: {} })
+  const denied = await denyJob(adminSupabase, auth, jobId)
+  if (denied) return denied
   const hit = forecastCache.get(jobId)
   if (hit && Date.now() - hit.at < HOUR) return Response.json(hit.value)
   try {

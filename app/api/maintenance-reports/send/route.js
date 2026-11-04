@@ -184,7 +184,7 @@ export async function POST(request) {
     const { data: report, error: fetchErr } = await adminSupabase
       .from('maintenance_reports').select('*').eq('id', report_id).maybeSingle()
     if (fetchErr || !report) return Response.json({ error: 'Report not found' }, { status: 404 })
-    if (report.performed_by !== auth.userId && !['pm', 'apm', 'admin'].includes(auth.role)) {
+    if (report.performed_by !== auth.userId && !['principal', 'pm', 'apm', 'admin'].includes(auth.role)) {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
 

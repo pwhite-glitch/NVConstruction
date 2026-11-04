@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
 const ROLE_LABELS = {
+  principal:     'Owner',
   pm:            'PM (Project Manager)',
   apm:           'APM (Asst. Project Manager)',
   super:         'Superintendent',
@@ -10,11 +11,11 @@ const ROLE_LABELS = {
   subcontractor: 'Subcontractor',
   sub_pm:        'Sub PM',
   sub_admin:     'Sub Admin',
-  owner:         'Owner',
+  owner:         'Client Owner',
 }
 
 const ROLE_COLORS = {
-  pm: '#e8590c', apm: '#f59e0b', admin: '#06b6d4', super: '#3b82f6',
+  principal: '#ca8a04', pm: '#e8590c', apm: '#f59e0b', admin: '#06b6d4', super: '#3b82f6',
   subcontractor: '#22c55e', sub_pm: '#a78bfa', sub_admin: '#ec4899', owner: '#10b981',
 }
 
@@ -34,8 +35,8 @@ export default function PreviewBanner() {
     if (role) {
       setPreview({ role, company })
       // Sync to localStorage so existing pages pick up the override
-      localStorage.setItem('nvc_dev_role', role === 'pm' ? '' : role)
-      if (role !== 'pm') localStorage.setItem('nvc_pm_session', '1')
+      localStorage.setItem('nvc_dev_role', role === 'principal' ? '' : role)
+      if (role !== 'principal') localStorage.setItem('nvc_pm_session', '1')
       document.body.style.paddingTop = '40px'
     } else {
       setPreview(false)

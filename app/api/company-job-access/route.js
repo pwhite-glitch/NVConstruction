@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 import { getCompanyProfiles, getCompanyAssignmentRows, isCompanyLevelRow } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
@@ -22,6 +23,8 @@ export async function POST(request) {
   try {
     const { job_id, company_id, action, user_id, enabled } = await request.json()
     if (!job_id || !company_id || !action) return Response.json({ error: 'job_id, company_id and action required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
 
     const members = await getCompanyProfiles(company_id)
     const rows = await getCompanyAssignmentRows(company_id, members, job_id)

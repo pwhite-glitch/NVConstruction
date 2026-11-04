@@ -1,5 +1,6 @@
 import { requirePM } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
+import { denyJob } from '../../../lib/roles'
 import { createClient } from '@supabase/supabase-js'
 
 const adminSupabase = createClient(
@@ -19,6 +20,10 @@ export async function POST(request) {
 
   const { job_id, entity_type, entity_id, field_name, old_value, new_value, note } = body
   if (!entity_type) return Response.json({ error: 'entity_type required' }, { status: 400 })
+  if (job_id) {
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
+  }
 
   const { data: prof } = await adminSupabase.from('profiles').select('full_name').eq('id', auth.userId).single()
 

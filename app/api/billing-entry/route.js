@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
 import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032 } from '../../../lib/billing-fields'
 
@@ -43,12 +44,12 @@ export async function POST(request) {
     const contentType = request.headers.get('content-type') || ''
     let raw = {}
     let doc_url = null
+    let file = null
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData()
-      const file = formData.get('file')
+      file = formData.get('file')
       raw = JSON.parse(formData.get('data') || '{}')
-      if (file && file.size > 0) doc_url = await uploadBillingDoc(file, raw.job_id)
     } else {
       raw = await request.json()
     }
@@ -56,6 +57,8 @@ export async function POST(request) {
     // Derive sub_id from session — never trust it from the request body
     let row
     if (isPM(auth.role)) {
+      const denied = await denyJob(adminSupabase, auth, raw.job_id)
+      if (denied) return denied
       row = pickFields(raw, PM_INSERT_FIELDS)
     } else if (isSub(auth.role)) {
       row = pickFields(raw, SUB_INSERT_FIELDS)
@@ -64,6 +67,8 @@ export async function POST(request) {
     } else {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    if (file && file.size > 0) doc_url = await uploadBillingDoc(file, raw.job_id)
 
     // Validate sub_id auth account still exists
     if (row.sub_id) {
@@ -122,6 +127,8 @@ export async function PATCH(request) {
 
     let fields
     if (isPM(auth.role)) {
+      const denied = await denyJob(adminSupabase, auth, current.job_id)
+      if (denied) return denied
       fields = pickFields(rawFields, PM_PATCH_FIELDS)
 
       // Validate status transition
@@ -230,6 +237,8 @@ export async function DELETE(request) {
     try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
     const { id } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'billing_submissions', id)
+    if (denied) return denied
 
     const { error } = await adminSupabase.from('billing_submissions').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })

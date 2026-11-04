@@ -6,8 +6,8 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const LEADERBOARD_ROLES = new Set(['pm','apm','admin','metal_rep','roofing_rep'])
-const FINANCE_ROLES     = new Set(['pm','apm','admin'])
+const LEADERBOARD_ROLES = new Set(['principal','pm','apm','admin','metal_rep','roofing_rep'])
+const FINANCE_ROLES     = new Set(['principal','pm','apm','admin'])
 
 export async function GET(request) {
   const auth = await requireAuth(request)

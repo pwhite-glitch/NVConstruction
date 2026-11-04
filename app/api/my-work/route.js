@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, PM_ROLES } from '../../../lib/server-auth'
 import { addDaysCentral } from '../../../lib/central-date'
+import { isJobLimited, accessibleJobIds } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,6 +26,16 @@ export async function GET(request) {
 
   const in14 = addDaysCentral(14)
 
+  // PM/APM: job items only from their jobs (null = no filter)
+  let jobIds = null
+  if (isPM && isJobLimited(auth.role)) {
+    const { ids, error: accErr } = await accessibleJobIds(adminSupabase, auth)
+    if (accErr) return Response.json({ error: accErr.message }, { status: 500 })
+    jobIds = [...ids]
+  }
+  const onMyJobs = q => (jobIds ? q.in('job_id', jobIds) : q)
+  const none = jobIds && !jobIds.length
+
   const promises = [
     // Sales tasks assigned to this user — exclude tasks on preview/test orders
     adminSupabase
@@ -38,38 +49,39 @@ export async function GET(request) {
   ]
 
   if (isPM) {
+    const job = q => (none ? Promise.resolve({ data: [] }) : onMyJobs(q))
     promises.push(
-      adminSupabase
+      job(adminSupabase
         .from('rfis')
         .select('id, title, question, created_at, job_id, jobs(id, job_number, project_name)')
         .eq('status', 'open')
         .order('created_at', { ascending: true })
-        .limit(25),
+        .limit(25)),
 
-      adminSupabase
+      job(adminSupabase
         .from('billing_submissions')
         .select('id, company_name, amount_billed, submitted_at, job_id, jobs(id, job_number, project_name)')
         .eq('status', 'pending')
         .order('submitted_at', { ascending: true })
-        .limit(25),
+        .limit(25)),
 
       fullName
-        ? adminSupabase
+        ? job(adminSupabase
             .from('meeting_action_items')
             .select('id, description, due_date, job_id, jobs(id, job_number, project_name)')
             .eq('status', 'open')
             .ilike('assigned_to', `%${fullName}%`)
             .order('due_date', { ascending: true, nullsFirst: false })
-            .limit(25)
+            .limit(25))
         : Promise.resolve({ data: [] }),
 
-      adminSupabase
+      job(adminSupabase
         .from('milestones')
         .select('id, title, due_date, status, job_id, jobs(id, job_number, project_name)')
         .lte('due_date', in14)
         .neq('status', 'complete')
         .order('due_date', { ascending: true })
-        .limit(25)
+        .limit(25))
     )
   }
 

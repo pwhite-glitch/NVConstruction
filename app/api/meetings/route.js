@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,8 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data: meetings, error } = await adminSupabase
     .from('meetings')
@@ -40,6 +43,8 @@ export async function POST(req) {
 
   const { job_id, meeting_date, title, attendees, raw_transcript, action_items = [], decisions = [] } = body
   if (!job_id || !meeting_date) return Response.json({ error: 'job_id and meeting_date required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data: meeting, error: meetErr } = await adminSupabase
     .from('meetings')
@@ -98,6 +103,8 @@ export async function PATCH(req) {
   if (!action_item_id || !['open', 'done'].includes(status)) {
     return Response.json({ error: 'action_item_id and status (open|done) required' }, { status: 400 })
   }
+  const denied = await denyJobOf(adminSupabase, auth, 'meeting_action_items', action_item_id)
+  if (denied) return denied
 
   const { error } = await adminSupabase
     .from('meeting_action_items')
@@ -116,6 +123,8 @@ export async function DELETE(req) {
   const { searchParams } = new URL(req.url)
   const meeting_id = searchParams.get('meeting_id')
   if (!meeting_id) return Response.json({ error: 'meeting_id required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'meetings', meeting_id)
+  if (denied) return denied
 
   const { error } = await adminSupabase.from('meetings').delete().eq('id', meeting_id)
   if (error) return Response.json({ error: error.message }, { status: 500 })

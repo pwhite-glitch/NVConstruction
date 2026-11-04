@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 import { getSubContracts } from '../../../lib/sub-access'
 import { cleanActivity, validateActivity, writeWithFallback, droppedWarning, missingColumn } from '../../../lib/lookahead-fields'
 
@@ -7,6 +8,15 @@ const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
+
+// PM/APM: the activity's lookahead must be on one of their jobs.
+async function denyActivity(auth, id) {
+  if (!isJobLimited(auth.role)) return null
+  const { data, error } = await adminSupabase.from('lookahead_activities').select('lookahead_id').eq('id', id).maybeSingle()
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (!data) return Response.json({ error: 'Not found.' }, { status: 404 })
+  return denyJobOf(adminSupabase, auth, 'lookaheads', data.lookahead_id)
+}
 
 // GET ?from&to — activities on the caller's subcontracts (sub portal Upcoming Work).
 // Office staff may pass ?sub_user_id to look at one sub user's contracts.
@@ -19,12 +29,18 @@ export async function GET(request) {
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     let contracts
+    let allowedJobs = null // PM/APM: only activities on their jobs
     if (isSub(auth.role)) {
       contracts = await getSubContracts(auth)
     } else if (isPM(auth.role)) {
       const subUserId = searchParams.get('sub_user_id')
       if (!subUserId) return Response.json({ error: 'sub_user_id required' }, { status: 400 })
       contracts = (await adminSupabase.from('subcontracts').select('id').eq('sub_id', subUserId)).data
+      if (isJobLimited(auth.role)) {
+        const { ids, error: accErr } = await accessibleJobIds(adminSupabase, auth)
+        if (accErr) return Response.json({ error: accErr.message }, { status: 500 })
+        allowedJobs = ids
+      }
     } else {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -33,7 +49,7 @@ export async function GET(request) {
     const run = withEndDate => {
       let query = adminSupabase
         .from('lookahead_activities')
-        .select('*, lookaheads(week_start_date, jobs(job_number, project_name))')
+        .select(allowedJobs ? '*, lookaheads(job_id, week_start_date, jobs(job_number, project_name))' : '*, lookaheads(week_start_date, jobs(job_number, project_name))')
         .in('sub_id', contractIds)
         .order('planned_date', { ascending: true })
       // end_date >= from, where a one-day activity's end is planned_date
@@ -44,6 +60,7 @@ export async function GET(request) {
     let { data, error } = await run(true)
     if (missingColumn(error?.message) === 'end_date') ({ data, error } = await run(false)) // before migration 035
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (allowedJobs) data = (data || []).filter(a => allowedJobs.has(a.lookaheads?.job_id))
     return Response.json({ data })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
@@ -56,6 +73,8 @@ export async function POST(request) {
   try {
     const body = cleanActivity(await request.json())
     if (!body.lookahead_id) return Response.json({ error: 'lookahead_id required' }, { status: 400 })
+    const denied = await denyJobOf(adminSupabase, auth, 'lookaheads', body.lookahead_id)
+    if (denied) return denied
     const problem = validateActivity(body)
     if (problem) return Response.json({ error: problem }, { status: 400 })
     const { data, error, dropped } = await writeWithFallback(
@@ -74,6 +93,8 @@ export async function PUT(request) {
     const raw = await request.json()
     const { id } = raw
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyActivity(auth, id)
+    if (denied) return denied
     const fields = cleanActivity(raw)
     delete fields.lookahead_id
     // An end date sent without a start is checked against the stored start
@@ -98,6 +119,8 @@ export async function DELETE(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    const denied = await denyActivity(auth, id)
+    if (denied) return denied
     const { error } = await adminSupabase.from('lookahead_activities').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

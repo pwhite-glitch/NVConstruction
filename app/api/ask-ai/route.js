@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -74,6 +75,8 @@ export async function POST(request) {
   if (!job_id || !Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: 'job_id and messages required' }, { status: 400 })
   }
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   // Fetch all job context in parallel
   const [

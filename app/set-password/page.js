@@ -58,7 +58,7 @@ export default function SetPassword() {
     const role = prof?.role
 
     // Internal users go straight to dashboard
-    if (role === 'pm' || role === 'apm' || role === 'super' || role === 'admin') {
+    if (role === 'principal' || role === 'pm' || role === 'apm' || role === 'super' || role === 'admin') {
       router.push('/dashboard')
       return
     }

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { isBeforeTodayCentral } from '../../../lib/central-date'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,6 +19,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data: invoices, error: invErr } = await adminSupabase
     .from('owner_reimb_invoices')
@@ -68,6 +71,8 @@ export async function POST(request) {
   if (!Array.isArray(lines) || lines.length === 0) {
     return Response.json({ error: 'At least one line item is required' }, { status: 400 })
   }
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   // Validate direct_cost_id references: must belong to the job, be bill_to_owner, not already routed elsewhere
   const dcIds = lines.map(l => l.direct_cost_id).filter(Boolean)

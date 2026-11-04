@@ -24,6 +24,7 @@ import * as lookaheadApi from '../../lib/lookahead-client'
 import EditPOForm from './EditPOForm'
 import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
 import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 
 const s = {
   // ── Layout ──
@@ -156,6 +157,7 @@ function JobDetailInner() {
   const [msg, setMsg] = useState('')
   const [toast, setToast] = useState(null)
   const [errMsg, setErrMsg] = useState('')
+  const [notAssigned, setNotAssigned] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [aiaBalanceWarning, setAiaBalanceWarning] = useState(null)
@@ -639,10 +641,20 @@ function JobDetailInner() {
         return
       }
       if (subRoles.includes(prof.role)) { router.push('/submit'); return }
-      if (prof.role === 'pm') localStorage.setItem('nvc_pm_session', '1')
+      if (isPrincipal(prof.role)) localStorage.setItem('nvc_pm_session', '1')
       const devRole = localStorage.getItem('nvc_dev_role')
-      const effectiveRole = (devRole === 'apm' && prof.role === 'pm') ? 'apm' : prof.role
+      const effectiveRole = (['pm', 'apm'].includes(devRole) && isPrincipal(prof.role)) ? devRole : prof.role
       setUserRole(effectiveRole)
+      // PM/APM may only open their jobs (assignment OR pm_email); principal/admin see every job
+      if (isJobLimited(effectiveRole)) {
+        const access = await isOnJob(supabase, { role: effectiveRole, userId: session.user.id, email: session.user.email }, id)
+        if (!access.ok) {
+          setNotAssigned(true)
+          if (access.error) setErrMsg('Could not check your access to this job: ' + (access.error.message || 'unknown error'))
+          setLoading(false)
+          return
+        }
+      }
       setCurrentUserName(prof.full_name || '')
       if (prof.hide_budget) setHideBudget(true)
       const { data: jobData, error: jobErr } = await supabase.from('jobs').select('*').eq('id', id).single()
@@ -2270,7 +2282,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
-    if (activeTab === 'history' && userRole === 'pm') loadChangeLog()
+    if (activeTab === 'history' && atLeastPM(userRole)) loadChangeLog()
     if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems(); loadDrawRequests() }
     if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment() }
   }, [activeTab, id])
@@ -5412,6 +5424,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   }
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', color: '#6b7280' }}>Loading...</div>
+  if (notAssigned) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#ffffff', gap: '1rem', padding: '0 16px' }}>
+      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '20px 24px', borderRadius: '8px', fontSize: '14px', maxWidth: '460px', textAlign: 'center', lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '6px' }}>{NOT_ASSIGNED_MESSAGE}</div>
+        {errMsg || 'Only the PM/APM assigned to this job (or listed as its PM) can open it. Ask an Owner to assign you if you need access.'}
+      </div>
+      <button onClick={() => router.push('/dashboard')} style={{ padding: '10px 24px', background: '#f0f0f0', border: '1px solid #d1d5db', borderRadius: '8px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }}>← Back to dashboard</button>
+    </div>
+  )
   if (errMsg && !job) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#ffffff', gap: '1rem' }}>
       <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '16px 24px', borderRadius: '8px', fontSize: '13px', maxWidth: '500px', textAlign: 'center' }}>{errMsg}</div>
@@ -5526,7 +5547,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'schedule', label: 'Schedule' },
                   { key: 'closeout', label: 'Closeout' },
                   { key: 'warranty', label: 'Warranty', badge: warrantyOrders.filter(o => o.status !== 'resolved').length || null },
-                  ...(userRole === 'pm' ? [{ key: 'history', label: 'History' }] : []),
+                  ...(atLeastPM(userRole) ? [{ key: 'history', label: 'History' }] : []),
                 ],
               },
               {
@@ -5562,7 +5583,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 items: [
                   { key: 'subs', label: 'Companies', badge: subs.length || null },
                   { key: 'contracts', label: 'Contracts', badge: contracts.length || null },
-                  ...(userRole === 'pm' ? [{ key: 'labor', label: 'Labor', badge: laborAllocations.length || null }] : []),
+                  ...(isPrincipal(userRole) ? [{ key: 'labor', label: 'Labor', badge: laborAllocations.length || null }] : []),
                 ],
               },
             ].map(({ group, items }) => (
@@ -5600,7 +5621,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <option value="schedule">Schedule</option>
             <option value="closeout">Closeout</option>
             <option value="warranty">Warranty</option>
-            {userRole === 'pm' && <option value="history">History</option>}
+            {atLeastPM(userRole) && <option value="history">History</option>}
           </optgroup>
           <optgroup label="Financials">
             <option value="budget">Budget</option>
@@ -5625,7 +5646,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           <optgroup label="Team">
             <option value="subs">Companies</option>
             <option value="contracts">Contracts</option>
-            {userRole === 'pm' && <option value="labor">Labor</option>}
+            {isPrincipal(userRole) && <option value="labor">Labor</option>}
           </optgroup>
         </select>
 
@@ -5725,7 +5746,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {/* Right column */}
               <div>
                 {/* Financial summary (PM only) */}
-                {userRole === 'pm' && ovCard(
+                {atLeastPM(userRole) && ovCard(
                   <>
                     {ovSec('Financial Summary')}
                     {overviewLoading && <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>Loading…</p>}
@@ -5792,12 +5813,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )
                     })}
-                    {userRole === 'pm' && <button onClick={() => setActiveTab('history')} style={{ marginTop: recentActivity.length > 0 ? '10px' : 0, fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>Full history →</button>}
+                    {atLeastPM(userRole) && <button onClick={() => setActiveTab('history')} style={{ marginTop: recentActivity.length > 0 ? '10px' : 0, fontSize: '12px', color: '#6b7280', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>Full history →</button>}
                   </>
                 )}
 
                 {/* Quick actions */}
-                {userRole === 'pm' && ovCard(
+                {atLeastPM(userRole) && ovCard(
                   <>
                     {ovSec('Quick Actions')}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -9909,18 +9930,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input type="number" step="0.01" min="0" style={s.input} required value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '2fr 1fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '2fr 1fr 1fr 1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Description *</label>
                         <input style={s.input} required value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} placeholder="Lumber, concrete delivery..." />
                       </div>
-                      {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
+                      {(userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Vendor</label>
                           <input style={s.input} value={dcForm.vendor} onChange={e => setDcForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Home Depot, ABC Supply..." />
                         </div>
                       )}
-                      {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
+                      {(userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Budget line</label>
                           <select style={s.input} value={dcForm.budget_item_id} onChange={e => setDcForm(f => ({ ...f, budget_item_id: e.target.value }))}>
@@ -9934,12 +9955,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: (userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin') ? '1fr 1fr' : '1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={s.label}>Reason *</label>
                         <input style={s.input} required value={dcForm.reason} onChange={e => setDcForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why was this purchase made?" />
                       </div>
-                      {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
+                      {(userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin') && (
                         <div>
                           <label style={s.label}>Assigned To</label>
                           <select style={s.input} value={dcForm.assigned_to} onChange={e => setDcForm(f => ({ ...f, assigned_to: e.target.value }))}>
@@ -9949,7 +9970,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                     </div>
-                    {(userRole === 'pm' || userRole === 'apm' || userRole === 'admin' || userRole === 'super') && (
+                    {(userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin' || userRole === 'super') && (
                       <div style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                           <input type="checkbox" checked={dcForm.bill_to_owner} onChange={e => setDcForm(f => ({ ...f, bill_to_owner: e.target.checked }))} />
@@ -10087,7 +10108,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
                 const drawnApp = c.drawn_application_id ? aiaApplications.find(a => a.id === c.drawn_application_id) : null
                 const isDup = activeDupIds.has(c.id)
-                const canReview = userRole === 'pm' || userRole === 'apm' || userRole === 'admin'
+                const canReview = userRole === 'principal' || userRole === 'pm' || userRole === 'apm' || userRole === 'admin'
                 return (
                   <div key={c.id} style={{ ...s.billingEntryRow, border: `1px solid ${c.drawn_application_id ? '#e9d5ff' : c.is_credit ? '#fecdd3' : c.status === 'approved' ? '#bbf7d0' : c.status === 'rejected' ? '#fecaca' : '#e5e7eb'}` }}>
                     <div style={s.billingEntryHeader}>
@@ -11699,7 +11720,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         )}
 
         {/* ── LABOR TAB ── */}
-        {activeTab === 'labor' && userRole === 'pm' && (() => {
+        {activeTab === 'labor' && isPrincipal(userRole) && (() => {
           const fmtD = (n) => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           const totalLaborCost = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
           const totalDrawn = laborAllocations.reduce((a, al) => a + allocDrawn(al), 0)
@@ -13592,7 +13613,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         })()}
 
         {/* ── HISTORY TAB ── */}
-        {activeTab === 'history' && userRole === 'pm' && (
+        {activeTab === 'history' && atLeastPM(userRole) && (
           <div>
             <p style={s.cardTitle}>Change History</p>
             {changeLogLoading ? (

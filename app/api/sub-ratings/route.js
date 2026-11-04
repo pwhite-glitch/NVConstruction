@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, accessibleJobIds, isJobLimited } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -12,9 +13,19 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const sub_id = searchParams.get('sub_id')
   const job_id = searchParams.get('job_id')
+  if (job_id) {
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
+  }
   let q = adminSupabase.from('sub_ratings').select('*, jobs(job_number, project_name)')
   if (sub_id) q = q.eq('sub_id', sub_id)
   if (job_id) q = q.eq('job_id', job_id)
+  else if (isJobLimited(auth.role)) {
+    const { ids, error: accErr } = await accessibleJobIds(adminSupabase, auth)
+    if (accErr) return Response.json({ error: accErr.message }, { status: 500 })
+    if (ids.size === 0) return Response.json({ ratings: [] })
+    q = q.in('job_id', [...ids])
+  }
   const { data, error } = await q.order('created_at', { ascending: false })
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ratings: data || [] })
@@ -27,6 +38,8 @@ export async function POST(request) {
   if (!sub_id || !job_id || !rated_by) {
     return Response.json({ error: 'sub_id, job_id, rated_by required' }, { status: 400 })
   }
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data: rating, error } = await adminSupabase
     .from('sub_ratings')
     .upsert({ sub_id, job_id, rated_by, quality, timeliness, communication, notes: notes || null }, { onConflict: 'sub_id,job_id' })

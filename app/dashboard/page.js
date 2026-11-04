@@ -16,6 +16,7 @@ import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJobIds, homePathForRole } from '../../lib/roles'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -138,9 +139,9 @@ const s = {
   coiWarning: { background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px', padding: '10px 14px', fontSize: '13px', color: '#c2410c', marginBottom: '1rem' },
   roleBadge: (role) => ({
     padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase',
-    background: role === 'pm' ? '#faf5ff' : role === 'apm' ? '#eff6ff' : role === 'super' ? '#f0fdf4' : '#fff7ed',
-    color: role === 'pm' ? '#7c3aed' : role === 'apm' ? '#1d4ed8' : role === 'super' ? '#15803d' : '#c2410c',
-    border: `1px solid ${role === 'pm' ? '#e9d5ff' : role === 'apm' ? '#bfdbfe' : role === 'super' ? '#bbf7d0' : '#fed7aa'}`
+    background: rolePill(role).background,
+    color: rolePill(role).color,
+    border: `1px solid ${rolePill(role).border}`
   }),
 
   // ── Form containers ──
@@ -559,10 +560,12 @@ export default function Dashboard() {
       if (prof.role === 'super') { router.push('/field'); return }
       if (prof.role === 'roofing_rep') { router.push('/sales?division=commercial_roofing'); return }
       if (prof.role === 'metal_rep') { router.push('/sales?division=metal_buildings'); return }
-      if (prof.role !== 'pm' && prof.role !== 'apm' && prof.role !== 'admin') { router.push('/submit'); return }
-      if (prof.role === 'pm') localStorage.setItem('nvc_pm_session', '1')
+      if (!isPrincipal(prof.role) && prof.role !== 'pm' && prof.role !== 'apm' && prof.role !== 'admin') { router.push(homePathForRole(prof.role)); return }
+      // Dev role switcher / preview is Owner (principal) only
+      if (isPrincipal(prof.role)) localStorage.setItem('nvc_pm_session', '1')
+      else if (!document.cookie.includes('nvc_preview_role=')) localStorage.removeItem('nvc_pm_session')
       const devRole = localStorage.getItem('nvc_dev_role')
-      const effectiveProf = (devRole && prof.role === 'pm') ? { ...prof, role: devRole } : prof
+      const effectiveProf = (devRole && isPrincipal(prof.role)) ? { ...prof, role: devRole } : prof
       setProfile(effectiveProf)
       // Load permission flags for this role so navGroups and feature gates use the DB values
       fetch(`/api/role-permissions?role=${effectiveProf.role}`, {
@@ -574,12 +577,9 @@ export default function Dashboard() {
         const stored = localStorage.getItem(`nvc_starred_jobs_${prof.id}`)
         if (stored) setStarredJobIds(new Set(JSON.parse(stored)))
       } catch {}
-      let jobIds = null
-      if (prof.role === 'apm') {
-        const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id').eq('user_id', session.user.id)
-        jobIds = (assigns || []).map(a => a.job_id)
-        setAssignedJobIds(jobIds)
-      }
+      // PM/APM: only their jobs (assignment OR pm_email). Principal/admin: every job.
+      const jobIds = await myJobIds(effectiveProf.role, session)
+      if (jobIds) setAssignedJobIds(jobIds)
       await loadAll(jobIds)
       loadTeamData()
       loadLookaheadReview()
@@ -596,9 +596,10 @@ export default function Dashboard() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      if (prof?.role === 'apm') {
-        const { data: assigns } = await supabase.from('pm_job_assignments').select('job_id').eq('user_id', session.user.id)
-        const jobIds = (assigns || []).map(a => a.job_id)
+      const devRole = localStorage.getItem('nvc_dev_role')
+      const role = (devRole && isPrincipal(prof?.role)) ? devRole : prof?.role
+      if (isJobLimited(role)) {
+        const jobIds = await myJobIds(role, session)
         setAssignedJobIds(jobIds)
         await loadAll(jobIds)
       }
@@ -623,6 +624,13 @@ export default function Dashboard() {
     if (activeTab === 'lookahead') { loadLookaheadReview(); if (!lookaheadThisWeek) loadLookaheadThisWeek() }
     if (activeTab === 'direct-costs') loadDcQueue()
   }, [activeTab])
+
+  // Job ids for a PM/APM (lib/roles accessibleJobIds: assignment OR pm_email), else null = all jobs.
+  async function myJobIds(role, session) {
+    if (!isJobLimited(role)) return null
+    const { ids } = await accessibleJobIds(supabase, { role, userId: session.user.id, email: session.user.email })
+    return ids ? [...ids] : []
+  }
 
   async function loadDcQueue() {
     try {
@@ -1049,8 +1057,9 @@ export default function Dashboard() {
     }
     const ids = jobIds !== undefined ? jobIds : assignedJobIds
     let q = supabase.from('bid_packages').select('*').order('created_at', { ascending: false })
-    if (ids !== null && ids.length > 0) q = q.in('job_id', ids)
-    else if (ids !== null && ids.length === 0) { setBidPackages([]); return }
+    // PM: packages on their jobs, plus packages not tied to a job yet (pre-award bids)
+    if (ids !== null && ids.length > 0) q = q.or(`job_id.is.null,job_id.in.(${ids.join(',')})`)
+    else if (ids !== null && ids.length === 0) q = q.is('job_id', null)
     const { data } = await q
     setBidPackages(data || [])
   }
@@ -1413,7 +1422,7 @@ export default function Dashboard() {
       job_type: 'commercial',
     }).select('id').single()
     if (error) { setJobMsg('Error: ' + error.message); return }
-    if (profile?.role === 'apm') {
+    if (isJobLimited(profile?.role)) {
       const { data: { session } } = await supabase.auth.getSession()
       await supabase.from('pm_job_assignments').insert({ job_id: data.id, user_id: session.user.id, assigned_by: session.user.id })
     }
@@ -1442,6 +1451,10 @@ export default function Dashboard() {
       sub_billing_anchor: newResJob.sub_billing_anchor || null,
     }).select('id').single()
     if (error) { setResJobMsg('Error: ' + error.message); return }
+    if (isJobLimited(profile?.role)) {
+      const { data: { session } } = await supabase.auth.getSession()
+      await supabase.from('pm_job_assignments').insert({ job_id: data.id, user_id: session.user.id, assigned_by: session.user.id })
+    }
     router.push(`/residentialjobdetail?id=${data.id}`)
   }
 
@@ -3300,7 +3313,7 @@ ${planLinks.map(p => p.url
 
   // p() checks the permissions table when loaded, falls back to role-based defaults while loading
   const p = userPerms
-  const can = (key, fallback) => p ? p.has(key) : fallback
+  const can = (key, fallback) => isPrincipal(profile?.role) ? true : p ? p.has(key) : fallback
 
   const navGroups = [
     {
@@ -3330,15 +3343,15 @@ ${planLinks.map(p => p.url
       label: 'People',
       items: [
         { tab: 'directory', label: 'Companies', icon: <IconUsers />, badge: dirBadge },
-        ...(can('tab.nv_team',   profile?.role === 'pm')  ? [{ tab: 'nv-directory', label: 'NV Team',   icon: <IconBuilding /> }] : []),
-        ...(can('tab.employees', profile?.role === 'pm')  ? [{ tab: 'employees',    label: 'Employees', icon: <IconUsers /> }]    : []),
+        ...(isPrincipal(profile?.role) ? [{ tab: 'nv-directory', label: 'NV Team',   icon: <IconBuilding /> }] : []),
+        ...(isPrincipal(profile?.role) ? [{ tab: 'employees',    label: 'Employees', icon: <IconUsers /> }]    : []),
       ]
     },
-    ...(can('tab.vehicles', ['pm', 'apm'].includes(profile?.role)) ? [{
+    ...(can('tab.vehicles', ['principal', 'pm', 'apm'].includes(profile?.role)) ? [{
       label: 'Equipment',
       items: [
         { tab: 'vehicles', label: profile?.role === 'apm' ? 'My Vehicle' : 'Fleet', icon: <IconTruck /> },
-        ...(can('tab.tools', ['pm', 'apm'].includes(profile?.role)) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
+        ...(can('tab.tools', ['principal', 'pm', 'apm'].includes(profile?.role)) ? [{ tab: 'tools', label: 'Tools', icon: <IconWrench /> }] : []),
         ...(isLandon ? [{ tab: 'maintenance', label: 'Maintenance Report', icon: <IconWrench /> }] : []),
       ]
     }] : []),
@@ -3346,11 +3359,11 @@ ${planLinks.map(p => p.url
       label: 'Business',
       items: [
         ...(can('tab.estimator', true) ? [{ tab: 'estimator', label: 'Estimator', icon: <IconCalc /> }] : []),
-        ...(can('tab.bd',        profile?.role === 'pm') ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
+        ...(isPrincipal(profile?.role) ? [{ tab: 'bd', label: 'Business Dev', icon: <IconTrend /> }] : []),
         ...(can('tab.calendar',  true) ? [{ tab: 'calendar', label: 'Calendar', icon: <IconCal /> }] : []),
       ]
     },
-    ...(profile?.role === 'pm' ? [{
+    ...(isPrincipal(profile?.role) ? [{
       items: [{ tab: 'permissions', label: 'Permissions', icon: <IconKey /> }]
     }] : []),
   ].filter(g => !g.items || g.items.length > 0)
@@ -5339,8 +5352,8 @@ ${planLinks.map(p => p.url
                         <label style={s.label}>PM contact (for sub emails)</label>
                         <select style={s.input} value={newJob.pm_email} onChange={e => setNewJob(j => ({ ...j, pm_email: e.target.value }))}>
                           <option value="">— Select PM —</option>
-                          {teamMembers.filter(m => m.role === 'pm' || m.role === 'apm').map(m => (
-                            <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
+                          {teamMembers.filter(m => m.role === 'principal' || m.role === 'pm' || m.role === 'apm').map(m => (
+                            <option key={m.id} value={m.email}>{m.full_name || m.email} ({roleLabel(m.role).toUpperCase()})</option>
                           ))}
                         </select>
                       </div>
@@ -5590,8 +5603,8 @@ ${planLinks.map(p => p.url
                         <label style={s.label}>PM contact (for sub emails)</label>
                         <select style={s.input} value={newResJob.pm_email} onChange={e => setNewResJob(j => ({ ...j, pm_email: e.target.value }))}>
                           <option value="">— Select PM —</option>
-                          {teamMembers.filter(m => m.role === 'pm' || m.role === 'apm').map(m => (
-                            <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
+                          {teamMembers.filter(m => m.role === 'principal' || m.role === 'pm' || m.role === 'apm').map(m => (
+                            <option key={m.id} value={m.email}>{m.full_name || m.email} ({roleLabel(m.role).toUpperCase()})</option>
                           ))}
                         </select>
                       </div>
@@ -5710,7 +5723,7 @@ ${planLinks.map(p => p.url
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{bidPackages.length} package{bidPackages.length !== 1 ? 's' : ''} · {bidPackages.filter(b => b.status === 'open').length} open{bidPackages.filter(b => b.status === 'won').length > 0 ? ` · ${bidPackages.filter(b => b.status === 'won').length} won` : ''}{bidPackages.filter(b => b.status === 'lost').length > 0 ? ` · ${bidPackages.filter(b => b.status === 'lost').length} lost` : ''}</p>
-                  {profile?.role === 'pm' && <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>{showCreateBid ? 'Cancel' : '+ New bid package'}</button>}
+                  {atLeastPM(profile?.role) && <button style={s.btnSm('orange')} onClick={() => setShowCreateBid(v => !v)}>{showCreateBid ? 'Cancel' : '+ New bid package'}</button>}
                 </div>
 
                 {showCreateBid && (
@@ -5824,7 +5837,7 @@ ${planLinks.map(p => p.url
                                 if (showScopeMatrix !== pkg.id) { loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
                               }}>📋 Coverage Matrix</button>
                             )}
-                            {profile?.role === 'pm' && <>
+                            {atLeastPM(profile?.role) && <>
                               {pkg.status === 'open' && <>
                                 <button style={s.btnSm('green')} onClick={() => setBidStatus(pkg.id, 'won')}>✓ Won</button>
                                 <button style={s.btnSm('red')} onClick={() => setBidStatus(pkg.id, 'lost')}>✗ Lost</button>
@@ -5970,7 +5983,7 @@ ${planLinks.map(p => p.url
                             )
                           })()}
 
-                          {profile?.role === 'pm' && (() => {
+                          {atLeastPM(profile?.role) && (() => {
                             const apms = teamMembers.filter(m => m.role === 'apm')
                             if (!apms.length) return null
                             return (
@@ -6572,7 +6585,7 @@ ${planLinks.map(p => p.url
                           <p style={s.meta}>{member.email}{member.phone ? ' · ' + member.phone : ''}</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={s.roleBadge(member.role)}>{member.role}</span>
+                          <span style={s.roleBadge(member.role)}>{roleLabel(member.role)}</span>
                           <span style={{ color: '#6b7280', fontSize: '16px' }}>{isExp ? '▲' : '▼'}</span>
                         </div>
                       </div>
@@ -6632,6 +6645,7 @@ ${planLinks.map(p => p.url
                                     onChange={e => updateTeamRole(member.id, e.target.value)}
                                     disabled={updatingRoleId === member.id}
                                   >
+                                    {member.role === 'principal' && <option value="principal">Owner</option>}
                                     <option value="pm">PM</option>
                                     <option value="apm">Assistant PM</option>
                                     <option value="super">Superintendent</option>
@@ -6829,15 +6843,15 @@ ${planLinks.map(p => p.url
                                     {est.project_type && <span style={{ fontSize: '10px', color: '#6b7280', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '3px', padding: '1px 5px' }}>{est.project_type}</span>}
                                   </div>
                                   <div style={{ display: 'flex', gap: '4px', marginTop: '8px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
-                                    {PREV[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '4px', color: '#6b7280', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, PREV[stage.key])}>← Back</button>}
-                                    {NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid var(--nv-border-strong)', borderRadius: '4px', color: '#374151', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} →</button>}
-                                    {stage.key !== 'won' && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', color: '#16a34a', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'won')}>Won ✓</button>}
-                                    <button style={{ fontSize: '10px', padding: '2px 6px', background: '#fef2f2', border: '1px solid var(--nv-red-border)', borderRadius: '4px', color: '#dc2626', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost ✗</button>
+                                    {isPrincipal(profile?.role) && PREV[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '4px', color: '#6b7280', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, PREV[stage.key])}>← Back</button>}
+                                    {isPrincipal(profile?.role) && NEXT[stage.key] && <button style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', border: '1px solid var(--nv-border-strong)', borderRadius: '4px', color: '#374151', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, NEXT[stage.key])}>{STAGES.find(s => s.key === NEXT[stage.key])?.label.charAt(0) + STAGES.find(s => s.key === NEXT[stage.key])?.label.slice(1).toLowerCase().split(' ')[0]} →</button>}
+                                    {isPrincipal(profile?.role) && stage.key !== 'won' && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', color: '#16a34a', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'won')}>Won ✓</button>}
+                                    {isPrincipal(profile?.role) && <button style={{ fontSize: '10px', padding: '2px 6px', background: '#fef2f2', border: '1px solid var(--nv-red-border)', borderRadius: '4px', color: '#dc2626', cursor: 'pointer' }} onClick={() => moveEstimateStage(est.id, 'lost')}>Lost ✗</button>}
                                   </div>
                                 </div>
                               )
                             })}
-                            {stage.key === 'lead' && ['pm', 'apm'].includes(profile?.role) && (
+                            {stage.key === 'lead' && isPrincipal(profile?.role) && (
                               <button style={{ background: 'transparent', border: '1px dashed var(--nv-border-strong)', borderRadius: '8px', color: '#374151', cursor: 'pointer', padding: '10px', fontSize: '12px', textAlign: 'center' }}
                                 onClick={() => { setEstimatorInnerTab('estimates'); setShowNewEstimate(true) }}>
                                 + New estimate
@@ -6912,7 +6926,7 @@ ${planLinks.map(p => p.url
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} — won/lost are in Archive</p>
-                  {['pm', 'apm'].includes(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
+                  {isPrincipal(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
                 {showNewEstimate && (
@@ -7301,7 +7315,7 @@ ${planLinks.map(p => p.url
                                   </div>
                                 ))}
                               </div>
-                              {profile?.role === 'pm' && (() => {
+                              {isPrincipal(profile?.role) && (() => {
                                 const apms = teamMembers.filter(m => m.role === 'apm')
                                 if (!apms.length) return null
                                 return (
@@ -7322,7 +7336,7 @@ ${planLinks.map(p => p.url
                               })()}
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: convertingEst === est.id ? '1rem' : 0 }}>
                                 <button style={s.btnSm('orange')} onClick={() => generateEstimatePDF(est)}>Export PDF</button>
-                                {['pm', 'apm'].includes(profile?.role) && <>
+                                {isPrincipal(profile?.role) && <>
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
                                     setEditEstimateBase(est.updated_at ?? null)
@@ -7455,7 +7469,7 @@ ${planLinks.map(p => p.url
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ fontSize: '16px', fontWeight: '800', color: isWon ? '#16a34a' : '#555' }}>{fmtC(tot)}</span>
                                 <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase', background: isWon ? '#dcfce7' : '#fef2f2', color: isWon ? '#16a34a' : '#dc2626', border: `1px solid ${isWon ? '#bbf7d0' : '#fecaca'}` }}>{isWon ? 'Won' : 'Lost'}</span>
-                                <button style={{ ...s.btnSm('orange'), fontSize: '11px' }} onClick={() => moveEstimateStage(est.id, 'lead')}>Restore →</button>
+                                {isPrincipal(profile?.role) && <button style={{ ...s.btnSm('orange'), fontSize: '11px' }} onClick={() => moveEstimateStage(est.id, 'lead')}>Restore →</button>}
                               </div>
                             </div>
                           </div>
@@ -7766,7 +7780,7 @@ ${planLinks.map(p => p.url
             })()}
 
             {/* ── EMPLOYEES ── */}
-            {activeTab === 'employees' && profile?.role === 'pm' && (() => {
+            {activeTab === 'employees' && isPrincipal(profile?.role) && (() => {
               const fmtW = (n) => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
               const weeklyTotal = (e) =>
                 Number(e.weekly_salary || 0) + Number(e.weekly_truck || 0) + Number(e.weekly_healthcare || 0) + Number(e.weekly_taxes || 0)
@@ -8172,7 +8186,7 @@ ${planLinks.map(p => p.url
               )
             })()}
 
-            {activeTab === 'vehicles' && ['pm', 'apm'].includes(profile?.role) && (() => {
+            {activeTab === 'vehicles' && ['principal', 'pm', 'apm'].includes(profile?.role) && (() => {
               if (profile?.role === 'apm') {
                 const myVehicle = vehicles.find(v => v.assigned_to === profile?.id)
                 const LOG_TYPES_APM = ['Weekly Miles', 'Mileage Update', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Other']
@@ -8401,7 +8415,7 @@ ${planLinks.map(p => p.url
               )
             })()}
 
-            {activeTab === 'tools' && ['pm', 'apm'].includes(profile?.role) && (() => {
+            {activeTab === 'tools' && ['principal', 'pm', 'apm'].includes(profile?.role) && (() => {
               const CATEGORIES = ['Power Tools', 'Hand Tools', 'Measuring', 'Safety', 'Equipment', 'Other']
               const STATUS_COLORS = { available: '#16a34a', checked_out: '#d97706', repair: '#3b82f6', lost: '#ef4444' }
               const COND_COLORS = { good: '#16a34a', fair: '#d97706', poor: '#ef4444' }
@@ -8831,7 +8845,7 @@ ${planLinks.map(p => p.url
               )
             })()}
 
-            {activeTab === 'permissions' && profile?.role === 'pm' && (
+            {activeTab === 'permissions' && isPrincipal(profile?.role) && (
               <div>
                 <div style={{ marginBottom: '1.5rem' }}>
                   <h2 style={s.sectionTitle}>Role Permissions</h2>

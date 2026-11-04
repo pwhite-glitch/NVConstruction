@@ -250,14 +250,14 @@ export default function AdminPortal() {
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       const devRole = localStorage.getItem('nvc_dev_role')
-      const devIsAdminOverride = devRole === 'admin' && prof?.role === 'pm'
+      const devIsAdminOverride = devRole === 'admin' && prof?.role === 'principal'
       // Partners may open /admin for the Bot Access tab whatever their role
       if (!devIsAdminOverride && (!prof || (prof.role !== 'admin' && !isPartner(prof.id)))) { router.push('/login'); return }
       setProfile(devIsAdminOverride ? { ...prof, role: 'admin' } : prof)
       const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, membersRes] = await Promise.all([
         supabase.from('jobs').select('id, job_number, project_name, payment_type').order('created_at', { ascending: false }),
         supabase.from('sub_directory').select('*').order('company_name'),
-        supabase.from('profiles').select('id, full_name').in('role', ['pm', 'apm', 'admin', 'super']),
+        supabase.from('profiles').select('id, full_name').in('role', ['principal', 'pm', 'apm', 'admin', 'super']),
         supabase.from('companies').select('*'),
         authFetch('/api/company-members').then(r => r.json()),
       ])

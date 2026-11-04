@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { notify } from '../../../lib/notify'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 import { subCanSeeJob } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
@@ -24,6 +25,9 @@ export async function GET(request) {
     sub_id = auth.userId
   } else if (!isPM(auth.role)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
+  } else {
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
   }
   let q = adminSupabase.from('punch_list_items').select('*').eq('job_id', job_id).order('created_at')
   if (sub_id) q = q.eq('assigned_sub_id', sub_id)
@@ -37,6 +41,8 @@ export async function POST(request) {
   if (auth.error) return auth.error
   const { job_id, title, description, assigned_sub_id, assigned_company, due_date, created_by } = await request.json()
   if (!job_id || !title) return Response.json({ error: 'job_id and title required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
   const { data: item, error } = await adminSupabase
     .from('punch_list_items')
     .insert({ job_id, title, description: description || null, assigned_sub_id: assigned_sub_id || null, assigned_company: assigned_company || null, due_date: due_date || null, created_by: created_by || null })
@@ -96,6 +102,9 @@ export async function PATCH(request) {
     if (!item || item.assigned_sub_id !== auth.userId) return Response.json({ error: 'Forbidden' }, { status: 403 })
   } else if (!isPM(auth.role)) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
+  } else {
+    const denied = await denyJobOf(adminSupabase, auth, 'punch_list_items', id)
+    if (denied) return denied
   }
   const updates = {}
   if (status !== undefined) {
@@ -119,6 +128,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
+  const denied = await denyJobOf(adminSupabase, auth, 'punch_list_items', id)
+  if (denied) return denied
   const { error } = await adminSupabase.from('punch_list_items').delete().eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true })

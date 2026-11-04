@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM, isSub } from '../../../lib/server-auth'
+import { denyJobs, isJobLimited } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -19,6 +20,28 @@ async function subInvitedToPlans(auth, paths) {
   return pkgIds.every(id => invited.has(id))
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// PM/APM: the bid packages behind these plan paths (bid_plans rows, else the
+// <package id>/ path prefix) must be on their jobs. Packages with no job pass.
+async function denyPlanJobs(auth, body) {
+  if (!isJobLimited(auth.role)) return null
+  const paths = (body.action === 'bulk-signed-urls' ? (body.paths || []) : [body.path || body.storage_path]).filter(Boolean)
+  const pkgIds = new Set(body.bid_package_id ? [body.bid_package_id] : [])
+  if (paths.length) {
+    const { data: plans } = await adminSupabase.from('bid_plans').select('storage_path, bid_package_id').in('storage_path', paths)
+    for (const p of plans || []) pkgIds.add(p.bid_package_id)
+    for (const path of paths) {
+      const prefix = String(path).split('/')[0]
+      if (UUID_RE.test(prefix)) pkgIds.add(prefix)
+    }
+  }
+  if (!pkgIds.size) return null
+  const { data: pkgs, error } = await adminSupabase.from('bid_packages').select('job_id').in('id', [...pkgIds])
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  return denyJobs(adminSupabase, auth, (pkgs || []).map(p => p.job_id))
+}
+
 // Office staff: every action. Sub users: view (signed) URLs for plans on
 // packages they were invited to bid on.
 export async function POST(request) {
@@ -31,6 +54,9 @@ export async function POST(request) {
       if (!isSub(auth.role) || !SUB_ACTIONS.has(body.action)) return Response.json({ error: 'Forbidden' }, { status: 403 })
       const paths = body.action === 'signed-url' ? [body.path].filter(Boolean) : (body.paths || [])
       if (!(await subInvitedToPlans(auth, paths))) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    } else {
+      const denied = await denyPlanJobs(auth, body)
+      if (denied) return denied
     }
     // Office can issue long-lived links for bid invite emails; sub links last at most an hour
     const expiry = isPM(auth.role) ? (body.expiry || 3600) : Math.min(Number(body.expiry) || 3600, 3600)

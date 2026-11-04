@@ -1,13 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { buildZip } from '../../../lib/zip-builder'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const ALLOWED_ROLES = new Set(['pm', 'apm', 'admin', 'super'])
+const ALLOWED_ROLES = new Set(['principal', 'pm', 'apm', 'admin', 'super'])
 
 export async function POST(request) {
   const auth = await requireAuth(request)
@@ -33,12 +34,17 @@ export async function POST(request) {
   // Verify the bid package exists
   const { data: pkg, error: pkgErr } = await adminSupabase
     .from('bid_packages')
-    .select('id, title')
+    .select('id, title, job_id')
     .eq('id', bidPackageId)
     .maybeSingle()
 
   if (pkgErr || !pkg) {
     return Response.json({ error: 'Bid package not found' }, { status: 404 })
+  }
+  // A package with no job is not job-scoped
+  if (pkg.job_id) {
+    const denied = await denyJob(adminSupabase, auth, pkg.job_id)
+    if (denied) return denied
   }
 
   // Fetch only plans that belong to this package and match the requested IDs

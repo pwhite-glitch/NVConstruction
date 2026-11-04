@@ -141,7 +141,7 @@ export default function OwnerPortal() {
 
     const { data: profile } = await supabase.from('profiles').select('role, full_name, invite_email').eq('id', session.user.id).single()
 
-    const dev = devRole === 'owner' && (pmSession === '1' || ['pm', 'apm', 'admin'].includes(profile?.role))
+    const dev = devRole === 'owner' && (pmSession === '1' || ['principal', 'pm', 'apm', 'admin'].includes(profile?.role))
     setIsDevPreview(dev)
     setCurrentUserName(profile?.full_name || session.user.email)
     setCurrentUserEmail(session.user.email)

@@ -3,7 +3,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
+// Owner-only tool. 'principal' is the real role (no override); the rest are previews.
 const ROLES = [
+  { value: 'principal',     label: 'Owner',        color: '#ca8a04', portal: '/dashboard' },
   { value: 'pm',            label: 'PM',          color: '#e8590c', portal: '/dashboard' },
   { value: 'apm',           label: 'APM',          color: '#f59e0b', portal: '/dashboard' },
   { value: 'admin',         label: 'Admin',        color: '#06b6d4', portal: '/admin' },
@@ -11,7 +13,7 @@ const ROLES = [
   { value: 'subcontractor', label: 'Sub',          color: '#22c55e', portal: '/submit' },
   { value: 'sub_pm',        label: 'Sub PM',       color: '#a78bfa', portal: '/submit' },
   { value: 'sub_admin',     label: 'Sub Admin',    color: '#ec4899', portal: '/submit' },
-  { value: 'owner',         label: 'Owner',        color: '#10b981', portal: '/owner' },
+  { value: 'owner',         label: 'Client Owner', color: '#10b981', portal: '/owner' },
 ]
 
 const SUB_ROLES = new Set(['subcontractor', 'sub_pm', 'sub_admin'])
@@ -55,10 +57,10 @@ export default function DevRoleSwitcher() {
   // When a server preview is running, defer to the PreviewBanner
   if (previewActive) return null
 
-  const current = ROLES.find(r => r.value === (devRole || 'pm')) || ROLES[0]
+  const current = ROLES.find(r => r.value === (devRole || 'principal')) || ROLES[0]
 
   function switchRole(role) {
-    if (role.value === 'pm') {
+    if (role.value === 'principal') {
       localStorage.removeItem('nvc_dev_role')
       setDevRole(null)
     } else {
@@ -129,14 +131,14 @@ export default function DevRoleSwitcher() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
                     padding: '7px 10px', marginBottom: '4px', borderRadius: '7px', border: 'none',
-                    background: (devRole || 'pm') === role.value ? '#1e1e1e' : 'transparent',
-                    color: (devRole || 'pm') === role.value ? '#fff' : '#999',
+                    background: (devRole || 'principal') === role.value ? '#1e1e1e' : 'transparent',
+                    color: (devRole || 'principal') === role.value ? '#fff' : '#999',
                     cursor: 'pointer', fontSize: '13px', fontWeight: '600', textAlign: 'left',
                   }}
                 >
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: role.color, flexShrink: 0 }} />
                   {role.label}
-                  {(devRole || 'pm') === role.value && <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#555' }}>active</span>}
+                  {(devRole || 'principal') === role.value && <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#555' }}>active</span>}
                 </button>
               ))}
             </>

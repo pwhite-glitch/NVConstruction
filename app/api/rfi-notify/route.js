@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { notify } from '../../../lib/notify'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notifyRfiSubmitted, sendRfiMail as mail, wrapRfiEmail as wrap } from '../../../lib/rfi-notify'
 
 const adminSupabase = createClient(
@@ -15,6 +16,8 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const job_id = searchParams.get('job_id')
   if (!job_id) return Response.json({ error: 'Pass ?job_id=xxx' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, job_id)
+  if (denied) return denied
 
   const { data: job, error: jobErr } = await adminSupabase
     .from('jobs').select('project_name, job_number, pm_email').eq('id', job_id).single()
@@ -36,6 +39,14 @@ export async function POST(request) {
   try {
     const body = await request.json()
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || ''
+    if (body.rfi_id) {
+      const deniedRfi = await denyJobOf(adminSupabase, auth, 'rfis', body.rfi_id)
+      if (deniedRfi) return deniedRfi
+    }
+    if (body.job_id || !body.rfi_id) {
+      const denied = await denyJob(adminSupabase, auth, body.job_id)
+      if (denied) return denied
+    }
 
     if (body.action === 'submitted') {
       const result = await notifyRfiSubmitted({ job_id: body.job_id, title: body.title, description: body.description, submitter_name: body.super_name })

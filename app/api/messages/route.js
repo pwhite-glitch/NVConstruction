@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, isPM, isSub } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 import { subCanSeeJob } from '../../../lib/sub-access'
 import { escapeHtml } from '../../../lib/email'
 
@@ -13,7 +14,11 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 // Threads are per job + sub user. Office staff read/write any thread; a sub
 // only their own thread (sub_id is always the session user) on a job they see.
 async function resolveThread(auth, job_id, sub_id) {
-  if (isPM(auth.role)) return { sub_id, sender_role: 'pm' }
+  if (isPM(auth.role)) {
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return { error: denied }
+    return { sub_id, sender_role: 'pm' }
+  }
   if (!isSub(auth.role)) return { error: Response.json({ error: 'Forbidden' }, { status: 403 }) }
   if (!(await subCanSeeJob(auth, job_id))) return { error: Response.json({ error: 'Forbidden' }, { status: 403 }) }
   return { sub_id: auth.userId, sender_role: 'sub' }
@@ -83,7 +88,7 @@ export async function POST(request) {
     const { data: pmProfiles } = await adminSupabase
       .from('profiles')
       .select('email')
-      .in('role', ['pm', 'apm'])
+      .in('role', ['principal', 'pm', 'apm'])
     const pmEmails = (pmProfiles || []).map(p => p.email).filter(Boolean)
     if (pmEmails.length === 0) pmEmails.push(process.env.PM_EMAIL || 'management@nvim.co')
     await resend.emails.send({

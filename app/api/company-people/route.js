@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { getCompanyPeople, SUB_ROLE_LIST } from '../../../lib/sub-access'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,11 @@ export async function GET(request) {
   if (auth.error) return auth.error
   try {
     const { searchParams } = new URL(request.url)
+    // With job_id the result carries per-job access/billing state; without it, company-wide
+    if (searchParams.get('job_id')) {
+      const denied = await denyJob(adminSupabase, auth, searchParams.get('job_id'))
+      if (denied) return denied
+    }
     const result = await getCompanyPeople({
       companyId: searchParams.get('company_id') || null,
       companyName: searchParams.get('company_name') || null,

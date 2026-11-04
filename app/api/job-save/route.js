@@ -1,12 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const WRITER_ROLES = new Set(['pm', 'apm', 'admin'])
+const WRITER_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
 
 // Columns that may not exist if a migration hasn't been run yet.
 // On schema cache error, these are stripped and the update is retried.
@@ -26,6 +27,8 @@ export async function POST(request) {
 
   const { id, fields } = body
   if (!id || !fields) return Response.json({ error: 'id and fields required' }, { status: 400 })
+  const denied = await denyJob(adminSupabase, auth, id)
+  if (denied) return denied
 
   let updateFields = { ...fields }
   let { error } = await adminSupabase.from('jobs').update(updateFields).eq('id', id)

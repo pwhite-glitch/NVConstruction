@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { denyJob } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,6 +23,8 @@ export async function GET(request) {
     }
 
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
+    const denied = await denyJob(adminSupabase, auth, job_id)
+    if (denied) return denied
     const { data, error } = await adminSupabase
       .from('job_docs')
       .select('*')
@@ -59,6 +62,8 @@ export async function POST(request) {
     if (action === 'insert-doc') {
       const { job_id, url, name, doc_type } = body
       if (!job_id || !url || !name) return Response.json({ error: 'job_id, url, name required' }, { status: 400 })
+      const denied = await denyJob(adminSupabase, auth, job_id)
+      if (denied) return denied
       const { error } = await adminSupabase.from('job_docs').insert({ job_id, url, name, doc_type: doc_type || 'general' })
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ ok: true })

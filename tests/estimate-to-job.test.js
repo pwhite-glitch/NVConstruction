@@ -28,6 +28,8 @@ function mockQuery(table) {
     is: (c, v) => { filters.push(r => (r[c] ?? null) === v); return q },
     in: (c, vs) => { filters.push(r => vs.includes(r[c])); return q },
     range: (a, b) => { range = [a, b]; return q },
+    limit: () => q,
+    insert: row => { (db[table] = db[table] || []).push(row); return Promise.resolve({ data: null, error: null }) },
     maybeSingle: () => Promise.resolve(run()).then(r => ({ ...r, data: r.data[0] ?? null })),
     then: (res, rej) => Promise.resolve(run()).then(res, rej),
   }
@@ -79,6 +81,8 @@ function seed() {
       { id: 'b2', job_id: 'job-b', cost_code: '06-100', description: 'Carpentry', budget_amount: 7000, owner_amount: 7700, sort_order: 1 },
     ],
     profiles: [{ id: 'u1', full_name: 'Pat PM' }],
+    // PM/APM only see and link jobs they are on
+    pm_job_assignments: [{ job_id: 'job-a', user_id: 'u1' }, { job_id: 'job-b', user_id: 'u1' }],
   }
 }
 
@@ -214,8 +218,8 @@ describe('/api/estimates/to-job guards', () => {
     expect(mockRpcCalls).toEqual([])
   })
 
-  test('pm, apm and dev are allowed', () => {
-    expect([...JOB_LINK_ROLES].sort()).toEqual(['apm', 'dev', 'pm'])
+  test('principal, pm, apm and dev are allowed', () => {
+    expect([...JOB_LINK_ROLES].sort()).toEqual(['apm', 'dev', 'pm', 'principal'])
   })
 
   test('dev who is not creator/allowed on the estimate -> 403', async () => {
@@ -223,6 +227,35 @@ describe('/api/estimates/to-job guards', () => {
     const res = await post({ action: 'convert', id: EST, expected_updated_at: LOADED, job_number: '2026-010' })
     expect(res.status).toBe(403)
     expect(mockRpcCalls).toEqual([])
+  })
+})
+
+describe('job access (PM/APM limited to their jobs)', () => {
+  beforeEach(seed)
+
+  test('list_jobs hides jobs the PM is not on', async () => {
+    db.pm_job_assignments = [{ job_id: 'job-b', user_id: 'u1' }]
+    const res = await post({ action: 'list_jobs' })
+    expect((await res.json()).jobs.map(j => j.id)).toEqual(['job-b'])
+  })
+
+  test('preview / link on a job the PM is not on -> 403, no RPC', async () => {
+    db.pm_job_assignments = []
+    expect((await post({ action: 'preview_link', id: EST, job_id: 'job-a' })).status).toBe(403)
+    const res = await post({ action: 'link', id: EST, job_id: 'job-a', expected_updated_at: LOADED, expected_job_lines: [], expected_contract_value: null, contract_action: 'set' })
+    expect(res.status).toBe(403)
+    expect(mockRpcCalls).toEqual([])
+  })
+
+  test('convert assigns the PM to the new job; APM is left to the SQL function', async () => {
+    db.pm_job_assignments = []
+    expect((await post({ action: 'convert', id: EST, expected_updated_at: LOADED, job_number: '2026-010' })).status).toBe(200)
+    expect(db.pm_job_assignments).toEqual([{ job_id: 'job-new', user_id: 'u1', assigned_by: 'u1' }])
+
+    db.pm_job_assignments = []
+    mockAuth = { userId: 'u1', role: 'apm', error: null }
+    expect((await post({ action: 'convert', id: EST, expected_updated_at: LOADED, job_number: '2026-011' })).status).toBe(200)
+    expect(db.pm_job_assignments).toEqual([])
   })
 })
 

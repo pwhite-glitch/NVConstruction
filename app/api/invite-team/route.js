@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { findAuthUserByEmail } from '../../../lib/auth-users'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -48,16 +49,23 @@ export async function POST(request) {
   if (error) {
     // User already exists — look them up and generate a recovery link instead
     if (error.message?.includes('already been registered') || error.message?.includes('already exists')) {
-      const { data: { users } } = await adminSupabase.auth.admin.listUsers()
-      const existing = users.find(u => u.email?.toLowerCase() === email.toLowerCase())
+      let existing
+      try {
+        existing = await findAuthUserByEmail(adminSupabase, email)
+      } catch (e) {
+        return Response.json({ error: e.message }, { status: 500 })
+      }
       if (!existing) return Response.json({ error: error.message }, { status: 400 })
       userId = existing.id
-      const { data: linkData } = await adminSupabase.auth.admin.generateLink({
+      const { data: linkData, error: linkErr } = await adminSupabase.auth.admin.generateLink({
         type: 'recovery',
         email,
         options: { redirectTo: `${siteUrl}/set-password` },
       })
       inviteUrl = linkData?.properties?.action_link
+      if (linkErr || !inviteUrl) {
+        return Response.json({ error: `Account exists but a password-reset link could not be generated: ${linkErr?.message || 'no link returned'}` }, { status: 500 })
+      }
     } else {
       return Response.json({ error: error.message }, { status: 400 })
     }

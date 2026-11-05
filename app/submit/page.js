@@ -611,6 +611,7 @@ export default function Submit() {
     const data = await res.json()
     setSavingCOResponse(false)
     if (data.ok) {
+      if (data.warning) alert(data.warning)
       setCoResponseMsg(prev => ({ ...prev, [co.id]: response }))
       setRespondingCO(null)
       setCoDisputeReason('')

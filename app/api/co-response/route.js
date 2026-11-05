@@ -4,7 +4,7 @@ import { logChange } from '../../../lib/change-log'
 import { requireAuth, isSub } from '../../../lib/server-auth'
 import { canAccessSubcontract } from '../../../lib/sub-access'
 import { escapeHtml } from '../../../lib/email'
-import { coLineRow, insertCoLine } from '../../../lib/sov-lines'
+import { addCoSovLine } from '../../../lib/sov-lines'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -64,15 +64,12 @@ export async function POST(request) {
   logChange({ job_id: jobId, entity_type: 'change_order', entity_id: co_id, field_name: 'status', old_value: 'pending', new_value: response, changed_by: sub_user_id, note: `Change order ${response} by ${co.subcontracts?.vendor_name || 'sub'} — ${logAmt}: ${co.description}` })
 
   // Add CO as a new SOV line so it appears in the sub's billing schedule of values
-  if (response === 'approved' && co.subcontract_id && co.amount) {
-    const { data: lastLine } = await adminSupabase
-      .from('subcontract_sov_lines')
-      .select('sort_order')
-      .eq('subcontract_id', co.subcontract_id)
-      .order('sort_order', { ascending: false })
-      .limit(1)
-    const nextSort = (lastLine?.[0]?.sort_order || 0) + 1
-    await insertCoLine(adminSupabase, coLineRow(co, nextSort))
+  // (skipped if the line already exists — same rule as the PM-side approve)
+  let sovWarning = null
+  if (response === 'approved') {
+    const { error: lineErr } = await addCoSovLine(adminSupabase, co)
+    if (lineErr) console.error('co-response: SOV line insert failed for CO', co_id, lineErr.message)
+    if (lineErr) sovWarning = 'Change order approved, but its SOV line could not be added: ' + lineErr.message
   }
 
   // Notify PM
@@ -96,5 +93,5 @@ export async function POST(request) {
     </div>`,
   }).catch(() => {})
 
-  return Response.json({ ok: true })
+  return Response.json({ ok: true, ...(sovWarning ? { warning: sovWarning } : {}) })
 }

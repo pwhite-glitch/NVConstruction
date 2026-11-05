@@ -7,7 +7,7 @@ import { authFetch } from '../../lib/client-fetch'
 import { openStorageFile, openHtml } from '../../lib/open-file'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
-import { isCoLine, coLineRow, insertCoLine } from '../../lib/sov-lines'
+import { isCoLine, addCoSovLine } from '../../lib/sov-lines'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
 import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
 import { contractSumToDate as calcContractSumToDate, totalCompletedToDate, contractCap, contractCapMessage } from '../../lib/contract-cap'
@@ -3970,16 +3970,18 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   async function reviewCO(coId, status, sovOverride = null) {
     const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('change_orders').update({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq('id', coId)
+    const { error: updErr } = await supabase.from('change_orders').update({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }).eq('id', coId)
+    if (updErr) { alert('Could not update change order: ' + updErr.message); return }
     if (status === 'approved') {
       const co = allCOs.find(c => c.id === coId)
       // Sub COs do NOT change budget — they increase committed cost via the subcontract's
       // adjusted_contract_value (computed in the DB view). Budget only grows when the owner
       // approves a prime CO and pays us for it.
-      if (co?.direction === 'sub_to_pm' && co?.subcontract_id && co?.amount) {
-        const { data: existingLines } = await supabase.from('subcontract_sov_lines').select('sort_order').eq('subcontract_id', co.subcontract_id).order('sort_order', { ascending: false }).limit(1)
-        const nextSort = (existingLines?.[0]?.sort_order || 0) + 1
-        await insertCoLine(supabase, coLineRow(co, nextSort))
+      // Every approved sub CO (pm_to_sub or sub_to_pm) gets a line on the contract SOV;
+      // addCoSovLine skips it if the line already exists.
+      if (co) {
+        const { error: lineErr } = await addCoSovLine(supabase, co)
+        if (lineErr) alert('Change order approved, but its SOV line could not be added to the subcontract: ' + lineErr.message)
       }
     }
     await loadAllCOs()

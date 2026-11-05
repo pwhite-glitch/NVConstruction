@@ -51,7 +51,7 @@ jest.mock('../lib/sub-access', () => ({
   }),
 }))
 
-const { isCoLine, contractsWithBaseSov, coLineRow, insertCoLine } = require('../lib/sov-lines')
+const { isCoLine, contractsWithBaseSov, coLineRow, insertCoLine, hasCoLine, addCoSovLine } = require('../lib/sov-lines')
 const sovRoute = require('../app/api/sub-portal/sov/route')
 
 const coLine = { id: 'co1', subcontract_id: 'rogers', description: 'CO: 3" SCH 40 PVC', scheduled_value: 1457.7, sort_order: 1 }
@@ -102,6 +102,73 @@ describe('insertCoLine', () => {
     expect(res.error).toBeNull()
     expect(inserted).toHaveLength(2)
     expect(inserted[1]).not.toHaveProperty('change_order_id')
+  })
+})
+
+describe('addCoSovLine (CO approval, any direction)', () => {
+  const client = { from: table => mockQuery(table) }
+  const base = { id: 'b1', subcontract_id: 'rogers', description: 'Mobilization', scheduled_value: 1000, sort_order: 3 }
+  const co = (over = {}) => ({ id: 'co9', subcontract_id: 'rogers', description: 'Extra rock', amount: '250.00', direction: 'pm_to_sub', ...over })
+
+  test.each(['pm_to_sub', 'sub_to_pm'])('inserts a linked CO line for a %s CO, after existing lines', async direction => {
+    seed([base])
+    const res = await addCoSovLine(client, co({ direction }))
+    expect(res).toEqual({ inserted: true, skipped: false, error: null })
+    const added = db.subcontract_sov_lines.find(l => l.change_order_id === 'co9')
+    expect(added).toMatchObject({ subcontract_id: 'rogers', description: 'CO: Extra rock', scheduled_value: 250, sort_order: 4 })
+  })
+
+  test('skips when a line is already linked by change_order_id', async () => {
+    seed([base, { id: 'x', subcontract_id: 'rogers', change_order_id: 'co9', description: 'CO: renamed later', scheduled_value: 250, sort_order: 4 }])
+    const res = await addCoSovLine(client, co())
+    expect(res.skipped).toBe(true)
+    expect(db.subcontract_sov_lines).toHaveLength(2)
+  })
+
+  test('skips when a legacy "CO: <description>" line exists on that subcontract', async () => {
+    seed([base, { id: 'x', subcontract_id: 'rogers', description: 'CO: Extra rock', scheduled_value: 250, sort_order: 4 }])
+    const res = await addCoSovLine(client, co())
+    expect(res.skipped).toBe(true)
+    expect(db.subcontract_sov_lines).toHaveLength(2)
+  })
+
+  test('a matching description on a different subcontract does not block the insert', () => {
+    expect(hasCoLine([{ subcontract_id: 'other', description: 'CO: Extra rock' }], co())).toBe(false)
+  })
+
+  test('approving twice only adds one line', async () => {
+    seed([base])
+    await addCoSovLine(client, co())
+    const again = await addCoSovLine(client, co())
+    expect(again.skipped).toBe(true)
+    expect(db.subcontract_sov_lines.filter(isCoLine)).toHaveLength(1)
+  })
+
+  test('negative (deduct) amounts are inserted', async () => {
+    seed([base])
+    const res = await addCoSovLine(client, co({ amount: '-125.5' }))
+    expect(res.inserted).toBe(true)
+    expect(db.subcontract_sov_lines.find(l => l.change_order_id === 'co9').scheduled_value).toBe(-125.5)
+  })
+
+  test('skips COs with no subcontract or a zero/blank amount', async () => {
+    seed([base])
+    for (const c of [co({ subcontract_id: null }), co({ amount: 0 }), co({ amount: '' }), co({ amount: null })]) {
+      expect((await addCoSovLine(client, c)).inserted).toBe(false)
+    }
+    expect(db.subcontract_sov_lines).toHaveLength(1)
+  })
+
+  test('returns the insert error instead of swallowing it', async () => {
+    const failing = {
+      from: () => ({
+        select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }),
+        insert: () => Promise.resolve({ error: { message: 'permission denied' } }),
+      }),
+    }
+    const res = await addCoSovLine(failing, co())
+    expect(res.inserted).toBe(false)
+    expect(res.error.message).toBe('permission denied')
   })
 })
 

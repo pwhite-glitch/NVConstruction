@@ -35,7 +35,8 @@ export async function GET(request) {
         .select('sov_line_id, pct_this_period, billing_submissions(status)')
         .in('sov_line_id', lineIds)
       for (const pl of prev || []) {
-        if (pl.billing_submissions?.status !== 'rejected') prevPct[pl.sov_line_id] = (prevPct[pl.sov_line_id] || 0) + (parseFloat(pl.pct_this_period) || 0)
+        // "% billed" = approved billings only. (The billing POST's over-billing guard still counts pending.)
+        if (pl.billing_submissions?.status === 'approved') prevPct[pl.sov_line_id] = (prevPct[pl.sov_line_id] || 0) + (parseFloat(pl.pct_this_period) || 0)
       }
     }
     // has_sov = the sub has set up their base schedule. Lines added for approved COs don't count.

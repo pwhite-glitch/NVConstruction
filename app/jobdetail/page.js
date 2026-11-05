@@ -10,6 +10,7 @@ import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, addCoSovLine } from '../../lib/sov-lines'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
 import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
+import { allocateJobBillings, cumulativeOnContract, contractsForSubmissionSub } from '../../lib/contract-billing'
 import { contractSumToDate as calcContractSumToDate, totalCompletedToDate, contractCap, contractCapMessage } from '../../lib/contract-cap'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
@@ -250,6 +251,8 @@ function JobDetailInner() {
 
   // Billing tab state
   const [billingSubmissions, setBillingSubmissions] = useState([])
+  const [jobBillingLines, setJobBillingLines] = useState([])
+  const [jobBillingLinesError, setJobBillingLinesError] = useState('')
   const [showCreateBilling, setShowCreateBilling] = useState(false)
   const [createBillingForm, setCreateBillingForm] = useState(emptyCreateBilling)
   const [creatingBilling, setCreatingBilling] = useState(false)
@@ -891,6 +894,24 @@ function JobDetailInner() {
   async function loadBillingForJob() {
     const { data } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
     setBillingSubmissions(data || [])
+    // Line breakdown for every billing on the job, with the contract each SOV line belongs to.
+    // Paged: a job can pass the 1000-row API cap.
+    const PAGE = 1000
+    const all = []
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error } = await supabase
+        .from('billing_sov_lines')
+        .select('billing_submission_id, sov_line_id, amount, subcontract_sov_lines(subcontract_id), billing_submissions!inner(job_id)')
+        .eq('billing_submissions.job_id', id)
+        .order('billing_submission_id')
+        .order('sov_line_id')
+        .range(from, from + PAGE - 1)
+      if (error) { setJobBillingLinesError(error.message); return }
+      all.push(...(page || []))
+      if (!page || page.length < PAGE) break
+    }
+    setJobBillingLinesError('')
+    setJobBillingLines(all)
   }
 
   async function loadDrawRequests() {
@@ -5296,6 +5317,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const approvedCOValue = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
   const pendingBillingCount = billingSubmissions.filter(b => b.status === 'pending').length
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+  // Sub billings credited per contract through billing_sov_lines -> subcontract_sov_lines (see lib/contract-billing.js)
+  const billingAlloc = allocateJobBillings({
+    contracts,
+    sovLines: jobBillingLines.filter(l => l.subcontract_sov_lines?.subcontract_id).map(l => ({ id: l.sov_line_id, subcontract_id: l.subcontract_sov_lines.subcontract_id })),
+    submissions: billingSubmissions,
+    billingLines: jobBillingLines,
+  })
   const totalLaborCostLive = laborAllocations.reduce((a, al) => a + allocCost(al), 0)
 
   function shiftLookaheadWeek(delta) {
@@ -7530,12 +7558,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 const attachments = [c.bid_proposal_url && 'Bid proposal', c.signed_contract_url && 'Signed contract'].filter(Boolean)
                 const scopeIsLong = (c.description || '').length > 160 || (c.description || '').split('\n').length > 3
                 const scopeExpanded = expandedScopeIds.has(c.id)
-                const contractApproved = billingSubmissions
-                  .filter(b => b.status === 'approved' && (
-                    (c.sub_id && b.sub_id === c.sub_id) ||
-                    (c.vendor_name && b.company_name && b.company_name.toLowerCase() === c.vendor_name.toLowerCase())
-                  ))
-                  .reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+                const contractApproved = billingAlloc.byContract[c.id]?.billedApproved || 0
                 const contractRemaining = Number(c.adjusted_contract_value) - contractApproved
 
                 return (
@@ -7758,13 +7781,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       const sovs = contractSovLines[c.id]
                       const totalScheduled = (sovs || []).reduce((a, l) => a + Number(l.scheduled_value), 0)
                       const totalBilled = (sovs || []).reduce((a, l) => a + Number(l.billed_to_date || 0), 0)
-                      const contractBillings = billingSubmissions.filter(b =>
-                        (c.sub_id && b.sub_id === c.sub_id) ||
-                        (c.vendor_name && b.company_name && b.company_name.toLowerCase() === c.vendor_name.toLowerCase())
-                      ).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at))
-                      const approvedBillings = contractBillings.filter(b => b.status === 'approved')
-                      const totalApproved = approvedBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
-                      const totalRetHeld = approvedBillings.reduce((a, b) => a + Number(b.retainage_held || 0), 0)
+                      // Only submissions with lines on THIS contract (or the one-contract fallback), at this contract's portion
+                      const contractAlloc = billingAlloc.byContract[c.id] || { billedApproved: 0, retainageApproved: 0, submissions: [] }
+                      const contractBillings = [...contractAlloc.submissions]
+                        .sort((a, z) => new Date(z.submission.submitted_at) - new Date(a.submission.submitted_at))
+                      const approvedBillings = contractBillings.filter(e => e.submission.status === 'approved')
+                      const totalApproved = contractAlloc.billedApproved
+                      const totalRetHeld = contractAlloc.retainageApproved
+                      const subUnassigned = billingAlloc.unassigned.filter(b => contractsForSubmissionSub(b, [c]).length > 0)
                       const remainingToBill = Number(c.adjusted_contract_value) - totalApproved
                       const pctBilled = Number(c.adjusted_contract_value) > 0 ? totalApproved / Number(c.adjusted_contract_value) * 100 : 0
                       const thS = { textAlign: 'left', padding: '6px 8px', fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700', whiteSpace: 'nowrap' }
@@ -7794,8 +7818,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
                           {/* Billing submissions */}
                           <p style={{ ...s.cardTitle, marginBottom: '0.75rem' }}>Billing submissions ({contractBillings.length})</p>
+                          {jobBillingLinesError && (
+                            <p style={{ fontSize: '12px', color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px' }}>
+                              Couldn't load billing line items ({jobBillingLinesError}), so billed amounts below may be incomplete.
+                            </p>
+                          )}
+                          {subUnassigned.length > 0 && (
+                            <p style={{ fontSize: '12px', color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px' }}>
+                              {subUnassigned.length} billing{subUnassigned.length !== 1 ? 's' : ''} from this sub ({fmtC(subUnassigned.reduce((a, b) => a + Number(b.amount_billed || 0), 0))}) {subUnassigned.length !== 1 ? 'have' : 'has'} no line items and the sub has more than one contract on this job, so {subUnassigned.length !== 1 ? 'they are' : 'it is'} not counted on any contract.
+                            </p>
+                          )}
                           {contractBillings.length === 0 ? (
-                            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1.5rem' }}>No billing submissions found for this sub.</p>
+                            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1.5rem' }}>No billing submissions on this contract.</p>
                           ) : (
                             <div style={{ overflowX: 'auto', marginBottom: '1.5rem' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -7811,8 +7845,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {contractBillings.map(b => {
-                                    const net = Number(b.amount_billed || 0) - Number(b.retainage_held || 0)
+                                  {contractBillings.map(({ submission: b, amount: portion, retainage: portionRet }) => {
+                                    const net = portion - portionRet
+                                    const info = billingAlloc.bySubmission[b.id]
+                                    const isSplit = Object.keys(info?.contractAmounts || {}).length > 1
                                     const sc = b.status === 'approved'
                                       ? { bg: '#dcfce7', color: '#16a34a', border: '#bbf7d0' }
                                       : b.status === 'rejected'
@@ -7822,8 +7858,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       <tr key={b.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                         <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap' }}>{new Date(b.submitted_at).toLocaleDateString()}</td>
                                         <td style={{ padding: '8px', color: '#6b7280', fontSize: '11px' }}>{b.billing_period ? b.billing_period.slice(0, 7) : '—'}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#111827', fontWeight: '600' }}>{fmtC(b.amount_billed)}</td>
-                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#a16207' }}>{Number(b.retainage_held || 0) > 0 ? fmtC(b.retainage_held) : '—'}</td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#111827', fontWeight: '600' }}>
+                                          {fmtC(portion)}
+                                          {isSplit && <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '400' }}>of {fmtC(b.amount_billed)} total</div>}
+                                          {info?.mismatch && <div style={{ fontSize: '10px', color: '#b45309', fontWeight: '600' }}>Lines total {fmtC(info.linesTotal)}, header {fmtC(info.header)}</div>}
+                                        </td>
+                                        <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#a16207' }}>{portionRet > 0 ? fmtC(portionRet) : '—'}</td>
                                         <td style={{ padding: '8px', textAlign: 'right', fontFamily: 'monospace', color: '#16a34a' }}>{fmtC(net)}</td>
                                         <td style={{ padding: '8px', textAlign: 'center', color: '#6b7280', fontSize: '11px' }}>{b.pct_complete != null ? b.pct_complete + '%' : '—'}</td>
                                         <td style={{ padding: '8px', textAlign: 'center' }}>
@@ -9320,18 +9360,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {billingSubmissions.map(b => {
                 const isEditing = editingBilling === b.id
                 const isOwnerPay = job?.payment_type === 'owner_pays_direct'
-                // Cumulative % billed to date for this sub
-                const matchContract = contracts.find(c => c.vendor_name?.toLowerCase() === b.company_name?.toLowerCase())
-                const contractVal = Number(matchContract?.adjusted_contract_value || matchContract?.contract_value || 0)
-                const companySubs = billingSubmissions
-                  .filter(s => s.company_name === b.company_name && s.status !== 'rejected')
-                  .sort((a, z) => new Date(a.submitted_at) - new Date(z.submitted_at))
-                let cumAmt = 0
-                for (const s of companySubs) {
-                  cumAmt += Number(s.amount_billed || 0)
-                  if (s.id === b.id) break
-                }
-                const cumPct = contractVal > 0 ? Math.round(cumAmt / contractVal * 1000) / 10 : null
+                // Cumulative % billed to date on each contract this billing has lines on (non-rejected billings up to this one)
+                const allocInfo = billingAlloc.bySubmission[b.id]
+                const touchedContracts = Object.keys(allocInfo?.contractAmounts || {}).map(cid => contracts.find(c => c.id === cid)).filter(Boolean)
+                const cumPcts = touchedContracts.map(c => {
+                  const contractVal = Number(c.adjusted_contract_value || c.contract_value || 0)
+                  const cumAmt = cumulativeOnContract(billingAlloc.byContract[c.id], b.id)
+                  return { c, pct: contractVal > 0 && cumAmt != null ? Math.round(cumAmt / contractVal * 1000) / 10 : null }
+                }).filter(x => x.pct != null)
+                const cumPctText = cumPcts.length === 1
+                  ? `${cumPcts[0].pct}% billed to date`
+                  : cumPcts.length > 1
+                    ? cumPcts.map(x => `${x.c.description ? x.c.description.split('\n')[0].slice(0, 40) : 'Contract'}: ${x.pct}%`).join(' · ') + ' billed to date'
+                    : null
                 return (
                   <div key={b.id} style={{ ...s.billingEntryRow, opacity: isEditing ? 0.95 : 1, border: b.ready_to_pay ? '1px solid #bbf7d0' : b.nv_cuts_check ? '1px solid #fed7aa' : '1px solid #e5e7eb' }}>
                     <div style={{ ...s.billingEntryHeader, background: b.ready_to_pay ? '#f0fdf4' : b.nv_cuts_check ? '#fff7ed' : '#f9fafb' }}>
@@ -9356,7 +9397,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             ? <span style={{ background: '#fff7ed', color: '#e8590c', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px', fontWeight: '700' }}>{drawRequests.find(d => d.id === b.draw_request_id)?.title || 'Draw'}</span>
                             : b.billing_period && <span style={{ background: '#1a2a1a', color: '#16a34a', padding: '1px 6px', borderRadius: '4px', fontSize: '11px', marginLeft: '6px' }}>{new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                           }
-                          {cumPct != null ? ` · ${cumPct}% billed to date` : b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
+                          {cumPctText ? ` · ${cumPctText}` : b.pct_complete != null ? ` · ${b.pct_complete}% complete` : ''}
+                          {allocInfo?.unassigned && b.status !== 'rejected' && <span style={{ color: '#b45309' }}> · Not on any contract (no line items; sub has more than one contract here)</span>}
                           {b.invoice_number ? ` · Invoice #${b.invoice_number}` : ''}
                           {b.invoice_date ? ` · Invoice date ${new Date(b.invoice_date + 'T12:00:00').toLocaleDateString()}` : ''}
                           {b.doc_url && (
@@ -9385,6 +9427,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '16px', fontWeight: '800', color: '#111827' }}>${Number(b.amount_billed).toLocaleString()}</div>
+                          {allocInfo?.mismatch && (
+                            <div style={{ fontSize: '11px', marginTop: '2px', color: '#b45309', fontWeight: '600' }} title="The line-item breakdown doesn't add up to the billed amount">
+                              ⚠ Lines total ${allocInfo.linesTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}, header ${allocInfo.header.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </div>
+                          )}
                           {b.retainage_held > 0 && (
                             <div style={{ fontSize: '11px', marginTop: '2px' }}>
                               <span style={{ color: '#a16207' }}>Ret: ${Number(b.retainage_held).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>

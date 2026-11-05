@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { denyJob } from '../../../lib/roles'
+import { allocateJobBillings } from '../../../lib/contract-billing'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,7 +10,7 @@ const adminSupabase = createClient(
 
 const fmt = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
-function buildSystemPrompt(job, budgetItems, costs, contracts, changeOrders, billings) {
+function buildSystemPrompt(job, budgetItems, costs, contracts, changeOrders, billings, billingLines = []) {
   const totalBudget = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
   const totalCommitted = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
   const approvedCosts = costs.filter(c => c.status === 'approved')
@@ -28,9 +29,15 @@ function buildSystemPrompt(job, budgetItems, costs, contracts, changeOrders, bil
     return `  • ${b.cost_code ? b.cost_code + ' ' : ''}${b.description}: budget ${fmt(b.budget_amount)}, committed ${fmt(lineCommitted)}, direct costs ${fmt(lineCosts)}`
   }).join('\n')
 
+  // Billings credited per contract through billing_sov_lines -> subcontract_sov_lines
+  const alloc = allocateJobBillings({ contracts, submissions: billings, billingLines })
   const subLines = contracts.map(c =>
-    `  • ${c.vendor_name || 'Unknown'}: contract ${fmt(c.contract_value)}, revised ${fmt(c.adjusted_contract_value || c.contract_value)}, billed ${fmt(billings.filter(b => b.status === 'approved' && (b.sub_id === c.sub_id || (b.company_name || '').toLowerCase() === (c.vendor_name || '').toLowerCase())).reduce((a, b) => a + Number(b.amount_billed || 0), 0))}`
+    `  • ${c.vendor_name || 'Unknown'}${c.description ? ' (' + String(c.description).split('\n')[0].slice(0, 60) + ')' : ''}: contract ${fmt(c.contract_value)}, revised ${fmt(c.adjusted_contract_value || c.contract_value)}, billed ${fmt(alloc.byContract[c.id]?.billedApproved || 0)}`
   ).join('\n')
+  const unassignedApproved = alloc.unassigned.filter(b => b.status === 'approved')
+  const unassignedLine = unassignedApproved.length
+    ? `\n  • Unassigned approved sub billings (no line items, sub has several contracts): ${fmt(unassignedApproved.reduce((a, b) => a + Number(b.amount_billed || 0), 0))}`
+    : ''
 
   const recentCosts = costs.slice(0, 30).map(c =>
     `  • ${c.cost_date} ${c.description} ${fmt(c.amount)} [${c.status}] ${c.category}${c.vendor ? ' — ' + c.vendor : ''}`
@@ -51,7 +58,7 @@ BUDGET (${budgetItems.length} lines, total ${fmt(totalBudget)}):
 ${budgetLines || '  No budget items'}
 
 SUBCONTRACTS (${contracts.length}, total committed ${fmt(totalCommitted)}):
-${subLines || '  None'}
+${subLines || '  None'}${unassignedLine}
 
 CHANGE ORDERS:
 ${coLines}
@@ -90,13 +97,28 @@ export async function POST(request) {
     adminSupabase.from('budget_items').select('id, cost_code, description, budget_amount, owner_amount').eq('job_id', job_id).order('sort_order', { ascending: true }),
     adminSupabase.from('direct_costs').select('id, description, amount, status, category, cost_date, vendor, budget_item_id, is_credit').eq('job_id', job_id).order('cost_date', { ascending: false }).limit(100),
     adminSupabase.from('change_orders').select('description, amount, status, direction').eq('job_id', job_id),
-    adminSupabase.from('billing_submissions').select('amount_billed, status, sub_id, company_name').eq('job_id', job_id),
+    adminSupabase.from('billing_submissions').select('id, amount_billed, retainage_held, status, sub_id, company_name, submitted_at').eq('job_id', job_id),
   ])
+
+  // Line breakdown with each SOV line's contract — this is what ties a billing to a contract
+  const billingLines = []
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: linesErr } = await adminSupabase
+      .from('billing_sov_lines')
+      .select('billing_submission_id, sov_line_id, amount, subcontract_sov_lines(subcontract_id), billing_submissions!inner(job_id)')
+      .eq('billing_submissions.job_id', job_id)
+      .order('billing_submission_id')
+      .order('sov_line_id')
+      .range(from, from + 999)
+    if (linesErr) { console.error('ask-ai billing_sov_lines:', linesErr.message); break }
+    billingLines.push(...(page || []))
+    if (!page || page.length < 1000) break
+  }
 
   // Fetch subcontracts separately (view may differ by environment)
   const { data: contractsRaw } = await adminSupabase
     .from('subcontracts')
-    .select('id, vendor_name, sub_id, contract_value, budget_item_id, budget_allocations')
+    .select('id, vendor_name, sub_id, description, contract_value, budget_item_id, budget_allocations')
     .eq('job_id', job_id)
 
   // Try to get adjusted values from the summary view
@@ -118,7 +140,8 @@ export async function POST(request) {
     costs || [],
     contracts,
     changeOrders || [],
-    billings || []
+    billings || [],
+    billingLines
   )
 
   const apiKey = process.env.GEMINI_API_KEY

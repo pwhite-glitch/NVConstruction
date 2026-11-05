@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
-import { notify } from '../../../lib/notify'
 import { requirePM } from '../../../lib/server-auth'
 import { denyJob, denyJobOf } from '../../../lib/roles'
-import { notifyRfiSubmitted, sendRfiMail as mail, wrapRfiEmail as wrap } from '../../../lib/rfi-notify'
+import { notifyRfiSubmitted, notifyRfiAnswered, sendRfiMail as mail, wrapRfiEmail as wrap } from '../../../lib/rfi-notify'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,7 +37,6 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || ''
     if (body.rfi_id) {
       const deniedRfi = await denyJobOf(adminSupabase, auth, 'rfis', body.rfi_id)
       if (deniedRfi) return deniedRfi
@@ -54,32 +52,15 @@ export async function POST(request) {
     }
 
     if (body.action === 'responded') {
-      // profiles has no email column — look up via auth.users
-      const { data: { users } } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
-      const authUser = users?.find(u => u.id === body.super_id)
-      if (!authUser?.email) return Response.json({ ok: false, reason: 'no email for superintendent' })
-
-      const { error: emailErr } = await mail(authUser.email, `RFI Answered: ${body.title}`, wrap(`
-        <h2 style="color:#4ade80;margin:0 0 1rem">Your RFI Has Been Answered</h2>
-        <p style="color:#aaa">A response has been posted for your RFI: <strong style="color:#f1f1f1">${body.title}</strong></p>
-        <div style="background:#111;border:1px solid #222;border-radius:8px;padding:1rem;margin:1rem 0">
-          <p style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px">Response</p>
-          <p style="color:#f1f1f1;font-size:14px;line-height:1.6;margin:0">${body.response}</p>
-        </div>
-        <a href="${siteUrl}/field" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px">View in Field Portal</a>
-      `))
-      notify({
-        recipient_id: body.super_id,
-        type:         'rfi_answered',
-        title:        `RFI answered: ${body.title}`,
-        body:         body.response ? body.response.slice(0, 120) : null,
-        link:         'rfis',
-        job_id:       body.job_id || null,
-        entity_type:  'rfi',
-        entity_id:    body.rfi_id || null,
-        dedup_key:    body.rfi_id ? `rfi:answered:${body.rfi_id}` : null,
-      })
-      return Response.json({ ok: !emailErr, emailError: emailErr?.message || null })
+      // Prefer the stored RFI (super_id + sub_id) over what the browser sent
+      let rfi = null
+      if (body.rfi_id) {
+        const { data } = await adminSupabase.from('rfis').select('*').eq('id', body.rfi_id).maybeSingle()
+        rfi = data
+      }
+      if (!rfi) rfi = { id: body.rfi_id || null, job_id: body.job_id || null, title: body.title, super_id: body.super_id || null }
+      const result = await notifyRfiAnswered(rfi, body.response ?? rfi.response ?? '')
+      return Response.json(result)
     }
 
     return Response.json({ error: 'Unknown action' }, { status: 400 })

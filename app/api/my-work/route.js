@@ -53,7 +53,8 @@ export async function GET(request) {
     promises.push(
       job(adminSupabase
         .from('rfis')
-        .select('id, title, question, created_at, job_id, jobs(id, job_number, project_name)')
+        // rfis has no `question` column; the RFI text is `description` (migrations/040)
+        .select('id, title, description, status, created_at, job_id, jobs(id, job_number, project_name)')
         .eq('status', 'open')
         .order('created_at', { ascending: true })
         .limit(25)),

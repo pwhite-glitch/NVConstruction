@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { authFetch } from '../../lib/client-fetch'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged } from '../../lib/lookahead-weather'
@@ -1098,7 +1099,7 @@ export default function Field() {
     setRfiForm({ title: '', description: '' })
     await loadRfis()
     setTimeout(() => setRfiSuccess(false), 3000)
-    fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'submitted', job_id: selectedJobId, title, description, super_name: profile?.full_name || profile?.email || 'Superintendent' }) })
+    authFetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'submitted', job_id: selectedJobId, title, description, super_name: profile?.full_name || profile?.email || 'Superintendent' }) })
     setSubmittingRfi(false)
   }
 

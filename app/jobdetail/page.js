@@ -319,6 +319,8 @@ function JobDetailInner() {
   const [respondingRfi, setRespondingRfi] = useState(null)
   const [rfiResponse, setRfiResponse] = useState('')
   const [savingRfiResponse, setSavingRfiResponse] = useState(false)
+  const [rfiError, setRfiError] = useState('')
+  const [closingRfi, setClosingRfi] = useState(null)
   const [milestoneForm, setMilestoneForm] = useState({ title: '', due_date: '', notes: '' })
   const [addingMilestone, setAddingMilestone] = useState(false)
   const [showMilestoneForm, setShowMilestoneForm] = useState(false)
@@ -912,7 +914,7 @@ function JobDetailInner() {
   async function loadFieldData() {
     const [{ data: reports }, { data: rfis }, { data: deliveries }, { data: milestones }] = await Promise.all([
       supabase.from('daily_reports').select('*').eq('job_id', id).order('report_date', { ascending: false }),
-      supabase.from('rfis').select('*').eq('job_id', id).order('created_at', { ascending: false }),
+      loadJobRfis(),
       supabase.from('deliveries').select('*').eq('job_id', id).order('expected_date', { ascending: true }),
       supabase.from('milestones').select('*').eq('job_id', id).order('due_date', { ascending: true }),
     ])
@@ -922,19 +924,52 @@ function JobDetailInner() {
     setFieldMilestones(milestones || [])
   }
 
+  // RFIs with submitter_label via /api/rfi-actions; falls back to a plain read
+  // so the list still shows if the route fails.
+  async function loadJobRfis() {
+    try {
+      const res = await authFetch(`/api/rfi-actions?job_id=${encodeURIComponent(id)}`)
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && Array.isArray(json.data)) return { data: json.data }
+    } catch {}
+    return supabase.from('rfis').select('*').eq('job_id', id).order('created_at', { ascending: false })
+  }
+
+  async function rfiAction(payload) {
+    const res = await authFetch('/api/rfi-actions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
+    return json
+  }
+
   async function respondToRfi(rfiId) {
     setSavingRfiResponse(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    const rfi = fieldRfis.find(r => r.id === rfiId)
-    await supabase.from('rfis').update({ response: rfiResponse, status: 'answered', responded_at: new Date().toISOString(), responded_by: session.user.id }).eq('id', rfiId)
-    if (rfi?.super_id) {
-      fetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'responded', super_id: rfi.super_id, title: rfi.title, response: rfiResponse, rfi_id: rfiId, job_id: job?.id }) })
+    setRfiError('')
+    try {
+      // Saves the answer and emails + notifies the submitting super / sub
+      await rfiAction({ action: 'respond', rfi_id: rfiId, response: rfiResponse })
+      setRespondingRfi(null)
+      setRfiResponse('')
+      await loadFieldData()
+    } catch (e) {
+      setRfiError(e.message || 'Could not save response.')
+    } finally {
+      setSavingRfiResponse(false)
     }
-    setRespondingRfi(null)
-    setRfiResponse('')
-    await loadFieldData()
-    setSavingRfiResponse(false)
+  }
+
+  async function closeRfi(rfiId) {
+    if (!confirm('Close this RFI?')) return
+    setClosingRfi(rfiId)
+    setRfiError('')
+    try {
+      await rfiAction({ action: 'close', rfi_id: rfiId })
+      await loadFieldData()
+    } catch (e) {
+      setRfiError(e.message || 'Could not close RFI.')
+    } finally {
+      setClosingRfi(null)
+    }
   }
 
   async function addMilestone(e) {
@@ -9628,7 +9663,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title}</span>
                         <span style={s.coBadge(rfi.status === 'answered' ? 'approved' : rfi.status === 'closed' ? 'rejected' : 'pending')}>{rfi.status}</span>
                       </div>
-                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}{rfi.submitter_label ? ` · From ${rfi.submitter_label}` : ''}</span>
                     </div>
                     <span style={{ color: '#6b7280' }}>{expandedFieldRfi === rfi.id ? '▲' : '▼'}</span>
                   </div>
@@ -9644,19 +9679,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.7', margin: 0, whiteSpace: 'pre-wrap' }}>{rfi.response}</p>
                         </div>
                       )}
+                      {rfiError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', marginBottom: '10px' }}>{rfiError}</div>}
                       {respondingRfi === rfi.id ? (
                         <div>
                           <label style={s.label}>Response</label>
                           <textarea rows={4} style={{ ...s.textarea, marginBottom: '10px' }} value={rfiResponse} onChange={e => setRfiResponse(e.target.value)} placeholder="Type your response..." />
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button onClick={() => respondToRfi(rfi.id)} disabled={savingRfiResponse || !rfiResponse} style={{ ...s.btnSmallOrange, opacity: savingRfiResponse || !rfiResponse ? 0.6 : 1 }}>{savingRfiResponse ? 'Saving...' : 'Send response'}</button>
-                            <button onClick={() => { setRespondingRfi(null); setRfiResponse('') }} style={s.btnSmall}>Cancel</button>
+                            <button onClick={() => { setRespondingRfi(null); setRfiResponse(''); setRfiError('') }} style={s.btnSmall}>Cancel</button>
                           </div>
                         </div>
                       ) : (
-                        <button onClick={() => { setRespondingRfi(rfi.id); setRfiResponse(rfi.response || '') }} style={s.btnSmallOrange}>
-                          {rfi.response ? 'Edit response' : 'Respond'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={() => { setRespondingRfi(rfi.id); setRfiResponse(rfi.response || ''); setRfiError('') }} style={s.btnSmallOrange}>
+                            {rfi.response ? 'Edit response' : 'Respond'}
+                          </button>
+                          {atLeastPM(userRole) && rfi.status !== 'closed' && (
+                            <button onClick={() => closeRfi(rfi.id)} disabled={closingRfi === rfi.id} style={{ ...s.btnSmall, opacity: closingRfi === rfi.id ? 0.6 : 1 }}>
+                              {closingRfi === rfi.id ? 'Closing...' : 'Close RFI'}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}

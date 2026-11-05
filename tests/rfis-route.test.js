@@ -69,7 +69,10 @@ function mockQuery(table) {
 }
 
 jest.mock('@supabase/supabase-js', () => ({
-  createClient: () => ({ from: table => mockQuery(table) }),
+  createClient: () => ({
+    from: table => mockQuery(table),
+    auth: { admin: { getUserById: async () => ({ data: { user: null }, error: { message: 'not found' } }), listUsers: async () => ({ data: { users: [] }, error: null }) } },
+  }),
 }))
 jest.mock('resend', () => ({
   Resend: function () { this.emails = { send: async msg => { mockEmails.push(msg); return { data: { id: 'e1' }, error: null } } } },

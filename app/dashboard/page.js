@@ -3793,7 +3793,8 @@ ${planLinks.map(p => p.url
                   {myWork && !myWork.error && mwSection('Open RFIs', myWork.rfis, '#2563eb', (item) => (
                     <>
                       <div>
-                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title || item.question || 'Untitled RFI'}</p>
+                        <p style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: '#111827' }}>{item.title || 'Untitled RFI'}</p>
+                        {item.description && <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '520px' }}>{item.description}</p>}
                         <div style={{ marginTop: '2px' }}>{jobTag(item)}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>

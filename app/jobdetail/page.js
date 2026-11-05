@@ -9,6 +9,7 @@ import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, coLineRow, insertCoLine } from '../../lib/sov-lines'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
+import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
 import { contractSumToDate as calcContractSumToDate, totalCompletedToDate, contractCap, contractCapMessage } from '../../lib/contract-cap'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import MeetingsTab from './MeetingsTab'
@@ -236,6 +237,12 @@ function JobDetailInner() {
   const [csvUploading, setCsvUploading] = useState(false)
   const [editingBudgetItem, setEditingBudgetItem] = useState(null)
   const [editBudgetForm, setEditBudgetForm] = useState({})
+  const [budgetError, setBudgetError] = useState('')        // multi-line; shown in the Budget card until dismissed
+  const [budgetNotice, setBudgetNotice] = useState('')
+  const [csvPreview, setCsvPreview] = useState(null)        // { fileName, rows, valid, invalid, duplicates, headerSkipped }
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false)
+  const [deleteAllText, setDeleteAllText] = useState('')
+  const [deletingAll, setDeletingAll] = useState(false)
   const [committedDrilldownItem, setCommittedDrilldownItem] = useState(null)
   const [editingSubCOId, setEditingSubCOId] = useState(null)
   const [editSubCOForm, setEditSubCOForm] = useState({})
@@ -4305,29 +4312,59 @@ ${attachmentHtml}
   }
 
   // ── Budget ──────────────────────────────────────────────────
+  // Calls /api/budget-items and returns { ok, data }. On failure, shows the
+  // server's message (including the 409 "what's attached" list) in the Budget card.
+  async function budgetApi(method, payload, failPrefix) {
+    let res, data = {}
+    try {
+      res = await fetch('/api/budget-items', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      data = await res.json().catch(() => ({}))
+    } catch (err) {
+      setBudgetError(`${failPrefix}: ${err.message || 'network error'}`)
+      return { ok: false, data }
+    }
+    if (!res.ok || data.error) {
+      setBudgetError(`${failPrefix}: ${data.error || `server returned ${res.status}`}`)
+      return { ok: false, data }
+    }
+    setBudgetError('')
+    return { ok: true, data }
+  }
+
+  // '' -> null, otherwise a finite number or NaN
+  const budgetNum = v => (v === '' || v === null || v === undefined) ? null : Number(v)
+
   async function saveBudgetItem(e) {
     e.preventDefault()
+    const budget = budgetNum(budgetItemForm.budget_amount)
+    const owner = budgetNum(budgetItemForm.owner_amount)
+    if (budget === null || !Number.isFinite(budget)) { setBudgetError('Enter a valid internal budget amount.'); return }
+    if (owner !== null && !Number.isFinite(owner)) { setBudgetError('Owner SOV amount must be a number.'); return }
     setAddingBudgetItem(true)
-    await fetch('/api/budget-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    const { ok } = await budgetApi('POST', {
       job_id: id, cost_code: budgetItemForm.cost_code || null, description: budgetItemForm.description,
-      budget_amount: parseFloat(budgetItemForm.budget_amount),
-      owner_amount: budgetItemForm.owner_amount ? parseFloat(budgetItemForm.owner_amount) : null,
-    }) })
+      budget_amount: budget, owner_amount: owner,
+    }, 'Could not add budget line')
+    setAddingBudgetItem(false)
+    if (!ok) return
     await loadBudgetItems()
     setShowAddBudgetItem(false)
     setBudgetItemForm(emptyBudgetItem)
-    setAddingBudgetItem(false)
   }
 
   async function updateBudgetItem(e) {
     e.preventDefault()
-    await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    const budget = budgetNum(editBudgetForm.budget_amount)
+    const owner = budgetNum(editBudgetForm.owner_amount)
+    if (budget === null || !Number.isFinite(budget)) { setBudgetError('Enter a valid internal budget amount.'); return }
+    if (owner !== null && !Number.isFinite(owner)) { setBudgetError('Owner SOV amount must be a number.'); return }
+    const { ok } = await budgetApi('PUT', {
       id: editingBudgetItem, fields: {
         cost_code: editBudgetForm.cost_code || null, description: editBudgetForm.description,
-        budget_amount: parseFloat(editBudgetForm.budget_amount),
-        owner_amount: editBudgetForm.owner_amount ? parseFloat(editBudgetForm.owner_amount) : null,
+        budget_amount: budget, owner_amount: owner,
       }
-    }) })
+    }, 'Could not save budget line')
+    if (!ok) return
     setEditingBudgetItem(null)
     await loadBudgetItems()
   }
@@ -4342,73 +4379,54 @@ ${attachmentHtml}
 
   async function deleteBudgetItem(itemId) {
     if (!window.confirm('Delete this budget line?')) return
-    await fetch('/api/budget-items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: itemId }) })
+    const { ok } = await budgetApi('DELETE', { id: itemId }, 'Budget line not deleted')
+    if (!ok) return
+    setBudgetItems(items => items.filter(b => b.id !== itemId))
     await loadBudgetItems()
   }
 
+  async function deleteAllBudgetItems() {
+    if (deleteAllText.trim() !== 'DELETE') return
+    setDeletingAll(true)
+    const { ok, data } = await budgetApi('DELETE', { job_id: id }, 'Budget lines not deleted')
+    setDeletingAll(false)
+    setDeleteAllOpen(false)
+    setDeleteAllText('')
+    if (!ok) return
+    setBudgetNotice(`Deleted ${data.deleted ?? 'all'} budget line${data.deleted === 1 ? '' : 's'}.`)
+    await loadBudgetItems()
+  }
+
+  // Step 1: read + validate the file and show a preview. Nothing is saved yet.
   async function handleCSVUpload(e) {
     const file = e.target.files[0]
+    e.target.value = ''
     if (!file) return
-    setCsvUploading(true)
+    setBudgetError('')
+    setBudgetNotice('')
     try {
       const text = await file.text()
-      const rawLines = text.trim().split(/\r?\n/)
-
-      // Proper CSV field splitter — handles quoted fields containing commas
-      function splitCsvRow(line) {
-        const result = []
-        let cur = '', inQ = false
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i]
-          if (ch === '"') {
-            if (inQ && line[i + 1] === '"') { cur += '"'; i++ }
-            else inQ = !inQ
-          } else if (ch === ',' && !inQ) {
-            result.push(cur.trim()); cur = ''
-          } else { cur += ch }
-        }
-        result.push(cur.trim())
-        return result
-      }
-
-      // Strip $, commas, spaces from a number string before parsing
-      function parseAmt(str) {
-        if (!str) return 0
-        return parseFloat(str.replace(/[$,\s]/g, '')) || 0
-      }
-
-      // Detect header row: last column of first row is not a number
-      const firstCols = splitCsvRow(rawLines[0])
-      const isHeader = isNaN(parseAmt(firstCols[firstCols.length - 1])) || firstCols[firstCols.length - 1] === ''
-      const rows = []
-      let sortOrder = 0
-      for (let i = isHeader ? 1 : 0; i < rawLines.length; i++) {
-        const line = rawLines[i].trim()
-        if (!line) continue
-        const cols = splitCsvRow(line)
-        const description = cols[1]?.replace(/^"|"$/g, '') || ''
-        if (!description) continue
-        const budgetAmt = parseAmt(cols[2])
-        const ownerAmt = cols[3] ? parseAmt(cols[3]) : null
-        rows.push({
-          job_id: id,
-          cost_code: cols[0]?.replace(/^"|"$/g, '') || null,
-          description,
-          budget_amount: budgetAmt,
-          owner_amount: ownerAmt,
-          sort_order: sortOrder++,
-        })
-      }
-      if (rows.length > 0) {
-        await fetch('/api/budget-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rows) })
-        await loadBudgetItems()
-      }
+      const parsed = parseBudgetCsv(text, budgetItems)
+      if (!parsed.rows.length) { setBudgetError('CSV import: no budget lines found in ' + file.name); return }
+      setCsvPreview({ fileName: file.name, ...parsed })
     } catch (err) {
-      setErrMsg('CSV import failed: ' + err.message)
-      setTimeout(() => setErrMsg(''), 4000)
+      setBudgetError('CSV import failed: ' + err.message)
     }
-    e.target.value = ''
+  }
+
+  // Step 2: insert the previewed rows (only when every row is valid).
+  async function confirmCSVImport() {
+    if (!csvPreview || csvPreview.invalid.length || !csvPreview.valid.length) return
+    setCsvUploading(true)
+    const rows = toInsertRows(csvPreview.valid, id, budgetItems)
+    const { ok, data } = await budgetApi('POST', rows, 'CSV import failed — nothing was imported')
     setCsvUploading(false)
+    if (!ok) return
+    const n = data.inserted ?? 0
+    setCsvPreview(null)
+    if (n !== rows.length) setBudgetError(`CSV import: server reported ${n} of ${rows.length} lines inserted. Check the budget lines below.`)
+    else setBudgetNotice(`Imported ${n} budget line${n === 1 ? '' : 's'} from ${csvPreview.fileName}.`)
+    await loadBudgetItems()
   }
 
   function laborCostForItem(budgetItemId) {
@@ -6655,22 +6673,96 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {budgetItems.length > 0 && <button style={s.btnSmall} onClick={exportBudgetPDF}>Export PDF</button>}
                   {budgetItems.length > 0 && (
-                    <button style={s.btnSmallRed} onClick={async () => {
-                      if (!window.confirm(`Delete all ${budgetItems.length} budget line${budgetItems.length !== 1 ? 's' : ''}? This cannot be undone.`)) return
-                      await fetch('/api/budget-items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id }) })
-                      await loadBudgetItems()
-                    }}>Delete all</button>
+                    <button style={s.btnSmallRed} onClick={() => { setDeleteAllOpen(v => !v); setDeleteAllText('') }}>Delete all</button>
                   )}
                   <label style={{ ...s.btnSmall, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
                     {csvUploading ? 'Importing...' : 'Import CSV'}
-                    <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCSVUpload} disabled={csvUploading} />
+                    <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCSVUpload} disabled={csvUploading || !!csvPreview} />
                   </label>
                   <button style={s.btnSmallOrange} onClick={() => setShowAddBudgetItem(v => !v)}>
                     {showAddBudgetItem ? 'Cancel' : '+ Add line'}
                   </button>
                 </div>
               </div>
-              <p style={{ fontSize: '12px', color: '#374151', margin: '0 0 1.25rem' }}>CSV format: cost_code, description, amount · Header row optional</p>
+              <p style={{ fontSize: '12px', color: '#374151', margin: '0 0 1.25rem' }}>CSV format: cost_code, description, amount[, owner_amount] · Header row optional</p>
+
+              {budgetError && (
+                <div style={{ ...s.errorMsg, whiteSpace: 'pre-line', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>{budgetError}</div>
+                  <button type="button" style={s.btnSmall} onClick={() => setBudgetError('')}>Dismiss</button>
+                </div>
+              )}
+              {budgetNotice && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '10px 14px', borderRadius: '6px', fontSize: '13px', marginBottom: '1.25rem', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <div style={{ flex: 1 }}>{budgetNotice}</div>
+                  <button type="button" style={s.btnSmall} onClick={() => setBudgetNotice('')}>Dismiss</button>
+                </div>
+              )}
+
+              {deleteAllOpen && (
+                <div style={{ ...s.inlineForm, border: '1px solid #fecaca', background: '#fef2f2' }}>
+                  <p style={{ fontSize: '13px', color: '#991b1b', margin: '0 0 8px', fontWeight: 600 }}>
+                    Delete all {budgetItems.length} budget line{budgetItems.length !== 1 ? 's' : ''}? This cannot be undone.
+                  </p>
+                  <p style={{ fontSize: '12px', color: '#374151', margin: '0 0 8px' }}>
+                    Lines with direct costs, POs, subcontract SOV lines, pay app lines or general conditions attached block this; nothing is deleted if any line is in use. Type <b>DELETE</b> to confirm.
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input style={{ ...s.input, maxWidth: '200px' }} value={deleteAllText} onChange={e => setDeleteAllText(e.target.value)} placeholder="DELETE" autoFocus />
+                    <button type="button" style={{ ...s.btnSmallRed, opacity: deleteAllText.trim() === 'DELETE' && !deletingAll ? 1 : 0.5 }}
+                      disabled={deleteAllText.trim() !== 'DELETE' || deletingAll} onClick={deleteAllBudgetItems}>
+                      {deletingAll ? 'Deleting...' : 'Delete all lines'}
+                    </button>
+                    <button type="button" style={s.btnSmall} onClick={() => { setDeleteAllOpen(false); setDeleteAllText('') }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {csvPreview && (
+                <div style={{ ...s.inlineForm, border: '1px solid #fed7aa' }}>
+                  <p style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 6px', color: '#111827' }}>
+                    Preview: {csvPreview.fileName} — {csvPreview.rows.length} line{csvPreview.rows.length !== 1 ? 's' : ''}{csvPreview.headerSkipped ? ' (header row skipped)' : ''}
+                  </p>
+                  {csvPreview.invalid.length > 0 && (
+                    <div style={{ ...s.errorMsg, marginBottom: '8px' }}>
+                      {csvPreview.invalid.length} row{csvPreview.invalid.length !== 1 ? 's have' : ' has'} errors ({csvPreview.invalid.map(r => 'line ' + r.line).join(', ')}). Fix the CSV and upload again — nothing will be imported until every row is valid.
+                    </div>
+                  )}
+                  {csvPreview.duplicates.length > 0 && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', marginBottom: '8px' }}>
+                      {csvPreview.duplicates.length} row{csvPreview.duplicates.length !== 1 ? 's use' : ' uses'} a cost code that already exists on this job or repeats in the file. Importing will add new lines alongside the existing ones.
+                    </div>
+                  )}
+                  <div style={{ maxHeight: '320px', overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: '6px', marginBottom: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
+                          {['Line', 'Cost code', 'Description', 'Budget', 'Owner SOV', 'Issues'].map(h => <th key={h} style={{ padding: '6px 8px', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, background: '#f9fafb' }}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvPreview.rows.map(r => (
+                          <tr key={r.line} style={{ background: r.errors.length ? '#fef2f2' : r.warnings.length ? '#fffbeb' : '#fff' }}>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f3f4f6', color: '#6b7280' }}>{r.line}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f3f4f6' }}>{r.cost_code || '—'}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f3f4f6' }}>{r.description || '—'}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f3f4f6', textAlign: 'right' }}>{r.budget_amount !== null ? '$' + r.budget_amount.toLocaleString('en-US', { minimumFractionDigits: 2 }) : (r.raw_budget || '—')}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f3f4f6', textAlign: 'right' }}>{r.owner_amount !== null ? '$' + r.owner_amount.toLocaleString('en-US', { minimumFractionDigits: 2 }) : (r.raw_owner || '—')}</td>
+                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f3f4f6', color: r.errors.length ? '#dc2626' : '#92400e' }}>{[...r.errors, ...r.warnings].join('; ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" style={{ ...s.btnSmallOrange, opacity: csvPreview.invalid.length || csvUploading ? 0.5 : 1 }}
+                      disabled={!!csvPreview.invalid.length || csvUploading || !csvPreview.valid.length} onClick={confirmCSVImport}>
+                      {csvUploading ? 'Importing...' : `Import ${csvPreview.valid.length} line${csvPreview.valid.length !== 1 ? 's' : ''}`}
+                    </button>
+                    <button type="button" style={s.btnSmall} disabled={csvUploading} onClick={() => setCsvPreview(null)}>Cancel</button>
+                  </div>
+                </div>
+              )}
 
               {showAddBudgetItem && (
                 <form onSubmit={saveBudgetItem} style={s.inlineForm}>

@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
-import { openStorageFile, openHtml } from '../../lib/open-file'
+import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, addCoSovLine } from '../../lib/sov-lines'
@@ -1052,6 +1052,16 @@ function JobDetailInner() {
     setShowPmDeliveryForm(false)
     await loadFieldData()
     setSubmittingPmDelivery(false)
+  }
+
+  // GC attachments are signed server-side (job-access checked; path must match the entry)
+  function openGCDoc(entry) {
+    return openFile(async () => {
+      const res = await authFetch(`/api/general-conditions?doc_id=${encodeURIComponent(entry.id)}&path=${encodeURIComponent(entry.doc_url)}`)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.url) { alert('Could not open attachment: ' + (json.error || res.status)); return null }
+      return json.url
+    })
   }
 
   function openBolUrl(path) {
@@ -13412,7 +13422,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         if (gcEditFile) {
                                           const fd = new FormData()
                                           fd.append('file', gcEditFile)
-                                          fd.append('data', JSON.stringify({ id: e.id, job_id: e.job_id, ...gcEditForm }))
+                                          fd.append('data', JSON.stringify({ id: e.id, ...gcEditForm }))
                                           res = await fetch('/api/general-conditions', { method: 'PUT', body: fd })
                                         } else {
                                           res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcEditForm }) })
@@ -13443,7 +13453,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#e8590c', fontFamily: 'monospace' }}>{fmtAmt(e.amount)}</span>
-                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={() => openStorageFile(supabase, 'gc-docs', e.doc_url, 3600)}>📎</button>}
+                                      {e.doc_url && <button style={s.btnSmallOrange} onClick={() => openGCDoc(e)}>📎</button>}
                                       <button style={s.btnSmallOrange} onClick={() => {
                                         setEditingGCId(e.id)
                                         setGcEditFile(null)

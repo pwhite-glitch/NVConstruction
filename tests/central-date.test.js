@@ -73,3 +73,29 @@ describe('isBeforeTodayCentral', () => {
     expect(isBeforeTodayCentral('2026-11-04T01:00:00Z', evening)).toBe(false)
   })
 })
+
+describe('centralDateRange (leaderboard From/To, inclusive in Central)', () => {
+  const { centralDateRange, centralDayStartIso } = require('../lib/central-date')
+  it('start of a Central day is 06:00Z in CST and 05:00Z in CDT', () => {
+    expect(centralDayStartIso('2026-11-30')).toBe('2026-11-30T06:00:00.000Z')
+    expect(centralDayStartIso('2026-07-15')).toBe('2026-07-15T05:00:00.000Z')
+    // DST change days
+    expect(centralDayStartIso('2026-11-01')).toBe('2026-11-01T05:00:00.000Z')
+    expect(centralDayStartIso('2026-11-02')).toBe('2026-11-02T06:00:00.000Z')
+    expect(centralDayStartIso('2026-03-08')).toBe('2026-03-08T06:00:00.000Z')
+  })
+  it('a To date of Nov 30 includes a win at 11:30 PM Central on Nov 30', () => {
+    const { gte, lt, lte } = centralDateRange('2026-11-01', '2026-11-30')
+    expect(gte).toBe('2026-11-01T05:00:00.000Z')
+    expect(lt).toBe('2026-12-01T06:00:00.000Z')
+    expect(lte).toBeNull()
+    const lateWin = '2026-12-01T05:30:00.000Z' // Nov 30 11:30 PM CST
+    expect(lateWin < lt).toBe(true)
+    expect('2026-12-01T06:00:00.000Z' < lt).toBe(false) // Dec 1 midnight Central is out
+  })
+  it('crosses month/year ends and leaves missing bounds empty', () => {
+    expect(centralDateRange(null, '2026-12-31').lt).toBe('2027-01-01T06:00:00.000Z')
+    expect(centralDateRange('', '')).toEqual({ gte: null, lt: null, lte: null })
+    expect(centralDateRange(null, '2026-12-31T00:00:00Z')).toEqual({ gte: null, lt: null, lte: '2026-12-31T00:00:00Z' })
+  })
+})

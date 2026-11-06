@@ -138,6 +138,10 @@ export default function SalesOrderDetailPage() {
   const [supplierOrders,  setSupplierOrders]  = useState([])
   const [readiness,       setReadiness]       = useState([])
   const [attribution,     setAttribution]     = useState([])
+  // Credit split editor: null when closed, else [{ salesperson_id, share_pct }]
+  const [attrEdit,        setAttrEdit]        = useState(null)
+  const [attrErr,         setAttrErr]         = useState('')
+  const [attrSaving,      setAttrSaving]      = useState(false)
   const [staffList,       setStaffList]       = useState([])
 
   // Modals
@@ -265,6 +269,39 @@ export default function SalesOrderDetailPage() {
     return { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }
   }
 
+  function startAttrEdit() {
+    setAttrErr('')
+    setAttrEdit(attribution.length
+      ? attribution.map(a => ({ salesperson_id: a.salesperson_id || '', share_pct: String(a.share_pct ?? '') }))
+      : [{ salesperson_id: order?.salesperson_id || '', share_pct: '100' }])
+  }
+
+  async function saveAttribution() {
+    const splits = (attrEdit || []).map(r => ({ salesperson_id: r.salesperson_id, share_pct: Number(r.share_pct) }))
+    if (!splits.length || splits.some(r => !r.salesperson_id)) { setAttrErr('Pick a rep on every line.'); return }
+    if (splits.some(r => !(r.share_pct > 0 && r.share_pct <= 100))) { setAttrErr('Each share must be more than 0% and at most 100%.'); return }
+    if (new Set(splits.map(r => r.salesperson_id)).size !== splits.length) { setAttrErr('A rep is listed twice.'); return }
+    const total = splits.reduce((a, r) => a + r.share_pct, 0)
+    if (Math.abs(total - 100) > 0.01) { setAttrErr(`Shares must total 100% (now ${Math.round(total * 100) / 100}%).`); return }
+    setAttrSaving(true); setAttrErr('')
+    try {
+      const headers = await authHeader()
+      const res = await fetch('/api/sales-orders', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'set_attribution', id, splits, actor_name: profile?.full_name }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setAttrErr(j.error || `Save failed (${res.status})`); return }
+      setAttrEdit(null)
+      await loadOrder()
+    } catch (e) {
+      setAttrErr(e.message)
+    } finally {
+      setAttrSaving(false)
+    }
+  }
+
   async function save() {
     setSaving(true); setSaveMsg('')
     try {
@@ -378,8 +415,10 @@ export default function SalesOrderDetailPage() {
       headers,
       body: JSON.stringify({ action: 'invite', order_id: id, email: inviteForm.email, name: inviteForm.name, inviter_name: profile?.full_name }),
     })
-    if (!res.ok) { const j = await res.json(); setModalErr(j.error || 'Failed'); return }
-    setModalOk(`Invitation sent to ${inviteForm.email}`)
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok) { setModalErr(j.error || 'Failed'); return }
+    if (j.email_status === 'sent') setModalOk(`Invitation sent to ${inviteForm.email}`)
+    else setModalErr(`Portal link created, but the email did not send${j.email_error ? ': ' + j.email_error : ''}.`)
     setInviteForm({ email: '', name: '' })
     loadPortalAccess()
   }
@@ -415,11 +454,12 @@ export default function SalesOrderDetailPage() {
   async function revokeAccess(accessId) {
     if (!window.confirm('Revoke this customer\'s portal access?')) return
     const headers = await authHeader()
-    await fetch('/api/customer-portal', {
+    const res = await fetch('/api/customer-portal', {
       method: 'POST',
       headers,
       body: JSON.stringify({ action: 'revoke', id: accessId }),
     })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); alert('Could not revoke: ' + (j.error || res.status)) }
     loadPortalAccess()
   }
 
@@ -581,6 +621,53 @@ export default function SalesOrderDetailPage() {
                 {showFinancials && <div style={s.kv}><span style={s.kvLabel}>Est. GP</span><span style={{ ...s.kvValue, color: '#16a34a' }}>{fmt$(order.estimated_profit)}</span></div>}
               </div>
             </div>
+
+            {/* Sales credit split (finance roles) */}
+            {showFinancials && (
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                  <p style={{ ...s.sec, marginBottom: 0 }}>Sales Credit</p>
+                  {!attrEdit && <button style={s.btnSm()} onClick={startAttrEdit}>{attribution.length ? 'Edit split' : 'Set split'}</button>}
+                </div>
+                {!attrEdit && (
+                  attribution.length ? (
+                    <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {attribution.map(a => (
+                        <span key={a.id || a.salesperson_id} style={{ fontSize: '13px', color: '#374151', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '4px 10px' }}>
+                          {a.salesperson_name || '—'} · {Number(a.share_pct)}%
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '12px', color: '#9ca3af', margin: '8px 0 0' }}>No split recorded. The leaderboard credits the salesperson at signing.</p>
+                  )
+                )}
+                {attrEdit && (
+                  <div style={{ marginTop: '10px' }}>
+                    {attrEdit.map((r, i) => (
+                      <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                        <select style={{ ...s.sel, flex: '1 1 180px', width: 'auto' }} value={r.salesperson_id} onChange={e => setAttrEdit(list => list.map((x, j) => j === i ? { ...x, salesperson_id: e.target.value } : x))}>
+                          <option value="">Select rep…</option>
+                          {staffList.map(p => <option key={p.id} value={p.id}>{p.full_name || p.id}</option>)}
+                        </select>
+                        <input type="number" min="0.01" max="100" step="0.01" style={{ ...s.inp, width: '90px' }} value={r.share_pct} onChange={e => setAttrEdit(list => list.map((x, j) => j === i ? { ...x, share_pct: e.target.value } : x))} />
+                        <span style={{ fontSize: '13px', color: '#6b7280' }}>%</span>
+                        {attrEdit.length > 1 && <button style={s.btnSm('red')} onClick={() => setAttrEdit(list => list.filter((_, j) => j !== i))}>Remove</button>}
+                      </div>
+                    ))}
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
+                      Total: {Math.round(attrEdit.reduce((a, r) => a + (Number(r.share_pct) || 0), 0) * 100) / 100}% (must be 100%)
+                    </div>
+                    {attrErr && <div style={{ fontSize: '12px', color: '#dc2626', marginBottom: '8px' }}>{attrErr}</div>}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button style={s.btnSm()} onClick={() => setAttrEdit(list => [...list, { salesperson_id: '', share_pct: '' }])}>+ Add rep</button>
+                      <button style={{ ...s.btnSm('green'), opacity: attrSaving ? 0.6 : 1 }} disabled={attrSaving} onClick={saveAttribution}>{attrSaving ? 'Saving…' : 'Save split'}</button>
+                      <button style={s.btnSm()} disabled={attrSaving} onClick={() => { setAttrEdit(null); setAttrErr('') }}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Customer */}
             <div style={s.card}>

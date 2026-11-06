@@ -10,6 +10,7 @@ import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from 
 import { sovByBudgetItem, sovBudgetDeltas } from '../../lib/prime-co-budget'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
+import { ratingScoresError } from '../../lib/sub-ratings'
 import { isCoLine, addCoSovLine } from '../../lib/sov-lines'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
 import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
@@ -3451,15 +3452,21 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   async function saveSubRating(subId) {
     const form = ratingForms[subId]
-    if (!form?.quality) return
+    const scoreErr = ratingScoresError(form)
+    if (scoreErr) { alert(scoreErr); return }
     setSavingRatingFor(subId)
     const { data: { session } } = await supabase.auth.getSession()
-    await fetch('/api/sub-ratings', {
+    const res = await fetch('/api/sub-ratings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sub_id: subId, job_id: id, rated_by: session.user.id, ...form }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ sub_id: subId, job_id: id, quality: form.quality, timeliness: form.timeliness, communication: form.communication, notes: form.notes || '' }),
     })
     setSavingRatingFor(null)
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      alert('Could not save rating: ' + (j.error || res.status))
+      return
+    }
     setShowRatingFor(null)
     await loadSubRatings()
   }
@@ -6849,7 +6856,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <input style={s.input} value={rf.notes || ''} onChange={e => setRatingForms(prev => ({ ...prev, [a.sub_id]: { ...rf, notes: e.target.value } }))} placeholder="Additional comments..." />
                               </div>
                               <div style={{ display: 'flex', gap: '8px' }}>
-                                <button style={{ ...s.btn, opacity: savingRatingFor === a.sub_id || !rf.quality ? 0.6 : 1 }} disabled={savingRatingFor === a.sub_id || !rf.quality} onClick={() => saveSubRating(a.sub_id)}>{savingRatingFor === a.sub_id ? 'Saving...' : 'Save Rating'}</button>
+                                <button style={{ ...s.btn, opacity: savingRatingFor === a.sub_id || ratingScoresError(rf) ? 0.6 : 1 }} disabled={savingRatingFor === a.sub_id || !!ratingScoresError(rf)} onClick={() => saveSubRating(a.sub_id)}>{savingRatingFor === a.sub_id ? 'Saving...' : 'Save Rating'}</button>
                                 <button style={s.btnGray} onClick={() => setShowRatingFor(null)}>Cancel</button>
                               </div>
                             </div>

@@ -11,6 +11,9 @@ import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import * as lookaheadApi from '../../lib/lookahead-client'
 import { StatusChip, DayWeather, RainTag, WorkflowBar, ActivityDateFields, FormHint, MoveToDaySelect, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
 
+// Unique storage file name for the i-th photo of a batch picked at `ts`.
+const uniquePhotoName = (ts, i) => `${ts}-${i}-${Math.random().toString(36).slice(2, 8)}.jpg`
+
 const WEATHER = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain', 'Heavy Rain', 'Thunderstorm', 'Snow', 'Windy', 'Extreme Heat', 'Fog']
 
 const PHOTO_TAGS = [
@@ -711,23 +714,32 @@ export default function Field() {
     }
   }
 
-  async function uploadMaintenancePhoto(file) {
+  // Upload picked photos one at a time; names carry index + random so several
+  // files picked in the same millisecond don't overwrite each other.
+  async function uploadMaintenancePhotos(files) {
+    if (!files.length) return
     setUploadingMxPhoto(true)
     const ts = Date.now()
-    const path = `maintenance/${user.id}/${ts}.jpg`
-    const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
-    if (!error) {
-      const { data: urlData } = await supabase.storage.from('daily-report-photos').createSignedUrl(path, 3600)
-      if (urlData?.signedUrl) setMxPhotoUrls(prev => ({ ...prev, [path]: urlData.signedUrl }))
-      setMaintenancePhotos(prev => [...prev, { path, name: file.name }])
-    } else alert('Photo upload failed: ' + error.message)
+    const failed = []
+    for (const [i, file] of files.entries()) {
+      try {
+        const path = `maintenance/${user.id}/${uniquePhotoName(ts, i)}`
+        const { error } = await supabase.storage.from('daily-report-photos').upload(path, file)
+        if (error) { failed.push(error.message); continue }
+        const { data: urlData } = await supabase.storage.from('daily-report-photos').createSignedUrl(path, 3600)
+        if (urlData?.signedUrl) setMxPhotoUrls(prev => ({ ...prev, [path]: urlData.signedUrl }))
+        setMaintenancePhotos(prev => [...prev, { path, name: file.name }])
+      } catch (e) { failed.push(e.message) }
+    }
     setUploadingMxPhoto(false)
+    if (failed.length) alert(`${files.length - failed.length} of ${files.length} photos uploaded. ${failed[0]}`)
   }
 
   async function submitMaintenanceReport(e) {
     e.preventDefault()
     const { report_date, equipment_name, current_hours, description } = maintenanceForm
     if (!equipment_name.trim() || !description.trim() || !report_date) { alert('Equipment, date, and description are required.'); return }
+    if (uploadingMxPhoto) { alert('Wait for photos to finish uploading.'); return }
     setSubmittingMx(true)
     const { data: { session } } = await supabase.auth.getSession()
     const res = await fetch('/api/maintenance-reports', {
@@ -764,9 +776,9 @@ export default function Field() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ report_id: report.id }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Send failed')
-      alert('Report sent to vivek@nvim.co and pwhite@nvim.co')
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || `Send failed (${res.status})`)
+      alert('Report sent to vivek@nvim.co and pwhite@nvim.co' + (json.photos_skipped ? `\n${json.photos_skipped} photo(s) could not be included in the PDF.` : ''))
     } catch (e) {
       alert('Error sending report: ' + e.message)
     } finally {
@@ -1005,17 +1017,23 @@ export default function Field() {
     window.open(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/vehicle-photos/${path}`, '_blank')
   }
 
-  async function uploadReportPhoto(file) {
+  async function uploadReportPhotos(files) {
+    if (!files.length) return
     setUploadingPhoto(true)
     const ts = Date.now()
-    const path = `${selectedJobId}/${ts}.jpg`
-    const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
-    const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
-    if (!error) {
-      await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
-      setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
-    } else alert('Photo upload failed: ' + error.message)
+    const failed = []
+    for (const [i, file] of files.entries()) {
+      try {
+        const path = `${selectedJobId}/${uniquePhotoName(ts, i)}`
+        const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
+        const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
+        if (error) { failed.push(error.message); continue }
+        await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
+        setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
+      } catch (e) { failed.push(e.message) }
+    }
     setUploadingPhoto(false)
+    if (failed.length) alert(`${files.length - failed.length} of ${files.length} photos uploaded. ${failed[0]}`)
   }
 
   async function openReportPhoto(path) {
@@ -1028,6 +1046,7 @@ export default function Field() {
   async function submitDailyReport(e) {
     if (e?.preventDefault) e.preventDefault()
     if (!dailyForm.work_performed.trim()) { alert('Work performed is required.'); return }
+    if (uploadingPhoto) { alert('Wait for photos to finish uploading.'); return }
     setSubmittingDaily(true)
     const filledCrew = crewLog.filter(r => r.name || r.company)
     const { error } = await supabase.from('daily_reports').insert({
@@ -1522,7 +1541,7 @@ export default function Field() {
                             <label style={s.label}>Attach photos</label>
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 18px', background: uploadingPhoto ? '#111' : '#1a1a1a', color: uploadingPhoto ? '#555' : '#aaa', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
                               {uploadingPhoto ? 'Uploading...' : 'Add Photos'}
-                              <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadReportPhoto(f)); e.target.value = '' }} />
+                              <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadReportPhotos(files) }} />
                             </label>
                             {reportPhotos.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
@@ -1538,8 +1557,8 @@ export default function Field() {
 
                           <div style={{ display: 'flex', gap: '10px' }}>
                             <button onClick={() => setWizardStep(3)} style={{ ...s.btnSm(), padding: '11px 20px', display: 'flex', alignItems: 'center', gap: '5px' }}>{IC.arrowL} Back</button>
-                            <button onClick={submitDailyReport} disabled={submittingDaily} style={{ ...s.btn, flex: 1, opacity: submittingDaily ? 0.6 : 1 }}>
-                              {submittingDaily ? 'Submitting...' : 'Submit Report ✓'}
+                            <button onClick={submitDailyReport} disabled={submittingDaily || uploadingPhoto} style={{ ...s.btn, flex: 1, opacity: submittingDaily || uploadingPhoto ? 0.6 : 1 }}>
+                              {submittingDaily ? 'Submitting...' : uploadingPhoto ? 'Uploading photos...' : 'Submit Report ✓'}
                             </button>
                           </div>
                         </div>
@@ -2986,7 +3005,7 @@ export default function Field() {
                         <label style={s.label}>Photos</label>
                         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', background: uploadingMxPhoto ? '#f3f4f6' : '#fff', color: uploadingMxPhoto ? '#9ca3af' : '#374151', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: uploadingMxPhoto ? 'not-allowed' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase' }}>
                           {uploadingMxPhoto ? 'Uploading...' : '+ Add Photos'}
-                          <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingMxPhoto} onChange={e => { Array.from(e.target.files || []).forEach(f => uploadMaintenancePhoto(f)); e.target.value = '' }} />
+                          <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingMxPhoto} onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadMaintenancePhotos(files) }} />
                         </label>
                         {maintenancePhotos.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
@@ -3000,8 +3019,8 @@ export default function Field() {
                           </div>
                         )}
                       </div>
-                      <button type="submit" disabled={submittingMx} style={{ ...s.btn, opacity: submittingMx ? 0.6 : 1 }}>
-                        {submittingMx ? 'Saving...' : 'Save Report'}
+                      <button type="submit" disabled={submittingMx || uploadingMxPhoto} style={{ ...s.btn, opacity: submittingMx || uploadingMxPhoto ? 0.6 : 1 }}>
+                        {submittingMx ? 'Saving...' : uploadingMxPhoto ? 'Uploading photos...' : 'Save Report'}
                       </button>
                     </form>
 

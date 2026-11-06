@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { safeFileName } from '../../lib/storage-path'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -67,6 +68,8 @@ export default function Apply() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
+  // Shown on the success screen: what happened with the W-9 / COI files.
+  const [docsNote, setDocsNote] = useState('')
 
   const [company, setCompany] = useState({ company_name: '', trade: '', phone: '', address: '', scope_description: '' })
   const [account, setAccount] = useState({ full_name: '', email: '', password: '', confirm: '' })
@@ -93,22 +96,25 @@ export default function Apply() {
     setStep(s => s + 1)
   }
 
-  async function handleSubmit() {
+  // Upload one file to <directory id>/ through a signed URL from /api/sub-docs. Returns the path.
+  async function uploadDoc(token, directoryId, file, kind) {
+    const path = `${directoryId}/${Date.now()}_${kind}_${safeFileName(file.name)}`
+    const res = await fetch('/api/sub-docs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'upload-url', path }),
+    })
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok || !j.signedUrl) throw new Error(`${kind === 'w9' ? 'W-9' : 'COI'}: ${j.error || 'could not get upload URL'}`)
+    const up = await fetch(j.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+    if (!up.ok) throw new Error(`${kind === 'w9' ? 'W-9' : 'COI'}: upload failed (${up.status})`)
+    return path
+  }
+
+  async function handleSubmit(withDocs = true) {
     setLoading(true)
     setError('')
     try {
-      // Documents are uploaded after auth — silently skip if storage rejects
-      // (sub can upload them later from the portal)
-      let w9_url = null, coi_url = null
-      if (w9File) {
-        const { data } = await supabase.storage.from('documents').upload(`w9/${Date.now()}_${w9File.name}`, w9File, { upsert: true })
-        if (data) w9_url = data.path
-      }
-      if (coiFile) {
-        const { data } = await supabase.storage.from('documents').upload(`coi/${Date.now()}_${coiFile.name}`, coiFile, { upsert: true })
-        if (data) coi_url = data.path
-      }
-
       const email = account.email.toLowerCase().trim()
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -117,11 +123,12 @@ export default function Apply() {
         options: { data: { full_name: account.full_name.trim(), role: 'subcontractor' } },
       })
       if (authError) throw authError
+      const token = authData.session?.access_token || null
 
-      // Server-side: create companies entry, sub_directory row, and link profile
+      // Server-side: create companies entry, sub_directory row (pending), and link profile
       const regRes = await fetch('/api/register-company', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           user_id: authData.user?.id,
           company_name: company.company_name.trim(),
@@ -134,12 +141,37 @@ export default function Apply() {
           scope_description: company.scope_description || null,
           coi_expiration: docs.coi_expiration || null,
           license_number: docs.license_number || null,
-          w9_url,
-          coi_url,
         }),
       })
-      const regData = await regRes.json()
-      if (!regData.ok) throw new Error(regData.error || 'Registration failed')
+      const regData = await regRes.json().catch(() => ({}))
+      if (!regRes.ok || !regData.ok) throw new Error(regData.error || 'Registration failed')
+
+      // Documents go up only after the account and directory row exist.
+      const files = withDocs ? [['w9', w9File], ['coi', coiFile]].filter(([, f]) => f) : []
+      if (files.length && (!token || !regData.directory_id)) {
+        setDocsNote('Your account was created. Please confirm your email, log in, and upload your W-9 / COI from My Documents in the portal.')
+      } else if (files.length) {
+        const saved = {}
+        const failed = []
+        for (const [kind, file] of files) {
+          try { saved[`${kind}_url`] = await uploadDoc(token, regData.directory_id, file, kind) }
+          catch (e) { failed.push(e.message) }
+        }
+        if (Object.keys(saved).length) {
+          const docRes = await fetch('/api/sub-docs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ directory_id: regData.directory_id, ...saved }),
+          })
+          if (!docRes.ok) {
+            const j = await docRes.json().catch(() => ({}))
+            failed.push('Saving document links: ' + (j.error || docRes.status))
+          }
+        }
+        if (failed.length) {
+          setDocsNote(`Your application was submitted, but some documents did not upload: ${failed.join('; ')}. Please log in and upload them from My Documents.`)
+        }
+      }
 
       setDone(true)
     } catch (err) {
@@ -160,6 +192,7 @@ export default function Apply() {
               Thank you, {account.full_name.split(' ')[0]}. We'll review your application and notify you once you're approved.<br />
               You can log in at any time to check your status or upload documents.
             </div>
+            {docsNote && <div style={{ ...s.err, textAlign: 'left' }}>{docsNote}</div>}
             <a href="/login" style={{ display: 'inline-block', padding: '12px 28px', background: '#e8590c', color: '#fff', textDecoration: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '14px', letterSpacing: '1px' }}>Go to Login</a>
           </div>
         </div>
@@ -276,10 +309,10 @@ export default function Apply() {
                   <input style={s.input} value={docs.license_number} onChange={e => setD('license_number', e.target.value)} placeholder="TX-12345" />
                 </div>
               </div>
-              <button style={{ ...s.btn, opacity: loading ? 0.6 : 1 }} disabled={loading} onClick={handleSubmit}>
+              <button style={{ ...s.btn, opacity: loading ? 0.6 : 1 }} disabled={loading} onClick={() => handleSubmit(true)}>
                 {loading ? 'Submitting...' : 'Submit application'}
               </button>
-              <button style={{ ...s.btnGray, opacity: loading ? 0.4 : 1 }} disabled={loading} onClick={handleSubmit}>
+              <button style={{ ...s.btnGray, opacity: loading ? 0.4 : 1 }} disabled={loading} onClick={() => handleSubmit(false)}>
                 Skip documents — submit now
               </button>
               <button style={{ ...s.btnGray, marginTop: '4px', opacity: loading ? 0.4 : 1 }} disabled={loading} onClick={() => setStep(2)}>← Back</button>

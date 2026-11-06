@@ -410,7 +410,7 @@ export default function CustomerPortalPage() {
     setDownloadingDoc(doc.id)
     try {
       const res = await fetch(
-        `/api/customer-portal?token=${encodeURIComponent(token)}&doc_url=${encodeURIComponent(doc.storage_path || doc.file_name)}`
+        `/api/customer-portal?token=${encodeURIComponent(token)}&doc_id=${encodeURIComponent(doc.id)}`
       )
       if (!res.ok) {
         alert('Unable to download this file. Please contact your project team.')

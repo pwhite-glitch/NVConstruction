@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { escapeHtml } from '../../../lib/email'
+import { notify } from '../../../lib/notify'
+import { ilikeExact } from '../../../lib/roles'
+import { canManageOrderPortal, findPortalDoc, isValidEmail, QUESTION_MAX_CHARS, QUESTION_MIN_GAP_MS } from '../../../lib/customer-portal'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -7,6 +11,7 @@ const adminSupabase = createClient(
 )
 
 const BUCKET = 'sales-docs'
+const FROM = () => process.env.EMAIL_FROM || 'NV Construction <noreply@nvim.co>'
 
 // Portal GET — no auth required, token IS the credential
 export async function GET(request) {
@@ -27,10 +32,14 @@ export async function GET(request) {
       return Response.json({ error: 'invalid_token' }, { status: 404 })
     }
 
-    // Signed URL for a shared document
+    // Signed URL for a shared document: only a doc on this token's order that is
+    // marked visible to the customer (by id, or by its exact storage_path).
+    const docId = searchParams.get('doc_id')
     const docPath = searchParams.get('doc_url')
-    if (docPath) {
-      const { data, error } = await adminSupabase.storage.from(BUCKET).createSignedUrl(docPath, 3600)
+    if (docId || docPath) {
+      const found = await findPortalDoc(adminSupabase, access.order_id, { docId, path: docPath })
+      if (found.error) return Response.json({ error: found.error }, { status: found.status })
+      const { data, error } = await adminSupabase.storage.from(BUCKET).createSignedUrl(found.doc.storage_path, 3600)
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ url: data.signedUrl })
     }
@@ -95,8 +104,10 @@ export async function POST(request) {
 
     // ── Customer sends a question (token-authenticated) ────────────────────
     if (action === 'send_question') {
-      const { token, access_id, body: questionText } = body
+      const { token, access_id } = body
+      const questionText = typeof body.body === 'string' ? body.body.trim() : ''
       if (!token || !questionText) return Response.json({ error: 'token and body required' }, { status: 400 })
+      if (questionText.length > QUESTION_MAX_CHARS) return Response.json({ error: `Please keep questions under ${QUESTION_MAX_CHARS} characters.` }, { status: 400 })
 
       const { data: access } = await adminSupabase
         .from('customer_portal_access')
@@ -107,22 +118,38 @@ export async function POST(request) {
 
       if (!access || access.revoked_at) return Response.json({ error: 'Invalid token' }, { status: 403 })
 
-      await adminSupabase.from('sales_order_updates').insert({
+      // Light rate limit: one question per access link per minute (uses the history log).
+      const since = new Date(Date.now() - QUESTION_MIN_GAP_MS).toISOString()
+      const { data: recent } = await adminSupabase
+        .from('sales_order_history')
+        .select('id')
+        .eq('order_id', access.order_id)
+        .eq('action', 'customer_question')
+        .eq('details->>access_id', access.id)
+        .gte('created_at', since)
+        .limit(1)
+      if (recent?.length) return Response.json({ error: 'Please wait a minute before sending another question.' }, { status: 429 })
+
+      const who = access.name || access.email
+      const { error: insErr } = await adminSupabase.from('sales_order_updates').insert({
         order_id:           access.order_id,
         author_id:          null,
-        author_name:        access.name || access.email,
+        author_name:        who,
         body:               `[Customer question] ${questionText}`,
         visible_to_customer: false,
         update_type:        'question',
       })
+      if (insErr) return Response.json({ error: 'Could not send your question. Please try again.' }, { status: 500 })
 
       await adminSupabase.from('sales_order_history').insert({
         order_id:   access.order_id,
         actor_id:   null,
-        actor_name: access.name || access.email,
+        actor_name: who,
         action:     'customer_question',
-        details:    { access_id },
+        details:    { access_id: access.id },
       })
+
+      await notifyQuestion(access, who, questionText)
 
       return Response.json({ ok: true })
     }
@@ -148,10 +175,39 @@ export async function POST(request) {
     const STAFF_ROLES = new Set(['principal', 'pm', 'apm', 'admin', 'metal_rep', 'roofing_rep'])
     if (!STAFF_ROLES.has(role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
 
+    // Every staff action is on one order: load it and check the caller may manage it.
+    let orderId = body.order_id
+    let revokeRow = null
+    if (action === 'revoke') {
+      if (!body.id) return Response.json({ error: 'id required' }, { status: 400 })
+      const { data: acc, error: accErr } = await adminSupabase.from('customer_portal_access').select('order_id, email').eq('id', body.id).maybeSingle()
+      if (accErr) return Response.json({ error: accErr.message }, { status: 500 })
+      if (!acc) return Response.json({ error: 'Not found' }, { status: 404 })
+      revokeRow = acc
+      orderId = acc.order_id
+    }
+    if (!['invite', 'revoke', 'list'].includes(action)) return Response.json({ error: 'Unknown action' }, { status: 400 })
+    if (!orderId) return Response.json({ error: 'order_id required' }, { status: 400 })
+    const { data: scopeOrder, error: scopeErr } = await adminSupabase
+      .from('sales_orders')
+      .select('id, order_number, customer_name, salesperson_id, salesperson_name, ops_owner_id')
+      .eq('id', orderId)
+      .maybeSingle()
+    if (scopeErr) return Response.json({ error: scopeErr.message }, { status: 500 })
+    if (!scopeOrder) return Response.json({ error: 'Order not found' }, { status: 404 })
+    if (!canManageOrderPortal(role, user.id, scopeOrder)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+
     // ── Invite customer ────────────────────────────────────────────────────────
     if (action === 'invite') {
-      const { order_id, email, name, inviter_name } = body
+      const { order_id, name, inviter_name } = body
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
       if (!order_id || !email) return Response.json({ error: 'order_id and email required' }, { status: 400 })
+      if (!isValidEmail(email)) return Response.json({ error: 'Enter a valid email address.' }, { status: 400 })
+
+      // Re-invite: retire older live links for the same order + email.
+      await adminSupabase.from('customer_portal_access')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('order_id', order_id).ilike('email', ilikeExact(email)).is('revoked_at', null)
 
       // Generate a secure token
       const crypto = await import('crypto')
@@ -166,13 +222,11 @@ export async function POST(request) {
       if (error) return Response.json({ error: error.message }, { status: 500 })
 
       // Send invitation email via Resend
-      const { data: order } = await adminSupabase
-        .from('sales_orders')
-        .select('order_number, customer_name, salesperson_name')
-        .eq('id', order_id)
-        .maybeSingle()
+      const order = scopeOrder
 
       const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.nvim.co'}/portal/${access_token}`
+      let emailStatus = 'failed'
+      let emailError = null
 
       try {
         const resend = new Resend(process.env.RESEND_API_KEY)
@@ -182,34 +236,39 @@ export async function POST(request) {
               <span style="color:#fff;font-weight:700;font-size:18px">NV Construction</span>
             </div>
             <div style="background:#fff;padding:28px 24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
-              <p style="margin:0 0 12px;font-size:15px">Hi ${name || 'there'},</p>
+              <p style="margin:0 0 12px;font-size:15px">Hi ${escapeHtml(name || 'there')},</p>
               <p style="margin:0 0 16px;font-size:14px;color:#374151">
-                You've been invited to view your order details for <strong>${order?.order_number || ''}</strong> through the NV Construction customer portal.
+                You've been invited to view your order details for <strong>${escapeHtml(order?.order_number || '')}</strong> through the NV Construction customer portal.
               </p>
               <a href="${portalUrl}" style="display:inline-block;background:#e8590c;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;margin-bottom:20px">
                 View My Order →
               </a>
               <p style="margin:0;font-size:12px;color:#9ca3af">
-                Questions? Contact your project representative: ${order?.salesperson_name || 'your sales rep'}.
+                Questions? Contact your project representative: ${escapeHtml(order?.salesperson_name || 'your sales rep')}.
               </p>
             </div>
           </div>
         `
-        await resend.emails.send({
-          from: process.env.EMAIL_FROM || 'NV Construction <noreply@nvim.co>',
+        const subject = `Your order portal — ${order?.order_number || 'NV Construction'}`
+        const { data: sent, error: sendErr } = await resend.emails.send({
+          from: FROM(),
           to:   email,
-          subject: `Your order portal — ${order?.order_number || 'NV Construction'}`,
+          subject,
           html: emailHtml,
         })
+        if (sendErr) throw new Error(sendErr.message || 'Email provider refused the message')
+        emailStatus = 'sent'
 
-        // Log the email
-        await adminSupabase.from('sales_email_log').insert({
-          order_id, template: 'portal_invite', to_email: email, subject: `Your order portal — ${order?.order_number}`,
-          status: 'sent', sent_by: user.id,
+        // Log the email ('sent' only after Resend accepted it). dedup_key is unique.
+        const { error: logErr } = await adminSupabase.from('sales_email_log').upsert({
+          order_id, template: 'portal_invite', to_email: email, subject,
+          status: 'sent', sent_by: user.id, provider_id: sent?.id || null,
           dedup_key: `portal_invite_${data.id}`,
-        }).onConflict('dedup_key').ignore()
+        }, { onConflict: 'dedup_key', ignoreDuplicates: true })
+        if (logErr) console.error('[customer-portal] email log:', logErr.message)
       } catch (emailErr) {
-        // Log failure but don't block the invite
+        emailError = emailErr.message
+        // Log failure but don't block the invite (the link still works)
         await adminSupabase.from('sales_email_log').insert({
           order_id, template: 'portal_invite', to_email: email,
           status: 'failed', error_message: emailErr.message, sent_by: user.id,
@@ -224,18 +283,16 @@ export async function POST(request) {
         details:    { email, name: name || null, access_id: data.id },
       })
 
-      return Response.json({ ok: true, id: data.id })
+      return Response.json({ ok: true, id: data.id, email_status: emailStatus, ...(emailError ? { email_error: emailError } : {}) })
     }
 
     // ── Revoke access ──────────────────────────────────────────────────────────
     if (action === 'revoke') {
       const { id } = body
-      if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+      const access = revokeRow
 
-      const { data: access } = await adminSupabase.from('customer_portal_access').select('order_id,email').eq('id', id).maybeSingle()
-      if (!access) return Response.json({ error: 'Not found' }, { status: 404 })
-
-      await adminSupabase.from('customer_portal_access').update({ revoked_at: new Date().toISOString() }).eq('id', id)
+      const { error: revErr } = await adminSupabase.from('customer_portal_access').update({ revoked_at: new Date().toISOString() }).eq('id', id)
+      if (revErr) return Response.json({ error: revErr.message }, { status: 500 })
 
       await adminSupabase.from('sales_order_history').insert({
         order_id:   access.order_id,
@@ -251,7 +308,6 @@ export async function POST(request) {
     // ── List accesses for an order ─────────────────────────────────────────────
     if (action === 'list') {
       const { order_id } = body
-      if (!order_id) return Response.json({ error: 'order_id required' }, { status: 400 })
 
       const { data, error } = await adminSupabase
         .from('customer_portal_access')
@@ -266,5 +322,48 @@ export async function POST(request) {
     return Response.json({ error: 'Unknown action' }, { status: 400 })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
+  }
+}
+
+// Tell the order's salesperson and ops owner a customer asked something:
+// in-app notification + a short email. Never throws.
+async function notifyQuestion(access, who, questionText) {
+  try {
+    const { data: order } = await adminSupabase
+      .from('sales_orders')
+      .select('id, order_number, salesperson_id, ops_owner_id')
+      .eq('id', access.order_id)
+      .maybeSingle()
+    if (!order) return
+    const ids = [...new Set([order.salesperson_id, order.ops_owner_id].filter(Boolean))]
+    if (!ids.length) return
+    const label = order.order_number || 'Sales order'
+    const preview = questionText.length > 200 ? questionText.slice(0, 200) + '…' : questionText
+    for (const id of ids) {
+      await notify({
+        recipient_id: id,
+        type:         'sales_order',
+        title:        `${label}: customer question`,
+        body:         `${who}: ${preview}`,
+        link:         `/sales/${order.id}`,
+        entity_type:  'sales_order',
+        entity_id:    order.id,
+      })
+    }
+    const { data: profs } = await adminSupabase.from('profiles').select('id, invite_email').in('id', ids)
+    const to = [...new Set((profs || []).map(p => p.invite_email).filter(e => isValidEmail(e || '')))]
+    if (!to.length) return
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const { error } = await resend.emails.send({
+      from: FROM(),
+      to,
+      subject: `Customer question — ${label}`,
+      html: `<p><strong>${escapeHtml(who)}</strong> asked a question on <strong>${escapeHtml(label)}</strong>:</p>`
+        + `<blockquote style="white-space:pre-wrap">${escapeHtml(questionText)}</blockquote>`
+        + `<p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.nvim.co'}/sales/${order.id}">Open the order</a></p>`,
+    })
+    if (error) console.error('[customer-portal] question email:', error.message || error)
+  } catch (e) {
+    console.error('[customer-portal] notifyQuestion:', e?.message)
   }
 }

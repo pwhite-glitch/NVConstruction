@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
+import { centralDateRange } from '../../../lib/central-date'
+import { fetchAll } from '../../../lib/budget-line-refs'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -20,33 +22,45 @@ export async function GET(request) {
     const to       = searchParams.get('to')
     const division = searchParams.get('division')
     const showFinancials = FINANCE_ROLES.has(auth.role)
+    // From/To are Central calendar days, both inclusive (To = before next day's Central midnight).
+    const range = centralDateRange(from, to)
+    const applyRange = (q, col) => {
+      if (range.gte) q = q.gte(col, range.gte)
+      if (range.lt)  q = q.lt(col, range.lt)
+      if (range.lte) q = q.lte(col, range.lte)
+      return q
+    }
 
     // ── Primary: use sales_attribution records (stored at signing) ───────────
     // These are the authoritative split-credit records. One order may have
     // multiple attribution rows totaling 100%. A rep's share_pct portion of
     // the order's signed_contract_value counts toward their total.
 
-    let attrQ = adminSupabase
-      .from('sales_attribution')
-      .select(`
-        salesperson_id,
-        salesperson_name,
-        share_pct,
-        order_id,
-        sales_orders!inner (
-          id, division, contract_value, internal_cost, estimated_profit,
-          won_at, stage, is_preview_data, signed_contract_value
-        )
-      `)
-      .not('sales_orders.stage', 'in', '(lead,quoted,cancelled)')
-      .not('sales_orders.won_at', 'is', null)
-      .eq('sales_orders.is_preview_data', false)
+    // Paged (1000 rows per request) until exhausted, so PostgREST's row cap never cuts totals short.
+    const attrQ = () => {
+      let q = adminSupabase
+        .from('sales_attribution')
+        .select(`
+          salesperson_id,
+          salesperson_name,
+          share_pct,
+          order_id,
+          sales_orders!inner (
+            id, division, contract_value, internal_cost, estimated_profit,
+            won_at, stage, is_preview_data, signed_contract_value
+          )
+        `)
+        .not('sales_orders.stage', 'in', '(lead,quoted,cancelled)')
+        .not('sales_orders.won_at', 'is', null)
+        .eq('sales_orders.is_preview_data', false)
+        .order('id')
 
-    if (from)     attrQ = attrQ.gte('sales_orders.won_at', from)
-    if (to)       attrQ = attrQ.lte('sales_orders.won_at', to)
-    if (division) attrQ = attrQ.eq('sales_orders.division', division)
+      q = applyRange(q, 'sales_orders.won_at')
+      if (division) q = q.eq('sales_orders.division', division)
+      return q
+    }
 
-    const { data: attrRows, error: attrErr } = await attrQ
+    const { data: attrRows, error: attrErr } = await fetchAll(attrQ)
     if (attrErr) return Response.json({ error: attrErr.message }, { status: 500 })
 
     // ── Fallback: orders without any attribution records ──────────────────────
@@ -55,18 +69,22 @@ export async function GET(request) {
 
     const coveredOrderIds = new Set((attrRows || []).map(r => r.order_id))
 
-    let legacyQ = adminSupabase
-      .from('sales_orders')
-      .select('id,division,salesperson_id,salesperson_name,signed_salesperson_id,signed_salesperson_name,contract_value,signed_contract_value,internal_cost,estimated_profit,won_at,stage')
-      .not('stage', 'in', '(lead,quoted,cancelled)')
-      .not('won_at', 'is', null)
-      .eq('is_preview_data', false)
+    const legacyQ = () => {
+      let q = adminSupabase
+        .from('sales_orders')
+        .select('id,division,salesperson_id,salesperson_name,signed_salesperson_id,signed_salesperson_name,contract_value,signed_contract_value,internal_cost,estimated_profit,won_at,stage')
+        .not('stage', 'in', '(lead,quoted,cancelled)')
+        .not('won_at', 'is', null)
+        .eq('is_preview_data', false)
+        .order('id')
 
-    if (from)     legacyQ = legacyQ.gte('won_at', from)
-    if (to)       legacyQ = legacyQ.lte('won_at', to)
-    if (division) legacyQ = legacyQ.eq('division', division)
+      q = applyRange(q, 'won_at')
+      if (division) q = q.eq('division', division)
+      return q
+    }
 
-    const { data: allOrders } = await legacyQ
+    const { data: allOrders, error: legacyErr } = await fetchAll(legacyQ)
+    if (legacyErr) return Response.json({ error: legacyErr.message }, { status: 500 })
 
     const legacyOrders = (allOrders || []).filter(o => !coveredOrderIds.has(o.id))
 

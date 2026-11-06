@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { requireAuth } from '../../../../lib/server-auth'
+import { escapeHtml } from '../../../../lib/email'
+import { winAnsiSafe, wrapLines } from '../../../../lib/pdf-text'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,23 +25,7 @@ const fmtDate = d =>
   d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : '—'
 const fmtNum = n => n != null ? Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }) : '—'
 
-// Wrap text to fit within maxWidth, honoring existing newlines
-function wrapLines(text, font, size, maxW) {
-  const out = []
-  for (const para of String(text || '').split('\n')) {
-    if (!para.trim()) { out.push(''); continue }
-    let line = ''
-    for (const word of para.split(' ')) {
-      const test = line ? `${line} ${word}` : word
-      if (font.widthOfTextAtSize(test, size) > maxW && line) {
-        out.push(line); line = word
-      } else { line = test }
-    }
-    if (line) out.push(line)
-  }
-  return out
-}
-
+// photoData: one entry per photo on the report; null when it could not be downloaded.
 async function buildPdf(report, photoData) {
   const doc = await PDFDocument.create()
   const font     = await doc.embedFont(StandardFonts.Helvetica)
@@ -62,7 +48,7 @@ async function buildPdf(report, photoData) {
   function drawText(text, x, opts = {}) {
     const { size = 10, bold = false, color = C_BLACK, rightX } = opts
     const f = bold ? boldFont : font
-    const s = String(text)
+    const s = winAnsiSafe(text).replace(/\n/g, ' ')
     const drawX = rightX != null ? rightX - f.widthOfTextAtSize(s, size) : x
     page.drawText(s, { x: drawX, y: py() - size, size, font: f, color })
   }
@@ -112,28 +98,38 @@ async function buildPdf(report, photoData) {
   curY += 8
 
   // ── Photos ───────────────────────────────────────────────────────
+  // Embed first so the label counts only photos that are really in the PDF.
+  const images = []
+  for (const pd of photoData) {
+    if (!pd) continue
+    try {
+      images.push(pd.isPng ? await doc.embedPng(pd.buffer) : await doc.embedJpg(pd.buffer))
+    } catch (_) {
+      // Not a JPEG/PNG pdf-lib can read (e.g. HEIC/WebP): counted as skipped below.
+    }
+  }
+  const skipped = photoData.length - images.length
   if (photoData.length) {
-    sectionLabel(`PHOTOS (${photoData.length})`)
+    sectionLabel(`PHOTOS (${images.length})`)
+    if (skipped) {
+      drawText(`${skipped} photo${skipped === 1 ? '' : 's'} could not be embedded (unsupported format or download failed).`, MARGIN, { size: 9, color: C_GRAY })
+      curY += 15
+    }
     const COLS = 3, GAP = 8
     const IMG_W = Math.floor((CONTENT_W - GAP * (COLS - 1)) / COLS)
     const IMG_H = Math.floor(IMG_W * 0.75)
 
-    for (let i = 0; i < photoData.length; i += COLS) {
+    for (let i = 0; i < images.length; i += COLS) {
       ensureSpace(IMG_H + GAP)
       for (let col = 0; col < COLS; col++) {
-        const pd = photoData[i + col]
-        if (!pd) break
-        try {
-          const img = pd.isPng
-            ? await doc.embedPng(pd.buffer)
-            : await doc.embedJpg(pd.buffer)
-          page.drawImage(img, {
-            x: MARGIN + col * (IMG_W + GAP),
-            y: PAGE_H - curY - IMG_H,
-            width: IMG_W,
-            height: IMG_H,
-          })
-        } catch (_) {}
+        const img = images[i + col]
+        if (!img) break
+        page.drawImage(img, {
+          x: MARGIN + col * (IMG_W + GAP),
+          y: PAGE_H - curY - IMG_H,
+          width: IMG_W,
+          height: IMG_H,
+        })
       }
       curY += IMG_H + GAP
     }
@@ -165,7 +161,7 @@ async function buildPdf(report, photoData) {
     })
   }
 
-  return Buffer.from(await doc.save())
+  return { buffer: Buffer.from(await doc.save()), embedded: images.length, skipped }
 }
 
 export const maxDuration = 30
@@ -195,7 +191,7 @@ export async function POST(request) {
       if (data) paths.forEach((path, i) => { if (data[i]?.signedUrl) signedUrls[path] = data[i].signedUrl })
     }
 
-    const photoData = (await Promise.all(
+    const photoData = await Promise.all(
       paths.map(async path => {
         const url = signedUrls[path]
         if (!url) return null
@@ -207,9 +203,9 @@ export async function POST(request) {
           return { buffer, isPng: ct.includes('png') }
         } catch (_) { return null }
       })
-    )).filter(Boolean)
+    )
 
-    const pdfBuffer = await buildPdf(report, photoData)
+    const { buffer: pdfBuffer, embedded, skipped } = await buildPdf(report, photoData)
 
     const dateStr = report.report_date
       ? new Date(report.report_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -217,15 +213,16 @@ export async function POST(request) {
     const safeName = (report.equipment_name || 'equipment').replace(/[^a-z0-9]/gi, '-').toLowerCase()
     const filename = `maintenance-report-${safeName}-${report.report_date || 'unknown'}.pdf`
 
-    await resend.emails.send({
+    const { error: sendErr } = await resend.emails.send({
       from: FROM,
       to: REPORT_RECIPIENTS,
-      subject: `Maintenance Report — ${report.equipment_name}${dateStr ? ` — ${dateStr}` : ''}`,
-      html: `<p style="font-family:sans-serif;color:#333;font-size:14px">Maintenance report for <strong>${report.equipment_name}</strong>${dateStr ? ` (${dateStr})` : ''} is attached.</p>`,
+      subject: `Maintenance Report — ${String(report.equipment_name || '').replace(/[\r\n]+/g, ' ').slice(0, 150)}${dateStr ? ` — ${dateStr}` : ''}`,
+      html: `<p style="font-family:sans-serif;color:#333;font-size:14px">Maintenance report for <strong>${escapeHtml(report.equipment_name || '')}</strong>${dateStr ? ` (${dateStr})` : ''} is attached.</p>`,
       attachments: [{ filename, content: pdfBuffer }],
     })
+    if (sendErr) return Response.json({ error: 'Email not sent: ' + (sendErr.message || 'provider refused the message') }, { status: 502 })
 
-    return Response.json({ ok: true })
+    return Response.json({ ok: true, photos_embedded: embedded, photos_skipped: skipped })
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 })
   }

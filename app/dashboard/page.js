@@ -10,7 +10,8 @@ import { openStorageFile } from '../../lib/open-file'
 import { generateEstimatePDF } from '../../lib/generate-estimate-pdf'
 import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount, budgetLineLabel, suggestBudgetLine, splitForApproval } from '../../lib/direct-cost-queue'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
-import { sameCompany } from '../../lib/company-name'
+import { sameCompany, companyKey } from '../../lib/company-name'
+import { rollupRatingsByCompany, averageStars, ratingScoresError } from '../../lib/sub-ratings'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
@@ -404,7 +405,7 @@ export default function Dashboard() {
   const [manualBidForm, setManualBidForm] = useState({ company_name: '', amount: '', notes: '' })
   const [manualBidFile, setManualBidFile] = useState(null)
   const [showBidCompare, setShowBidCompare] = useState(null)
-  const [dirRatings, setDirRatings] = useState({}) // keyed by sub_id
+  const [dirRatings, setDirRatings] = useState({}) // keyed by companyKey(company name), or 'email:<addr>'
   const [submittingManualBid, setSubmittingManualBid] = useState(false)
 
   // Role / APM filtering
@@ -749,17 +750,14 @@ export default function Dashboard() {
   }
 
   async function loadDirRatings() {
-    const { data } = await supabase.from('sub_ratings').select('sub_id, quality, timeliness, communication, profiles!sub_ratings_sub_id_fkey(email, company_name), jobs(job_number, project_name)')
+    const [{ data, error }, { data: companies }] = await Promise.all([
+      supabase.from('sub_ratings').select('sub_id, quality, timeliness, communication, profiles!sub_ratings_sub_id_fkey(company_id, company_name, invite_email), jobs(job_number, project_name)'),
+      supabase.from('companies').select('id, name'),
+    ])
+    if (error) { console.error('[loadDirRatings]', error.message); return }
     if (!data) return
-    // Key by email for easy lookup against sub_directory
-    const map = {}
-    data.forEach(r => {
-      const email = r.profiles?.email?.toLowerCase()
-      if (!email) return
-      if (!map[email]) map[email] = []
-      map[email].push(r)
-    })
-    setDirRatings(map)
+    // Roll up by company (companyKey of the company's name), not by one person's email
+    setDirRatings(rollupRatingsByCompany(data, companies, companyKey))
   }
 
   async function loadPmNotifications() {
@@ -1599,6 +1597,9 @@ export default function Dashboard() {
     if (res.ok) {
       setEditingSubUser(null)
       await refreshSubProfiles()
+    } else {
+      const j = await res.json().catch(() => ({}))
+      alert('Could not save user: ' + (j.error || res.status))
     }
     setSubUserActionLoading(null)
   }
@@ -1612,6 +1613,10 @@ export default function Dashboard() {
       body: JSON.stringify({ userId }),
     })
     if (res.ok) await refreshSubProfiles()
+    else {
+      const j = await res.json().catch(() => ({}))
+      alert('Could not remove user: ' + (j.error || res.status))
+    }
     setSubUserActionLoading(null)
   }
 
@@ -4448,8 +4453,8 @@ ${planLinks.map(p => p.url
                   <div key={sub.id} style={s.rowBorder}>
                     {(() => {
                       const isDuplicate = duplicateNames.has(sub.company_name?.toLowerCase().trim())
-                      const ratings = sub.email ? (dirRatings[sub.email.toLowerCase()] || []) : []
-                      const avgRating = ratings.length > 0 ? Math.round(ratings.reduce((a, r) => a + (r.quality + r.timeliness + r.communication) / 3, 0) / ratings.length) : 0
+                      const ratings = (dirRatings[companyKey(sub.company_name)] || (sub.email ? dirRatings['email:' + sub.email.toLowerCase().trim()] : null) || []).filter(r => !ratingScoresError(r))
+                      const avgRating = averageStars(ratings)
                       return (
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 8px', cursor: 'pointer' }} onClick={() => setExpandedDir(expandedDir === sub.id ? null : sub.id)}>
                           <div>
@@ -5096,10 +5101,11 @@ ${planLinks.map(p => p.url
                 const keepId = mergeKeep === 'a' ? mergePersonA.company_id : mergePersonB.company_id
                 const removeId = mergeKeep === 'a' ? mergePersonB.company_id : mergePersonA.company_id
                 const res = await authFetch('/api/merge-companies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keep_company_id: keepId, remove_company_id: removeId }) })
-                const data = await res.json()
+                const data = await res.json().catch(() => ({}))
                 setMergingCompanies(false)
-                if (data.error) { setMergeResult({ error: data.error }); return }
-                setMergeResult({ ok: true, msg: `Done — ${data.profiles_moved} account${data.profiles_moved !== 1 ? 's' : ''} moved to "${data.kept}"` })
+                if (!res.ok || data.error) { setMergeResult({ error: data.error || `Merge failed (${res.status})` }); return }
+                const plural = (n, w) => `${n} ${w}${n !== 1 ? 's' : ''}`
+                setMergeResult({ ok: true, msg: `Done — moved to "${data.kept}": ${plural(data.profiles_moved, 'account')}, ${plural(data.contacts_moved, 'contact')}${data.contacts_skipped_dup_email ? ` (${data.contacts_skipped_dup_email} duplicate email${data.contacts_skipped_dup_email !== 1 ? 's' : ''} dropped)` : ''}, ${plural(data.assignments_moved, 'job assignment')}${data.assignments_folded ? ` (${data.assignments_folded} merged into existing)` : ''}, ${plural(data.contracts_moved, 'contract')}` })
                 setMergePersonA(null); setMergePersonB(null); setMergeSearchA(''); setMergeSearchB(''); setMergeKeep('a')
                 refreshSubProfiles()
               }

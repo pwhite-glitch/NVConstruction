@@ -207,8 +207,9 @@ function SalesPageInner() {
       const res = await fetch(`/api/sales-leaderboard?${params}`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
-      const json = await res.json()
-      setLbData(json.rows || [])
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) { alert('Could not load leaderboard: ' + (json.error || res.status)); setLbData([]) }
+      else setLbData(json.rows || [])
     } catch {}
     setLbLoading(false)
   }, [profile, lbFrom, lbTo, lbDiv])
@@ -471,7 +472,7 @@ function SalesPageInner() {
 
             {/* Counting rules note */}
             <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '10px 14px', marginBottom: '1.25rem', fontSize: '12px', color: '#92400e' }}>
-              <strong>Counting rules:</strong> Only orders at Contract Signed or later (not Lead, Quoted, or Cancelled) count. Attribution is locked at the time of signing and does not change if the order is later reassigned. Split-sale credits are supported — each rep's share is recorded as a percentage, and totals reflect their portion of split deals. An order with splits counts once toward overall totals.
+              <strong>Counting rules:</strong> Only orders at Contract Signed or later (not Lead, Quoted, or Cancelled) count. Attribution is locked at the time of signing and does not change if the order is later reassigned. Split-sale credits are supported — each rep's share is recorded as a percentage, and totals reflect their portion of split deals. An order with splits counts once toward overall totals. Owners, PMs, APMs and Admins set splits on the order page (Sales Credit). From / To dates are Central time and include both days.
             </div>
 
             {/* Leaderboard filters */}

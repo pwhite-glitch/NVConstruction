@@ -23,9 +23,10 @@ async function ownDirectoryRow(auth) {
 
 // Storage paths in the documents bucket a sub may read or write:
 // <their directory id>/... and contracts/<accessible contract id>/...
+// (No "equals the stored w9_url/coi_url" shortcut: stored paths must be under dir.id/ too.)
 async function subOwnsPath(auth, path, dir) {
-  if (!path || path.includes('..') || path.startsWith('/')) return false
-  if (dir && (path.startsWith(`${dir.id}/`) || path === dir.w9_url || path === dir.coi_url)) return true
+  if (!path || typeof path !== 'string' || path.includes('..') || path.startsWith('/')) return false
+  if (dir && path.startsWith(`${dir.id}/`)) return true
   const m = path.match(/^contracts\/([^/]+)\//)
   if (!m) return false
   return (await getSubContracts(auth)).some(c => c.id === m[1])

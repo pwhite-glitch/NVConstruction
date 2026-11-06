@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { notify } from '../../../lib/notify'
 import { todayCentral } from '../../../lib/central-date'
+import { buildAttributionRows } from '../../../lib/sales-attribution'
+import { fetchAll } from '../../../lib/budget-line-refs'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -214,18 +216,23 @@ export async function GET(request) {
     const roleDivision = auth.role === 'metal_rep' ? 'metal_buildings' : auth.role === 'roofing_rep' ? 'commercial_roofing' : null
     const division = roleDivision || searchParams.get('division')
 
-    let q = adminSupabase
-      .from('sales_orders')
-      .select('id,order_number,division,stage,payment_status,delivery_status,installation_status,customer_name,customer_company,site_address,city,state,salesperson_id,salesperson_name,ops_owner_name,quoted_amount,contract_value,expected_delivery_date,confirmed_delivery_date,expected_install_date,confirmed_install_date,created_at,updated_at,won_at,contract_signed_at,deposit_received,is_preview_data')
-      .eq('is_preview_data', false)
-      .order('updated_at', { ascending: false })
+    // Paged until exhausted (1000 per request) so lists over PostgREST's row cap are complete.
+    const listQuery = () => {
+      let q = adminSupabase
+        .from('sales_orders')
+        .select('id,order_number,division,stage,payment_status,delivery_status,installation_status,customer_name,customer_company,site_address,city,state,salesperson_id,salesperson_name,ops_owner_name,quoted_amount,contract_value,expected_delivery_date,confirmed_delivery_date,expected_install_date,confirmed_install_date,created_at,updated_at,won_at,contract_signed_at,deposit_received,is_preview_data')
+        .eq('is_preview_data', false)
+        .order('updated_at', { ascending: false })
+        .order('id')
 
-    if (division) q = q.eq('division', division)
-    if (stage)    q = q.eq('stage', stage)
-    if (salesId)  q = q.eq('salesperson_id', salesId)
-    if (search)   q = q.or(`customer_name.ilike.%${search}%,customer_company.ilike.%${search}%,order_number.ilike.%${search}%,site_address.ilike.%${search}%`)
+      if (division) q = q.eq('division', division)
+      if (stage)    q = q.eq('stage', stage)
+      if (salesId)  q = q.eq('salesperson_id', salesId)
+      if (search)   q = q.or(`customer_name.ilike.%${search}%,customer_company.ilike.%${search}%,order_number.ilike.%${search}%,site_address.ilike.%${search}%`)
+      return q
+    }
 
-    const { data, error } = await q
+    const { data, error } = await fetchAll(listQuery)
     if (error) return Response.json({ error: error.message }, { status: 500 })
 
     const orders = (data || []).map(o => sanitizeForRole(o, auth.role))
@@ -757,21 +764,35 @@ export async function POST(request) {
     // ── Update attribution (split sale) ───────────────────────────────────────
     if (action === 'set_attribution') {
       if (!FINANCE_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { id, splits } = body  // splits: [{salesperson_id, salesperson_name, share_pct}]
-      if (!id || !splits?.length) return Response.json({ error: 'id and splits required' }, { status: 400 })
-      const total = splits.reduce((s, x) => s + Number(x.share_pct), 0)
-      if (Math.abs(total - 100) > 0.01) return Response.json({ error: 'Splits must total 100%' }, { status: 400 })
+      const { id, splits } = body  // splits: [{salesperson_id, share_pct}] — share_pct is a percent (0–100]
+      if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+      const { data: order, error: oErr } = await adminSupabase.from('sales_orders').select('id').eq('id', id).maybeSingle()
+      if (oErr) return Response.json({ error: oErr.message }, { status: 500 })
+      if (!order) return Response.json({ error: 'Not found' }, { status: 404 })
 
-      // Delete existing, reinsert
-      await adminSupabase.from('sales_attribution').delete().eq('order_id', id)
-      const { error } = await adminSupabase.from('sales_attribution').insert(
-        splits.map(s => ({ order_id: id, ...s, recorded_by: auth.userId }))
-      )
-      if (error) return Response.json({ error: error.message }, { status: 500 })
+      const built = buildAttributionRows(id, splits, await getSalesStaff(), auth.userId)
+      if (built.error) return Response.json({ error: built.error }, { status: 400 })
+
+      // Replace safely: insert the new set first; only then delete the old rows by id.
+      // A failed insert leaves the current attribution untouched.
+      const { data: oldRows, error: oldErr } = await adminSupabase.from('sales_attribution').select('id').eq('order_id', id)
+      if (oldErr) return Response.json({ error: oldErr.message }, { status: 500 })
+      const { data: inserted, error: insErr } = await adminSupabase.from('sales_attribution').insert(built.rows).select('id')
+      if (insErr) return Response.json({ error: 'Could not save splits: ' + insErr.message }, { status: 500 })
+      const oldIds = (oldRows || []).map(r => r.id)
+      if (oldIds.length) {
+        const { error: delErr } = await adminSupabase.from('sales_attribution').delete().in('id', oldIds)
+        if (delErr) {
+          // Put things back as they were: remove the new rows, keep the old ones.
+          const newIds = (inserted || []).map(r => r.id)
+          if (newIds.length) await adminSupabase.from('sales_attribution').delete().in('id', newIds)
+          return Response.json({ error: 'Could not replace old splits: ' + delErr.message }, { status: 500 })
+        }
+      }
       await adminSupabase.from('sales_order_history').insert({
         order_id: id, actor_id: auth.userId, actor_name: body.actor_name || 'Staff',
         action:   'attribution_set',
-        details:  { splits },
+        details:  { splits: built.rows.map(r => ({ salesperson_id: r.salesperson_id, salesperson_name: r.salesperson_name, share_pct: r.share_pct })) },
       })
       return Response.json({ ok: true })
     }

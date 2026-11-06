@@ -41,6 +41,7 @@ export async function POST(request) {
       .from('signing_requests')
       .select('token, status')
       .eq('subcontract_id', subcontract_id)
+      .in('status', ['pending', 'signed']) // a voided link is never handed out again
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()

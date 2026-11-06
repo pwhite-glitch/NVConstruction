@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
-import { isJobLimited, accessibleJobIds } from '../../../lib/roles'
+import { isPrincipal } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,18 +10,12 @@ const adminSupabase = createClient(
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  // Job profit / margins are Owner-only (principal).
+  if (!isPrincipal(auth.role)) return Response.json({ error: 'Only Owners can see job profit.' }, { status: 403 })
 
   try {
-    let { job_ids } = await request.json()
+    const { job_ids } = await request.json()
     if (!job_ids?.length) return Response.json({ profits: {} })
-    // PM/APM: only their jobs (others are dropped from the result)
-    if (isJobLimited(auth.role)) {
-      const { ids, error } = await accessibleJobIds(adminSupabase, auth)
-      if (error) return Response.json({ error: error.message }, { status: 500 })
-      job_ids = job_ids.filter(id => ids.has(id))
-      if (!job_ids.length) return Response.json({ profits: {} })
-    }
-
     const [
       { data: items },
       { data: costs },

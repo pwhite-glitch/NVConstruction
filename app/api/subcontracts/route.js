@@ -3,6 +3,7 @@ import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { canAccessSubcontract } from '../../../lib/sub-access'
 import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
+import { changedContractTerms, isSubcontractSigned } from '../../../lib/signing'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -94,7 +95,10 @@ export async function PUT(request) {
     const fields = pick(raw)
 
     // Fetch current values for auditing changed fields
-    const { data: current } = await adminSupabase.from('subcontracts').select('contract_value, status, vendor_name, job_id, signed_contract_url').eq('id', id).single()
+    const { data: current, error: curErr } = await adminSupabase.from('subcontracts')
+      .select('contract_value, description, special_terms, status, signed_at, vendor_name, job_id, signed_contract_url').eq('id', id).maybeSingle()
+    if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
+    if (!current) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     const denied = await denyJob(adminSupabase, auth, current?.job_id) ||
       (fields.job_id && fields.job_id !== current?.job_id ? await denyJob(adminSupabase, auth, fields.job_id) : null)
     if (denied) return denied
@@ -116,8 +120,23 @@ export async function PUT(request) {
       }
     }
 
+    // Once signed, the contract terms change only through a change order.
+    const termsChanged = changedContractTerms(current, fields)
+    if (termsChanged.length && isSubcontractSigned(current)) {
+      return Response.json({ error: `This subcontract is signed. ${termsChanged.join(', ').replace(/_/g, ' ')} can only change through a change order.` }, { status: 409 })
+    }
+
     const { error } = await adminSupabase.from('subcontracts').update(fields).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+
+    // Terms changed after a signing request went out: that link would sign the old terms.
+    let voidedSigningRequests = 0
+    if (termsChanged.length) {
+      const { data: voided, error: voidErr } = await adminSupabase.from('signing_requests')
+        .update({ status: 'voided' }).eq('subcontract_id', id).eq('status', 'pending').select('id')
+      if (voidErr) return Response.json({ ok: true, warning: 'Saved, but pending signing links could not be cancelled: ' + voidErr.message })
+      voidedSigningRequests = voided?.length || 0
+    }
 
     if (current) {
       const fmtAmt = v => v != null ? '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null
@@ -129,7 +148,7 @@ export async function PUT(request) {
       }
     }
 
-    return Response.json({ ok: true })
+    return Response.json({ ok: true, voidedSigningRequests })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
@@ -143,6 +162,35 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'subcontracts', id)
     if (denied) return denied
+    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, vendor_name, status, signed_at').eq('id', id).maybeSingle()
+    if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
+    if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
+    if (isSubcontractSigned(sc)) return Response.json({ error: 'This subcontract is signed and can’t be deleted.' }, { status: 409 })
+    // Anything billed or ordered against it keeps it.
+    const [sov, cos, pos, signed] = await Promise.all([
+      adminSupabase.from('subcontract_sov_lines').select('id').eq('subcontract_id', id),
+      adminSupabase.from('change_orders').select('id', { count: 'exact', head: true }).eq('subcontract_id', id),
+      // purchase_orders has no subcontract_id: same job + same vendor name counts
+      sc.vendor_name?.trim()
+        ? adminSupabase.from('purchase_orders').select('id', { count: 'exact', head: true }).eq('job_id', sc.job_id).ilike('vendor_name', sc.vendor_name.trim().replace(/[\\%_]/g, c => '\\' + c))
+        : Promise.resolve({ count: 0, error: null }),
+      adminSupabase.from('signing_requests').select('id', { count: 'exact', head: true }).eq('subcontract_id', id).eq('status', 'signed'),
+    ])
+    for (const r of [sov, cos, pos, signed]) if (r.error) return Response.json({ error: 'Could not check what is attached: ' + r.error.message }, { status: 500 })
+    if (signed.count) return Response.json({ error: 'This subcontract has a signed e-signature and can’t be deleted.' }, { status: 409 })
+    const sovIds = (sov.data || []).map(l => l.id)
+    let billings = 0
+    if (sovIds.length) {
+      const { count, error: bErr } = await adminSupabase.from('billing_sov_lines').select('id', { count: 'exact', head: true }).in('sov_line_id', sovIds)
+      if (bErr) return Response.json({ error: 'Could not check billings: ' + bErr.message }, { status: 500 })
+      billings = count || 0
+    }
+    const attached = [
+      billings && `${billings} billing line${billings === 1 ? '' : 's'}`,
+      cos.count && `${cos.count} change order${cos.count === 1 ? '' : 's'}`,
+      pos.count && `${pos.count} purchase order${pos.count === 1 ? '' : 's'}`,
+    ].filter(Boolean)
+    if (attached.length) return Response.json({ error: `Can’t delete: this subcontract has ${attached.join(', ')}.` }, { status: 409 })
     const { error } = await adminSupabase.from('subcontracts').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

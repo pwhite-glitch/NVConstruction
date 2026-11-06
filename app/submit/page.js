@@ -824,6 +824,14 @@ export default function Submit() {
         setSovError(`Over-billing on: ${overBilled.map(l => l.description).join(', ')}. Cumulative % would exceed 100%.`)
         return
       }
+      if (sovForm.some(l => (parseFloat(l.pct_this) || 0) < 0 || (Number(l.amount_this) || 0) < 0)) {
+        setSovError('Line % and amount can’t be negative.')
+        return
+      }
+      if (!sovForm.some(l => (Number(l.amount_this) || 0) > 0)) {
+        setSovError('Fill in at least one schedule-of-values line. The amount billed comes from your lines.')
+        return
+      }
     }
     setSovError('')
     if (!form.invoice_number?.trim()) {
@@ -859,7 +867,8 @@ export default function Submit() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         job_id: form.job_id,
-        amount_billed: form.amount_billed,
+        // With a schedule the amount is the sum of the lines (the server rejects anything else)
+        amount_billed: sovForm.length > 0 ? sovForm.reduce((a, l) => a + (Number(l.amount_this) || 0), 0).toFixed(2) : form.amount_billed,
         pct_complete: form.pct_complete,
         work_description: form.work_description,
         invoice_number: form.invoice_number.trim(),
@@ -1386,7 +1395,8 @@ export default function Submit() {
                                     placeholder="0.00"
                                     onChange={e => {
                                       const amt = parseFloat(e.target.value) || 0
-                                      const pct = line.scheduled_value > 0 ? Math.round(amt / line.scheduled_value * 100 * 10000) / 10000 : 0
+                                      // Full precision so scheduled value x % matches the amount to the cent (checked on the server)
+                                      const pct = line.scheduled_value > 0 ? Math.round(amt / line.scheduled_value * 100 * 1e8) / 1e8 : 0
                                       const next = sovForm.map((l, i) => i === idx ? { ...l, pct_this: pct.toString(), amount_this: amt } : l)
                                       setSovForm(next)
                                       setSovError('')
@@ -1530,8 +1540,8 @@ export default function Submit() {
                     {sovSaved && <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#16a34a', marginBottom: '1rem' }}>✓ Schedule of values saved — fill in the fields below to submit your billing.</div>}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '1rem' }} className="rx-grid-3">
                       <div>
-                        <label style={s.label}>Amount billed ($)</label>
-                        <input type="number" step="0.01" min="0" style={{ ...s.input, color: '#e8590c', fontWeight: '700' }} value={form.amount_billed} onChange={e => update('amount_billed', e.target.value)} placeholder="0.00" />
+                        <label style={s.label}>Amount billed ($) — from your lines</label>
+                        <input type="number" readOnly tabIndex={-1} title="Total of your schedule-of-values lines" style={{ ...s.input, color: '#e8590c', fontWeight: '700', background: '#f9fafb', cursor: 'default' }} value={(sovForm.reduce((a, l) => a + (Number(l.amount_this) || 0), 0)).toFixed(2)} placeholder="0.00" />
                       </div>
                       <div><label style={s.label}>% complete on scope</label><input type="number" style={s.input} value={form.pct_complete} onChange={e => update('pct_complete', e.target.value)} placeholder="0" min="0" max="100" /></div>
                       <div>

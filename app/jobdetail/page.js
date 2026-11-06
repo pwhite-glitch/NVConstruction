@@ -5,6 +5,9 @@ import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
+import { safeFileName } from '../../lib/storage-path'
+import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
+import { sovByBudgetItem, sovBudgetDeltas } from '../../lib/prime-co-budget'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { isCoLine, addCoSovLine } from '../../lib/sov-lines'
@@ -400,6 +403,8 @@ function JobDetailInner() {
   const [creatingRetainage, setCreatingRetainage] = useState(false)
   const [aiaLoading, setAiaLoading] = useState(false)
   const [relinkDrawOpen, setRelinkDrawOpen] = useState(false)
+  // Owner override: id of a locked (submitted/certified/paid) AIA app opened for editing
+  const [aiaUnlockedId, setAiaUnlockedId] = useState(null)
   const [relinkDrawId, setRelinkDrawId] = useState('')
   // Per-subcontract AIA (nv_role === 'sub')
   const [showNewNvSubAia, setShowNewNvSubAia] = useState(null) // nv_subcontract_id | null
@@ -914,6 +919,19 @@ function JobDetailInner() {
     setJobBillingLines(all)
   }
 
+  // PATCH a draw (tag/untag items, close/reopen); shows the API error instead of failing silently.
+  async function drawPatch(body) {
+    try {
+      const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok || out.error) { alert('Draw not updated: ' + (out.error || `HTTP ${res.status}`)); return false }
+      return true
+    } catch (e) {
+      alert('Draw not updated: ' + e.message)
+      return false
+    }
+  }
+
   async function loadDrawRequests() {
     const res = await fetch(`/api/draw-requests?job_id=${id}`)
     const { draws } = await res.json()
@@ -1402,11 +1420,23 @@ function JobDetailInner() {
   async function moveCostToJob() {
     if (!moveTargetJobId || !movingCostId) return
     setConfirmingMoveCostId(movingCostId)
-    await fetch('/api/direct-costs', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: movingCostId, job_id: moveTargetJobId, budget_item_id: null, draw_request_id: null, drawn_application_id: null }),
-    })
+    // drawn_application_id / billed costs are refused by the API (409); only an open draw link is cleared.
+    let res, out = {}
+    try {
+      res = await fetch('/api/direct-costs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: movingCostId, job_id: moveTargetJobId, budget_item_id: null }),
+      })
+      out = await res.json().catch(() => ({}))
+    } catch (e) {
+      out = { error: e.message }
+    }
+    if (!res?.ok || out.error) {
+      alert('Move failed: ' + (out.error || `HTTP ${res?.status}`))
+      setConfirmingMoveCostId(null)
+      return
+    }
     setDirectCosts(prev => prev.filter(c => c.id !== movingCostId))
     setMovingCostId(null)
     setMoveTargetJobId('')
@@ -1456,6 +1486,7 @@ function JobDetailInner() {
   }
 
   async function openAiaApp(app) {
+    setAiaUnlockedId(null)
     if (activeAia?.id === app.id) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setAppliedBillings(new Set()); setAppliedGCs(new Set()); setPeriodDirectCosts([]); setPeriodPOs([]); setAppliedPOs(new Set()); return }
     setAiaLoading(true)
     setActiveAia(app)
@@ -1727,17 +1758,53 @@ function JobDetailInner() {
     ))
   }
 
+  // Next prime (owner) app number from the database: max(app_number) + 1.
+  async function nextPrimeAiaNumber() {
+    const { data, error } = await supabase.from('aia_applications')
+      .select('app_number, nv_subcontract_id').eq('job_id', id).is('nv_subcontract_id', null)
+      .order('app_number', { ascending: false }).limit(1)
+    if (error) throw new Error('Could not read app numbers: ' + error.message)
+    return nextAiaAppNumber(data || [])
+  }
+
+  // Locked app (submitted/certified/paid): non-Owners are refused; an Owner must
+  // type the app number. Returns true when the change may go ahead.
+  function confirmAiaOverride(app, what) {
+    if (!isAiaLocked(app)) return true
+    if (!isPrincipal(userRole)) {
+      alert(`App #${app.app_number} is locked because ${aiaLockReason(app)}. Only an Owner can ${what}.`)
+      return false
+    }
+    const typed = window.prompt(`App #${app.app_number} is locked because ${aiaLockReason(app)}.\n\nOwner override: type the app number (${app.app_number}) to ${what}.`)
+    if (typed == null) return false
+    if (!overrideConfirmed(typed, app)) { alert('App number did not match. Nothing was changed.'); return false }
+    return true
+  }
+
   async function createAiaApplication() {
     const isDrawType = job?.billing_type === 'draw_request'
     if (!isDrawType && !newAiaForm.period_to) return
     if (isDrawType && !newAiaForm.linked_draw_request_id) return
     setSavingAia(true)
     const { data: { session } } = await supabase.auth.getSession()
-    const prevApp = aiaApplications[0]
+    // Carry forward from the latest prime app (NV-sub apps are a separate sequence)
+    const prevApp = aiaApplications.find(a => !a.nv_subcontract_id)
     let prevLines = []
     if (prevApp) {
-      const { data: pl } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
+      const { data: pl, error: plErr } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
+      if (plErr) { alert('Could not read the previous app lines: ' + plErr.message); setSavingAia(false); return }
       prevLines = pl || []
+    }
+    let appNumber
+    try { appNumber = await nextPrimeAiaNumber() } catch (e) { alert(e.message); setSavingAia(false); return }
+    const typedNumber = parseInt(newAiaForm.app_number, 10)
+    if (Number.isFinite(typedNumber) && typedNumber > 0) {
+      if (aiaApplications.some(a => !a.nv_subcontract_id && Number(a.app_number) === typedNumber)) {
+        alert(`App #${typedNumber} already exists on this job. The next free number is ${appNumber}.`)
+        setSavingAia(false)
+        return
+      }
+      appNumber = typedNumber
     }
     let periodTo = null, periodFrom = null
     if (!isDrawType) {
@@ -1753,7 +1820,7 @@ function JobDetailInner() {
     const linkedDraw = isDrawType ? drawRequests.find(d => d.id === newAiaForm.linked_draw_request_id) : null
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
       job_id: id,
-      app_number: parseInt(newAiaForm.app_number) || (aiaApplications.length + 1),
+      app_number: appNumber,
       period_from: periodFrom,
       period_to: periodTo,
       retainage_pct: isNaN(parseFloat(newAiaForm.retainage_pct)) ? 10 : parseFloat(newAiaForm.retainage_pct),
@@ -1784,7 +1851,15 @@ function JobDetailInner() {
           dollar_this_period: 0,
         }
       })
-      await supabase.from('aia_application_lines').insert(lineInserts)
+      const { error: linesErr } = await supabase.from('aia_application_lines').insert(lineInserts)
+      if (linesErr) {
+        // Don't leave a header that looks fine with no G703 lines
+        const { error: undoErr } = await supabase.from('aia_applications').delete().eq('id', newApp.id)
+        alert('Could not create the G703 lines: ' + linesErr.message + (undoErr ? `\n\nThe empty App #${newApp.app_number} could not be removed (${undoErr.message}); delete it before trying again.` : '\n\nThe app was not created.'))
+        await loadAiaApplications()
+        setSavingAia(false)
+        return
+      }
     }
     const updatedApps = await loadAiaApplications()
     setShowNewAia(false)
@@ -1794,7 +1869,7 @@ function JobDetailInner() {
   }
 
   async function createRetainageRelease() {
-    const prevApp = aiaApplications[0] // most recent (desc by app_number)
+    const prevApp = aiaApplications.find(a => !a.nv_subcontract_id) // most recent prime app (desc by app_number)
     if (!prevApp) return
     const r2 = n => Math.round(n * 100) / 100
     const { data: prevLines } = await supabase.from('aia_application_lines').select('*').eq('application_id', prevApp.id)
@@ -1810,13 +1885,15 @@ function JobDetailInner() {
     const fmtAmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     if (!window.confirm(`Create a retainage release application for ${fmtAmt(totalRetainageHeld)}?\n\nThis creates a new draw at 0% retainage with no new work billed, releasing the ${prevApp.retainage_pct}% retainage held across all previous applications.`)) return
     setCreatingRetainage(true)
+    let appNumber
+    try { appNumber = await nextPrimeAiaNumber() } catch (e) { alert(e.message); setCreatingRetainage(false); return }
     const { data: { session } } = await supabase.auth.getSession()
     const today = todayCentral()
     const [yr, mo] = today.split('-').map(Number)
     const periodFrom = `${String(yr).padStart(4, '0')}-${String(mo).padStart(2, '0')}-01`
     const { data: newApp, error } = await supabase.from('aia_applications').insert({
       job_id: id,
-      app_number: aiaApplications.length + 1,
+      app_number: appNumber,
       period_from: periodFrom,
       period_to: today,
       retainage_pct: 0,
@@ -1835,7 +1912,14 @@ function JobDetailInner() {
         const newPctPrev = bAmt > 0 ? newDollarPrev / bAmt * 100 : 0
         return { application_id: newApp.id, budget_item_id: b.id, pct_prev: newPctPrev, dollar_prev: newDollarPrev, pct_this_period: 0, dollar_this_period: 0 }
       })
-      await supabase.from('aia_application_lines').insert(lineInserts)
+      const { error: linesErr } = await supabase.from('aia_application_lines').insert(lineInserts)
+      if (linesErr) {
+        const { error: undoErr } = await supabase.from('aia_applications').delete().eq('id', newApp.id)
+        alert('Could not create the G703 lines: ' + linesErr.message + (undoErr ? `\n\nThe empty App #${newApp.app_number} could not be removed (${undoErr.message}); delete it before trying again.` : '\n\nThe retainage release was not created.'))
+        await loadAiaApplications()
+        setCreatingRetainage(false)
+        return
+      }
     }
     const updatedApps = await loadAiaApplications()
     const created = updatedApps.find(a => a.id === newApp.id) || newApp
@@ -1848,12 +1932,14 @@ function JobDetailInner() {
     if (!newNvSubAiaForm.period_to) return
     setSavingNvSubAia(true)
     const { data: { session } } = await supabase.auth.getSession()
-    const { data: scAppsData } = await supabase.from('aia_applications')
-      .select('id, app_number')
+    const { data: scAppsData, error: scAppsErr } = await supabase.from('aia_applications')
+      .select('id, app_number, nv_subcontract_id')
+      .eq('job_id', id)
       .eq('nv_subcontract_id', sc.id)
       .order('app_number', { ascending: false })
+    if (scAppsErr) { alert('Could not read app numbers: ' + scAppsErr.message); setSavingNvSubAia(false); return }
     const scApps = scAppsData || []
-    const appNum = (scApps[0]?.app_number || 0) + 1
+    const appNum = nextAiaAppNumber(scApps, sc.id)
     const [year, month] = newNvSubAiaForm.period_to.split('-').map(Number)
     const periodTo = new Date(year, month, 0).toISOString().split('T')[0]
     const periodFrom = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01`
@@ -1883,7 +1969,7 @@ function JobDetailInner() {
       { description: sc.scope_description || sc.gc_name || 'Base Contract', amount: Number(sc.contract_value || 0) },
       ...approvedCOs.map(co => ({ description: `CO: ${co.description}`, amount: Number(co.amount || 0) })),
     ]
-    await supabase.from('aia_application_lines').insert(
+    const { error: nvLinesErr } = await supabase.from('aia_application_lines').insert(
       lineDescriptions.map(ln => ({
         application_id: newApp.id,
         line_description: ln.description,
@@ -1894,6 +1980,13 @@ function JobDetailInner() {
         dollar_this_period: 0,
       }))
     )
+    if (nvLinesErr) {
+      const { error: undoErr } = await supabase.from('aia_applications').delete().eq('id', newApp.id)
+      alert('Could not create the G703 lines: ' + nvLinesErr.message + (undoErr ? `\n\nThe empty App #${newApp.app_number} could not be removed (${undoErr.message}); delete it before trying again.` : '\n\nThe app was not created.'))
+      await loadAiaApplications()
+      setSavingNvSubAia(false)
+      return
+    }
     const updatedApps = await loadAiaApplications()
     setShowNewNvSubAia(null)
     const created = updatedApps.find(a => a.id === newApp.id) || newApp
@@ -1901,8 +1994,52 @@ function JobDetailInner() {
     setSavingNvSubAia(false)
   }
 
+  // Amount to store for one G703 line (same rounding as the save below).
+  function aiaLineSaveAmount(line) {
+    const dollarRaw = line.dollar_this !== undefined ? Number(line.dollar_this) : null
+    return dollarRaw != null ? Math.round(dollarRaw * 100) / 100 : null
+  }
+
   async function saveAiaLines() {
     if (!activeAia) return
+    // The stored row decides the lock (the Status dropdown is local until saved).
+    const { data: stored, error: storedErr } = await supabase.from('aia_applications')
+      .select('id, app_number, status, payment_received, retainage_pct, markup_pct').eq('id', activeAia.id).maybeSingle()
+    if (storedErr || !stored) { alert('Could not check the application: ' + (storedErr?.message || 'not found')); return false }
+    const ownerOverride = aiaUnlockedId === stored.id && isPrincipal(userRole)
+    if (isAiaLocked(stored) && !ownerOverride) {
+      // Locked: amounts, retainage % and markup % stay as stored. Only Status may move forward.
+      const { data: storedLines, error: slErr } = await supabase.from('aia_application_lines')
+        .select('id, budget_item_id, dollar_this_period').eq('application_id', stored.id)
+      if (slErr) { alert('Could not check the application lines: ' + slErr.message); return false }
+      const near = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.005
+      const linesChanged = aiaLines.some(line => {
+        const amt = aiaLineSaveAmount(line)
+        if (amt == null) return false
+        const sl = line.nv_sub_mode
+          ? (storedLines || []).find(x => x.id === line.id)
+          : (storedLines || []).find(x => x.budget_item_id === line.budget_item_id)
+        return !near(amt, sl?.dollar_this_period)
+      })
+      const headerChanged = !near(parseFloat(activeAia.retainage_pct), stored.retainage_pct)
+        || !near(parseFloat(activeAia.markup_pct) || 0, stored.markup_pct)
+      if (linesChanged || headerChanged) {
+        alert(`App #${stored.app_number} is locked because ${aiaLockReason(stored)}. G703 amounts, retainage % and markup % were not saved.` +
+          (isPrincipal(userRole) ? '\n\nUse "Owner override" on the app to unlock it first.' : ''))
+        return false
+      }
+      const newStatus = activeAia.status || 'draft'
+      if (newStatus !== (stored.status || 'draft')) {
+        if (newStatus === 'draft' && !confirmAiaOverride(stored, 'move it back to draft')) return false
+        setSavingAia(true)
+        const { error: stErr } = await supabase.from('aia_applications')
+          .update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', stored.id)
+        setSavingAia(false)
+        if (stErr) { alert('Status was not saved: ' + stErr.message); return false }
+        await loadAiaApplications()
+      }
+      return true
+    }
     // Lump sum: lines may run over, but the pay app as a whole can't bill past the contract.
     // Every way of entering amounts (typed, Apply to G703, pinned) lands here before it is stored.
     const cap = contractCap(
@@ -1972,18 +2109,35 @@ function JobDetailInner() {
     generateAIAFromApp(override)
   }
 
+  // Re-read the app so a lock is decided on what is stored, not a stale screen.
+  async function freshAiaApp(appId) {
+    const { data, error } = await supabase.from('aia_applications')
+      .select('id, app_number, status, payment_received, linked_draw_request_id').eq('id', appId).maybeSingle()
+    if (error || !data) { alert('Could not load the application: ' + (error?.message || 'not found')); return null }
+    return data
+  }
+
   async function deleteAiaApplication(appId) {
-    if (!window.confirm('Delete this AIA application?')) return
-    await supabase.from('aia_application_lines').delete().eq('application_id', appId)
+    const app = await freshAiaApp(appId)
+    if (!app) return
+    if (isAiaLocked(app)) {
+      if (!confirmAiaOverride(app, 'delete it')) return
+    } else if (!window.confirm(`Delete App #${app.app_number}?`)) return
+    const { error: linesErr } = await supabase.from('aia_application_lines').delete().eq('application_id', appId)
+    if (linesErr) { alert('Delete failed (lines): ' + linesErr.message); return }
     const { error } = await supabase.from('aia_applications').delete().eq('id', appId)
-    if (error) { alert('Delete failed: ' + error.message); return }
+    if (error) { alert('Delete failed: ' + error.message + '\n\nThe G703 lines were already removed; reload and re-check this app.'); await loadAiaApplications(); return }
     if (activeAia?.id === appId) { setActiveAia(null); setAiaLines([]); setPeriodBilling([]); setPeriodPOs([]); setAppliedPOs(new Set()) }
     await loadAiaApplications()
   }
 
   async function relinkAiaDraw() {
     if (!activeAia) return
-    await supabase.from('aia_applications').update({ linked_draw_request_id: relinkDrawId || null }).eq('id', activeAia.id)
+    const app = await freshAiaApp(activeAia.id)
+    if (!app) return
+    if (!confirmAiaOverride(app, 'relink its draw')) return
+    const { error } = await supabase.from('aia_applications').update({ linked_draw_request_id: relinkDrawId || null }).eq('id', activeAia.id)
+    if (error) { alert('Relink failed: ' + error.message); return }
     setRelinkDrawOpen(false)
     setRelinkDrawId('')
     setActiveAia(null)
@@ -1996,8 +2150,11 @@ function JobDetailInner() {
 
   async function markPaymentReceived(appId, current) {
     if (current) {
-      if (!window.confirm('Unmark this payment as received?')) return
-      await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null, amount_received: null }).eq('id', appId)
+      // Reopening a paid app is the Owner's call
+      if (!isPrincipal(userRole)) { alert('Only an Owner can unmark a recorded payment.'); return }
+      if (!window.confirm('Unmark this payment as received? The app will no longer be locked by payment.')) return
+      const { error } = await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null, amount_received: null }).eq('id', appId)
+      if (error) { alert('Could not unmark payment: ' + error.message); return }
       await loadAiaApplications()
     } else {
       setPaymentForm({ appId, amount: '', received_at: todayCentral() })
@@ -2336,7 +2493,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
-    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications() }
+    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications(); loadDrawRequests() }
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests(); loadNvSubcontracts(); loadPurchaseOrders() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
@@ -2937,7 +3094,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   async function uploadJobDoc(file) {
     setUploadingDoc(true)
-    const path = `${id}/${docCategory}/${Date.now()}-${file.name}`
+    const path = `${id}/${docCategory}/${Date.now()}-${safeFileName(file.name)}`
     const res = await authFetch('/api/job-docs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2953,7 +3110,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       setUploadingDoc(false)
       return
     }
-    await supabase.from('job_documents').insert({ job_id: id, file_name: file.name, storage_path: path, category: docCategory, uploaded_by: (await supabase.auth.getUser()).data.user?.id })
+    const { error: docInsErr } = await supabase.from('job_documents').insert({ job_id: id, file_name: file.name, storage_path: path, category: docCategory, uploaded_by: (await supabase.auth.getUser()).data.user?.id })
+    if (docInsErr) alert('File uploaded but the document record could not be saved: ' + docInsErr.message)
     await loadJobDocs()
     setUploadingDoc(false)
   }
@@ -2964,8 +3122,9 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'signed-url', path: storagePath }),
     })
-    const { url } = await res.json()
+    const { url, error } = await res.json().catch(() => ({}))
     if (url) window.open(url, '_blank')
+    else alert('Could not open document: ' + (error || `HTTP ${res.status}`))
   }
 
   async function deleteJobDoc(docId, storagePath) {
@@ -2982,41 +3141,45 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   async function uploadDrawing(file) {
     setUploadingDrawing(true)
-    const path = `${id}/${Date.now()}-${file.name}`
-    const res = await authFetch('/api/drawings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload-url', path }),
-    })
-    const { signedUrl, error: urlErr } = await res.json()
-    if (urlErr || !signedUrl) { alert('Upload error: ' + (urlErr || 'Could not get upload URL')); setUploadingDrawing(false); return }
-    const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!up.ok) { alert('Upload failed'); setUploadingDrawing(false); return }
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: newRow } = await supabase.from('drawings').insert({
-      job_id: id,
-      file_name: file.name,
-      storage_path: path,
-      sheet_number: drawingUploadForm.sheet_number || null,
-      sheet_name: drawingUploadForm.sheet_name || null,
-      discipline: drawingUploadForm.discipline || 'Architectural',
-      revision: drawingUploadForm.revision || '0',
-      notes: drawingUploadForm.notes || null,
-      uploaded_by: user?.id,
-      is_current: true,
-    }).select('id').single()
-    if (newRow?.id && drawingUploadForm.sheet_number) {
-      const { data: prev } = await supabase.from('drawings')
-        .select('id').eq('job_id', id).eq('sheet_number', drawingUploadForm.sheet_number)
-        .eq('is_current', true).neq('id', newRow.id)
-      if (prev?.length) {
-        await supabase.from('drawings').update({ is_current: false, superseded_by: newRow.id }).in('id', prev.map(r => r.id))
+    try {
+      const path = `${id}/${Date.now()}-${safeFileName(file.name)}`
+      const res = await authFetch('/api/drawings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload-url', path }),
+      })
+      const { signedUrl, error: urlErr } = await res.json().catch(() => ({}))
+      if (urlErr || !signedUrl) { alert('Upload error: ' + (urlErr || 'Could not get upload URL')); return }
+      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!up.ok) { alert('Upload failed'); return }
+      // Row insert + "mark older revisions superseded" happen server side, with errors returned.
+      const recRes = await authFetch('/api/drawings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'record',
+          job_id: id,
+          storage_path: path,
+          file_name: file.name,
+          sheet_number: drawingUploadForm.sheet_number || null,
+          sheet_name: drawingUploadForm.sheet_name || null,
+          discipline: drawingUploadForm.discipline || 'Architectural',
+          revision: drawingUploadForm.revision || '0',
+          notes: drawingUploadForm.notes || null,
+        }),
+      })
+      const rec = await recRes.json().catch(() => ({}))
+      if (!recRes.ok || rec.error) {
+        alert('Drawing upload problem: ' + (rec.error || `HTTP ${recRes.status}`))
+        await loadDrawings()
+        return
       }
+      await loadDrawings()
+      setShowDrawingUpload(false)
+      setDrawingUploadForm({ sheet_number: '', sheet_name: '', discipline: 'Architectural', revision: '0', notes: '' })
+    } finally {
+      setUploadingDrawing(false)
     }
-    await loadDrawings()
-    setUploadingDrawing(false)
-    setShowDrawingUpload(false)
-    setDrawingUploadForm({ sheet_number: '', sheet_name: '', discipline: 'Architectural', revision: '0', notes: '' })
   }
 
   async function openDrawing(storagePath) {
@@ -3025,17 +3188,21 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'signed-url', path: storagePath }),
     })
-    const { url } = await res.json()
+    const { url, error } = await res.json().catch(() => ({}))
     if (url) window.open(url, '_blank')
+    else alert('Could not open drawing: ' + (error || `HTTP ${res.status}`))
   }
 
   async function deleteDrawing(drawingId, storagePath) {
     if (!window.confirm('Delete this drawing?')) return
-    await authFetch('/api/drawings', {
+    const res = await authFetch('/api/drawings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', storage_path: storagePath, drawing_id: drawingId }),
     })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not delete drawing: ' + (out.error || `HTTP ${res.status}`))
+    else if (out.warning) alert(out.warning)
     await loadDrawings()
   }
 
@@ -3548,15 +3715,19 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
       retainage_pct: parseFloat(editContractForm.retainage_pct) || 0, bid_proposal_url: bidProposalUrl,
     }) })
-    if (!scUpRes.ok) { const j = await scUpRes.json(); setErrMsg('Save failed: ' + j.error); setTimeout(() => setErrMsg(''), 5000); return }
+    const scUp = await scUpRes.json().catch(() => ({}))
+    if (!scUpRes.ok || scUp.error) { setErrMsg('Save failed: ' + (scUp.error || `HTTP ${scUpRes.status}`)); setTimeout(() => setErrMsg(''), 6000); return }
     setEditingContract(null); setEditContractBidFile(null)
     await loadContracts()
-    showToast('Saved — subcontract changes stored.')
+    if (scUp.voidedSigningRequests) await loadSigningRequests()
+    showToast('Saved — subcontract changes stored.' + (scUp.voidedSigningRequests ? ' The pending signing link was cancelled because the terms changed; send a new one.' : '') + (scUp.warning ? ' ' + scUp.warning : ''))
   }
 
   async function deleteContract(contractId) {
-    if (!window.confirm('Delete this subcontract and all its change orders?')) return
-    await fetch('/api/subcontracts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: contractId }) })
+    if (!window.confirm('Delete this subcontract? (Not allowed once it is signed or has billings, POs or change orders.)')) return
+    const res = await fetch('/api/subcontracts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: contractId }) })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not delete: ' + (out.error || `HTTP ${res.status}`))
     await loadContracts()
   }
 
@@ -3879,6 +4050,14 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     }
   }
 
+  async function cancelSigningRequest(reqId) {
+    if (!window.confirm('Cancel this signing request? The emailed link will stop working.')) return
+    const res = await authFetch('/api/signing-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: reqId, action: 'void' }) })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not cancel: ' + (out.error || `HTTP ${res.status}`))
+    await loadSigningRequests()
+  }
+
   async function sendForESign() {
     if (!signerEmail.trim()) return
     if (contracts.find(c => c.id === contractGenForm.contract_id)?.status === 'draft') {
@@ -3903,10 +4082,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           created_by: session?.user?.id,
         }),
       })
-      const json = await res.json()
-      if (json.error) { setSignMsg('Error: ' + json.error); return }
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) { setSignMsg('Error: ' + (json.error || `HTTP ${res.status}`)); await loadSigningRequests(); return }
       markContractGenerated(contractGenForm.contract_id, json.saved_contract)
-      setSignMsg('Sent! The subcontractor will receive an email link to sign.')
+      setSignMsg('Sent! The subcontractor will receive an email link to sign.' + (json.voided ? ` The older link${json.voided === 1 ? ' was' : 's were'} cancelled.` : '') + (json.warning ? ' ' + json.warning : ''))
       setShowSignPanel(false)
       setSignerEmail('')
       setSignerName('')
@@ -4071,7 +4250,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         budget_item_id: l.budget_item_id,
         amount: Number(l.amount),
       }))
-    await supabase.from('prime_change_orders').update({ sov: finalSOV.length > 0 ? finalSOV : null }).eq('id', coId)
+    const { error: sovErr } = await supabase.from('prime_change_orders').update({ sov: finalSOV.length > 0 ? finalSOV : null }).eq('id', coId).eq('status', 'pending')
+    if (sovErr) { alert('Could not save the budget line assignments: ' + sovErr.message); return }
     setPrimeCOAssignPanel(null)
     const co = primeCOs.find(c => c.id === coId)
     await reviewPrimeCO(coId, 'approved', co?.amount, finalSOV)
@@ -4104,26 +4284,46 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setAddingPrimeCO(false)
   }
 
-  async function reviewPrimeCO(coId, status, coAmount, sovOverride = null) {
-    const { error } = await supabase.from('prime_change_orders').update({ status }).eq('id', coId)
-    if (error) { alert('Error updating prime CO: ' + error.message); return }
-    if (status === 'approved') {
-      const co = primeCOs.find(c => c.id === coId)
-      const sov = sovOverride || co?.sov || []
-      const linkedSovItems = sov.filter(r => r.budget_item_id && r.amount)
-      for (const sovItem of linkedSovItems) {
-        const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) {
-          const updates = {
-            budget_amount: Number(item.budget_amount) + Number(sovItem.amount),
-            owner_amount: Number(item.owner_amount ?? item.budget_amount) + Number(sovItem.amount),
-          }
-          await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
-        }
+  // Add `deltas` ({ budget_item_id: amount }) to budget_amount and owner_amount
+  // through /api/budget-items. Returns a list of error strings (empty = all saved).
+  // Never touches jobs.contract_value.
+  async function adjustBudgetLines(deltas) {
+    const errors = []
+    for (const [budgetItemId, delta] of Object.entries(deltas)) {
+      const label = (() => { const bi = budgetItems.find(b => b.id === budgetItemId); return bi ? `${bi.cost_code ? bi.cost_code + ' ' : ''}${bi.description}` : budgetItemId })()
+      const { data: item, error: readErr } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', budgetItemId).maybeSingle()
+      if (readErr || !item) { errors.push(`${label}: ${readErr?.message || 'budget line not found'} (needed ${delta >= 0 ? '+' : ''}${delta})`); continue }
+      const fields = {
+        budget_amount: Number(item.budget_amount || 0) + Number(delta),
+        owner_amount: Number(item.owner_amount ?? item.budget_amount ?? 0) + Number(delta),
       }
-      // Mark budget as applied so the "Apply to Budget" button is hidden — prevents double-counting
-      if (linkedSovItems.length > 0) {
-        await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', coId)
+      try {
+        const res = await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: budgetItemId, fields }) })
+        const out = await res.json().catch(() => ({}))
+        if (!res.ok || out.error) errors.push(`${label}: ${out.error || 'HTTP ' + res.status} (needed ${delta >= 0 ? '+' : ''}${delta})`)
+      } catch (e) {
+        errors.push(`${label}: ${e.message} (needed ${delta >= 0 ? '+' : ''}${delta})`)
+      }
+    }
+    return errors
+  }
+
+  async function reviewPrimeCO(coId, status, coAmount, sovOverride = null) {
+    // Claim: only a still-pending CO can be approved/rejected, so a double click can't apply twice.
+    const { data: claimed, error } = await supabase.from('prime_change_orders')
+      .update({ status }).eq('id', coId).eq('status', 'pending')
+      .select('id, sov, budget_applied')
+    if (error) { alert('Error updating prime CO: ' + error.message); return }
+    if (!claimed?.length) { alert('This change order was already reviewed. Refreshing.'); await loadPrimeCOs(); return }
+    if (status === 'approved' && !claimed[0].budget_applied) {
+      const sov = sovOverride || claimed[0].sov || []
+      const deltas = sovByBudgetItem(sov)
+      if (Object.keys(deltas).length > 0) {
+        const errors = await adjustBudgetLines(deltas)
+        // Mark budget as applied so the "Apply to Budget" button is hidden — prevents double-counting
+        const { error: flagErr } = await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', coId)
+        if (flagErr) errors.push('Could not mark the CO as applied to budget: ' + flagErr.message)
+        if (errors.length) alert('CO approved, but some budget lines were not updated:\n\n' + errors.join('\n'))
       }
       await loadBudgetItems()
     }
@@ -4138,37 +4338,30 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       return `  ${bi ? (bi.cost_code ? bi.cost_code + ' · ' : '') + bi.description : 'Unknown'}: +$${Number(r.amount).toLocaleString()}`
     }).join('\n')
     if (!window.confirm(`Apply CO "${co.description}" to budget items?\n\n${lines}`)) return
-    for (const sovItem of linked) {
-      const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
-      if (item) {
-        await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: {
-          budget_amount: Number(item.budget_amount) + Number(sovItem.amount),
-          owner_amount: Number(item.owner_amount ?? item.budget_amount) + Number(sovItem.amount),
-        } }) })
-      }
-    }
-    // Mark applied so this button is hidden — prevents double-counting
-    await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', co.id)
+    // Claim first so two clicks / tabs can't both apply
+    const { data: claimed, error: claimErr } = await supabase.from('prime_change_orders')
+      .update({ budget_applied: true }).eq('id', co.id).eq('status', 'approved')
+      .or('budget_applied.is.null,budget_applied.eq.false')
+      .select('id, sov')
+    if (claimErr) { alert('Could not apply: ' + claimErr.message); return }
+    if (!claimed?.length) { alert('This CO was already applied to the budget. Refreshing.'); await loadPrimeCOs(); return }
+    const errors = await adjustBudgetLines(sovByBudgetItem(claimed[0].sov))
+    if (errors.length) alert('Some budget lines were not updated:\n\n' + errors.join('\n'))
     await loadBudgetItems()
     await loadPrimeCOs()
   }
 
   async function deletePrimeCO(coId) {
     if (!window.confirm('Delete this contract modification?')) return
-    const co = primeCOs.find(c => c.id === coId)
-    await supabase.from('prime_change_orders').delete().eq('id', coId)
-    if (co?.status === 'approved') {
-      for (const sovItem of co.sov || []) {
-        if (!sovItem.budget_item_id || !sovItem.amount) continue
-        const { data: item } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', sovItem.budget_item_id).single()
-        if (item) {
-          const updates = {
-            budget_amount: Number(item.budget_amount) - Number(sovItem.amount),
-            owner_amount: Number(item.owner_amount ?? item.budget_amount) - Number(sovItem.amount),
-          }
-          await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sovItem.budget_item_id, fields: updates }) })
-        }
-      }
+    const { data: co, error: readErr } = await supabase.from('prime_change_orders').select('id, status, sov, budget_applied').eq('id', coId).maybeSingle()
+    if (readErr || !co) { alert('Could not load the change order: ' + (readErr?.message || 'not found')); await loadPrimeCOs(); return }
+    const { error: delErr } = await supabase.from('prime_change_orders').delete().eq('id', coId)
+    if (delErr) { alert('Delete failed: ' + delErr.message); return }
+    // Only take amounts back out of the budget if they were put in
+    if (co.status === 'approved' && co.budget_applied) {
+      const deltas = sovBudgetDeltas(co.sov, [])
+      const errors = await adjustBudgetLines(deltas)
+      if (errors.length) alert('CO deleted, but some budget lines were not reduced:\n\n' + errors.join('\n'))
       await loadBudgetItems()
     }
     await loadPrimeCOs()
@@ -4176,18 +4369,26 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   async function savePrimeCO() {
     setSavingPrimeCO(true)
-    const co = primeCOs.find(c => c.id === editingPrimeCOId)
     const sovTotal = editPrimeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
     const newAmount = parseFloat(editPrimeCOForm.sov.length > 0 ? sovTotal : editPrimeCOForm.amount) || 0
     const validSOV = editPrimeCOForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
+    // Read what is stored now (not the list on screen) to know what was applied to budget
+    const { data: before, error: readErr } = await supabase.from('prime_change_orders').select('status, sov, budget_applied').eq('id', editingPrimeCOId).maybeSingle()
+    if (readErr || !before) { setSavingPrimeCO(false); alert('Save failed: ' + (readErr?.message || 'change order not found')); return }
     const { error } = await supabase.from('prime_change_orders').update({
       description: editPrimeCOForm.description,
       amount: newAmount,
       notes: editPrimeCOForm.notes || null,
       sov: validSOV.length > 0 ? validSOV : null,
     }).eq('id', editingPrimeCOId)
+    if (error) { setSavingPrimeCO(false); setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
+    // Approved and already applied: reverse the old SOV amounts and apply the new ones
+    if (before.status === 'approved' && before.budget_applied) {
+      const errors = await adjustBudgetLines(sovBudgetDeltas(before.sov, validSOV))
+      if (errors.length) alert('CO saved, but some budget lines were not re-synced:\n\n' + errors.join('\n'))
+      await loadBudgetItems()
+    }
     setSavingPrimeCO(false)
-    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
     setEditingPrimeCOId(null)
     await loadPrimeCOs()
   }
@@ -4780,10 +4981,10 @@ ${attachmentHtml}
   }
 
   async function updateBillingEntry() {
-    if (editBillingForm.status === 'rejected') {
-      await authFetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: editingBilling }) })
-      setEditingBilling(null)
-      await loadBillingForJob()
+    // Rejected keeps the billing (status rejected + reason); Delete is a separate action.
+    const rejecting = editBillingForm.status === 'rejected'
+    if (rejecting && editBillingForm.original_status !== 'rejected' && !String(editBillingForm.rejection_reason || '').trim()) {
+      alert('Enter a rejection reason for the sub.')
       return
     }
     const now = new Date().toISOString()
@@ -4806,6 +5007,8 @@ ${attachmentHtml}
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
       nv_reimbursement: editBillingForm.nv_reimbursement || false,
+      ...(rejecting ? { rejection_reason: String(editBillingForm.rejection_reason || '').trim() || null } : {}),
+      ...(rejecting && editBillingForm.original_status !== 'rejected' ? { email_sub: true } : {}),
     }
     let res
     if (editBillingFile) {
@@ -4816,8 +5019,9 @@ ${attachmentHtml}
     } else {
       res = await authFetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
     }
-    const result = await res.json()
-    if (result.error) { alert('Save error: ' + result.error); return }
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok || result.error) { alert('Save error: ' + (result.error || `HTTP ${res.status}`)); return }
+    if (result.emailError) alert('Saved, but the email to the sub was not sent: ' + result.emailError)
     setEditingBilling(null)
     setEditBillingFile(null)
     await loadBillingForJob()
@@ -4836,6 +5040,8 @@ ${attachmentHtml}
       invoice_date: b.invoice_date || '',
       billing_period: b.billing_period ? b.billing_period.slice(0, 7) : '',
       status: b.status,
+      original_status: b.status,
+      rejection_reason: b.rejection_reason || '',
       doc_url: b.doc_url || null,
       nv_reimbursement: b.nv_reimbursement || false,
     }
@@ -4853,17 +5059,21 @@ ${attachmentHtml}
   }
 
   async function deleteBillingEntry(billingId) {
-    if (!window.confirm('Delete this billing submission?')) return
-    await authFetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
+    if (!window.confirm('Delete this billing submission? This cannot be undone. (To send it back to the sub, set Status to Rejected instead.)')) return
+    const res = await authFetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: billingId }) })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not delete: ' + (out.error || `HTTP ${res.status}`))
     await loadBillingForJob()
   }
 
   async function assignBillingToDraw(billingId, drawRequestId) {
-    await authFetch('/api/billing-entry', {
+    const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: billingId, draw_request_id: drawRequestId || null }),
     })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not change the draw: ' + (out.error || `HTTP ${res.status}`))
     await loadBillingForJob()
   }
 
@@ -4876,22 +5086,26 @@ ${attachmentHtml}
 
   async function toggleReadyToPay(billingId, current) {
     setTogglingReadyToPay(billingId)
-    await authFetch('/api/billing-entry', {
+    const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: billingId, ready_to_pay: !current }),
     })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not change ready to pay: ' + (out.error || `HTTP ${res.status}`))
     setTogglingReadyToPay(null)
     await loadBillingForJob()
   }
 
   async function approveBilling(billingId) {
     setApprovingBillingId(billingId)
-    await authFetch('/api/billing-entry', {
+    const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: billingId, status: 'approved', reviewed_at: new Date().toISOString() }),
     })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) alert('Could not approve: ' + (out.error || `HTTP ${res.status}`))
     setApprovingBillingId(null)
     await loadBillingForJob()
   }
@@ -7423,8 +7637,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     {signingRequests.filter(r => r.subcontract_id === contractGenForm.contract_id).map(r => (
                       <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0', fontSize: '12px' }}>
                         <span style={{ color: '#4b5563' }}>{r.signer_email}</span>
-                        <span style={{ color: r.status === 'signed' ? '#16a34a' : '#d97706', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
-                          {r.status === 'signed' ? `✓ Signed ${new Date(r.signed_at).toLocaleDateString()}` : '⏳ Awaiting signature'}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ color: r.status === 'signed' ? '#16a34a' : r.status === 'pending' ? '#d97706' : '#9ca3af', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase' }}>
+                            {r.status === 'signed' ? `✓ Signed ${new Date(r.signed_at).toLocaleDateString()}` : r.status === 'pending' ? '⏳ Awaiting signature' : r.status === 'voided' ? 'Cancelled' : r.status}
+                          </span>
+                          {r.status === 'pending' && (
+                            <button style={{ ...s.btnSmall, fontSize: '10px', padding: '2px 8px' }} onClick={() => cancelSigningRequest(r.id)}>Cancel request</button>
+                          )}
                         </span>
                       </div>
                     ))}
@@ -8192,7 +8411,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <p style={{ ...s.cardTitle, margin: 0 }}>Edit prime CO</p>
                         {co.status === 'approved' && (
                           <span style={{ fontSize: '11px', color: '#d97706', background: '#fff7ed', border: '1px solid #3a2a00', borderRadius: '6px', padding: '3px 8px' }}>
-                            Approved — amount change will adjust contract value
+                            {co.budget_applied ? 'Approved — saving re-syncs the budget lines to the new SOV amounts' : 'Approved — contract sum follows the new amount'}
                           </span>
                         )}
                       </div>
@@ -8878,7 +9097,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ job_id: id, title: drawForm.title || null, dc_ids: drawForm.dc_ids, po_ids: drawForm.po_ids, gc_ids: drawForm.gc_ids }),
                         })
-                        if (!res.ok) { alert('Failed to create draw. Please try again.'); setCreatingDraw(false); return; }
+                        if (!res.ok) { const j = await res.json().catch(() => ({})); alert('Draw not created: ' + (j.error || `HTTP ${res.status}`)); setCreatingDraw(false); if (j.draw) await loadDrawRequests(); return }
                         setDrawForm({ title: '', dc_ids: [], po_ids: [], gc_ids: [] })
                         setShowCreateDraw(false)
                         await loadDrawRequests()
@@ -8944,24 +9163,22 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
                         {dr.status === 'open' ? (
                           <button style={s.btnSmall} onClick={async () => {
-                            const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'closed' }) })
-                            if (!res.ok) { alert('Action failed. Please try again.'); return; }
+                            if (!(await drawPatch({ id: dr.id, status: 'closed' }))) return
                             await loadDrawRequests()
                           }}>Close</button>
                         ) : (
                           <button style={s.btnSmall} onClick={async () => {
-                            const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, status: 'open' }) })
-                            if (!res.ok) { alert('Action failed. Please try again.'); return; }
+                            if (!(await drawPatch({ id: dr.id, status: 'open' }))) return
                             await loadDrawRequests()
                           }}>Reopen</button>
                         )}
-                        <button style={s.btnSmallRed} onClick={async () => {
+                        {dr.status !== 'closed' && <button style={s.btnSmallRed} onClick={async () => {
                           if (!window.confirm('Delete this draw? Billing submissions linked to it will be unlinked.')) return
                           const res = await fetch(`/api/draw-requests?id=${dr.id}`, { method: 'DELETE' })
-                          if (!res.ok) { alert('Action failed. Please try again.'); return; }
+                          if (!res.ok) { const j = await res.json().catch(() => ({})); alert('Delete failed: ' + (j.error || `HTTP ${res.status}`)); return }
                           await loadDrawRequests()
                           await loadBillingForJob()
-                        }}>Delete</button>
+                        }}>Delete</button>}
                         <span style={{ color: '#6b7280', fontSize: '14px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
                       </div>
                     </div>
@@ -8999,7 +9216,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <button
                                     style={{ fontSize: '11px', padding: '3px 8px', background: '#fef2f2', border: '1px solid #3a1a1a', color: '#dc2626', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
-                                      await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_dc_ids: [dc.id] }) })
+                                      await drawPatch({ id: dr.id, remove_dc_ids: [dc.id] })
                                       await loadDirectCosts()
                                       await loadDrawRequests()
                                     }}
@@ -9037,7 +9254,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               disabled={savingDrawCosts || drawAddCostIds.length === 0}
                               onClick={async () => {
                                 setSavingDrawCosts(true)
-                                await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_dc_ids: drawAddCostIds }) })
+                                await drawPatch({ id: dr.id, add_dc_ids: drawAddCostIds })
                                 setDrawAddCostIds([])
                                 await loadDirectCosts()
                                 await loadDrawRequests()
@@ -9105,7 +9322,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               disabled={savingDrawPOs || drawAddPOIds.length === 0}
                               onClick={async () => {
                                 setSavingDrawPOs(true)
-                                await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_po_ids: drawAddPOIds }) })
+                                await drawPatch({ id: dr.id, add_po_ids: drawAddPOIds })
                                 setDrawAddPOIds([])
                                 await loadPurchaseOrders()
                                 setSavingDrawPOs(false)
@@ -9134,7 +9351,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                   <span style={{ color: '#e8590c', fontWeight: '700' }}>${Number(e.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                   <button style={{ fontSize: '11px', padding: '3px 8px', background: '#fef2f2', border: '1px solid #3a1a1a', color: '#dc2626', borderRadius: '4px', cursor: 'pointer' }}
                                     onClick={async () => {
-                                      await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, remove_gc_ids: [e.id] }) })
+                                      await drawPatch({ id: dr.id, remove_gc_ids: [e.id] })
                                       await loadGeneralConditions()
                                     }}>Remove</button>
                                 </div>
@@ -9163,7 +9380,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               disabled={savingDrawGCs || drawAddGCIds.length === 0}
                               onClick={async () => {
                                 setSavingDrawGCs(true)
-                                await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: dr.id, add_gc_ids: drawAddGCIds }) })
+                                await drawPatch({ id: dr.id, add_gc_ids: drawAddGCIds })
                                 setDrawAddGCIds([])
                                 await loadGeneralConditions()
                                 setSavingDrawGCs(false)
@@ -9593,6 +9810,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <option value="rejected">Rejected</option>
                           </select>
                         </div>
+                        {editBillingForm.status === 'rejected' && (
+                          <div style={{ marginBottom: '1rem' }}>
+                            <label style={s.label}>Rejection reason (sent to the sub){editBillingForm.original_status !== 'rejected' ? ' *' : ''}</label>
+                            <textarea style={{ ...s.input, minHeight: '60px', resize: 'vertical' }} value={editBillingForm.rejection_reason || ''} onChange={e => setEditBillingForm(f => ({ ...f, rejection_reason: e.target.value }))} placeholder="What needs to change before they resubmit?" />
+                          </div>
+                        )}
                         <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <input type="checkbox" id={`nvReimb-${b.id}`} checked={editBillingForm.nv_reimbursement} onChange={e => setEditBillingForm(f => ({ ...f, nv_reimbursement: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#7c3aed' }} />
                           <label htmlFor={`nvReimb-${b.id}`} style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>NV Reimbursement (direct cost / credit card)</label>
@@ -10393,10 +10616,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {updatingCostId === c.id ? '...' : 'Undo reject'}
                           </button>
                         )}
-                        <button
-                          style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#faf5ff', color: '#7c3aed', border: '1px solid #4a1a6a' } : {}) }}
-                          onClick={() => openMovePanel(c.id)}
-                        >{movingCostId === c.id ? '✕ Cancel' : '⇄ Move'}</button>
+                        {c.draw_request_id && (() => {
+                          const dr = drawRequests.find(d => d.id === c.draw_request_id)
+                          return (
+                            <span title="On a draw request — take it off the draw before moving it" style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                              Draw #{dr?.draw_number ?? '?'}
+                            </span>
+                          )
+                        })()}
+                        {(c.draw_request_id || c.drawn_application_id || c.billing_route) ? (
+                          <button
+                            disabled
+                            title={c.drawn_application_id ? 'Drawn on a pay app — cannot move' : c.draw_request_id ? 'On a draw request — cannot move' : 'On an owner reimbursement invoice — cannot move'}
+                            style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', opacity: 0.45, cursor: 'not-allowed' }}
+                          >⇄ Move</button>
+                        ) : (
+                          <button
+                            style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(movingCostId === c.id ? { background: '#faf5ff', color: '#7c3aed', border: '1px solid #4a1a6a' } : {}) }}
+                            onClick={() => openMovePanel(c.id)}
+                          >{movingCostId === c.id ? '✕ Cancel' : '⇄ Move'}</button>
+                        )}
                       </div>
                     </div>
 
@@ -10753,7 +10992,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button style={s.btnSmallOrange} onClick={() => {
                           setShowNewAia(true)
-                          setNewAiaForm({ app_number: String(aiaApplications.length + 1), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
+                          setNewAiaForm({ app_number: String(nextAiaAppNumber(aiaApplications)), period_to: '', period_from: '', retainage_pct: '10', markup_pct: '0', linked_draw_request_id: '' })
                         }}>{job.billing_type === 'draw_request' ? '+ New draw request' : '+ New application'}</button>
                         {aiaApplications.length > 0 && (
                           <button
@@ -10900,6 +11139,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {activeAia && (() => {
                 const isActive = true
+                // Lock follows the stored app (submitted / certified / paid), not the unsaved Status dropdown
+                const aiaStored = aiaApplications.find(a => a.id === activeAia.id) || activeAia
+                const aiaLocked = isAiaLocked(aiaStored)
+                const aiaEditLocked = aiaLocked && aiaUnlockedId !== activeAia.id
+                const lockedFieldset = { border: 0, padding: 0, margin: 0, minWidth: 0, opacity: aiaEditLocked ? 0.75 : 1 }
                 const periodLabel = activeAia.period_from && activeAia.period_from !== (activeAia.period_to ? activeAia.period_to.slice(0, 7) + '-01' : '')
                   ? `${new Date(activeAia.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
                   : activeAia.period_to ? new Date(activeAia.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
@@ -10921,10 +11165,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {activeAia.payment_received && activeAia.payment_received_at && (
                             <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(activeAia.payment_received_at).toLocaleDateString()}</span>
                           )}
+                          {aiaLocked && (
+                            <span title={`Locked because ${aiaLockReason(aiaStored)}`} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: aiaEditLocked ? '#f3f4f6' : '#fef3c7', color: aiaEditLocked ? '#374151' : '#92400e', border: '1px solid #d1d5db' }}>
+                              {aiaEditLocked ? '🔒 Locked' : '🔓 Owner override'}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        {relinkDrawOpen ? (
+                        {aiaEditLocked && isPrincipal(userRole) && (
+                          <button style={s.btnSmall} title="Owner only: type the app number to edit a locked app" onClick={() => { if (confirmAiaOverride(aiaStored, 'edit it')) setAiaUnlockedId(activeAia.id) }}>Owner override</button>
+                        )}
+                        {aiaLocked && !isPrincipal(userRole) ? null : relinkDrawOpen ? (
                           <>
                             <select value={relinkDrawId} onChange={e => setRelinkDrawId(e.target.value)} style={{ padding: '5px 8px', background: '#ffffff', border: '1px solid #333', borderRadius: '6px', color: '#111827', fontSize: '11px' }}>
                               <option value="">— No draw —</option>
@@ -10938,10 +11190,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         )}
                         <button
                           style={activeAia.payment_received ? s.btnSmallGreen : s.btnSmall}
+                          disabled={activeAia.payment_received && !isPrincipal(userRole)}
+                          title={activeAia.payment_received && !isPrincipal(userRole) ? 'Only an Owner can unmark a recorded payment' : undefined}
                           onClick={() => markPaymentReceived(activeAia.id, activeAia.payment_received)}>
                           {activeAia.payment_received ? '✓ Received' : 'Record Payment'}
                         </button>
-                        <button style={s.btnSmallRed} onClick={() => deleteAiaApplication(activeAia.id)}>Delete</button>
+                        {(!aiaLocked || isPrincipal(userRole)) && (
+                          <button style={s.btnSmallRed} onClick={() => deleteAiaApplication(activeAia.id)}>Delete</button>
+                        )}
                       </div>
                     </div>
 
@@ -10955,24 +11211,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div>
                                 <label style={s.label}>Status</label>
                                 <select style={{ ...s.input, width: 'auto' }} value={activeAia.status || 'draft'} onChange={e => setActiveAia(a => ({ ...a, status: e.target.value }))}>
-                                  <option value="draft">Draft</option>
+                                  <option value="draft" disabled={aiaLocked && !isPrincipal(userRole)}>Draft</option>
                                   <option value="submitted">Submitted</option>
                                   <option value="certified">Certified</option>
                                 </select>
                               </div>
                               <div>
                                 <label style={s.label}>Retainage %</label>
-                                <input type="number" min="0" max="100" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.retainage_pct} onChange={e => setActiveAia(a => ({ ...a, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
+                                <input type="number" min="0" max="100" step="0.5" disabled={aiaEditLocked} style={{ ...s.input, width: '80px' }} value={activeAia.retainage_pct} onChange={e => setActiveAia(a => ({ ...a, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
                               </div>
                               <div>
                                 <label style={s.label}>Markup %</label>
-                                <input type="number" min="0" step="0.5" style={{ ...s.input, width: '80px' }} value={activeAia.markup_pct || 0} onChange={e => setActiveAia(a => ({ ...a, markup_pct: e.target.value }))} placeholder="0" />
+                                <input type="number" min="0" step="0.5" disabled={aiaEditLocked} style={{ ...s.input, width: '80px' }} value={activeAia.markup_pct || 0} onChange={e => setActiveAia(a => ({ ...a, markup_pct: e.target.value }))} placeholder="0" />
                                 {parseFloat(activeAia.markup_pct) > 0 && (
                                   <p style={{ fontSize: '10px', color: '#e8590c', margin: '3px 0 0', whiteSpace: 'nowrap' }}>Applied on G703 billing</p>
                                 )}
                               </div>
                             </div>
 
+                            <fieldset disabled={aiaEditLocked} style={lockedFieldset}>
                             {periodBilling.length > 0 && (
                               <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '1rem', marginBottom: '1.25rem' }}>
                                 <p style={{ fontSize: '11px', fontWeight: '700', color: '#2563eb', letterSpacing: '1.5px', textTransform: 'uppercase', margin: '0 0 8px' }}>
@@ -11279,11 +11536,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 </div>
                               )
                             })()}
+                            </fieldset>
 
                             {aiaLines.length === 0 ? (
                               <p style={{ color: '#6b7280', fontSize: '14px' }}>No budget line items found. Add them in the Budget tab.</p>
                             ) : (
                               <>
+                                <fieldset disabled={aiaEditLocked} style={lockedFieldset}>
                                 <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
                                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                                     <thead>
@@ -11383,6 +11642,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </tbody>
                                   </table>
                                 </div>
+                                </fieldset>
 
                                 {(() => {
                                   const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(activeAia.retainage_pct)) ? 10 : parseFloat(activeAia.retainage_pct))) / 100

@@ -5,6 +5,7 @@ import { billingContext } from '../../../../lib/sub-access'
 import { contractsWithBaseSov } from '../../../../lib/sov-lines'
 import { emailWrap, escapeHtml } from '../../../../lib/email'
 import { withoutNew032 } from '../../../../lib/billing-fields'
+import { checkSovBilling } from '../../../../lib/billing-sov-check'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -53,40 +54,56 @@ export async function POST(request) {
     if (!body.invoice_number?.trim()) return Response.json({ error: 'Invoice number is required.' }, { status: 400 })
     if (!body.doc_url || !String(body.doc_url).startsWith(`${auth.userId}/`)) return Response.json({ error: 'Invoice PDF is required.' }, { status: 400 })
 
-    // SOV lines must belong to this job's contracts and not push any line past 100%
-    const sovIn = (body.sov_lines || []).filter(l => Number(l.amount) > 0)
+    // The sub's schedule on this job's billable contracts
+    const contractMap = Object.fromEntries(ctx.contracts.map(c => [c.id, c]))
+    const { data: contractLines, error: clErr } = await adminSupabase
+      .from('subcontract_sov_lines').select('*').in('subcontract_id', Object.keys(contractMap))
+    if (clErr) return Response.json({ error: 'Could not read your schedule of values: ' + clErr.message }, { status: 500 })
+    const withBase = contractsWithBaseSov(contractLines)
+    const lineMap = Object.fromEntries((contractLines || []).map(l => [l.id, l]))
+
+    // Amount must follow the lines: required when a schedule exists, no negatives,
+    // each line = scheduled value x % (within 1 cent), header = sum of lines.
+    const checked = checkSovBilling({ lines: body.sov_lines, sovById: lineMap, amountBilled: body.amount_billed, hasSchedule: withBase.size > 0 })
+    if (checked.error) return Response.json({ error: checked.error }, { status: 400 })
+    const sovIn = checked.lines
+
     let retainageHeld = 0
     if (sovIn.length) {
-      const { data: lines } = await adminSupabase
-        .from('subcontract_sov_lines')
-        .select('id, subcontract_id, description')
-        .in('id', sovIn.map(l => l.sov_line_id))
-      const lineMap = Object.fromEntries((lines || []).map(l => [l.id, l]))
-      const contractMap = Object.fromEntries(ctx.contracts.map(c => [c.id, c]))
-      if (sovIn.some(l => !lineMap[l.sov_line_id] || !contractMap[lineMap[l.sov_line_id].subcontract_id])) {
-        return Response.json({ error: 'One or more schedule-of-values lines do not belong to your subcontract.' }, { status: 400 })
-      }
       // A contract's CO lines can't be billed until the sub has set up its base schedule
       const billedContractIds = [...new Set(sovIn.map(l => lineMap[l.sov_line_id].subcontract_id))]
-      const { data: contractLines } = await adminSupabase.from('subcontract_sov_lines').select('*').in('subcontract_id', billedContractIds)
-      const withBase = contractsWithBaseSov(contractLines)
       if (billedContractIds.some(id => !withBase.has(id))) {
         return Response.json({ error: 'Set up your schedule of values for the base contract before billing.' }, { status: 400 })
       }
-      const { data: prev } = await adminSupabase
+      // Not past 100% on any line
+      const { data: prev, error: prevErr } = await adminSupabase
         .from('billing_sov_lines')
         .select('sov_line_id, pct_this_period, billing_submissions(status)')
         .in('sov_line_id', sovIn.map(l => l.sov_line_id))
+      if (prevErr) return Response.json({ error: 'Could not check earlier billing: ' + prevErr.message }, { status: 500 })
       const prevPct = {}
       for (const pl of prev || []) {
         if (pl.billing_submissions?.status !== 'rejected') prevPct[pl.sov_line_id] = (prevPct[pl.sov_line_id] || 0) + (parseFloat(pl.pct_this_period) || 0)
       }
-      const over = sovIn.filter(l => (prevPct[l.sov_line_id] || 0) + (parseFloat(l.pct_this_period) || 0) > 100.0001)
+      const over = sovIn.filter(l => (prevPct[l.sov_line_id] || 0) + l.pct_this_period > 100.0001)
       if (over.length) return Response.json({ error: `Over-billing on: ${over.map(l => lineMap[l.sov_line_id].description).join(', ')}. Cumulative % would exceed 100%.` }, { status: 400 })
-      retainageHeld = Math.round(sovIn.reduce((a, l) => a + Number(l.amount) * (parseFloat(contractMap[lineMap[l.sov_line_id].subcontract_id].retainage_pct) || 0) / 100, 0) * 100) / 100
+      retainageHeld = Math.round(sovIn.reduce((a, l) => a + l.amount * (parseFloat(contractMap[lineMap[l.sov_line_id].subcontract_id].retainage_pct) || 0) / 100, 0) * 100) / 100
     }
 
-    const amountBilled = parseFloat(body.amount_billed) || 0
+    const amountBilled = checked.total != null ? checked.total : (parseFloat(body.amount_billed) || 0)
+    if (amountBilled < 0) return Response.json({ error: 'Amount billed can’t be negative.' }, { status: 400 })
+
+    // Draw: must be an open draw on this job
+    let drawRequestId = null
+    if (body.draw_request_id) {
+      const { data: draw, error: drawErr } = await adminSupabase.from('draw_requests').select('id, job_id, status').eq('id', body.draw_request_id).maybeSingle()
+      if (drawErr) return Response.json({ error: drawErr.message }, { status: 500 })
+      if (!draw || draw.job_id !== body.job_id || draw.status !== 'open') {
+        return Response.json({ error: 'That billing period / draw is no longer open on this project. Pick another one.' }, { status: 400 })
+      }
+      drawRequestId = draw.id
+    }
+
     const invoiceDate = /^\d{4}-\d{2}-\d{2}$/.test(body.invoice_date || '') ? body.invoice_date : null
     const row = {
       sub_id: auth.userId,
@@ -103,7 +120,7 @@ export async function POST(request) {
       invoice_number: body.invoice_number.trim(),
       ...(invoiceDate ? { invoice_date: invoiceDate } : {}),
       billing_period: body.billing_period ? body.billing_period + '-01' : null,
-      draw_request_id: body.draw_request_id || null,
+      draw_request_id: drawRequestId,
       doc_url: body.doc_url,
     }
     let { data: newSub, error } = await adminSupabase.from('billing_submissions').insert(row).select().single()
@@ -117,8 +134,8 @@ export async function POST(request) {
       const { error: lineErr } = await adminSupabase.from('billing_sov_lines').insert(sovIn.map(l => ({
         billing_submission_id: newSub.id,
         sov_line_id: l.sov_line_id,
-        amount: Number(l.amount),
-        pct_this_period: parseFloat(l.pct_this_period) || 0,
+        amount: l.amount,
+        pct_this_period: l.pct_this_period,
       })))
       if (lineErr) return Response.json({ ok: true, submission: newSub, warning: 'Billing saved, but the line-item breakdown failed to save: ' + lineErr.message })
     }

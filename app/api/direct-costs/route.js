@@ -149,6 +149,35 @@ export async function POST(request) {
   }
 }
 
+// A cost that is already billed must not move to another job (that would unlink
+// it and silently change the draw / pay app / invoice total). Returns null when
+// the move may go ahead, else { status, error } naming the link.
+async function moveBlockedBy(cost) {
+  if (cost.drawn_application_id) {
+    const { data: app } = await adminSupabase.from('aia_applications').select('app_number').eq('id', cost.drawn_application_id).maybeSingle()
+    return { status: 409, error: `This cost is drawn on pay app #${app?.app_number ?? '?'}. Take it off the app before moving it.` }
+  }
+  if (cost.draw_request_id) {
+    const { data: draw, error } = await adminSupabase.from('draw_requests').select('draw_number, status').eq('id', cost.draw_request_id).maybeSingle()
+    if (error) return { status: 500, error: error.message }
+    if (draw && draw.status !== 'open') {
+      return { status: 409, error: `This cost is on Draw #${draw.draw_number}, which is ${draw.status || 'not open'}. It can't be moved to another job.` }
+    }
+  }
+  const { data: invLines, error: invErr } = await adminSupabase
+    .from('owner_reimb_invoice_lines')
+    .select('invoice_id, owner_reimb_invoices!inner(invoice_number, status)')
+    .eq('direct_cost_id', cost.id)
+    .neq('owner_reimb_invoices.status', 'voided')
+    .limit(1)
+  if (invErr) return { status: 500, error: 'Could not check owner reimbursement invoices: ' + invErr.message }
+  if (invLines?.length) {
+    const inv = invLines[0].owner_reimb_invoices
+    return { status: 409, error: `This cost is on owner reimbursement invoice ${inv?.invoice_number || ''} (${inv?.status || 'open'}). Remove it from the invoice (or void the invoice) before moving it.` }
+  }
+  return null
+}
+
 // PUT: update a direct cost by id
 // Used for budget line assignment, job moves, and draw application linkage.
 // Status transitions (approve/reject/resubmit) should go through /api/dc-review.
@@ -159,7 +188,8 @@ export async function PUT(request) {
     const { id, ...fields } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-    const { data: cost, error: fetchErr } = await adminSupabase.from('direct_costs').select('id, job_id, budget_item_id').eq('id', id).maybeSingle()
+    const { data: cost, error: fetchErr } = await adminSupabase.from('direct_costs')
+      .select('id, job_id, budget_item_id, draw_request_id, drawn_application_id, billing_route').eq('id', id).maybeSingle()
     if (fetchErr) return Response.json({ error: fetchErr.message }, { status: 500 })
     if (!cost) return Response.json({ error: 'Cost not found' }, { status: 404 })
 
@@ -175,6 +205,10 @@ export async function PUT(request) {
       if (fields.budget_item_id === undefined && cost.budget_item_id) {
         return Response.json({ error: 'Moving a cost to another job must clear or replace its budget line.' }, { status: 422 })
       }
+      const moveBlock = await moveBlockedBy(cost)
+      if (moveBlock) return Response.json({ error: moveBlock.error }, { status: moveBlock.status })
+      // On an open draw of the old job: the move takes it off that draw.
+      if (cost.draw_request_id) fields.draw_request_id = null
     }
     if (fields.budget_item_id === '') fields.budget_item_id = null
     if (fields.budget_item_id) {

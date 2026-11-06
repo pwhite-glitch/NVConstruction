@@ -4,7 +4,8 @@ import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
-import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032 } from '../../../lib/billing-fields'
+import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock } from '../../../lib/billing-fields'
+import { escapeHtml, emailWrap } from '../../../lib/email'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,6 +24,41 @@ const ALLOWED_TRANSITIONS = {
   sub: {
     pending: [], // subs cannot change status
   },
+}
+
+// Who to email about a billing decision: the address saved on the submission,
+// else the sub's login email. Returns null when there is none.
+async function billingRecipient(current) {
+  if (current.sub_email?.trim()) return current.sub_email.trim()
+  if (!current.sub_id) return null
+  const { data } = await adminSupabase.auth.admin.getUserById(current.sub_id)
+  return data?.user?.email || null
+}
+
+async function emailBillingDecision(current, status, reason) {
+  const to = await billingRecipient(current)
+  if (!to) return 'No email on file for this sub.'
+  const { data: job } = await adminSupabase.from('jobs').select('job_number, project_name').eq('id', current.job_id).maybeSingle()
+  const approved = status === 'approved'
+  const color = approved ? '#16a34a' : '#dc2626'
+  const amt = '$' + Number(current.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const jobLabel = `#${escapeHtml(job?.job_number || '')} — ${escapeHtml(job?.project_name || '')}`
+  try {
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
+      to,
+      subject: `Billing ${status} — ${job?.project_name || 'your job'}`,
+      html: emailWrap(`
+        <h2 style="color:${color};margin:0 0 1rem">Billing ${status}</h2>
+        <p style="color:#aaa">Your billing submission of <strong style="color:#f1f1f1">${amt}</strong> for <strong style="color:#f1f1f1">${jobLabel}</strong> has been <strong style="color:${color}">${status}</strong>.</p>
+        ${!approved && reason ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${escapeHtml(reason)}</p></div>` : ''}
+        ${!approved && !reason ? `<p style="color:#888;font-size:13px">Contact NV Construction if you have questions.</p>` : ''}
+      `),
+    })
+    return error ? (error.message || 'Email failed') : null
+  } catch (e) {
+    return e.message || 'Email failed'
+  }
 }
 
 async function uploadBillingDoc(file, jobId) {
@@ -117,13 +153,15 @@ export async function PATCH(request) {
 
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-    const { data: current } = await adminSupabase
+    const { data: current, error: curErr } = await adminSupabase
       .from('billing_submissions')
-      .select('status, sub_id, job_id, amount_billed, company_name')
+      .select('status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
+    if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
     if (!current) return Response.json({ error: 'Not found' }, { status: 404 })
+    const emailSub = rawFields.email_sub === true
 
     let fields
     if (isPM(auth.role)) {
@@ -143,6 +181,34 @@ export async function PATCH(request) {
       if (current.status === 'approved' && 'amount_billed' in fields && !fields.status) {
         delete fields.amount_billed
       }
+
+      const nextStatus = fields.status || current.status
+      // Rejecting keeps the billing (status rejected) and needs a reason the sub can act on.
+      if (fields.status === 'rejected' && current.status !== 'rejected') {
+        const reason = String(rawFields.rejection_reason || '').trim()
+        if (!reason) return Response.json({ error: 'A rejection reason is required.' }, { status: 422 })
+        fields.rejection_reason = reason
+      } else if ('rejection_reason' in fields && nextStatus !== 'rejected') {
+        delete fields.rejection_reason
+      }
+      // Ready to pay only on an approved billing; reopening clears it.
+      if (fields.ready_to_pay === true && nextStatus !== 'approved') {
+        return Response.json({ error: 'Only an approved billing can be marked ready to pay.' }, { status: 422 })
+      }
+      if (current.status === 'approved' && nextStatus !== 'approved') fields.ready_to_pay = false
+
+      // Draw link: must be a draw on this job, and a closed draw can't gain or lose items.
+      if ('draw_request_id' in fields && (fields.draw_request_id || null) !== (current.draw_request_id || null)) {
+        const ids = [fields.draw_request_id, current.draw_request_id].filter(Boolean)
+        const { data: draws, error: drawErr } = await adminSupabase.from('draw_requests').select('id, job_id, status, draw_number').in('id', ids)
+        if (drawErr) return Response.json({ error: drawErr.message }, { status: 500 })
+        for (const did of ids) {
+          const d = (draws || []).find(x => x.id === did)
+          if (!d) return Response.json({ error: 'Draw request not found.' }, { status: 404 })
+          if (d.job_id !== current.job_id) return Response.json({ error: 'That draw request is on a different job.' }, { status: 422 })
+          if (d.status === 'closed') return Response.json({ error: `Draw #${d.draw_number} is closed. Reopen it first.` }, { status: 409 })
+        }
+      }
     } else if (isSub(auth.role)) {
       // Subs can only edit their own pending submissions
       if (current.sub_id !== auth.userId) return Response.json({ error: 'Forbidden' }, { status: 403 })
@@ -154,11 +220,15 @@ export async function PATCH(request) {
 
     if (file && file.size > 0) doc_url = await uploadBillingDoc(file, current.job_id)
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
-    let { error } = await adminSupabase.from('billing_submissions').update(update).eq('id', id)
+    if (!Object.keys(update).length) return Response.json({ error: 'Nothing to update' }, { status: 400 })
+    // Status changes only apply to the status we read (no double approve / reject).
+    const statusGuard = q => (fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)
+    let { data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(update).eq('id', id)).select('id')
     if (error?.message?.includes('schema cache')) {
-      ({ error } = await adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id))
+      ({ data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id)).select('id'))
     }
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!updatedRows?.length) return Response.json({ error: 'This billing was changed by someone else. Refresh and try again.' }, { status: 409 })
 
     // Log auditable changes
     const fmtAmt = v => v != null ? '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null
@@ -183,7 +253,7 @@ export async function PATCH(request) {
       if ('amount_billed' in fields && String(fields.amount_billed) !== String(current.amount_billed)) {
         logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'amount_billed', old_value: fmtAmt(current.amount_billed), new_value: fmtAmt(fields.amount_billed), changed_by: auth.userId, note: `Billing amount updated — ${current.company_name || ''}` })
       }
-      if (fields.ready_to_pay === true && current.status === 'approved') {
+      if (fields.ready_to_pay === true && (fields.status || current.status) === 'approved') {
         logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'ready_to_pay', old_value: 'false', new_value: 'true', changed_by: auth.userId, note: `Marked ready to pay — ${current.company_name || ''}` })
       }
     }
@@ -222,7 +292,13 @@ export async function PATCH(request) {
       } catch {}
     }
 
-    return Response.json({ ok: true })
+    // Email the sub about approve / reject when the screen asks for it (dashboard, job page reject)
+    let emailError = null
+    if (isPM(auth.role) && emailSub && fields.status && fields.status !== current.status && (fields.status === 'approved' || fields.status === 'rejected')) {
+      emailError = await emailBillingDecision(current, fields.status, fields.rejection_reason)
+    }
+
+    return Response.json({ ok: true, emailError })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
@@ -239,6 +315,13 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'billing_submissions', id)
     if (denied) return denied
+
+    const { data: row, error: rowErr } = await adminSupabase.from('billing_submissions')
+      .select('id, status, draw_request_id, paid_at, payment_amount').eq('id', id).maybeSingle()
+    if (rowErr) return Response.json({ error: rowErr.message }, { status: 500 })
+    if (!row) return Response.json({ error: 'Not found' }, { status: 404 })
+    const block = billingDeleteBlock(row)
+    if (block) return Response.json({ error: block }, { status: 409 })
 
     const { error } = await adminSupabase.from('billing_submissions').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })

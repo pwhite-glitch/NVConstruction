@@ -992,27 +992,27 @@ export default function Dashboard() {
     setCoverPickerJob(null)
   }
 
+  // Approve / reject through /api/billing-entry so the status check, change log,
+  // in-app notification and the email to the sub (real recipient looked up server side) all run.
   async function updateStatus(sub, status, rejectionReason = '') {
-    await supabase.from('billing_submissions').update({
-      status,
-      reviewed_at: new Date().toISOString(),
-      ...(status === 'rejected' ? { rejection_reason: rejectionReason || null } : {}),
-    }).eq('id', sub.id)
+    if (status === 'rejected' && !String(rejectionReason || '').trim()) { alert('Enter a rejection reason for the sub.'); return }
+    const res = await authFetch('/api/billing-entry', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: sub.id,
+        status,
+        reviewed_at: new Date().toISOString(),
+        ...(status === 'rejected' ? { rejection_reason: String(rejectionReason).trim() } : {}),
+        email_sub: true,
+      }),
+    })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) { alert(`Could not mark billing ${status}: ` + (out.error || `HTTP ${res.status}`)); return }
     if (status === 'approved') {
       fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id }) }).catch(() => {})
     }
-    if (sub.sub_email) {
-      const approved = status === 'approved'
-      const color = approved ? '#16a34a' : '#dc2626'
-      sendEmail(sub.sub_email, `Billing ${status} — ${sub.jobs?.project_name}`,
-        emailWrap(`
-          <h2 style="color:${color};margin:0 0 1rem">Billing ${status}</h2>
-          <p style="color:#aaa">Your billing submission of <strong style="color:#f1f1f1">$${sub.amount_billed?.toLocaleString()}</strong> for <strong style="color:#f1f1f1">#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</strong> has been <strong style="color:${color}">${status}</strong>.</p>
-          ${!approved && rejectionReason ? `<div style="background:#1a0a0a;border:1px solid #3a1a1a;border-radius:8px;padding:14px 16px;margin-top:1rem"><p style="color:#888;font-size:11px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Reason</p><p style="color:#ff6b6b;margin:0;font-size:14px;line-height:1.6">${rejectionReason}</p></div>` : ''}
-          ${!approved && !rejectionReason ? `<p style="color:#888;font-size:13px">Contact NV Construction if you have questions.</p>` : ''}
-        `)
-      )
-    }
+    if (out.emailError) alert(`Billing ${status}, but the email to the sub was not sent: ${out.emailError}`)
     setRejectingSubId(null)
     setRejectionReasonDraft('')
     await loadAll()

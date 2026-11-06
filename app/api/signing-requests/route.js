@@ -4,6 +4,8 @@ import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
 import { isUuid, saveGeneratedContract } from '../../../lib/generated-contract'
 import { denyJob, denyJobOf } from '../../../lib/roles'
+import { escapeHtml } from '../../../lib/email'
+import { isSubcontractSigned } from '../../../lib/signing'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -24,6 +26,13 @@ export async function POST(request) {
   const denied = await denyJob(adminSupabase, auth, job_id) ||
     (subcontract_id ? await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id) : null)
   if (denied) return denied
+  if (subcontract_id) {
+    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at').eq('id', subcontract_id).maybeSingle()
+    if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
+    if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
+    if (sc.job_id !== job_id) return Response.json({ error: 'That subcontract is on a different job.' }, { status: 400 })
+    if (isSubcontractSigned(sc)) return Response.json({ error: 'This subcontract is already signed.' }, { status: 409 })
+  }
 
   const { data: row, error: insertErr } = await adminSupabase
     .from('signing_requests')
@@ -31,7 +40,7 @@ export async function POST(request) {
       job_id,
       subcontract_id: subcontract_id || null,
       signer_email: signer_email.trim().toLowerCase(),
-      signer_name: signer_name || null,
+      signer_name: signer_name?.trim() || null,
       document_html,
       document_title: document_title || null,
       created_by: auth.userId,  // always from verified session
@@ -54,13 +63,15 @@ export async function POST(request) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
   const signingLink = `${siteUrl}/sign?token=${row.token}`
   const logo = logoSrc()
-  const firstName = signer_name?.split(' ')[0] || 'there'
-  const title = document_title || 'Subcontract Agreement'
+  const firstName = escapeHtml(signer_name?.split(' ')[0] || 'there')
+  const title = escapeHtml(document_title || 'Subcontract Agreement')
 
-  await resend.emails.send({
+  let emailError = null
+  try {
+  const { error: sendErr } = await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
     to: signer_email,
-    subject: `Action Required: Please sign — ${title}`,
+    subject: `Action Required: Please sign — ${document_title || 'Subcontract Agreement'}`,
     html: `
 <!DOCTYPE html>
 <html>
@@ -103,8 +114,42 @@ export async function POST(request) {
 </body>
 </html>`,
   })
+    if (sendErr) emailError = sendErr.message || 'Email failed'
+  } catch (e) {
+    emailError = e.message || 'Email failed'
+  }
 
-  return Response.json({ data: row, saved_contract })
+  if (emailError) {
+    // The link never went out: void this request so it can't be used, keep any older one as is.
+    await adminSupabase.from('signing_requests').update({ status: 'voided' }).eq('id', row.id).eq('status', 'pending')
+    return Response.json({ error: `The signing email was not sent (${emailError}). Nothing was sent to the signer; try again.` }, { status: 502 })
+  }
+
+  // Resend: the new link replaces any older pending one for this subcontract.
+  let voided = 0
+  if (subcontract_id) {
+    const { data: old, error: voidErr } = await adminSupabase.from('signing_requests')
+      .update({ status: 'voided' }).eq('subcontract_id', subcontract_id).eq('status', 'pending').neq('id', row.id).select('id')
+    if (voidErr) return Response.json({ data: row, saved_contract, warning: 'Sent, but older signing links could not be cancelled: ' + voidErr.message })
+    voided = old?.length || 0
+  }
+
+  return Response.json({ data: row, saved_contract, voided })
+}
+
+// PATCH { id, action: 'void' } — cancel a pending signing request (the link stops working).
+export async function PATCH(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
+  const { id, action } = await request.json().catch(() => ({}))
+  if (!id || action !== 'void') return Response.json({ error: 'id and action: "void" required' }, { status: 400 })
+  const denied = await denyJobOf(adminSupabase, auth, 'signing_requests', id)
+  if (denied) return denied
+  const { data, error } = await adminSupabase.from('signing_requests')
+    .update({ status: 'voided' }).eq('id', id).eq('status', 'pending').select('id')
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (!data?.length) return Response.json({ error: 'Only a pending request can be cancelled (it may already be signed).' }, { status: 409 })
+  return Response.json({ ok: true })
 }
 
 export async function GET(request) {

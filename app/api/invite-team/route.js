@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
 import { findAuthUserByEmail } from '../../../lib/auth-users'
+import { isPrincipal, ownerChangeError } from '../../../lib/roles'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -20,9 +21,14 @@ const ROLE_LABELS = {
   roofing_rep: 'Commercial Roofing Rep',
 }
 
+// NV Team admin is Owner-only (principal), like the hidden screen.
+const OWNER_ONLY = () => Response.json({ error: 'Only Owners can manage the NV team.' }, { status: 403 })
+const guardResponse = err => Response.json({ error: err.error }, { status: err.status })
+
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  if (!isPrincipal(auth.role)) return OWNER_ONLY()
   const { email, full_name, role, phone } = await request.json()
   if (!email || !role) {
     return Response.json({ error: 'Email and role are required.' }, { status: 400 })
@@ -57,6 +63,9 @@ export async function POST(request) {
       }
       if (!existing) return Response.json({ error: error.message }, { status: 400 })
       userId = existing.id
+      // Re-inviting an existing Owner would change their role: never the last Owner.
+      const ownerErr = await ownerChangeError(adminSupabase, auth, userId, role)
+      if (ownerErr) return guardResponse(ownerErr)
       const { data: linkData, error: linkErr } = await adminSupabase.auth.admin.generateLink({
         type: 'recovery',
         email,
@@ -154,15 +163,21 @@ export async function POST(request) {
 </html>`,
   })
 
-  return Response.json({ ok: true, emailError: emailError?.message || null, inviteUrl })
+  // The link is a login credential: only ever handed back to an Owner.
+  return Response.json({ ok: true, emailError: emailError?.message || null, ...(isPrincipal(auth.role) ? { inviteUrl } : {}) })
 }
 
 export async function PATCH(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  if (!isPrincipal(auth.role)) return OWNER_ONLY()
   try {
   const { user_id, email, full_name, role } = await request.json()
   if (!user_id || !email) return Response.json({ error: 'user_id and email required' }, { status: 400 })
+  // Changing an Owner's login email: Owner callers only (checked above); role is unchanged.
+  const { data: target, error: targetErr } = await adminSupabase.from('profiles').select('role').eq('id', user_id).maybeSingle()
+  if (targetErr) return Response.json({ error: targetErr.message }, { status: 500 })
+  if (target?.role === 'principal' && !isPrincipal(auth.role)) return OWNER_ONLY()
 
   const { error } = await adminSupabase.auth.admin.updateUserById(user_id, { email })
   if (error) return Response.json({ error: error.message }, { status: 400 })
@@ -230,7 +245,7 @@ export async function PATCH(request) {
     emailError = e.message
   }
 
-  return Response.json({ ok: true, emailError: emailError || null, resetUrl })
+  return Response.json({ ok: true, emailError: emailError || null, ...(isPrincipal(auth.role) ? { resetUrl } : {}) })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
@@ -239,9 +254,13 @@ export async function PATCH(request) {
 export async function DELETE(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  if (!isPrincipal(auth.role)) return OWNER_ONLY()
   try {
     const { user_id } = await request.json()
     if (!user_id) return Response.json({ error: 'user_id required' }, { status: 400 })
+    if (user_id === auth.userId) return Response.json({ error: "You can't remove your own account." }, { status: 409 })
+    const ownerErr = await ownerChangeError(adminSupabase, auth, user_id, null)
+    if (ownerErr) return guardResponse(ownerErr)
 
     // Remove job assignments
     await adminSupabase.from('pm_job_assignments').delete().eq('user_id', user_id)

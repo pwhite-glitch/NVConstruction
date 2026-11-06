@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { saveSignedContract } from '../../../../lib/generated-contract'
+import { escapeHtml } from '../../../../lib/email'
+import { canSign, signatureMatchesName } from '../../../../lib/signing'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -45,12 +47,17 @@ export async function POST(request, { params }) {
 
   if (fetchErr || !existing) return Response.json({ error: 'Not found' }, { status: 404 })
   if (existing.status === 'signed') return Response.json({ error: 'Already signed' }, { status: 400 })
+  if (!canSign(existing.status)) return Response.json({ error: 'This signing link is no longer valid. Ask NV Construction for a new one.' }, { status: 410 })
+  if (!signatureMatchesName(signature_text, existing.signer_name)) {
+    return Response.json({ error: `Type your full name exactly as shown (${existing.signer_name}) to sign.` }, { status: 400 })
+  }
 
   const signedAt = new Date().toISOString()
 
   // Record the IP the request came from; the body value is only a fallback
   const signerIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || signer_ip || null
-  const { error: updateErr } = await adminSupabase
+  // Claim: only a still-pending request is signed, so a double tap can't save / email twice.
+  const { data: claimed, error: updateErr } = await adminSupabase
     .from('signing_requests')
     .update({
       status: 'signed',
@@ -59,8 +66,11 @@ export async function POST(request, { params }) {
       signer_ip: signerIp,
     })
     .eq('token', token)
+    .eq('status', 'pending')
+    .select('id')
 
   if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
+  if (!claimed?.length) return Response.json({ error: 'Already signed' }, { status: 409 })
 
   // Store the signed document and link it as the subcontract's signed contract.
   // The signature itself is already recorded above, so a failure here is only logged.
@@ -79,9 +89,10 @@ export async function POST(request, { params }) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
   const logo = logoSrc()
-  const title = existing.document_title || 'Subcontract Agreement'
-  const signerDisplay = existing.signer_name || existing.signer_email
-  const firstName = existing.signer_name?.split(' ')[0] || 'there'
+  // User-entered text going into email HTML is escaped
+  const title = escapeHtml(existing.document_title || 'Subcontract Agreement')
+  const signerDisplay = escapeHtml(existing.signer_name || existing.signer_email)
+  const firstName = escapeHtml(existing.signer_name?.split(' ')[0] || 'there')
   const signedDate = new Date(signedAt).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })
   const jobPortalLink = `${siteUrl}/jobdetail?id=${existing.job_id}&tab=contracts`
 
@@ -89,7 +100,7 @@ export async function POST(request, { params }) {
   await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
     to: existing.signer_email,
-    subject: `Signed: ${title}`,
+    subject: `Signed: ${existing.document_title || 'Subcontract Agreement'}`,
     html: `
 <!DOCTYPE html>
 <html>
@@ -139,7 +150,7 @@ export async function POST(request, { params }) {
   await resend.emails.send({
     from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
     to: pmEmail,
-    subject: `${signerDisplay} signed: ${title}`,
+    subject: `${existing.signer_name || existing.signer_email} signed: ${existing.document_title || 'Subcontract Agreement'}`,
     html: `
 <!DOCTYPE html>
 <html>

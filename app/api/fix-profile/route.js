@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
+import { isPrincipal, ownerChangeError } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,6 +12,8 @@ const ALLOWED_ROLES = ['pm', 'apm', 'super', 'subcontractor', 'sub_estimator', '
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  // Setting anyone's role is Owner-only (principal).
+  if (!isPrincipal(auth.role)) return Response.json({ error: 'Only Owners can change account roles.' }, { status: 403 })
 
   let body
   try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
@@ -26,6 +29,9 @@ export async function POST(request) {
   if (!user) return Response.json({ error: `No account found for ${email}` }, { status: 404 })
 
   const { data: existing } = await adminSupabase.from('profiles').select('id, company_name, invite_email').eq('id', user.id).maybeSingle()
+  // Never demote the last Owner.
+  const ownerErr = await ownerChangeError(adminSupabase, auth, user.id, role)
+  if (ownerErr) return Response.json({ error: ownerErr.error }, { status: ownerErr.status })
 
   const profileFields = {
     role,

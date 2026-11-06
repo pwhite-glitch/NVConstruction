@@ -690,8 +690,15 @@ function ResidentialJobDetailInner() {
   }
 
   async function updateBillingStatus(billingId, status) {
+    // Rejecting keeps the billing and needs a reason (the API requires one)
+    let rejection_reason
+    if (status === 'rejected') {
+      rejection_reason = window.prompt('Reason for rejecting this billing (sent to the sub):')
+      if (rejection_reason == null) return
+      if (!rejection_reason.trim()) { alert('A rejection reason is required.'); return }
+    }
     const { data: { session: bSession } } = await supabase.auth.getSession()
-    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, status }) })
+    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, status, ...(rejection_reason ? { rejection_reason: rejection_reason.trim() } : {}) }) })
     const result = await res.json()
     if (result.error) { alert('Error: ' + result.error); return }
     await loadBillingSubmissions()

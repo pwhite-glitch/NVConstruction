@@ -101,6 +101,11 @@ function fmtDate(d) {
   try { return new Date(d.includes('T') ? d : d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return d }
 }
 
+// Job columns the client owner page uses.
+const OWNER_JOB_FIELDS = 'id, job_number, project_name, location, status, start_date, owner_company, owner_email, pm_email, contract_value'
+// Draw statuses an owner may see (draw_requests use open / closed; never draft).
+const OWNER_DRAW_STATUSES = ['open', 'closed', 'submitted', 'approved']
+
 export default function OwnerPortal() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -151,7 +156,8 @@ export default function OwnerPortal() {
       return
     }
 
-    let q = supabase.from('jobs').select('*').order('project_name')
+    // Only what the client owner sees on this page (no select('*') on jobs)
+    let q = supabase.from('jobs').select(OWNER_JOB_FIELDS).order('project_name')
     if (!dev) q = q.eq('owner_email', session.user.email)
 
     const { data: jobsData } = await q
@@ -175,18 +181,22 @@ export default function OwnerPortal() {
     setDrawRequests([]); setMilestones([]); setPhotos([]); setPmProfile(null)
 
     const [cosRes, rfisRes, aiaRes, drawRes, milestonesRes] = await Promise.all([
-      supabase.from('change_orders').select('*').eq('job_id', jobId).order('co_number', { ascending: true }),
+      // Owner (prime) change orders, not the sub change_orders table
+      supabase.from('prime_change_orders').select('id, description, amount, status, created_at').eq('job_id', jobId).order('created_at', { ascending: true }),
       supabase.from('rfis').select('*').eq('job_id', jobId).order('created_at', { ascending: false }),
-      supabase.from('aia_applications').select('*').eq('job_id', jobId).order('application_number', { ascending: true }),
-      supabase.from('draw_requests').select('*').eq('job_id', jobId).order('draw_number', { ascending: true }),
+      supabase.from('aia_applications').select('*').eq('job_id', jobId).order('app_number', { ascending: true }),
+      // Never drafts. Needs the owner SELECT policy from migration 042; until then this returns nothing.
+      supabase.from('draw_requests').select('id, job_id, draw_number, title, status, created_at').eq('job_id', jobId).in('status', OWNER_DRAW_STATUSES).order('draw_number', { ascending: true }),
       supabase.from('milestones').select('*').eq('job_id', jobId).order('due_date', { ascending: true }),
     ])
 
-    setChangeOrders(cosRes.data || [])
+    // Numbered in the order they were written (same as the PCO # on the job page),
+    // then only approved and pending are shown to the owner.
+    setChangeOrders((cosRes.data || []).map((co, i) => ({ ...co, co_number: i + 1 })).filter(co => co.status === 'approved' || co.status === 'pending' || !co.status))
     const rfiList = rfisRes.data || []
     setRfis(rfiList)
     setAiaApps(aiaRes.data || [])
-    setDrawRequests(drawRes.data || [])
+    setDrawRequests((drawRes.data || []).filter(d => d.status !== 'draft'))
     setMilestones(milestonesRes.data || [])
 
     // Load PM profile
@@ -374,7 +384,6 @@ export default function OwnerPortal() {
                         <div><div style={s.detailLabel}>Address</div><div style={s.detailValue}>{job.location || '—'}</div></div>
                         <div><div style={s.detailLabel}>Status</div><div style={s.detailValue}>{job.status || '—'}</div></div>
                         <div><div style={s.detailLabel}>Start Date</div><div style={s.detailValue}>{fmtDate(job.start_date)}</div></div>
-                        <div><div style={s.detailLabel}>Expected Completion</div><div style={s.detailValue}>{fmtDate(job.end_date)}</div></div>
                         {job.owner_company && <div><div style={s.detailLabel}>Owner</div><div style={s.detailValue}>{job.owner_company}</div></div>}
                       </div>
                     </div>

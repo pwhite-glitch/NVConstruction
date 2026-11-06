@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
-import { denyJob } from '../../../lib/roles'
+import { denyUnlessOnJob } from '../../../lib/roles'
+import { sanitizeChatMessages } from '../../../lib/ai-messages'
 import { allocateJobBillings } from '../../../lib/contract-billing'
 
 const adminSupabase = createClient(
@@ -78,12 +79,17 @@ export async function POST(request) {
   let body
   try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
-  const { job_id, messages } = body
-  if (!job_id || !Array.isArray(messages) || messages.length === 0) {
+  const { job_id } = body
+  if (!job_id || !Array.isArray(body.messages) || body.messages.length === 0) {
     return Response.json({ error: 'job_id and messages required' }, { status: 400 })
   }
-  const denied = await denyJob(adminSupabase, auth, job_id)
+  // Office roles only (job budget, costs, sub contract values). Principal/admin:
+  // any job. PM/APM/super: only a job they are on. Subs, client owners, sales: 403.
+  const denied = await denyUnlessOnJob(adminSupabase, auth, job_id)
   if (denied) return denied
+  // Only user/assistant turns from the browser, capped in count and size.
+  const { messages, error: msgErr } = sanitizeChatMessages(body.messages)
+  if (msgErr) return Response.json({ error: msgErr }, { status: 400 })
 
   // Fetch all job context in parallel
   const [

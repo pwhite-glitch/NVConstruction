@@ -222,6 +222,22 @@ function SignPageInner() {
     )
   }
 
+  if (request && request.status !== 'signed' && request.status !== 'pending') {
+    return (
+      <div style={s.page}>
+        <div style={s.header}>
+          <div>
+            <p style={s.headerTitle}>NV Construction — E-Signature Request</p>
+          </div>
+        </div>
+        <div style={{ ...s.container, textAlign: 'center', paddingTop: '80px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '800', color: '#f1f1f1', margin: '0 0 12px' }}>Link No Longer Valid</h1>
+          <p style={{ fontSize: '15px', color: '#888' }}>This signing request was cancelled or replaced. Use the most recent email from NV Construction, or contact your project manager.</p>
+        </div>
+      </div>
+    )
+  }
+
   if (request?.status === 'signed') {
     return (
       <div style={s.page}>
@@ -285,11 +301,11 @@ function SignPageInner() {
 
           <form onSubmit={handleSign}>
             <div style={{ marginBottom: '20px' }}>
-              <label style={s.label}>Full legal name *</label>
+              <label style={s.label}>Full legal name *{request?.signer_name ? ` (type: ${request.signer_name})` : ''}</label>
               <input
                 type="text"
                 style={s.input}
-                placeholder="Type your full legal name"
+                placeholder={request?.signer_name || 'Type your full legal name'}
                 value={sigText}
                 onChange={e => setSigText(e.target.value)}
                 required

@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { todayCentral } from '../../lib/central-date'
+import { openFile } from '../../lib/open-file'
+import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, applyDelta } from '../../lib/residential-money'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -73,6 +75,7 @@ const s = {
 }
 
 const statusColor = { pending: 'orange', approved: 'green', rejected: 'red', active: 'green', complete: 'gray', open: 'orange', closed: 'gray', planned: 'blue', 'in-progress': 'orange', done: 'green' }
+const milestoneColor = { pending: 'orange', complete: 'green', delayed: 'red' }
 
 function ResidentialJobDetailInner() {
   const router = useRouter()
@@ -95,8 +98,9 @@ function ResidentialJobDetailInner() {
   // Budget
   const [budgetItems, setBudgetItems] = useState([])
   const [showAddBudget, setShowAddBudget] = useState(false)
-  const [newBudget, setNewBudget] = useState({ description: '', budget_amount: '', cost_code: '', notes: '' })
+  const [newBudget, setNewBudget] = useState({ description: '', budget_amount: '', owner_amount: '', cost_code: '' })
   const [addingBudget, setAddingBudget] = useState(false)
+  const [budgetError, setBudgetError] = useState('')
   const [editingBudgetId, setEditingBudgetId] = useState(null)
   const [editBudgetForm, setEditBudgetForm] = useState({})
   const [directCosts, setDirectCosts] = useState([])
@@ -114,9 +118,11 @@ function ResidentialJobDetailInner() {
   // Change orders
   const [changeOrders, setChangeOrders] = useState([])
   const [showAddCO, setShowAddCO] = useState(false)
-  const [newCO, setNewCO] = useState({ description: '', amount: '', notes: '' })
+  const [newCO, setNewCO] = useState({ description: '', amount: '', notes: '', budget_item_id: '' })
   const [addingCO, setAddingCO] = useState(false)
   const [coMsg, setCOMsg] = useState('')
+  const [coLinePick, setCoLinePick] = useState({}) // { [coId]: budget_item_id } picked before approve
+  const [reviewingCOId, setReviewingCOId] = useState(null)
 
   // Billing
   const [billingSubmissions, setBillingSubmissions] = useState([])
@@ -141,7 +147,7 @@ function ResidentialJobDetailInner() {
   // Schedule (milestones)
   const [milestones, setMilestones] = useState([])
   const [showAddMilestone, setShowAddMilestone] = useState(false)
-  const [newMilestone, setNewMilestone] = useState({ title: '', planned_date: '', status: 'planned', notes: '' })
+  const [newMilestone, setNewMilestone] = useState({ title: '', due_date: '', status: 'pending', notes: '' })
   const [addingMilestone, setAddingMilestone] = useState(false)
 
   // Photos
@@ -195,7 +201,7 @@ function ResidentialJobDetailInner() {
   // Owner Draw
   const [ownerDraws, setOwnerDraws] = useState([])
   const [showAddOwnerDraw, setShowAddOwnerDraw] = useState(false)
-  const [newOwnerDraw, setNewOwnerDraw] = useState({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '' })
+  const [newOwnerDraw, setNewOwnerDraw] = useState({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '', link_draw_request_id: '' })
   const [addingOwnerDraw, setAddingOwnerDraw] = useState(false)
 
   // Punch List
@@ -295,7 +301,8 @@ function ResidentialJobDetailInner() {
   }
 
   async function loadMilestones() {
-    const { data } = await supabase.from('milestones').select('*').eq('job_id', id).order('planned_date')
+    const { data, error } = await supabase.from('milestones').select('*').eq('job_id', id).order('due_date', { ascending: true })
+    if (error) console.error('Load milestones failed:', error.message)
     setMilestones(data || [])
   }
 
@@ -363,14 +370,13 @@ function ResidentialJobDetailInner() {
       job_number: detailsForm.job_number,
       location: detailsForm.location,
       start_date: detailsForm.start_date || null,
-      end_date: detailsForm.end_date || null,
       contract_value: newCV,
       owner_name: detailsForm.owner_name,
       owner_email: detailsForm.owner_email,
       owner_phone: detailsForm.owner_phone,
       owner_company: detailsForm.owner_company,
       status: detailsForm.status,
-      notes: detailsForm.notes,
+      scope_notes: detailsForm.scope_notes || null,
     }).eq('id', id)
     if (error) { setDetailsMsg('Error: ' + error.message) }
     else {
@@ -383,27 +389,67 @@ function ResidentialJobDetailInner() {
     setSavingDetails(false)
   }
 
+  // Calls /api/budget-items and returns { ok, data }. On failure, shows the
+  // server's message (including the 409 "what's attached" list) on the Budget tab.
+  async function budgetApi(method, payload, failPrefix) {
+    let res, data = {}
+    try {
+      res = await fetch('/api/budget-items', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      data = await res.json().catch(() => ({}))
+    } catch (err) {
+      setBudgetError(`${failPrefix}: ${err.message || 'network error'}`)
+      return { ok: false, data }
+    }
+    if (!res.ok || data.error) {
+      setBudgetError(`${failPrefix}: ${data.error || `server returned ${res.status}`}`)
+      return { ok: false, data }
+    }
+    setBudgetError('')
+    return { ok: true, data }
+  }
+
+  // '' -> null, otherwise a finite number or NaN
+  const budgetNum = v => (v === '' || v === null || v === undefined) ? null : Number(v)
+
   async function addBudgetItem() {
-    if (!newBudget.description || !newBudget.budget_amount) return
+    if (!newBudget.description || newBudget.budget_amount === '') return
+    const cost = budgetNum(newBudget.budget_amount)
+    const bank = budgetNum(newBudget.owner_amount)
+    if (cost === null || !Number.isFinite(cost)) { setBudgetError('Enter a valid Cost amount.'); return }
+    if (bank !== null && !Number.isFinite(bank)) { setBudgetError('Bank amount must be a number.'); return }
     setAddingBudget(true)
-    const { error: budgetErr } = await supabase.from('budget_items').insert({ job_id: id, description: newBudget.description, budget_amount: parseFloat(newBudget.budget_amount), cost_code: newBudget.cost_code || null, notes: newBudget.notes || null })
-    if (budgetErr) { alert('Failed to add item. Please try again.'); setAddingBudget(false); return }
-    await loadBudget()
-    setNewBudget({ description: '', budget_amount: '', cost_code: '', notes: '' })
-    setShowAddBudget(false)
+    const { ok } = await budgetApi('POST', {
+      job_id: id, description: newBudget.description, cost_code: newBudget.cost_code || null,
+      budget_amount: cost, owner_amount: bank,
+    }, 'Could not add budget line')
     setAddingBudget(false)
+    if (!ok) return
+    await loadBudget()
+    setNewBudget({ description: '', budget_amount: '', owner_amount: '', cost_code: '' })
+    setShowAddBudget(false)
   }
 
   async function saveBudgetEdit(itemId) {
-    const { error: budgetEditErr } = await supabase.from('budget_items').update({ description: editBudgetForm.description, budget_amount: parseFloat(editBudgetForm.budget_amount) || 0, cost_code: editBudgetForm.cost_code || null }).eq('id', itemId)
-    if (budgetEditErr) { alert('Failed to save changes. Please try again.'); return }
+    const cost = budgetNum(editBudgetForm.budget_amount)
+    const bank = budgetNum(editBudgetForm.owner_amount)
+    if (cost === null || !Number.isFinite(cost)) { setBudgetError('Enter a valid Cost amount.'); return }
+    if (bank !== null && !Number.isFinite(bank)) { setBudgetError('Bank amount must be a number.'); return }
+    const { ok } = await budgetApi('PUT', {
+      id: itemId, fields: {
+        description: editBudgetForm.description, cost_code: editBudgetForm.cost_code || null,
+        budget_amount: cost, owner_amount: bank,
+      },
+    }, 'Could not save budget line')
+    if (!ok) return
     await loadBudget()
     setEditingBudgetId(null)
   }
 
   async function deleteBudgetItem(itemId) {
-    if (!confirm('Delete this budget line?')) return
-    await supabase.from('budget_items').delete().eq('id', itemId)
+    if (!window.confirm('Delete this budget line?')) return
+    const { ok } = await budgetApi('DELETE', { id: itemId }, 'Budget line not deleted')
+    if (!ok) return
+    setBudgetItems(items => items.filter(b => b.id !== itemId))
     await loadBudget()
   }
 
@@ -411,28 +457,118 @@ function ResidentialJobDetailInner() {
     if (!newCO.description || !newCO.amount) return
     setAddingCO(true)
     setCOMsg('')
-    const { error } = await supabase.from('prime_change_orders').insert({ job_id: id, description: newCO.description, amount: parseFloat(newCO.amount), notes: newCO.notes || null, status: 'pending' })
+    const amount = parseFloat(newCO.amount)
+    if (!Number.isFinite(amount)) { setCOMsg('Error: amount must be a number'); setAddingCO(false); return }
+    const { data: { session: coSession } } = await supabase.auth.getSession()
+    const lineId = newCO.budget_item_id || null
+    const { error } = await supabase.from('prime_change_orders').insert({
+      job_id: id,
+      description: newCO.description,
+      amount,
+      notes: newCO.notes || null,
+      status: 'pending',
+      budget_item_id: lineId,
+      sov: lineId ? [{ budget_item_id: lineId, amount, description: newCO.description }] : null,
+      created_by: coSession?.user?.id || null,
+    })
     if (error) { setCOMsg('Error: ' + error.message) }
     else {
       await loadChangeOrders()
-      setNewCO({ description: '', amount: '', notes: '' })
+      setNewCO({ description: '', amount: '', notes: '', budget_item_id: '' })
       setShowAddCO(false)
     }
     setAddingCO(false)
   }
 
-  async function updateCOStatus(coId, status) {
-    await supabase.from('prime_change_orders').update({ status }).eq('id', coId)
-    if (status === 'approved') {
-      const co = changeOrders.find(c => c.id === coId)
-      if (co) {
-        const current = parseFloat(job?.contract_value || 0)
-        await supabase.from('jobs').update({ contract_value: current + parseFloat(co.amount) }).eq('id', id)
-        const { data } = await supabase.from('jobs').select('*').eq('id', id).single()
-        setJob(data)
+  // Add `sign` × each delta to its budget line's budget_amount and owner_amount
+  // through /api/budget-items (same as commercial reviewPrimeCO). Rolls back the
+  // lines already changed if one fails. Returns an error string or null.
+  async function applyCODeltas(deltas, sign) {
+    const done = []
+    for (const d of deltas) {
+      const { data: item, error: readErr } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('id', d.budget_item_id).maybeSingle()
+      let err = readErr?.message || (!item ? 'Budget line not found' : null)
+      if (!err) {
+        const res = await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.budget_item_id, fields: applyDelta(item, sign * d.amount) }) })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok || j.error) err = j.error || `server returned ${res.status}`
       }
+      if (err) {
+        for (const prev of done) {
+          const { data: p } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('id', prev.budget_item_id).maybeSingle()
+          if (p) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: prev.budget_item_id, fields: applyDelta(p, -sign * prev.amount) }) })
+        }
+        return err
+      }
+      done.push(d)
     }
-    await loadChangeOrders()
+    return null
+  }
+
+  // Approve: applies the CO to its budget line(s) and sets budget_applied. Never
+  // touches jobs.contract_value (that stays the base contract).
+  async function approveCO(co) {
+    if (co.status !== 'pending') { alert('Only pending change orders can be approved.'); return }
+    const pickedLine = co.budget_item_id || coLinePick[co.id] || ''
+    const target = { ...co, budget_item_id: pickedLine || null }
+    const deltas = co.budget_applied ? [] : coBudgetDeltas(target)
+    if (!co.budget_applied && deltas.length === 0) { alert('Pick a budget line for this change order before approving.'); return }
+    setReviewingCOId(co.id)
+    try {
+      // Claim the CO first so a second click / second user can't apply it twice
+      const { data: claimed, error: claimErr } = await supabase.from('prime_change_orders')
+        .update({ status: 'approved' }).eq('id', co.id).eq('status', 'pending').select('id, budget_applied')
+      if (claimErr) { alert('Approve failed: ' + claimErr.message); return }
+      if (!claimed || claimed.length === 0) { alert('This change order was already handled. Refreshing.'); return }
+      if (claimed[0].budget_applied) return // already on the budget; don't apply again
+
+      const applyErr = await applyCODeltas(deltas, 1)
+      if (applyErr) {
+        await supabase.from('prime_change_orders').update({ status: 'pending' }).eq('id', co.id)
+        alert('Approve failed — budget not updated: ' + applyErr)
+        return
+      }
+      const coUpdate = { budget_applied: true }
+      if (!co.budget_item_id && pickedLine) coUpdate.budget_item_id = pickedLine
+      if (!(Array.isArray(co.sov) && co.sov.some(r => r?.budget_item_id))) {
+        coUpdate.sov = deltas.map(d => ({ budget_item_id: d.budget_item_id, amount: d.amount, description: co.description }))
+      }
+      const { error: markErr } = await supabase.from('prime_change_orders').update(coUpdate).eq('id', co.id)
+      if (markErr) alert('Budget updated, but the change order could not be marked as applied: ' + markErr.message + '\nDo not approve it again; ask an admin to set budget_applied.')
+    } finally {
+      await Promise.all([loadChangeOrders(), loadBudget()])
+      setReviewingCOId(null)
+    }
+  }
+
+  // Reject: a pending CO just becomes rejected. An approved CO that was applied to
+  // the budget has the same deltas reversed and budget_applied cleared.
+  async function rejectCO(co) {
+    if (!['pending', 'approved'].includes(co.status)) return
+    const reverse = co.status === 'approved' && co.budget_applied
+    const deltas = reverse ? coBudgetDeltas(co) : []
+    if (reverse && deltas.length === 0) { alert('Cannot reverse: this change order has no budget line recorded.'); return }
+    const msg = reverse
+      ? `Reject this approved change order and take $${fmt(co.amount)} back off its budget line(s)?`
+      : 'Reject this change order?'
+    if (!window.confirm(msg)) return
+    setReviewingCOId(co.id)
+    try {
+      const { data: claimed, error: claimErr } = await supabase.from('prime_change_orders')
+        .update({ status: 'rejected', budget_applied: false }).eq('id', co.id).eq('status', co.status).select('id, budget_applied')
+      if (claimErr) { alert('Reject failed: ' + claimErr.message); return }
+      if (!claimed || claimed.length === 0) { alert('This change order was already handled. Refreshing.'); return }
+      if (reverse) {
+        const err = await applyCODeltas(deltas, -1)
+        if (err) {
+          await supabase.from('prime_change_orders').update({ status: co.status, budget_applied: true }).eq('id', co.id)
+          alert('Reject failed — budget not reversed: ' + err)
+        }
+      }
+    } finally {
+      await Promise.all([loadChangeOrders(), loadBudget()])
+      setReviewingCOId(null)
+    }
   }
 
   async function addSub(e) {
@@ -615,8 +751,8 @@ function ResidentialJobDetailInner() {
   function printDraw(dr) {
     const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
     const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
-    const costTotal = drCosts.reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
-    const billingTotal = drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+    const costTotal = packagedDrawTotal(dr.id, drCosts, [])
+    const billingTotal = packagedDrawTotal(dr.id, [], drBillings)
     const grandTotal = costTotal + billingTotal
     const fmtN = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const jobName = job?.project_name || job?.location || 'Project'
@@ -694,22 +830,34 @@ function ResidentialJobDetailInner() {
   async function addMilestone() {
     if (!newMilestone.title) return
     setAddingMilestone(true)
-    const { error: milestoneErr } = await supabase.from('milestones').insert({ job_id: id, title: newMilestone.title, planned_date: newMilestone.planned_date || null, status: newMilestone.status, notes: newMilestone.notes || null })
-    if (milestoneErr) { alert('Failed to add milestone. Please try again.'); setAddingMilestone(false); return }
+    const { data: { session: mSession } } = await supabase.auth.getSession()
+    const status = newMilestone.status || 'pending'
+    const { error: milestoneErr } = await supabase.from('milestones').insert({
+      job_id: id,
+      title: newMilestone.title,
+      due_date: newMilestone.due_date || null,
+      status,
+      completed_date: status === 'complete' ? todayCentral() : null,
+      notes: newMilestone.notes || null,
+      created_by: mSession?.user?.id || null,
+    })
+    if (milestoneErr) { alert('Failed to add milestone: ' + milestoneErr.message); setAddingMilestone(false); return }
     await loadMilestones()
-    setNewMilestone({ title: '', planned_date: '', status: 'planned', notes: '' })
+    setNewMilestone({ title: '', due_date: '', status: 'pending', notes: '' })
     setShowAddMilestone(false)
     setAddingMilestone(false)
   }
 
   async function updateMilestoneStatus(milestoneId, status) {
-    await supabase.from('milestones').update({ status, actual_date: status === 'done' ? todayCentral() : null }).eq('id', milestoneId)
+    const { error } = await supabase.from('milestones').update({ status, completed_date: status === 'complete' ? todayCentral() : null }).eq('id', milestoneId)
+    if (error) alert('Failed to update milestone: ' + error.message)
     await loadMilestones()
   }
 
   async function deleteMilestone(milestoneId) {
     if (!confirm('Delete this milestone?')) return
-    await supabase.from('milestones').delete().eq('id', milestoneId)
+    const { error } = await supabase.from('milestones').delete().eq('id', milestoneId)
+    if (error) alert('Failed to delete milestone: ' + error.message)
     await loadMilestones()
   }
 
@@ -761,15 +909,16 @@ function ResidentialJobDetailInner() {
     if (docInputRef.current) docInputRef.current.value = ''
   }
 
+  // Called straight from the click so iOS keeps it as a user gesture
   async function openJobDoc(path) {
-    try {
+    let errMsg = ''
+    const url = await openFile(async () => {
       const res = await fetch(`/api/job-docs?path=${encodeURIComponent(path)}`)
-      const json = await res.json()
-      if (json.url) window.open(json.url, '_blank')
-      else alert('Could not open document: ' + (json.error || 'unknown error'))
-    } catch (e) {
-      alert('Could not open document: ' + e.message)
-    }
+      const json = await res.json().catch(() => ({}))
+      if (!json.url) errMsg = json.error || ''
+      return json.url || null
+    })
+    if (!url) alert('Could not open document' + (errMsg ? ': ' + errMsg : '.'))
   }
 
   async function addContact() {
@@ -803,7 +952,8 @@ function ResidentialJobDetailInner() {
       notes: dcForm.notes || null,
       budget_item_id: dcForm.budget_item_id || null,
       is_credit: dcForm.is_credit || false,
-      status: 'approved',
+      // New costs go through review (Pending → Approve), same as commercial
+      status: 'pending',
     }
     let res, json
     if (dcFile) {
@@ -833,22 +983,71 @@ function ResidentialJobDetailInner() {
     setSubmittingDc(false)
   }
 
-  async function updateDCStatus(costId, status) {
-    setUpdatingCostId(costId)
-    if (status === 'deleted') {
-      await fetch('/api/direct-costs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId }) })
-    } else {
-      await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status, reject_notes: costRejectNote || null }) })
+  // Status changes and review edits go through /api/dc-review (same as commercial).
+  async function callDcReview(action, costId, extraFields = {}) {
+    const { data: { session: rSession } } = await supabase.auth.getSession()
+    const token = rSession?.access_token
+    if (!token) { alert('Session expired — please reload the page.'); return { error: 'No session' } }
+    try {
+      const res = await fetch('/api/dc-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action, id: costId, ...extraFields }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok && !json.error) json.error = `server returned ${res.status}`
+      return json
+    } catch (err) {
+      return { error: err.message || 'network error' }
     }
-    setRejectingCostId(null)
-    setCostRejectNote('')
+  }
+
+  async function approveCost(costId) {
+    const cost = directCosts.find(c => c.id === costId)
+    if (!cost?.budget_item_id) { alert('Assign a budget line before approving.'); return }
+    setUpdatingCostId(costId)
+    const result = await callDcReview('approve', costId)
+    if (result.error) alert('Approve failed: ' + result.error)
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function rejectCost(costId) {
+    const rejection_reason = costRejectNote.trim()
+    if (!rejection_reason) { alert('A rejection reason is required.'); return }
+    setUpdatingCostId(costId)
+    const result = await callDcReview('reject', costId, { rejection_reason })
+    if (result.error) alert('Reject failed: ' + result.error)
+    else { setRejectingCostId(null); setCostRejectNote('') }
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function unapproveCost(costId) {
+    setUpdatingCostId(costId)
+    const result = await callDcReview('unapprove', costId)
+    if (result.error) alert('Unapprove failed: ' + result.error)
+    await loadDirectCosts()
+    setUpdatingCostId(null)
+  }
+
+  async function deleteCost(costId) {
+    setUpdatingCostId(costId)
+    try {
+      const res = await fetch('/api/direct-costs', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) alert('Delete failed: ' + (j.error || `server returned ${res.status}`))
+    } catch (err) {
+      alert('Delete failed: ' + (err.message || 'network error'))
+    }
     await loadDirectCosts()
     setUpdatingCostId(null)
   }
 
   async function unrejectCost(costId) {
     setUpdatingCostId(costId)
-    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, status: 'pending', rejection_reason: null, rejected_at: null, rejected_by: null }) })
+    const result = await callDcReview('reopen', costId)
+    if (result.error) alert('Failed: ' + result.error)
     await loadDirectCosts()
     setUpdatingCostId(null)
   }
@@ -881,15 +1080,18 @@ function ResidentialJobDetailInner() {
     if (toApprove.length === 0) return
     if (!window.confirm(`Approve ${toApprove.length} pending cost${toApprove.length !== 1 ? 's' : ''} with assigned budget lines?`)) return
     setApprovingAll(true)
-    await Promise.all(toApprove.map(c =>
-      fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id, status: 'approved' }) })
-    ))
+    const results = await Promise.all(toApprove.map(c => callDcReview('approve', c.id).then(r => ({ c, r }))))
+    const failed = results.filter(x => x.r.error)
+    if (failed.length) {
+      alert(`${failed.length} of ${toApprove.length} could not be approved:\n` + failed.map(x => `• ${x.c.description}: ${x.r.error}`).join('\n'))
+    }
     await loadDirectCosts()
     setApprovingAll(false)
   }
 
   async function assignDCBudgetItem(costId, budgetItemId) {
-    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, budget_item_id: budgetItemId || null }) })
+    const result = await callDcReview('edit', costId, { budget_item_id: budgetItemId || '' })
+    if (result.error) alert('Could not assign budget line: ' + result.error)
     await loadDirectCosts()
   }
 
@@ -904,22 +1106,22 @@ function ResidentialJobDetailInner() {
     a.click()
   }
 
+  // Called straight from the click so iOS keeps it as a user gesture
   async function openDCReceipt(path) {
-    const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-    else alert('Could not open receipt. The file may not be available.')
+    const url = await openFile(async () => {
+      const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
+      return data?.signedUrl || null
+    })
+    if (!url) alert('Could not open receipt. The file may not be available.')
   }
 
   async function saveEditedCost() {
     setSavingEditCost(true)
-    await fetch('/api/direct-costs', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: editingCostId, ...editCostForm, budget_item_id: editCostForm.budget_item_id || null }),
-    })
+    const result = await callDcReview('edit', editingCostId, { ...editCostForm, budget_item_id: editCostForm.budget_item_id || '' })
+    setSavingEditCost(false)
+    if (result.error) { alert('Save failed: ' + result.error); return }
     setEditingCostId(null)
     await loadDirectCosts()
-    setSavingEditCost(false)
   }
 
   // ── Inspections ──
@@ -971,26 +1173,39 @@ function ResidentialJobDetailInner() {
   // ── Owner Draw ──
   async function addOwnerDraw() {
     if (!newOwnerDraw.amount_requested) return
+    const amount = parseFloat(newOwnerDraw.amount_requested)
+    if (!Number.isFinite(amount)) { alert('Amount requested must be a number.'); return }
+    // Linked to a packaged Draw Request → share its draw_number (that is the link);
+    // otherwise auto-increment as before.
+    const linked = newOwnerDraw.link_draw_request_id ? drawRequests.find(d => d.id === newOwnerDraw.link_draw_request_id) : null
+    const drawNum = linked?.draw_number != null
+      ? linked.draw_number
+      : (ownerDraws.length > 0 ? Math.max(...ownerDraws.map(d => d.draw_number || 0)) : 0) + 1
+    if (linked && ownerDraws.some(d => d.draw_number === drawNum)) {
+      if (!window.confirm(`An Owner/Lender Draw #${drawNum} already exists. Create another one with the same number?`)) return
+    }
     setAddingOwnerDraw(true)
-    const drawNum = (ownerDraws.length > 0 ? Math.max(...ownerDraws.map(d => d.draw_number || 0)) : 0) + 1
-    await supabase.from('res_owner_draws').insert({ job_id: id, draw_number: drawNum, title: newOwnerDraw.title || `Draw #${drawNum}`, period_start: newOwnerDraw.period_start || null, period_end: newOwnerDraw.period_end || null, amount_requested: parseFloat(newOwnerDraw.amount_requested), status: 'draft', notes: newOwnerDraw.notes || null })
-    await loadOwnerDraws()
-    setNewOwnerDraw({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '' })
-    setShowAddOwnerDraw(false)
+    const { error } = await supabase.from('res_owner_draws').insert({ job_id: id, draw_number: drawNum, title: newOwnerDraw.title || linked?.title || `Draw #${drawNum}`, period_start: newOwnerDraw.period_start || null, period_end: newOwnerDraw.period_end || null, amount_requested: amount, status: 'draft', notes: newOwnerDraw.notes || null })
     setAddingOwnerDraw(false)
+    if (error) { alert('Failed to create draw: ' + error.message); return }
+    await loadOwnerDraws()
+    setNewOwnerDraw({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '', link_draw_request_id: '' })
+    setShowAddOwnerDraw(false)
   }
 
   async function updateOwnerDrawStatus(drawId, status) {
     const update = { status }
     if (status === 'submitted') update.submitted_date = todayCentral()
     if (status === 'funded') update.funded_date = todayCentral()
-    await supabase.from('res_owner_draws').update(update).eq('id', drawId)
+    const { error } = await supabase.from('res_owner_draws').update(update).eq('id', drawId)
+    if (error) alert('Failed to update draw: ' + error.message)
     await loadOwnerDraws()
   }
 
   async function deleteOwnerDraw(drawId) {
     if (!confirm('Delete this draw request?')) return
-    await supabase.from('res_owner_draws').delete().eq('id', drawId)
+    const { error } = await supabase.from('res_owner_draws').delete().eq('id', drawId)
+    if (error) alert('Failed to delete draw: ' + error.message)
     await loadOwnerDraws()
   }
 
@@ -1096,9 +1311,17 @@ function ResidentialJobDetailInner() {
   )
   if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#6b7280' }}>Project not found.</div></div>
 
-  const approvedCOs = changeOrders.filter(c => c.status === 'approved').reduce((a, c) => a + Number(c.amount), 0)
+  const approvedCOs = approvedCOTotal(changeOrders)
   const baseContract = Number(job.contract_value || 0)
+  const revisedContractTotal = revisedContract(job, changeOrders)
   const budgetTotal = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
+  const bankTotal = budgetItems.reduce((a, b) => a + Number(bankAmount(b) || 0), 0)
+  // Only warn when there is a budget and a contract to compare
+  const canCompareBudget = budgetItems.length > 0 && job.contract_value != null
+  // Compare Cost and Bank totals to jobs.contract_value
+  const costVsContract = canCompareBudget && amountsDiffer(budgetTotal, baseContract)
+  const bankVsContract = canCompareBudget && amountsDiffer(bankTotal, baseContract)
+  const BUDGET_COLS = '3fr 1fr 1fr 1fr 1fr 1fr 1fr 80px'
   const committedTotal = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
   const dcTotal = directCosts.reduce((a, d) => a + (d.is_credit ? -1 : 1) * Number(d.amount || 0), 0)
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
@@ -1249,9 +1472,6 @@ function ResidentialJobDetailInner() {
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Start date</label><input style={s.input} type="date" value={detailsForm.start_date || ''} onChange={e => setDetailsForm(f => ({ ...f, start_date: e.target.value }))} /></div>
-                    <div><label style={s.label}>End date</label><input style={s.input} type="date" value={detailsForm.end_date || ''} onChange={e => setDetailsForm(f => ({ ...f, end_date: e.target.value }))} /></div>
-                  </div>
-                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Status</label>
                       <select style={s.select} value={detailsForm.status || 'active'} onChange={e => setDetailsForm(f => ({ ...f, status: e.target.value }))}>
                         <option value="active">Active</option>
@@ -1259,7 +1479,10 @@ function ResidentialJobDetailInner() {
                         <option value="on-hold">On Hold</option>
                       </select>
                     </div>
-                    <div><label style={s.label}>Notes</label><input style={s.input} value={detailsForm.notes || ''} onChange={e => setDetailsForm(f => ({ ...f, notes: e.target.value }))} /></div>
+                  </div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Notes</label>
+                    <textarea style={{ ...s.textarea, minHeight: '60px' }} value={detailsForm.scope_notes || ''} onChange={e => setDetailsForm(f => ({ ...f, scope_notes: e.target.value }))} />
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Owner name</label><input style={s.input} value={detailsForm.owner_name || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_name: e.target.value }))} /></div>
@@ -1277,13 +1500,13 @@ function ResidentialJobDetailInner() {
                     ['Project Name', job.project_name],
                     ['Address', job.location],
                     ['Start Date', fmtDate(job.start_date)],
-                    ['End Date', fmtDate(job.end_date)],
                     ['Contract Value', job.contract_value ? '$' + fmt(job.contract_value) : '—'],
+                    ['Revised Contract', job.contract_value || approvedCOs ? '$' + fmt(revisedContractTotal) : '—'],
                     ['Owner Name', job.owner_name],
                     ['Owner Email', job.owner_email],
                     ['Owner Phone', job.owner_phone],
                     ['Status', job.status],
-                    ['Notes', job.notes],
+                    ['Notes', job.scope_notes],
                   ].map(([label, val]) => (
                     <div key={label}>
                       <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '3px' }}>{label}</div>
@@ -1299,11 +1522,28 @@ function ResidentialJobDetailInner() {
         {/* ── BUDGET ── */}
         {activeTab === 'budget' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-              <div style={s.statCard}><div style={s.statLabel}>Total Budget</div><div style={s.statValue()}>${fmt(budgetTotal)}</div></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+              <div style={s.statCard}><div style={s.statLabel}>Cost Total</div><div style={s.statValue()}>${fmt(budgetTotal)}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Bank Total</div><div style={s.statValue()}>${fmt(bankTotal)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Sub Committed</div><div style={s.statValue('#60a5fa')}>${fmt(committedTotal)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(dcTotal)}</div></div>
             </div>
+
+            {(costVsContract || bankVsContract) && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
+                <strong>Budget doesn't match the contract.</strong> Contract value is ${fmt(baseContract)}.
+                {costVsContract && <> Cost total is ${fmt(budgetTotal)} ({budgetTotal - baseContract > 0 ? '+' : '−'}${fmt(Math.abs(budgetTotal - baseContract))}).</>}
+                {bankVsContract && <> Bank total is ${fmt(bankTotal)} ({bankTotal - baseContract > 0 ? '+' : '−'}${fmt(Math.abs(bankTotal - baseContract))}).</>}
+                {' '}Set Bank amounts on the lines so the bank SOV adds up to the contract, or correct the contract value on Details.
+              </div>
+            )}
+
+            {budgetError && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', whiteSpace: 'pre-wrap', display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                <span>{budgetError}</span>
+                <button onClick={() => setBudgetError('')} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: 0 }}>×</button>
+              </div>
+            )}
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1381,12 +1621,14 @@ function ResidentialJobDetailInner() {
 
               {showAddBudget && (
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                  <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '10px' }}>
                     <div><label style={s.label}>Description *</label><input style={s.input} placeholder="Framing, Electrical..." value={newBudget.description} onChange={e => setNewBudget(f => ({ ...f, description: e.target.value }))} autoFocus /></div>
-                    <div><label style={s.label}>Budgeted Amount *</label><input style={s.input} type="number" placeholder="0.00" value={newBudget.budget_amount} onChange={e => setNewBudget(f => ({ ...f, budget_amount: e.target.value }))} /></div>
+                    <div><label style={s.label}>Cost *</label><input style={s.input} type="number" placeholder="0.00" value={newBudget.budget_amount} onChange={e => setNewBudget(f => ({ ...f, budget_amount: e.target.value }))} /></div>
+                    <div><label style={s.label}>Bank</label><input style={s.input} type="number" placeholder="Same as Cost" value={newBudget.owner_amount} onChange={e => setNewBudget(f => ({ ...f, owner_amount: e.target.value }))} /></div>
                     <div><label style={s.label}>Cost Code</label><input style={s.input} placeholder="03-000 (optional)" value={newBudget.cost_code} onChange={e => setNewBudget(f => ({ ...f, cost_code: e.target.value }))} /></div>
                   </div>
-                  <button style={s.btn} onClick={addBudgetItem} disabled={addingBudget || !newBudget.description || !newBudget.budget_amount}>{addingBudget ? 'Adding...' : 'Add Budget Line'}</button>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>Cost is the internal budget. Bank is the owner/lender SOV amount; leave it blank to use the Cost amount.</div>
+                  <button style={s.btn} onClick={addBudgetItem} disabled={addingBudget || !newBudget.description || newBudget.budget_amount === ''}>{addingBudget ? 'Adding...' : 'Add Budget Line'}</button>
                 </div>
               )}
 
@@ -1395,8 +1637,8 @@ function ResidentialJobDetailInner() {
               ) : (
                 <>
                   <div style={{ overflowX: 'auto' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', minWidth: '700px' }}>
-                    {['Description', 'Code', 'Budget', 'Committed', 'Spent', 'Variance', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  <div style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', minWidth: '800px' }}>
+                    {['Description', 'Code', 'Cost', 'Bank', 'Committed', 'Spent', 'Variance', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                   </div>
                   {budgetItems.map(item => {
                     const committed = contracts.filter(c => c.budget_item_id === item.id).reduce((a, c) => a + Number(c.contract_value || 0), 0)
@@ -1405,10 +1647,11 @@ function ResidentialJobDetailInner() {
                     const variance = budgeted - committed - spent
                     const over = variance < 0
                     return editingBudgetId === item.id ? (
-                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '700px' }}>
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '8px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '800px' }}>
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.description || ''} onChange={e => setEditBudgetForm(f => ({ ...f, description: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} />
-                        <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editBudgetForm.budget_amount || ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} />
+                        <input style={{ ...s.input, fontSize: '12px' }} type="number" title="Cost" value={editBudgetForm.budget_amount ?? ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} />
+                        <input style={{ ...s.input, fontSize: '12px' }} type="number" title="Bank (blank = same as Cost)" placeholder="= Cost" value={editBudgetForm.owner_amount ?? ''} onChange={e => setEditBudgetForm(f => ({ ...f, owner_amount: e.target.value }))} />
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spent)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#dc2626' : '#15803d' }}>{over ? '-' : ''}${fmt(Math.abs(variance))}</span>
@@ -1418,10 +1661,11 @@ function ResidentialJobDetailInner() {
                         </div>
                       </div>
                     ) : (
-                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '700px', background: over ? '#fef2f2' : 'transparent' }}>
+                      <div key={item.id} style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '800px', background: over ? '#fef2f2' : 'transparent' }}>
                         <span style={{ fontSize: '13px', color: '#111827' }}>{item.description}</span>
                         <span style={{ fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{item.cost_code || '—'}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.budget_amount)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: item.owner_amount == null ? '#9ca3af' : '#111827' }} title={item.owner_amount == null ? 'Same as Cost' : undefined}>${fmt(bankAmount(item))}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: committed > 0 ? '#60a5fa' : '#555' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: spent > 0 ? '#e8590c' : '#555' }}>${fmt(spent)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: '700', color: over ? '#dc2626' : variance < budgeted * 0.1 ? '#f59e0b' : '#15803d' }}>
@@ -1434,10 +1678,11 @@ function ResidentialJobDetailInner() {
                       </div>
                     )
                   })}
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr 1fr 80px', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #333', minWidth: '700px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #333', minWidth: '800px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' }}>Total</span>
                     <span />
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(budgetTotal)}</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(bankTotal)}</span>
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committedTotal)}</span>
                     {(() => { const spentTotal = directCosts.filter(c => c.status === 'approved' && budgetItems.some(b => b.id === c.budget_item_id)).reduce((a, c) => a + Number(c.amount || 0), 0); const v = budgetTotal - committedTotal - spentTotal; return (<>
                       <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spentTotal)}</span>
@@ -1600,13 +1845,13 @@ function ResidentialJobDetailInner() {
                                 <button style={s.btnGreen} disabled={updatingCostId === c.id} onClick={() => {
                                   if (!c.budget_item_id) { alert('Assign a budget line before approving.'); return }
                                   if (!c.receipt_url && !window.confirm('This cost has no receipt attached. Approve without one?')) return
-                                  updateDCStatus(c.id, 'approved')
+                                  approveCost(c.id)
                                 }}>{c.receipt_url ? 'Approve' : 'Approve Anyway'}</button>
                                 <button style={s.btnRed} onClick={() => setRejectingCostId(isRejecting ? null : c.id)}>{isRejecting ? 'Cancel' : 'Reject'}</button>
                               </div>
                             )}
                             {c.status === 'approved' && atLeastPM(profile?.role) && (
-                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => updateDCStatus(c.id, 'rejected')}>Undo</button>
+                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={updatingCostId === c.id} onClick={() => unapproveCost(c.id)}>Unapprove</button>
                             )}
                             {c.status === 'rejected' && ['principal', 'pm', 'apm', 'admin'].includes(profile?.role) && (
                               <button style={{ ...s.btnSmGray, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d' }} disabled={updatingCostId === c.id} onClick={() => unrejectCost(c.id)}>
@@ -1614,14 +1859,14 @@ function ResidentialJobDetailInner() {
                               </button>
                             )}
                             {atLeastPM(profile?.role) && (
-                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => { if (confirm('Delete this cost?')) updateDCStatus(c.id, 'deleted') }}>Delete</button>
+                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={updatingCostId === c.id} onClick={() => { if (confirm('Delete this cost?')) deleteCost(c.id) }}>Delete</button>
                             )}
                           </div>
                         </div>
                         {isRejecting && (
                           <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <input style={{ ...s.input, flex: 1, fontSize: '12px' }} placeholder="Rejection reason (optional)" value={costRejectNote} onChange={e => setCostRejectNote(e.target.value)} autoFocus />
-                            <button style={s.btnRed} onClick={() => updateDCStatus(c.id, 'rejected')}>Confirm Reject</button>
+                            <input style={{ ...s.input, flex: 1, fontSize: '12px' }} placeholder="Rejection reason (required)" value={costRejectNote} onChange={e => setCostRejectNote(e.target.value)} autoFocus />
+                            <button style={s.btnRed} disabled={updatingCostId === c.id || !costRejectNote.trim()} onClick={() => rejectCost(c.id)}>Confirm Reject</button>
                           </div>
                         )}
                         {editingCostId === c.id && (
@@ -1754,7 +1999,7 @@ function ResidentialJobDetailInner() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
               <div style={s.statCard}><div style={s.statLabel}>Pending COs</div><div style={s.statValue('#e8590c')}>{changeOrders.filter(c => c.status === 'pending').length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Approved COs</div><div style={s.statValue('#15803d')}>${fmt(approvedCOs)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue()}>${fmt(baseContract)}</div></div>
+              <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue()}>${fmt(revisedContractTotal)}</div></div>
             </div>
 
             <div style={s.card}>
@@ -1770,6 +2015,13 @@ function ResidentialJobDetailInner() {
                     <div><label style={s.label}>Amount *</label><input style={s.input} type="number" placeholder="0.00" value={newCO.amount} onChange={e => setNewCO(f => ({ ...f, amount: e.target.value }))} /></div>
                   </div>
                   <div style={{ marginBottom: '10px' }}>
+                    <label style={s.label}>Budget Line (required to approve)</label>
+                    <select style={s.select} value={newCO.budget_item_id} onChange={e => setNewCO(f => ({ ...f, budget_item_id: e.target.value }))}>
+                      <option value="">— Pick later —</option>
+                      {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ marginBottom: '10px' }}>
                     <label style={s.label}>Notes</label>
                     <textarea style={{ ...s.textarea, minHeight: '60px' }} value={newCO.notes} onChange={e => setNewCO(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." />
                   </div>
@@ -1781,13 +2033,21 @@ function ResidentialJobDetailInner() {
               {changeOrders.length === 0 ? (
                 <div style={s.emptyMsg}>No change orders yet.</div>
               ) : (
-                changeOrders.map(co => (
+                changeOrders.map(co => {
+                  const lines = coBudgetDeltas(co).map(d => budgetItems.find(b => b.id === d.budget_item_id)).filter(Boolean)
+                  const needsLine = co.status === 'pending' && lines.length === 0
+                  const busy = reviewingCOId === co.id
+                  return (
                   <div key={co.id} style={{ padding: '14px 0', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
                         <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{co.description}</div>
                         {co.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{co.notes}</div>}
-                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>{co.created_at ? new Date(co.created_at).toLocaleDateString() : ''}</div>
+                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                          {co.created_at ? new Date(co.created_at).toLocaleDateString() : ''}
+                          {lines.length > 0 && ` · Budget line: ${lines.map(b => b.description).join(', ')}`}
+                          {co.status === 'approved' && (co.budget_applied ? ' · Applied to budget' : ' · Not applied to budget')}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'monospace', color: Number(co.amount) >= 0 ? '#15803d' : '#dc2626' }}>
@@ -1797,13 +2057,25 @@ function ResidentialJobDetailInner() {
                       </div>
                     </div>
                     {co.status === 'pending' && atLeastPM(profile?.role) && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {needsLine && (
+                          <select style={{ ...s.select, width: '220px', fontSize: '12px', padding: '5px 8px' }} value={coLinePick[co.id] || ''} onChange={e => setCoLinePick(p => ({ ...p, [co.id]: e.target.value }))}>
+                            <option value="">Pick budget line to approve</option>
+                            {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
+                          </select>
+                        )}
+                        <button style={s.btnGreen} disabled={busy || (needsLine && !coLinePick[co.id])} onClick={() => approveCO(co)}>{busy ? '…' : 'Approve'}</button>
+                        <button style={s.btnRed} disabled={busy} onClick={() => rejectCO(co)}>Reject</button>
+                      </div>
+                    )}
+                    {co.status === 'approved' && co.budget_applied && atLeastPM(profile?.role) && (
                       <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                        <button style={s.btnGreen} onClick={() => updateCOStatus(co.id, 'approved')}>Approve</button>
-                        <button style={s.btnRed} onClick={() => updateCOStatus(co.id, 'rejected')}>Reject</button>
+                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={busy} onClick={() => rejectCO(co)}>{busy ? '…' : 'Reject & reverse budget'}</button>
                       </div>
                     )}
                   </div>
-                ))
+                  )
+                })
               )}
             </div>
           </>
@@ -1922,7 +2194,9 @@ function ResidentialJobDetailInner() {
                   drawRequests.map(dr => {
                     const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
                     const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
-                    const drTotal = drCosts.reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0) + drBillings.reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+                    const drTotal = packagedDrawTotal(dr.id, directCosts, billingSubmissions)
+                    const ownerDraw = dr.draw_number != null ? ownerDraws.find(d => d.draw_number === dr.draw_number) : null
+                    const ownerMismatch = ownerDraw && amountsDiffer(ownerDraw.amount_requested, drTotal)
                     const isExpanded = expandedDrawId === dr.id
                     const undrawnCosts = directCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
                     const undrawnBillings = billingSubmissions.filter(b => !b.draw_request_id)
@@ -1932,6 +2206,12 @@ function ResidentialJobDetailInner() {
                           <div>
                             <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{dr.title}</div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>{drCosts.length} costs · {drBillings.length} billings · ${fmt(drTotal)}</div>
+                            {ownerDraw && (
+                              <div style={{ fontSize: '12px', color: ownerMismatch ? '#92400e' : '#6b7280', marginTop: '2px' }}>
+                                Owner/Lender Draw #{ownerDraw.draw_number} · ${fmt(ownerDraw.amount_requested)} · {ownerDraw.status}
+                                {ownerMismatch && <> — ⚠ differs from packaged total by ${fmt(Math.abs(Number(ownerDraw.amount_requested || 0) - drTotal))}</>}
+                              </div>
+                            )}
                           </div>
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                             <span style={s.badge(dr.status === 'open' ? 'orange' : 'gray')}>{dr.status}</span>
@@ -2031,12 +2311,12 @@ function ResidentialJobDetailInner() {
               <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
                 <div style={{ ...s.grid3, marginBottom: '10px' }}>
                   <div><label style={s.label}>Milestone *</label><input style={s.input} placeholder="Demo complete, Framing..." value={newMilestone.title} onChange={e => setNewMilestone(f => ({ ...f, title: e.target.value }))} autoFocus /></div>
-                  <div><label style={s.label}>Planned date</label><input style={s.input} type="date" value={newMilestone.planned_date} onChange={e => setNewMilestone(f => ({ ...f, planned_date: e.target.value }))} /></div>
+                  <div><label style={s.label}>Due date</label><input style={s.input} type="date" value={newMilestone.due_date} onChange={e => setNewMilestone(f => ({ ...f, due_date: e.target.value }))} /></div>
                   <div><label style={s.label}>Status</label>
                     <select style={s.select} value={newMilestone.status} onChange={e => setNewMilestone(f => ({ ...f, status: e.target.value }))}>
-                      <option value="planned">Planned</option>
-                      <option value="in-progress">In Progress</option>
-                      <option value="done">Done</option>
+                      <option value="pending">Pending</option>
+                      <option value="complete">Complete</option>
+                      <option value="delayed">Delayed</option>
                     </select>
                   </div>
                 </div>
@@ -2049,17 +2329,17 @@ function ResidentialJobDetailInner() {
             ) : (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                  {['Milestone', 'Planned', 'Actual', 'Status', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
+                  {['Milestone', 'Due date', 'Completed', 'Status', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {milestones.map(m => (
                   <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
                     <span style={{ fontSize: '13px', color: '#111827' }}>{m.title}</span>
-                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(m.planned_date)}</span>
-                    <span style={{ fontSize: '12px', color: m.actual_date ? '#15803d' : '#9ca3af' }}>{fmtDate(m.actual_date)}</span>
-                    <span style={s.badge(statusColor[m.status] || 'gray')}>{m.status}</span>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(m.due_date)}</span>
+                    <span style={{ fontSize: '12px', color: m.completed_date ? '#15803d' : '#9ca3af' }}>{fmtDate(m.completed_date)}</span>
+                    <span style={s.badge(milestoneColor[m.status || 'pending'] || 'gray')}>{m.status || 'pending'}</span>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      {m.status !== 'done' && <button style={s.btnGreen} onClick={() => updateMilestoneStatus(m.id, 'done')}>Done</button>}
-                      {m.status === 'done' && <button style={s.btnSmGray} onClick={() => updateMilestoneStatus(m.id, 'planned')}>Reset</button>}
+                      {m.status !== 'complete' && <button style={s.btnGreen} onClick={() => updateMilestoneStatus(m.id, 'complete')}>Complete</button>}
+                      {m.status === 'complete' && <button style={s.btnSmGray} onClick={() => updateMilestoneStatus(m.id, 'pending')}>Reset</button>}
                       <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteMilestone(m.id)}>×</button>
                     </div>
                   </div>
@@ -2285,14 +2565,22 @@ function ResidentialJobDetailInner() {
           const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
           const approvedCostTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
           const drawStatusColor = { draft: 'gray', submitted: 'orange', approved: 'blue', funded: 'green' }
+          const packagedAllTotal = drawRequests.reduce((a, dr) => a + packagedDrawTotal(dr.id, directCosts, billingSubmissions), 0)
+          const fundedVsPackaged = drawRequests.length > 0 && amountsDiffer(totalFunded, packagedAllTotal)
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
                 <div style={s.statCard}><div style={s.statLabel}>Total Requested</div><div style={s.statValue()}>${fmt(totalRequested)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Total Funded</div><div style={s.statValue('#15803d')}>${fmt(totalFunded)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Packaged Draws</div><div style={s.statValue('#7c3aed')}>${fmt(packagedAllTotal)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Approved Sub Billing</div><div style={s.statValue('#60a5fa')}>${fmt(approvedBillingTotal)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Approved Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(approvedCostTotal)}</div></div>
               </div>
+              {fundedVsPackaged && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
+                  <strong>Funded draws don't match packaged Draw Requests.</strong> Funded owner/lender draws total ${fmt(totalFunded)}; packaged Draw Requests (Billing → Draw Requests) total ${fmt(packagedAllTotal)} ({totalFunded - packagedAllTotal > 0 ? '+' : '−'}${fmt(Math.abs(totalFunded - packagedAllTotal))}).
+                </div>
+              )}
               <div style={s.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Owner/Lender Draw Requests ({ownerDraws.length})</p>
@@ -2305,6 +2593,26 @@ function ResidentialJobDetailInner() {
                       Direct costs: <strong style={{ color: '#e8590c' }}>${fmt(approvedCostTotal)}</strong> &nbsp;·&nbsp;
                       Combined: <strong style={{ color: '#111827' }}>${fmt(approvedBillingTotal + approvedCostTotal)}</strong>
                     </div>
+                    {drawRequests.length > 0 && (
+                      <div style={{ marginBottom: '10px' }}>
+                        <label style={s.label}>Link to packaged Draw Request</label>
+                        <select style={s.select} value={newOwnerDraw.link_draw_request_id} onChange={e => {
+                          const dr = drawRequests.find(d => d.id === e.target.value)
+                          setNewOwnerDraw(f => ({
+                            ...f,
+                            link_draw_request_id: e.target.value,
+                            amount_requested: dr ? packagedDrawTotal(dr.id, directCosts, billingSubmissions).toFixed(2) : f.amount_requested,
+                          }))
+                        }}>
+                          <option value="">— Not linked (next draw number) —</option>
+                          {drawRequests.map(dr => {
+                            const taken = ownerDraws.some(d => d.draw_number === dr.draw_number)
+                            return <option key={dr.id} value={dr.id}>#{dr.draw_number} · {dr.title} · ${fmt(packagedDrawTotal(dr.id, directCosts, billingSubmissions))}{taken ? ' (already has an owner draw)' : ''}</option>
+                          })}
+                        </select>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Uses that request's draw number and fills in its packaged total. You can still change the amount.</div>
+                      </div>
+                    )}
                     <div style={{ ...s.grid3, marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Draw Title</label>
@@ -2335,7 +2643,11 @@ function ResidentialJobDetailInner() {
                 {ownerDraws.length === 0 ? (
                   <div style={s.emptyMsg}>No owner draw requests yet. Create one to request funds from the construction lender or owner.</div>
                 ) : (
-                  ownerDraws.map(d => (
+                  ownerDraws.map(d => {
+                    const linkedDR = drawRequests.find(dr => dr.draw_number != null && dr.draw_number === d.draw_number)
+                    const linkedTotal = linkedDR ? packagedDrawTotal(linkedDR.id, directCosts, billingSubmissions) : null
+                    const mismatch = linkedDR && amountsDiffer(d.amount_requested, linkedTotal)
+                    return (
                     <div key={d.id} style={{ border: `1px solid ${d.status === 'funded' ? '#bbf7d0' : d.status === 'submitted' ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                         <div>
@@ -2352,6 +2664,16 @@ function ResidentialJobDetailInner() {
                           <span style={s.badge(drawStatusColor[d.status] || 'gray')}>{d.status}</span>
                         </div>
                       </div>
+                      {linkedDR && (
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
+                          Packaged Draw Request: {linkedDR.title} · ${fmt(linkedTotal)}
+                        </div>
+                      )}
+                      {mismatch && (
+                        <div style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', marginTop: '6px' }}>
+                          Amount requested (${fmt(d.amount_requested)}) differs from the packaged total (${fmt(linkedTotal)}) by ${fmt(Math.abs(Number(d.amount_requested || 0) - linkedTotal))}.
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                         {d.status === 'draft' && <button style={s.btnSm} onClick={() => updateOwnerDrawStatus(d.id, 'submitted')}>Submit to Owner/Bank</button>}
                         {d.status === 'submitted' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'approved')}>Mark Approved</button>}
@@ -2359,7 +2681,8 @@ function ResidentialJobDetailInner() {
                         {d.status !== 'funded' && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteOwnerDraw(d.id)}>Delete</button>}
                       </div>
                     </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </>

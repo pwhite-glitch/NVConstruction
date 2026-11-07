@@ -25,7 +25,13 @@ function fakeAdmin({ row = { id: SC, signed_contract_url: null }, updateError = 
       const q = {
         update: (p) => { patch = p; return q },
         eq: (col, val) => { filters.push(r => r[col] === val); return q },
-        is: (col, val) => { filters.push(r => r[col] === val); return q },
+        is: (col, val) => { filters.push(r => (r[col] ?? null) === val); return q },
+        // PostgREST or(): 'a.is.null,a.eq.x' → any part matches
+        or: (expr) => {
+          const parts = expr.split(',').map(p => p.split('.'))
+          filters.push(r => parts.some(([c, op, v]) => op === 'is' ? (r[c] ?? null) === null : r[c] === v))
+          return q
+        },
         select: () => q,
         then: (resolve) => {
           if (updateError) return resolve({ data: null, error: updateError })
@@ -109,6 +115,32 @@ describe('saveSignedContract', () => {
     expect(res.linked).toBe(false)
     expect(admin.row.signed_contract_url).toBe(`contracts/${SC}/uploaded.pdf`)
     expect(admin.uploads).toHaveLength(1)
+  })
+
+  it('on a blank row also stamps signed_at (from `at`) and status signed', async () => {
+    const admin = fakeAdmin({ row: { id: SC, status: 'active', signed_contract_url: null, signed_at: null } })
+    const res = await saveSignedContract(admin, { subcontractId: SC, html: '<body></body>', certificate, at: AT })
+    expect(res.linked).toBe(true)
+    expect(admin.row).toMatchObject({ signed_contract_url: res.path, signed_at: AT.toISOString(), status: 'signed' })
+  })
+
+  it('keeps an uploaded PDF but fills a missing signed_at; an existing signed_at is not moved', async () => {
+    const admin = fakeAdmin({ row: { id: SC, status: 'active', signed_contract_url: `contracts/${SC}/uploaded.pdf`, signed_at: null } })
+    await saveSignedContract(admin, { subcontractId: SC, html: '', certificate, at: AT })
+    expect(admin.row).toMatchObject({ signed_contract_url: `contracts/${SC}/uploaded.pdf`, signed_at: AT.toISOString(), status: 'signed' })
+    const earlier = '2026-01-01T00:00:00.000Z'
+    const admin2 = fakeAdmin({ row: { id: SC, status: 'active', signed_contract_url: null, signed_at: earlier } })
+    await saveSignedContract(admin2, { subcontractId: SC, html: '', certificate, at: AT })
+    expect(admin2.row.signed_at).toBe(earlier)
+  })
+
+  it('does not overwrite a draft or complete status', async () => {
+    for (const status of ['draft', 'complete']) {
+      const admin = fakeAdmin({ row: { id: SC, status, signed_contract_url: null, signed_at: null } })
+      await saveSignedContract(admin, { subcontractId: SC, html: '', certificate, at: AT })
+      expect(admin.row.status).toBe(status)
+      expect(admin.row.signed_at).toBe(AT.toISOString())
+    }
   })
 })
 

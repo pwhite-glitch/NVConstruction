@@ -4,6 +4,7 @@ import { canAccessSubcontract } from '../../../lib/sub-access'
 import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { changedContractTerms, isSubcontractSigned } from '../../../lib/signing'
+import { stampSubcontractSigned } from '../../../lib/generated-contract'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -80,7 +81,17 @@ async function subUploadSignedContract(auth, raw) {
   if (!(await canAccessSubcontract(auth, id))) return Response.json({ error: 'Forbidden' }, { status: 403 })
   const { error } = await adminSupabase.from('subcontracts').update({ signed_contract_url }).eq('id', id)
   if (error) return Response.json({ error: error.message }, { status: 500 })
+  // Uploading the signed copy signs the contract: stamp signed_at / status 'signed' (server-set, never from the body).
+  const stamp = await stampSubcontractSigned(adminSupabase, id)
+  if (stamp.error) return Response.json({ ok: true, warning: 'Signed contract saved, but the signed date could not be recorded: ' + stamp.error })
   return Response.json({ ok: true })
+}
+
+// Whether a completed e-sign request exists for this subcontract. Errors count as
+// signed so a failed lookup never unlocks a signed contract.
+async function hasSignedRequest(subcontractId) {
+  const { data, error } = await adminSupabase.from('signing_requests').select('id').eq('subcontract_id', subcontractId).eq('status', 'signed').limit(1)
+  return !!error || !!data?.length
 }
 
 export async function PUT(request) {
@@ -114,15 +125,15 @@ export async function PUT(request) {
       if (current.status && current.status !== 'active') {
         return Response.json({ error: `Only active subcontracts can be moved back to draft (this one is "${current.status}").` }, { status: 400 })
       }
-      const { data: signedReq } = await adminSupabase.from('signing_requests').select('id').eq('subcontract_id', id).eq('status', 'signed').limit(1)
-      if (current.signed_contract_url || signedReq?.length) {
+      if (isSubcontractSigned(current) || await hasSignedRequest(id)) {
         return Response.json({ error: 'This subcontract has been signed and can\'t be moved back to draft.' }, { status: 400 })
       }
     }
 
     // Once signed, the contract terms change only through a change order.
+    // Signed = signed_at, status 'signed', a signed PDF on file, or a signed e-sign request.
     const termsChanged = changedContractTerms(current, fields)
-    if (termsChanged.length && isSubcontractSigned(current)) {
+    if (termsChanged.length && (isSubcontractSigned(current) || await hasSignedRequest(id))) {
       return Response.json({ error: `This subcontract is signed. ${termsChanged.join(', ').replace(/_/g, ' ')} can only change through a change order.` }, { status: 409 })
     }
 
@@ -162,7 +173,7 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'subcontracts', id)
     if (denied) return denied
-    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, vendor_name, status, signed_at').eq('id', id).maybeSingle()
+    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, vendor_name, status, signed_at, signed_contract_url').eq('id', id).maybeSingle()
     if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
     if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     if (isSubcontractSigned(sc)) return Response.json({ error: 'This subcontract is signed and can’t be deleted.' }, { status: 409 })

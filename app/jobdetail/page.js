@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { statusSaveClearsArchived } from '../../lib/job-lifecycle'
+import { isSubcontractSigned } from '../../lib/signing'
 import { safePageTab, wrongPageHref } from '../../lib/job-links'
 import { contractCommittedForItem } from '../../lib/residential-money'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
@@ -765,7 +766,7 @@ function JobDetailInner() {
     if (!summary) { setContracts([]); return [] }
     // Fetch budget_item_id from the base table — the view may predate this column
     // Read status / attachments here too so the row (and the edit form) never rely on view columns
-    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url, bid_proposal_url, onedrive_url, status, company_id').eq('job_id', id)
+    const { data: raw } = await supabase.from('subcontracts').select('id, budget_item_id, budget_allocations, vendor_name, retainage_pct, signed_contract_url, signed_at, bid_proposal_url, onedrive_url, status, company_id').eq('job_id', id)
     // Separate query: these columns come from migration 031 and this errors (gen = null) until it is applied
     const { data: gen } = await supabase.from('subcontracts').select('id, generated_contract_path, generated_at').eq('job_id', id)
     // Fetch SOV line budget assignments so committedForItem can use them when no explicit budget_allocations are set
@@ -792,6 +793,7 @@ function JobDetailInner() {
         vendor_name: rawRow?.vendor_name ?? null,
         retainage_pct: rawRow?.retainage_pct ?? 10,
         signed_contract_url: rawRow?.signed_contract_url ?? null,
+        signed_at: rawRow?.signed_at ?? c.signed_at ?? null,
         bid_proposal_url: rawRow?.bid_proposal_url ?? null,
         onedrive_url: rawRow?.onedrive_url ?? null,
         status: rawRow?.status ?? c.status,
@@ -3798,9 +3800,10 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     showToast(`${name} activated. No email sent.`)
   }
 
-  // Signed = signed PDF on file, status 'signed', or a completed e-sign request. Signed contracts can't go back to draft.
+  // Signed = signed_at, status 'signed', signed PDF on file, or a completed e-sign request (lib/signing isSubcontractSigned,
+  // same rule the API and job delete use). Signed contracts can't go back to draft and their terms change only by change order.
   function isContractSigned(c) {
-    return c.status === 'signed' || !!c.signed_contract_url || signingRequests.some(r => r.subcontract_id === c.id && r.status === 'signed')
+    return isSubcontractSigned(c, { hasSignedRequest: signingRequests.some(r => r.subcontract_id === c.id && r.status === 'signed') })
   }
 
   // Billing state of the contract's company on this job: 'on' | 'partly' | 'off' | null (not assigned)
@@ -3849,10 +3852,14 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       if (upErr) { setErrMsg('Bid proposal upload failed — changes not saved: ' + upErr.message); setTimeout(() => setErrMsg(''), 6000); return }
       bidProposalUrl = path
     }
+    // Signed contracts: value and scope are locked (change order only), so they are not sent.
+    const editedContract = contracts.find(x => x.id === editingContract)
+    const termsLocked = !!editedContract && isContractSigned(editedContract)
     // PUT requires a PM session token — plain fetch() was rejected with 401
     const scUpRes = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-      id: editingContract, contract_value: parseFloat(editContractForm.contract_value),
-      description: editContractForm.description || null, onedrive_url: editContractForm.onedrive_url || null,
+      id: editingContract,
+      ...(termsLocked ? {} : { contract_value: parseFloat(editContractForm.contract_value), description: editContractForm.description || null }),
+      onedrive_url: editContractForm.onedrive_url || null,
       budget_item_id: singleBudgetId, budget_allocations: validAllocs.length > 0 ? validAllocs : null,
       retainage_pct: parseFloat(editContractForm.retainage_pct) || 0, bid_proposal_url: bidProposalUrl,
     }) })
@@ -8109,14 +8116,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <button style={s.btnSmall} onClick={() => moveContractToDraft(c)}>Move back to draft</button>
                           )}
                         </div>
+                        {isSigned && (
+                          <p style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 10px', margin: '0 0 12px' }}>
+                            This subcontract is signed. Contract value and scope are locked — change them with a change order.
+                          </p>
+                        )}
                         <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                           <div>
                             <label style={s.label}>Contract value ($)</label>
-                            <input type="number" style={s.input} value={editContractForm.contract_value} onChange={e => setEditContractForm(f => ({ ...f, contract_value: e.target.value }))} />
+                            <input type="number" style={{ ...s.input, ...(isSigned ? { background: '#f3f4f6', color: '#6b7280' } : {}) }} disabled={isSigned} title={isSigned ? 'Signed — change through a change order' : undefined} value={editContractForm.contract_value} onChange={e => setEditContractForm(f => ({ ...f, contract_value: e.target.value }))} />
                           </div>
                           <div>
                             <label style={s.label}>Description / scope</label>
-                            <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical', lineHeight: '1.5' }} value={editContractForm.description} onChange={e => setEditContractForm(f => ({ ...f, description: e.target.value }))} />
+                            <textarea style={{ ...s.input, minHeight: '70px', resize: 'vertical', lineHeight: '1.5', ...(isSigned ? { background: '#f3f4f6', color: '#6b7280' } : {}) }} disabled={isSigned} title={isSigned ? 'Signed — change through a change order' : undefined} value={editContractForm.description} onChange={e => setEditContractForm(f => ({ ...f, description: e.target.value }))} />
                           </div>
                         </div>
                         {budgetItems.length > 0 && (() => {

@@ -27,7 +27,7 @@ export async function POST(request) {
     (subcontract_id ? await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id) : null)
   if (denied) return denied
   if (subcontract_id) {
-    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at').eq('id', subcontract_id).maybeSingle()
+    const { data: sc, error: scErr } = await adminSupabase.from('subcontracts').select('id, job_id, status, signed_at, signed_contract_url').eq('id', subcontract_id).maybeSingle()
     if (scErr) return Response.json({ error: scErr.message }, { status: 500 })
     if (!sc) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     if (sc.job_id !== job_id) return Response.json({ error: 'That subcontract is on a different job.' }, { status: 400 })

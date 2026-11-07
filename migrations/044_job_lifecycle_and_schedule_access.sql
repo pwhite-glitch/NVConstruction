@@ -83,8 +83,16 @@ BEGIN
    WHERE a.job_id::text = v_job AND (a.status IN ('submitted', 'certified') OR coalesce(a.payment_received, false));
   IF n > 0 THEN v_reasons := v_reasons || format('%s owner pay app(s) are submitted, certified, or paid.', n); END IF;
 
+  -- Signed = same as isSubcontractSigned (lib/signing.js) and the job page's
+  -- isContractSigned: signed_at, status 'signed', a non-blank signed_contract_url
+  -- (e-signed or uploaded PDF), or a completed signing_requests row.
   SELECT count(*) INTO n FROM public.subcontracts s
-   WHERE s.job_id::text = v_job AND (s.signed_at IS NOT NULL OR s.status = 'signed');
+   WHERE s.job_id::text = v_job
+     AND (s.signed_at IS NOT NULL
+          OR s.status = 'signed'
+          OR btrim(coalesce(s.signed_contract_url, '')) <> ''
+          OR EXISTS (SELECT 1 FROM public.signing_requests sr
+                      WHERE sr.subcontract_id::text = s.id::text AND sr.status = 'signed'));
   IF n > 0 THEN v_reasons := v_reasons || format('%s subcontract(s) are signed.', n); END IF;
 
   SELECT count(*) INTO n FROM public.direct_costs dc

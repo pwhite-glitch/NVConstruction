@@ -13,7 +13,7 @@ const HISTORY = [
   { key: 'billings', table: 'billing_submissions', cols: 'id, status, draw_request_id, paid_at, payment_amount' },
   { key: 'draws', table: 'draw_requests', cols: 'id, draw_number, status' },
   { key: 'aiaApps', table: 'aia_applications', cols: 'id, app_number, status, payment_received' },
-  { key: 'subcontracts', table: 'subcontracts', cols: 'id, status, signed_at' },
+  { key: 'subcontracts', table: 'subcontracts', cols: 'id, status, signed_at, signed_contract_url' },
   { key: 'directCosts', table: 'direct_costs', cols: 'id, draw_request_id, nv_paid' },
   { key: 'purchaseOrders', table: 'purchase_orders', cols: 'id, draw_request_id' },
   { key: 'generalConditions', table: 'general_conditions', cols: 'id, draw_request_id' },
@@ -46,6 +46,14 @@ export async function POST(request) {
     const { data, error } = await adminSupabase.from(h.table).select(h.cols).eq('job_id', jobId)
     if (error) return Response.json({ error: `Could not check ${h.table}: ${error.message}` }, { status: 500 })
     history[h.key] = data || []
+  }
+  // A completed e-sign request also makes a subcontract signed (same as 044).
+  const scIds = history.subcontracts.map(sc => sc.id)
+  if (scIds.length) {
+    const { data: signedReqs, error } = await adminSupabase.from('signing_requests').select('subcontract_id').in('subcontract_id', scIds).eq('status', 'signed')
+    if (error) return Response.json({ error: `Could not check signing_requests: ${error.message}` }, { status: 500 })
+    const signedIds = new Set((signedReqs || []).map(r => r.subcontract_id))
+    history.subcontracts = history.subcontracts.map(sc => ({ ...sc, has_signed_request: signedIds.has(sc.id) }))
   }
   const reasons = jobDeleteBlockers(history)
   if (reasons.length) {

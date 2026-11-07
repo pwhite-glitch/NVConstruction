@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
 import { findAuthUserByEmail } from '../../../lib/auth-users'
+import { loadExistingProfile, existingInviteTargetError, blankCompanyFill } from '../../../lib/invite-guards'
 
 const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
 
@@ -37,6 +38,7 @@ export async function POST(request) {
     let userId = null
     let inviteUrl = null
     let action = 'invited'
+    let existingProfile = null
 
     const { data, error } = await adminSupabase.auth.admin.generateLink({
       type: 'invite',
@@ -53,6 +55,13 @@ export async function POST(request) {
         const existing = await findAuthUserByEmail(adminSupabase, dir.email)
         if (!existing) return Response.json({ error: error.message }, { status: 400 })
         userId = existing.id
+        // Reset PW / Resend: never touch an office or Owner account, and never
+        // rewrite an existing sub's role or name (see below).
+        const loaded = await loadExistingProfile(adminSupabase, userId, dir.email)
+        if (loaded.error) return Response.json({ error: loaded.error.message }, { status: 500 })
+        existingProfile = loaded.profile
+        const targetErr = await existingInviteTargetError(adminSupabase, auth, userId, existingProfile)
+        if (targetErr) return Response.json({ error: targetErr.error }, { status: targetErr.status })
         const { data: linkData, error: linkErr } = await adminSupabase.auth.admin.generateLink({
           type: 'recovery',
           email: dir.email,
@@ -89,22 +98,33 @@ export async function POST(request) {
         if (co?.id) resolvedCompanyId = co.id
       }
 
-      const profileData = {
-        id: userId,
-        full_name: dir.contact_name || reqFullName || 'Invited User',
-        role: desiredRole,
-        company_name: resolvedCompanyName,
-        invite_email: dir.email,
+      if (existingProfile) {
+        // Existing account: role, full_name and invite_email stay as they are.
+        // Only fill company fields that are blank today.
+        const fill = blankCompanyFill(existingProfile, { companyId: resolvedCompanyId, companyName: resolvedCompanyName })
+        if (Object.keys(fill).length) {
+          const { error: fillErr } = await adminSupabase.from('profiles').update(fill).eq('id', existingProfile.id)
+          if (fillErr) profileWarning = fillErr.message
+        }
+      } else {
+        // Brand-new invite (or an auth user with no profile row yet).
+        const profileData = {
+          id: userId,
+          full_name: dir.contact_name || reqFullName || 'Invited User',
+          role: desiredRole,
+          company_name: resolvedCompanyName,
+          invite_email: dir.email,
+        }
+        if (resolvedCompanyId) profileData.company_id = resolvedCompanyId
+        let { error: profileErr } = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+        // If the DB check constraint doesn't include sub_* roles yet, fall back to 'subcontractor'
+        if (profileErr?.message?.includes('role_check') && desiredRole !== 'subcontractor') {
+          profileData.role = 'subcontractor'
+          const retry = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
+          profileErr = retry.error
+        }
+        if (profileErr) profileWarning = profileErr.message
       }
-      if (resolvedCompanyId) profileData.company_id = resolvedCompanyId
-      let { error: profileErr } = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
-      // If the DB check constraint doesn't include sub_* roles yet, fall back to 'subcontractor'
-      if (profileErr?.message?.includes('role_check') && desiredRole !== 'subcontractor') {
-        profileData.role = 'subcontractor'
-        const retry = await adminSupabase.from('profiles').upsert(profileData, { onConflict: 'id', ignoreDuplicates: false })
-        profileErr = retry.error
-      }
-      if (profileErr) profileWarning = profileErr.message
     }
 
     const subject = action === 'reset'

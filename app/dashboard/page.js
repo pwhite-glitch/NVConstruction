@@ -18,6 +18,7 @@ import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { isConverted } from '../../lib/estimate-pipeline'
+import { inActiveJobList, inCompletedJobList, isActiveStatusJob } from '../../lib/job-lifecycle'
 import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJobIds, homePathForRole } from '../../lib/roles'
 
 const TRADES = [
@@ -134,9 +135,9 @@ const s = {
   }),
   jobBadge: (status) => ({
     padding: '2px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', letterSpacing: '0.25px', textTransform: 'uppercase',
-    background: status === 'active' ? '#eff6ff' : status === 'complete' ? '#dcfce7' : '#fefce8',
-    color: status === 'active' ? '#1d4ed8' : status === 'complete' ? '#15803d' : '#a16207',
-    border: `1px solid ${status === 'active' ? '#bfdbfe' : status === 'complete' ? '#bbf7d0' : '#fef08a'}`
+    background: status === 'active' ? '#eff6ff' : status === 'complete' ? '#dcfce7' : status === 'archived' ? '#f3f4f6' : '#fefce8',
+    color: status === 'active' ? '#1d4ed8' : status === 'complete' ? '#15803d' : status === 'archived' ? '#6b7280' : '#a16207',
+    border: `1px solid ${status === 'active' ? '#bfdbfe' : status === 'complete' ? '#bbf7d0' : status === 'archived' ? '#d1d5db' : '#fef08a'}`
   }),
   coiWarning: { background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px', padding: '10px 14px', fontSize: '13px', color: '#c2410c', marginBottom: '1rem' },
   roleBadge: (role) => ({
@@ -2143,7 +2144,7 @@ export default function Dashboard() {
       const ests = estimates.filter(e => getStage(e) === k && !(k === 'won' && isConverted(e, jobs)))
       return ests.map(e => ({ ...e, _stage: k, _total: calcTotal(e) }))
     })
-    const activeJobs = (jobs || []).filter(j => j.status === 'active' && !j.is_preview_data)
+    const activeJobs = (jobs || []).filter(j => isActiveStatusJob(j) && !j.is_preview_data)
     const showConstruction = !!enabledStages['under_construction']
     const constructionGCTotal = showConstruction ? activeJobs.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0) : 0
     const constructionSubTotal = showConstruction ? activeJobs.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0) : 0
@@ -3287,7 +3288,7 @@ ${planLinks.map(p => p.url
     })).sort((a, b) => b._score - a._score))
   const duplicateNames = new Set(duplicateGroups.flatMap(g => g.map(e => e.company_name?.toLowerCase().trim())))
   const pendingApps = directory.filter(s => s.status === 'pending').length
-  const activeJobs = jobs.filter(j => j.status === 'active')
+  const activeJobs = jobs.filter(isActiveStatusJob)
   const billedByJob = submissions.reduce((map, sub) => {
     if (sub.status === 'approved') map[sub.job_id] = (map[sub.job_id] || 0) + (sub.amount_billed || 0)
     return map
@@ -5237,7 +5238,7 @@ ${planLinks.map(p => p.url
                 }
               }
 
-              const activeJobs = jobs.filter(j => j.status === 'active')
+              const activeJobs = jobs.filter(isActiveStatusJob)
               computeEvents(activeJobs, j => j.sub_billing_frequency, j => j.sub_billing_due, j => j.sub_billing_anchor, j => j.sub_billing_start, subByDay)
               computeEvents(activeJobs, j => j.owner_billing_frequency, j => j.owner_billing_due, j => j.owner_billing_anchor, j => j.owner_billing_start, ownerByDay)
 
@@ -5322,7 +5323,7 @@ ${planLinks.map(p => p.url
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedJobs && !showStarredJobs ? '#fff7ed' : '#ffffff', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed ({jobs.filter(j => j.job_type !== 'residential' && j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => j.job_type !== 'residential' && inCompletedJobList(j)).length})</button>
                   </div>
                   {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
@@ -5427,7 +5428,7 @@ ${planLinks.map(p => p.url
                 )}
 
                 {!showCompletedJobs && !showStarredJobs && (() => {
-                  const activeCommercial = jobs.filter(j => j.job_type !== 'residential' && j.status !== 'complete')
+                  const activeCommercial = jobs.filter(j => j.job_type !== 'residential' && inActiveJobList(j))
                   const gcTotal = activeCommercial.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const subTotal = activeCommercial.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const activeContractTotal = gcTotal + subTotal
@@ -5463,7 +5464,7 @@ ${planLinks.map(p => p.url
                   const visibleJobs = jobs.filter(j => {
                     if (j.job_type === 'residential') return false
                     if (showStarredJobs) return starredJobIds.has(j.id)
-                    if (!(showCompletedJobs ? j.status === 'complete' : j.status !== 'complete')) return false
+                    if (!(showCompletedJobs ? inCompletedJobList(j) : inActiveJobList(j))) return false
                     if (jobSearch) {
                       const q = jobSearch.toLowerCase()
                       return (j.project_name || '').toLowerCase().includes(q) || String(j.job_number || '').includes(q) || (j.location || '').toLowerCase().includes(q)
@@ -5505,7 +5506,7 @@ ${planLinks.map(p => p.url
                               <p style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{j.project_name}</p>
                               {j.location && <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location}</p>}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-                                <span style={s.jobBadge(j.status)}>{j.status}</span>
+                                <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                                 {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 5px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>SUB</span>}
                               </div>
                               {pmFirst && <div style={{ marginTop: '5px', fontSize: '11px', color: '#6b7280' }}>PM: {pmFirst}</div>}
@@ -5549,7 +5550,7 @@ ${planLinks.map(p => p.url
                               {pendingCount > 0 && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>{pendingCount} pending</span>}
                               {j.nv_role === 'sub' ? (contract > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '13px', fontWeight: '700', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(contract)}</div><div style={{ fontSize: '10px', color: '#3a5a8a' }}>our contract</div></div>) : (contract > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#dc2626' : '#111827', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}</div><div style={{ fontSize: '10px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% sub-billed</div></div>)}
                               {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>SUB</span>}
-                              <span style={s.jobBadge(j.status)}>{j.status}</span>
+                              <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                               <span style={{ color: '#9ca3af', fontSize: '16px' }}>›</span>
                             </div>
                           </div>
@@ -5581,7 +5582,7 @@ ${planLinks.map(p => p.url
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#fff7ed' : '#ffffff', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#d97706' : '#d1d5db'}`, background: showStarredResJobs ? '#fefce8' : '#ffffff', color: showStarredResJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed ({jobs.filter(j => j.job_type === 'residential' && j.status === 'complete').length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => j.job_type === 'residential' && inCompletedJobList(j)).length})</button>
                   </div>
                   {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
                     {showNewResJobForm ? 'Cancel' : '+ New residential job'}
@@ -5654,7 +5655,7 @@ ${planLinks.map(p => p.url
                   const resJobs = jobs.filter(j => {
                     if (j.job_type !== 'residential') return false
                     if (showStarredResJobs) return starredJobIds.has(j.id)
-                    if (!(showCompletedResJobs ? j.status === 'complete' : j.status !== 'complete')) return false
+                    if (!(showCompletedResJobs ? inCompletedJobList(j) : inActiveJobList(j))) return false
                     if (resJobSearch) {
                       const q = resJobSearch.toLowerCase()
                       return (j.project_name || '').toLowerCase().includes(q) || (j.owner_name || '').toLowerCase().includes(q) || String(j.job_number || '').includes(q) || (j.location || '').toLowerCase().includes(q)
@@ -5686,7 +5687,7 @@ ${planLinks.map(p => p.url
                               {j.owner_name && <p style={{ margin: '0 0 2px', fontSize: '12px', color: '#374151', fontWeight: '500' }}>{j.owner_name}</p>}
                               {j.location && <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location}</p>}
                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-                                <span style={s.jobBadge(j.status)}>{j.status}</span>
+                                <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                                 <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 5px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>RESIDENTIAL</span>
                               </div>
                               {contract > 0 && <div style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>${contract.toLocaleString()} contract</div>}
@@ -5713,7 +5714,7 @@ ${planLinks.map(p => p.url
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                               <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>RESIDENTIAL</span>
-                              <span style={s.jobBadge(j.status)}>{j.status}</span>
+                              <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                               <span style={{ color: '#9ca3af', fontSize: '16px' }}>›</span>
                             </div>
                           </div>
@@ -6765,7 +6766,7 @@ ${planLinks.map(p => p.url
               const lost = estimates.filter(e => ['lost','declined'].includes(e.status))
               const pipeline = active.filter(e => !['won','accepted'].includes(e.status))
               const completedJobs = (jobs || []).filter(j => j.status === 'complete' && !j.is_preview_data)
-              const activeJobs = (jobs || []).filter(j => j.status === 'active' && !j.is_preview_data)
+              const activeJobs = (jobs || []).filter(j => isActiveStatusJob(j) && !j.is_preview_data)
               const pipelineVal = pipeline.reduce((a, e) => a + calcTotal(e), 0)
               const wonVal = won.reduce((a, e) => a + calcTotal(e), 0)
               const completedVal = completedJobs.reduce((a, j) => a + Number(j.adjusted_contract_value || j.contract_value || 0), 0)
@@ -7514,7 +7515,7 @@ ${planLinks.map(p => p.url
               // bid packages for selected year (shown as Bidding)
               const yearBids = bdBidPackages.filter(b => getYear(b.due_date || b.created_at) === bdYear)
               // jobs: active = all (ongoing), complete = filtered by year
-              const activeJobs = jobs.filter(j => j.status === 'active')
+              const activeJobs = jobs.filter(isActiveStatusJob)
               const completeJobs = jobs.filter(j => j.status === 'complete' && getYear(j.created_at) === bdYear)
 
               // Unified items

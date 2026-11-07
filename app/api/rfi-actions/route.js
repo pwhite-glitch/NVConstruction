@@ -74,11 +74,25 @@ export async function POST(request) {
 
   const response = typeof body?.response === 'string' ? body.response.trim() : ''
   if (!response) return Response.json({ error: 'A response is required.' }, { status: 400 })
+  // A closed RFI stays closed: no edit, no reopen, no email.
+  const closedMsg = 'This RFI is closed. Its response can no longer be edited.'
+  if (rfi.status === 'closed') return Response.json({ error: closedMsg }, { status: 409 })
   const patch = { response, status: 'answered', responded_at: new Date().toISOString(), responded_by: auth.userId }
-  const { data: updated, error } = await adminSupabase
-    .from('rfis').update(patch).eq('id', rfi_id).select().maybeSingle()
-  if (error) return Response.json({ error: `Could not save response: ${error.message}` }, { status: 500 })
 
-  const notified = await notifyRfiAnswered({ ...rfi, ...patch }, response)
-  return Response.json({ ok: true, rfi: updated || { ...rfi, ...patch }, notified })
+  // Conditional writes so a just-closed row can't be reopened, and only the
+  // write that actually moves it open → answered notifies the submitter.
+  const { data: answered, error } = await adminSupabase
+    .from('rfis').update(patch).eq('id', rfi_id).eq('status', 'open').select().maybeSingle()
+  if (error) return Response.json({ error: `Could not save response: ${error.message}` }, { status: 500 })
+  if (answered) {
+    const notified = await notifyRfiAnswered({ ...rfi, ...patch }, response)
+    return Response.json({ ok: true, rfi: answered, notified })
+  }
+
+  // Already answered: edit the response quietly (no second email / bell).
+  const { data: edited, error: editErr } = await adminSupabase
+    .from('rfis').update(patch).eq('id', rfi_id).eq('status', 'answered').select().maybeSingle()
+  if (editErr) return Response.json({ error: `Could not save response: ${editErr.message}` }, { status: 500 })
+  if (edited) return Response.json({ ok: true, rfi: edited, notified: false })
+  return Response.json({ error: 'This RFI is no longer open (it may have just been closed). Refresh and try again.' }, { status: 409 })
 }

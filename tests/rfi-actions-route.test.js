@@ -188,6 +188,49 @@ describe('POST respond', () => {
     const res = await post({ rfi_id: 'nope', action: 'respond', response: 'Yes' })
     expect(res.status).toBe(404)
   })
+
+  // 2026-11-06 evening: Edit response on a closed RFI reopened it and re-emailed.
+  test('closed RFI → 409, stays closed, response unchanged, nobody notified', async () => {
+    Object.assign(db.rfis.find(r => r.id === 'r-sub'), { status: 'closed', response: 'Original' })
+    const res = await post({ rfi_id: 'r-sub', action: 'respond', response: 'Changed' })
+    expect(res.status).toBe(409)
+    expect(db.rfis.find(r => r.id === 'r-sub')).toMatchObject({ status: 'closed', response: 'Original' })
+    expect(mockEmails).toHaveLength(0)
+    expect(db.notifications).toHaveLength(0)
+  })
+
+  test('editing an already-answered RFI saves quietly (no second email / bell)', async () => {
+    Object.assign(db.rfis.find(r => r.id === 'r-sub'), { status: 'answered', response: 'First' })
+    const res = await post({ rfi_id: 'r-sub', action: 'respond', response: 'Second' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).notified).toBe(false)
+    expect(db.rfis.find(r => r.id === 'r-sub')).toMatchObject({ status: 'answered', response: 'Second' })
+    expect(mockEmails).toHaveLength(0)
+    expect(db.notifications).toHaveLength(0)
+  })
+
+  test('answering an open RFI notifies exactly once', async () => {
+    await post({ rfi_id: 'r-sub', action: 'respond', response: 'One' })
+    await post({ rfi_id: 'r-sub', action: 'respond', response: 'Two' })
+    expect(mockEmails).toHaveLength(1)
+    expect(db.notifications).toHaveLength(1)
+  })
+
+  test('closed between load and save (race): conditional update does not reopen it', async () => {
+    const row = db.rfis.find(r => r.id === 'r-sub')
+    const realFrom = db.rfis
+    // The route loads the row as open; flip it to closed right after that read.
+    let reads = 0
+    Object.defineProperty(db, 'rfis', {
+      configurable: true,
+      get() { reads++; if (reads === 2) row.status = 'closed'; return realFrom },
+      set(v) { Object.defineProperty(db, 'rfis', { value: v, writable: true, configurable: true }) },
+    })
+    const res = await post({ rfi_id: 'r-sub', action: 'respond', response: 'Late' })
+    expect(res.status).toBe(409)
+    expect(row.status).toBe('closed')
+    expect(mockEmails).toHaveLength(0)
+  })
 })
 
 describe('POST close', () => {

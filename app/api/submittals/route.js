@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
-import { denyJob, denyJobOf } from '../../../lib/roles'
+import { denyJob, denyJobOf, ilikeExact } from '../../../lib/roles'
+import { jobIdFromPath } from '../../../lib/storage-path'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -30,6 +31,26 @@ function parseFileUrls(raw) {
   return [{ path: raw, name: raw.split('/').pop() }]
 }
 
+// Signing a submittal file: the path must be on a submittal row (for the job in
+// the path, when the path starts with a job id) and the caller must pass the
+// job check for that submittal's job. Returns a Response to send back, or null.
+async function denySubmittalPath(auth, path) {
+  const parts = typeof path === 'string' ? path.split('/') : []
+  if (!parts.length || parts.some(p => p === '' || p === '.' || p === '..')) {
+    return Response.json({ error: 'Invalid file path.' }, { status: 400 })
+  }
+  const pathJobId = jobIdFromPath(path)
+  let q = adminSupabase.from('submittals').select('id, job_id, file_url').like('file_url', `%${ilikeExact(path)}%`)
+  if (pathJobId) q = q.eq('job_id', pathJobId)
+  const { data, error } = await q.limit(50)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  const row = (data || []).find(r =>
+    parseFileUrls(r.file_url).some(f => f?.path === path) &&
+    (!pathJobId || String(r.job_id).toLowerCase() === pathJobId))
+  if (!row) return Response.json({ error: 'That file is not on a submittal you can open.' }, { status: 403 })
+  return denyJob(adminSupabase, auth, row.job_id)
+}
+
 export async function GET(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
@@ -38,6 +59,8 @@ export async function GET(request) {
   const file_path = searchParams.get('file_path')
 
   if (file_path) {
+    const denied = await denySubmittalPath(auth, file_path)
+    if (denied) return denied
     const { data, error } = await adminSupabase.storage
       .from('submittal-docs')
       .createSignedUrl(file_path, 300)

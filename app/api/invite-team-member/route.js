@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth, isPM } from '../../../lib/server-auth'
+import { findAuthUserByEmail } from '../../../lib/auth-users'
+import { loadExistingProfile, existingInviteTargetError } from '../../../lib/invite-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -52,24 +54,37 @@ export async function POST(request) {
     })
 
     if (inviteErr) {
-      const { data: { users } } = await adminSupabase.auth.admin.listUsers({ perPage: 1000 })
-      const existing = users.find(u => u.email?.toLowerCase() === email)
+      // Account already exists: Resend only sends a recovery link. It never
+      // changes role, name, or company, and never touches a non-sub account.
+      const existing = await findAuthUserByEmail(adminSupabase, email)
       if (!existing) return Response.json({ error: inviteErr.message }, { status: 400 })
       userId = existing.id
-      const { data: linkData } = await adminSupabase.auth.admin.generateLink({
+      const loaded = await loadExistingProfile(adminSupabase, userId, email)
+      if (loaded.error) return Response.json({ error: loaded.error.message }, { status: 500 })
+      const targetErr = await existingInviteTargetError(adminSupabase, auth, userId, loaded.profile)
+      if (targetErr) return Response.json({ error: targetErr.error }, { status: targetErr.status })
+      if (!loaded.profile) {
+        return Response.json({ error: 'That email has an account with no profile. Ask the NV office to set it up.' }, { status: 409 })
+      }
+      // A sub admin/PM may only resend to people already in their own company.
+      if (!isPM(auth.role) && loaded.profile.company_id !== inviterProfile?.company_id) {
+        return Response.json({ error: 'That email already belongs to a user outside your company.' }, { status: 403 })
+      }
+      const { data: linkData, error: linkErr } = await adminSupabase.auth.admin.generateLink({
         type: 'recovery',
         email,
         options: { redirectTo: `${siteUrl}/set-password` },
       })
       inviteUrl = linkData?.properties?.action_link
+      if (linkErr || !inviteUrl) {
+        return Response.json({ error: `Account exists but a password-reset link could not be generated: ${linkErr?.message || 'no link returned'}` }, { status: 500 })
+      }
     } else {
       userId = inviteData.user.id
       inviteUrl = inviteData.properties?.action_link
-    }
-
-    if (userId) {
+      // Brand-new account: the only place role / name / company are set.
       const validSubRoles = ['subcontractor', 'sub_estimator', 'sub_pm', 'sub_admin']
-      await adminSupabase.from('profiles').upsert({
+      const { error: profileErr } = await adminSupabase.from('profiles').upsert({
         id: userId,
         full_name: full_name || null,
         role: validSubRoles.includes(role) ? role : 'subcontractor',
@@ -77,6 +92,7 @@ export async function POST(request) {
         company_id,
         invite_email: email,
       }, { onConflict: 'id', ignoreDuplicates: false })
+      if (profileErr) return Response.json({ error: `Account created but the profile could not be saved: ${profileErr.message}` }, { status: 500 })
     }
 
     const inviterName = inviterProfile?.full_name || 'Your project manager'

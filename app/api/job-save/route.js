@@ -31,6 +31,8 @@ export async function POST(request) {
   if (denied) return denied
 
   let updateFields = { ...fields }
+  // Archive / Unarchive is Owner-only and goes through /api/jobs/archive.
+  delete updateFields.archived
   let { error } = await adminSupabase.from('jobs').update(updateFields).eq('id', id)
 
   if (error && error.message && error.message.includes('schema cache')) {

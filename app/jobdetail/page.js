@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { statusSaveClearsArchived } from '../../lib/job-lifecycle'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
@@ -165,6 +166,7 @@ function JobDetailInner() {
   const [errMsg, setErrMsg] = useState('')
   const [notAssigned, setNotAssigned] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deletingJob, setDeletingJob] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [aiaBalanceWarning, setAiaBalanceWarning] = useState(null)
   const [budgetView, setBudgetView] = useState('lines')
@@ -1157,9 +1159,14 @@ function JobDetailInner() {
   }
 
   async function openSubmittalDocUrl(path) {
-    const res = await fetch(`/api/submittals?file_path=${encodeURIComponent(path)}`)
-    const { url } = await res.json()
-    if (url) window.open(url, '_blank')
+    let errText = ''
+    const url = await openFile(async () => {
+      const res = await authFetch(`/api/submittals?file_path=${encodeURIComponent(path)}`)
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.url) errText = d.error || `HTTP ${res.status}`
+      return d.url
+    })
+    if (!url) alert('Could not open file: ' + (errText || 'no link returned'))
   }
 
   function parseSubmittalFiles(raw) {
@@ -3048,44 +3055,67 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   // ── Schedule ────────────────────────────────────────────────
+  // All Schedule tab file work goes through /api/schedule-files (job-checked, service role).
+  async function scheduleFilesApi(body) {
+    const res = await authFetch('/api/schedule-files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok || out.error) throw new Error(out.error || `HTTP ${res.status}`)
+    return out
+  }
+
+  async function scheduleFileUrl(storagePath) {
+    return (await scheduleFilesApi({ action: 'signed-url', path: storagePath })).url
+  }
+
   async function loadScheduleFiles() {
-    const { data } = await supabase.from('job_schedule_files').select('*').eq('job_id', id).order('uploaded_at', { ascending: false })
-    setScheduleFiles(data || [])
+    const res = await authFetch(`/api/schedule-files?job_id=${encodeURIComponent(id)}`)
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok) { setErrMsg('Could not load schedule files: ' + (out.error || `HTTP ${res.status}`)); setTimeout(() => setErrMsg(''), 8000); return }
+    setScheduleFiles(out.files || [])
   }
 
   async function uploadScheduleFile(file, meta = {}) {
     setUploadingSchedule(true)
-    const path = `${id}/${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('schedule-files').upload(path, file)
-    if (error) { alert('Upload error: ' + error.message); setUploadingSchedule(false); return }
-    await supabase.from('job_schedule_files').insert({
-      job_id: id, file_name: file.name, storage_path: path,
-      file_type: file.name.split('.').pop().toLowerCase(),
-      revision: meta.revision || null,
-      notes: meta.notes || null,
+    try {
+      const path = `${id}/${Date.now()}-${safeFileName(file.name).slice(-100)}`
+      const { signedUrl } = await scheduleFilesApi({ action: 'upload-url', path })
+      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!up.ok) throw new Error(`Upload failed (HTTP ${up.status})`)
+      await scheduleFilesApi({ action: 'record', job_id: id, storage_path: path, file_name: file.name, revision: meta.revision || null, notes: meta.notes || null })
+      if (file.name.toLowerCase().endsWith('.xml')) {
+        const text = await file.text()
+        const tasks = parseProjectXml(text)
+        setParsedTasks(tasks)
+        setParsedFrom(file.name)
+      }
+      setShowScheduleUpload(false)
+      setScheduleUploadMeta({ revision: '', notes: '' })
+    } catch (e) {
+      alert('Schedule upload error: ' + e.message)
+    } finally {
+      await loadScheduleFiles()
+      setUploadingSchedule(false)
+    }
+  }
+
+  async function openScheduleFile(storagePath) {
+    let errText = ''
+    const url = await openFile(async () => {
+      try { return await scheduleFileUrl(storagePath) } catch (e) { errText = e.message; return null }
     })
-    if (file.name.toLowerCase().endsWith('.xml')) {
-      const text = await file.text()
-      const tasks = parseProjectXml(text)
-      setParsedTasks(tasks)
-      setParsedFrom(file.name)
+    if (!url) alert('Could not open file: ' + (errText || 'no link returned'))
+  }
+
+  async function deleteScheduleFile(fileId, storagePath, fileName) {
+    if (!window.confirm('Delete this file?')) return
+    try {
+      const out = await scheduleFilesApi({ action: 'delete', file_id: fileId })
+      if (out.warning) alert(out.warning)
+      if (parsedFrom && (parsedFrom === fileName || storagePath.includes(parsedFrom))) { setParsedTasks(null); setParsedFrom(null) }
+    } catch (e) {
+      alert('Could not delete file: ' + e.message)
     }
     await loadScheduleFiles()
-    setUploadingSchedule(false)
-    setShowScheduleUpload(false)
-    setScheduleUploadMeta({ revision: '', notes: '' })
-  }
-
-  function openScheduleFile(storagePath) {
-    return openStorageFile(supabase, 'schedule-files', storagePath, 3600)
-  }
-
-  async function deleteScheduleFile(fileId, storagePath) {
-    if (!window.confirm('Delete this file?')) return
-    await supabase.storage.from('schedule-files').remove([storagePath])
-    await supabase.from('job_schedule_files').delete().eq('id', fileId)
-    await loadScheduleFiles()
-    if (parsedFrom && storagePath.includes(parsedFrom)) { setParsedTasks(null); setParsedFrom(null) }
   }
 
   async function loadJobDocs() {
@@ -5418,6 +5448,8 @@ ${(budgets || []).length > 0 ? `
       rollup_general_conditions: !!form.rollup_general_conditions,
       nv_role: form.nv_role || 'gc',
     }
+    // Changing Status to Active un-archives the job (no "Archived" + "Active" dual state).
+    if (statusSaveClearsArchived(job, form.status)) jobFields.archived = false
     let { error } = await supabase.from('jobs').update(jobFields).eq('id', id)
     if (error && error.message && error.message.includes('schema cache')) {
       jobFields = Object.fromEntries(Object.entries(jobFields).filter(([k]) => !JOB_OPT_COLS.has(k)))
@@ -5436,21 +5468,50 @@ ${(budgets || []).length > 0 ? `
         logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'contract_value', old_value: fmtAmt(job.contract_value || 0), new_value: fmtAmt(form.contract_value), note: `Contract value updated: ${fmtAmt(job.contract_value || 0)} → ${fmtAmt(form.contract_value)}` }) }))
       }
       if (logCalls.length) Promise.all(logCalls).catch(() => {})
-      setJob(j => ({ ...j, ...form })); setMsg('Job saved successfully.'); setTimeout(() => setMsg(''), 3000)
+      const unarchived = jobFields.archived === false
+      if (unarchived) setForm(f => ({ ...f, archived: false }))
+      setJob(j => ({ ...j, ...form, ...(unarchived ? { archived: false } : {}) })); setMsg(unarchived ? 'Job saved and unarchived (status set to Active).' : 'Job saved successfully.'); setTimeout(() => setMsg(''), 3000)
     }
     setSaving(false)
   }
 
-  async function archiveJob() {
-    await supabase.from('jobs').update({ archived: true, status: 'on_hold' }).eq('id', id)
-    setMsg('Job archived.')
-    setTimeout(() => router.push('/dashboard'), 1500)
+  // Owner-only Archive / Unarchive via /api/jobs/archive (writes only `archived`).
+  async function setJobArchived(archived) {
+    if (!isPrincipal(userRole)) return
+    const prompt = archived
+      ? 'Archive this job? It will be hidden from the Active job lists and Active Contract Sum (it stays under Completed / Archived). Its status is not changed. An Owner can unarchive it later.'
+      : 'Unarchive this job? It will show in the job lists again under its current status.'
+    if (!window.confirm(prompt)) return
+    let data = {}
+    try {
+      const res = await authFetch('/api/jobs/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, archived }) })
+      data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    } catch (e) {
+      setErrMsg((archived ? 'Archive' : 'Unarchive') + ' failed: ' + e.message); setTimeout(() => setErrMsg(''), 8000)
+      return
+    }
+    setJob(j => ({ ...j, archived }))
+    setForm(f => ({ ...f, archived }))
+    setMsg(archived ? 'Job archived.' : 'Job unarchived.'); setTimeout(() => setMsg(''), 3000)
   }
 
+  // Owner-only, via /api/jobs/delete. The server refuses jobs with billings or
+  // other financial history and deletes in one transaction; only leave the
+  // page once it says the job is gone.
   async function deleteJob() {
-    await supabase.from('job_assignments').delete().eq('job_id', id)
-    await supabase.from('billing_submissions').delete().eq('job_id', id)
-    await supabase.from('jobs').delete().eq('id', id)
+    if (!isPrincipal(userRole)) return
+    setDeletingJob(true)
+    try {
+      const res = await authFetch('/api/jobs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`)
+    } catch (e) {
+      setDeletingJob(false)
+      setErrMsg(e.message); setTimeout(() => setErrMsg(''), 12000)
+      alert(e.message)
+      return
+    }
     router.push('/dashboard')
   }
 
@@ -6236,6 +6297,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <option value="on_hold">On hold</option>
                       <option value="complete">Complete</option>
                     </select>
+                    {job.archived && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>Archived. Changing Status to Active (or an Owner's Unarchive) brings it back to the Active list.</p>}
                   </div>
                   <div><label style={s.label}>Who pays subs</label>
                     <select style={s.input} value={form.payment_type || 'nv_pays'} onChange={e => update('payment_type', e.target.value)}>
@@ -6421,15 +6483,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               <div style={{ display: 'flex', gap: '12px', marginBottom: '1.5rem' }}>
                 <button type="submit" style={{ ...s.btn, opacity: saving ? 0.6 : 1 }} disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
-                <button type="button" style={s.btnGray} onClick={archiveJob}>Archive job</button>
-                <button type="button" style={s.btnRed} onClick={() => setConfirmDelete(!confirmDelete)}>Delete job</button>
+                {isPrincipal(userRole) && (job.archived
+                  ? <button type="button" style={s.btnGray} onClick={() => setJobArchived(false)}>Unarchive job</button>
+                  : <button type="button" style={s.btnGray} onClick={() => setJobArchived(true)}>Archive job</button>)}
+                {isPrincipal(userRole) && <button type="button" style={s.btnRed} onClick={() => setConfirmDelete(!confirmDelete)}>Delete job</button>}
               </div>
 
-              {confirmDelete && (
+              {confirmDelete && isPrincipal(userRole) && (
                 <div style={s.confirmBox}>
-                  <p style={{ color: '#dc2626', fontSize: '14px', margin: '0 0 1rem' }}>This will permanently delete the job, all billing submissions, and all sub assignments. This cannot be undone.</p>
+                  <p style={{ color: '#dc2626', fontSize: '14px', margin: '0 0 1rem' }}>This permanently deletes the job and its sub assignments. It is refused if the job has any sub billings, a closed draw, a submitted/certified/paid owner pay app, a signed subcontract, drawn or paid costs, or an issued reimbursement invoice — archive those jobs instead. This cannot be undone.</p>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button type="button" onClick={deleteJob} style={s.btnRed}>Yes, delete permanently</button>
+                    <button type="button" onClick={deleteJob} disabled={deletingJob} style={{ ...s.btnRed, opacity: deletingJob ? 0.6 : 1 }}>{deletingJob ? 'Deleting...' : 'Yes, delete permanently'}</button>
                     <button type="button" onClick={() => setConfirmDelete(false)} style={s.btnGray}>Cancel</button>
                   </div>
                 </div>
@@ -10061,7 +10125,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                       )}
                       {rfiError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', marginBottom: '10px' }}>{rfiError}</div>}
-                      {respondingRfi === rfi.id ? (
+                      {rfi.status === 'closed' ? (
+                        <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>This RFI is closed.</p>
+                      ) : respondingRfi === rfi.id ? (
                         <div>
                           <label style={s.label}>Response</label>
                           <textarea rows={4} style={{ ...s.textarea, marginBottom: '10px' }} value={rfiResponse} onChange={e => setRfiResponse(e.target.value)} placeholder="Type your response..." />
@@ -11854,18 +11920,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '8px' }}>
                       {f.file_type === 'xml' && (
                         <button style={s.btnSmallOrange} onClick={async () => {
-                          const { data } = await supabase.storage.from('schedule-files').createSignedUrl(f.storage_path, 3600)
-                          if (data?.signedUrl) {
-                            const res = await fetch(data.signedUrl)
+                          try {
+                            const url = await scheduleFileUrl(f.storage_path)
+                            const res = await fetch(url)
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`)
                             const text = await res.text()
                             const tasks = parseProjectXml(text)
                             setParsedTasks(tasks)
                             setParsedFrom(f.file_name)
+                          } catch (e) {
+                            alert('Could not read schedule file: ' + e.message)
                           }
                         }}>Parse Tasks</button>
                       )}
                       <button style={s.btnSmall} onClick={() => openScheduleFile(f.storage_path)}>Open</button>
-                      <button style={s.btnSmallRed} onClick={() => deleteScheduleFile(f.id, f.storage_path)}>Delete</button>
+                      <button style={s.btnSmallRed} onClick={() => deleteScheduleFile(f.id, f.storage_path, f.file_name)}>Delete</button>
                     </div>
                   </div>
                 ))}

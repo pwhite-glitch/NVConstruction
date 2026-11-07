@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
 // Owner-only tool. 'principal' is the real role (no override); the rest are previews.
@@ -31,7 +30,6 @@ function getCookie(name) {
 }
 
 export default function DevRoleSwitcher() {
-  const router = useRouter()
   const [open, setOpen]               = useState(false)
   const [tab, setTab]                 = useState('local') // 'local' | 'server'
   const [devRole, setDevRole]         = useState(null)
@@ -68,8 +66,13 @@ export default function DevRoleSwitcher() {
       setDevRole(role.value)
     }
     setOpen(false)
-    router.push(role.portal)
-    router.refresh()
+    // Full navigation so the page remounts and reloads with the new role (a
+    // client-side push to the page you're already on kept the old role's job
+    // list, e.g. APM-scoped jobs after switching back to Owner). Staying on the
+    // same page keeps its query (?tab=...) and hash.
+    const { pathname, search, hash } = window.location
+    if (pathname === role.portal) window.location.replace(pathname + search + hash)
+    else window.location.assign(role.portal)
   }
 
   async function startServerPreview() {
@@ -112,7 +115,9 @@ export default function DevRoleSwitcher() {
   const selectStyle = { width: '100%', padding: '6px 8px', borderRadius: '6px', background: '#1e1e1e', border: '1px solid #333', color: '#ccc', fontSize: '12px', marginBottom: '6px', cursor: 'pointer' }
 
   return (
-    <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999, fontFamily: 'system-ui, sans-serif' }}>
+    // Bottom-LEFT: the job pages' Ask AI button sits bottom-right. On phones the
+    // nv-dev-badge class lifts it above the dashboard's bottom nav (globals.css).
+    <div className="nv-dev-badge" style={{ position: 'fixed', bottom: 'calc(16px + env(safe-area-inset-bottom))', left: '16px', zIndex: 9999, fontFamily: 'system-ui, sans-serif', maxWidth: 'calc(100vw - 32px)' }}>
       {open && (
         <div style={panelBg}>
           {/* Tab strip */}

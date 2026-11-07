@@ -2,12 +2,23 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
-import { atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
+import { atLeastPM, isJobLimited, isOnJob, isPrincipal, homePathForRole, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { todayCentral } from '../../lib/central-date'
-import { openFile } from '../../lib/open-file'
+import { openFile, openHtml, openStorageFile } from '../../lib/open-file'
 import { dcBilledLockReason } from '../../lib/dc-guards'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
-import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, applyDelta } from '../../lib/residential-money'
+import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, applyDelta, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
+import { ownerDrawFunding, pctFunded, priorDrawnByLine, buildDrawSchedule, drawFundedAmount, isDrawEditable, round2 } from '../../lib/owner-draws'
+import { buildDrawPackageHtml, buildOwnerDrawHtml, buildChangeOrderHtml, buildBillingWaiverHtml, buildCompletionReportHtml } from '../../lib/residential-print'
+import { safePageTab, wrongPageHref } from '../../lib/job-links'
+import { safeFileName } from '../../lib/storage-path'
+import { JOB_DOC_CATEGORIES, docCategoryLabel } from '../../lib/job-docs'
+import { allocateJobBillings } from '../../lib/contract-billing'
+import { billingDeleteBlock } from '../../lib/billing-fields'
+import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
+import { isSubcontractSigned } from '../../lib/signing'
+import { sameCompany } from '../../lib/company-name'
+import { isBeforeTodayCentral } from '../../lib/central-date'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,23 +27,6 @@ const supabase = createClient(
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—'
-
-const TABS = [
-  { id: 'details',      label: 'Details' },
-  { id: 'budget',       label: 'Budget' },
-  { id: 'costs',        label: 'Costs' },
-  { id: 'subs',         label: 'Subs' },
-  { id: 'changeorders', label: 'Change Orders' },
-  { id: 'billing',      label: 'Billing' },
-  { id: 'ownerdraw',    label: 'Owner/Lender Draw' },
-  { id: 'inspections',  label: 'Inspections' },
-  { id: 'lienWaivers',  label: 'Lien Waivers' },
-  { id: 'punchlist',    label: 'Punch List' },
-  { id: 'schedule',     label: 'Schedule' },
-  { id: 'photos',       label: 'Photos' },
-  { id: 'documents',    label: 'Documents' },
-  { id: 'contacts',     label: 'Contacts' },
-]
 
 const s = {
   page: { minHeight: '100vh', background: '#f4f6f8', color: '#111827', fontFamily: "'Inter', sans-serif", fontSize: '14px' },
@@ -79,6 +73,51 @@ const s = {
 const statusColor = { pending: 'orange', approved: 'green', rejected: 'red', active: 'green', complete: 'gray', open: 'orange', closed: 'gray', planned: 'blue', 'in-progress': 'orange', done: 'green' }
 const milestoneColor = { pending: 'orange', complete: 'green', delayed: 'red' }
 
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const ordinal = n => { const t = n % 10, h = n % 100; return n + (h >= 11 && h <= 13 ? 'th' : t === 1 ? 'st' : t === 2 ? 'nd' : t === 3 ? 'rd' : 'th') }
+
+// "Bills on the 25th of each month" / "Bills every Friday (bi-weekly)" from the
+// jobs <prefix>_billing_* columns (same reading as the commercial page).
+function billingScheduleLabel(job, prefix) {
+  const freq = job?.[`${prefix}_billing_frequency`]
+  const due = job?.[`${prefix}_billing_due`]
+  if (!freq || due === null || due === undefined || due === '') return null
+  const n = Number(due)
+  return freq === 'monthly' ? `Bills on the ${ordinal(n)} of each month` : `Bills every ${DAYS[n] || '?'}${freq === 'biweekly' ? ' (bi-weekly)' : ''}`
+}
+
+// Frequency + first due date → due day and anchor, exactly like the commercial Details.
+function BillingScheduleFields({ title, prefix, form, setForm }) {
+  const fk = `${prefix}_billing_frequency`, sk = `${prefix}_billing_start`, dk = `${prefix}_billing_due`, ak = `${prefix}_billing_anchor`
+  const freq = form[fk] || 'monthly'
+  const label = billingScheduleLabel({ ...form, [fk]: freq }, prefix)
+  return (
+    <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px' }}>
+      <p style={{ margin: '0 0 10px', fontSize: '11px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase' }}>{title}</p>
+      <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '6px' }}>
+        <div>
+          <label style={s.label}>Frequency</label>
+          <select style={s.select} value={freq} onChange={e => setForm(f => ({ ...f, [fk]: e.target.value, [dk]: '', [sk]: '', [ak]: '' }))}>
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Bi-weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <div>
+          <label style={s.label}>First billing due date</label>
+          <input type="date" style={s.input} value={form[sk] || ''} onChange={e => {
+            const v = e.target.value
+            if (!v) { setForm(f => ({ ...f, [sk]: '', [ak]: '', [dk]: '' })); return }
+            const [yr, mo, dy] = v.split('-').map(Number)
+            setForm(f => ({ ...f, [fk]: freq, [sk]: v, [ak]: v, [dk]: freq === 'monthly' ? dy : new Date(yr, mo - 1, dy).getDay() }))
+          }} />
+        </div>
+      </div>
+      <p style={{ fontSize: '12px', color: '#4b5563', margin: 0 }}>{label || 'No schedule set.'}</p>
+    </div>
+  )
+}
+
 function ResidentialJobDetailInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -89,7 +128,38 @@ function ResidentialJobDetailInner() {
   const [notAssigned, setNotAssigned] = useState(false)
   const [job, setJob] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('details')
+  const [activeTab, setActiveTab] = useState('overview')
+  const [userRole, setUserRole] = useState(null) // effective role (Owner previewing PM/APM narrows the UI only)
+  const [hideBudget, setHideBudget] = useState(false)
+  const [loadErrors, setLoadErrors] = useState({}) // { area: message } — failed reads are shown, not hidden
+  const [toast, setToast] = useState(null) // { ok, text }
+  const [completing, setCompleting] = useState(false)
+  const [teamMembers, setTeamMembers] = useState([])
+  const [contractSov, setContractSov] = useState({}) // { [subcontract_id]: subcontract_sov_lines }
+  const [subCOs, setSubCOs] = useState([]) // change_orders on this job's subcontracts
+  const [reviewingSubCOId, setReviewingSubCOId] = useState(null)
+  const [billingLines, setBillingLines] = useState([]) // billing_sov_lines for this job (contract credit)
+  const [openCompanyId, setOpenCompanyId] = useState(null)
+  const [fieldData, setFieldData] = useState(null) // { reports, rfis, deliveries } — read-only Field tab
+  const [photoUrls, setPhotoUrls] = useState({})
+  const [lightbox, setLightbox] = useState(null) // index into photos
+  const [deletingPhoto, setDeletingPhoto] = useState(null)
+  const [legacyDocs, setLegacyDocs] = useState([]) // job_docs (read-only bridge)
+  const [docCategory, setDocCategory] = useState('plans')
+  const [legacyPunch, setLegacyPunch] = useState([]) // res_punch_list (read-only; empty live)
+  const [punchBusyId, setPunchBusyId] = useState(null)
+  const [ownerDrawsMigrated, setOwnerDrawsMigrated] = useState(null) // migration 046 present?
+  const [drawEdit, setDrawEdit] = useState(null) // { id|null, title, period_start, period_end, notes, amount_requested, lines: {budget_item_id: amount} }
+  const [drawBusy, setDrawBusy] = useState(false)
+  const [drawMsg, setDrawMsg] = useState('')
+  const [fundingDraw, setFundingDraw] = useState(null) // { id, amount_funded, funded_date }
+  const [inspectionMsg, setInspectionMsg] = useState('')
+  const [inspEdit, setInspEdit] = useState(null) // { id, mode: 'result'|'reschedule'|'reinspect', result, date, notes }
+  const [waiverMsg, setWaiverMsg] = useState('')
+  const [punchMsg, setPunchMsg] = useState('')
+  const [contactMsg, setContactMsg] = useState('')
+  const [photoMsg, setPhotoMsg] = useState('')
+  const [docMsg, setDocMsg] = useState('')
 
   // Details edit
   const [editingDetails, setEditingDetails] = useState(false)
@@ -209,7 +279,7 @@ function ResidentialJobDetailInner() {
   // Punch List
   const [punchList, setPunchList] = useState([])
   const [showAddPunch, setShowAddPunch] = useState(false)
-  const [newPunch, setNewPunch] = useState({ description: '', assigned_to: '', subcontract_id: '', due_date: '', status: 'open', notes: '' })
+  const [newPunch, setNewPunch] = useState({ title: '', description: '', subcontract_id: '', assigned_company: '', due_date: '' })
   const [addingPunch, setAddingPunch] = useState(false)
 
   // Contacts
@@ -222,39 +292,104 @@ function ResidentialJobDetailInner() {
     const jobId = searchParams.get('id')
     const tab = searchParams.get('tab')
     if (jobId) setId(jobId)
-    if (tab) setActiveTab(tab)
+    // Unknown tab keys (e.g. a commercial-only tab) fall back to Overview, never a blank pane.
+    setActiveTab(safePageTab(tab, true, 'overview'))
   }, [searchParams])
 
+  // Keep the open tab in the URL (bookmark / refresh), like the commercial page.
+  useEffect(() => {
+    if (!id || typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    params.set('id', id)
+    params.set('tab', activeTab)
+    const next = `${window.location.pathname}?${params.toString()}${window.location.hash || ''}`
+    if (next !== window.location.pathname + window.location.search + (window.location.hash || '')) window.history.replaceState(window.history.state, '', next)
+  }, [id, activeTab])
+
   useEffect(() => { if (id) loadAll() }, [id])
+  useEffect(() => { if (id && job && activeTab === 'field' && !fieldData) loadFieldData() }, [id, job, activeTab])
+  useEffect(() => {
+    if (lightbox === null) return
+    const onKey = e => {
+      if (e.key === 'Escape') setLightbox(null)
+      if (e.key === 'ArrowRight') setLightbox(i => (i === null ? i : Math.min(photos.length - 1, i + 1)))
+      if (e.key === 'ArrowLeft') setLightbox(i => (i === null ? i : Math.max(0, i - 1)))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox, photos.length])
+
+  // Record (or clear) a failed read so the page shows it instead of an empty tab.
+  function noteLoad(area, error) {
+    setLoadErrors(prev => {
+      const next = { ...prev }
+      if (error) next[area] = error.message || String(error)
+      else delete next[area]
+      return next
+    })
+  }
+  function flash(ok, text) {
+    setToast({ ok, text })
+    setTimeout(() => setToast(t => (t && t.text === text ? null : t)), ok ? 4000 : 9000)
+  }
+  // fetch → { ok, data, error } with the server's error text
+  async function api(url, opts = {}) {
+    try {
+      const res = await fetch(url, opts)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) return { ok: false, data, error: data.error || `server returned ${res.status}` }
+      return { ok: true, data }
+    } catch (e) {
+      return { ok: false, data: {}, error: e.message || 'network error' }
+    }
+  }
+  const jsonOpts = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 
   async function loadAll() {
     setLoading(true)
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
 
-    const [profileRes, jobRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-      supabase.from('jobs').select('*').eq('id', id).single(),
-    ])
-    if (profileRes.data) { setProfile(profileRes.data) } else { setProfileLoadError(true) }
+    const profileRes = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    const prof = profileRes.data
+    if (!prof) { setProfileLoadError(true); setLoading(false); return }
+    // Same routing as the commercial page: subs to /submit; client owners and reps to their portal.
+    if (!['principal', 'pm', 'apm', 'admin', 'super'].includes(prof.role)) { router.push(homePathForRole(prof.role)); return }
+    if (isPrincipal(prof.role)) localStorage.setItem('nvc_pm_session', '1')
+    const devRole = localStorage.getItem('nvc_dev_role')
+    const effectiveRole = (['pm', 'apm'].includes(devRole) && isPrincipal(prof.role)) ? devRole : prof.role
+    setProfile({ ...prof, role: effectiveRole })
+    setUserRole(effectiveRole)
+    const hide = !!prof.hide_budget
+    setHideBudget(hide)
     // PM/APM may only open their jobs (assignment OR pm_email); principal/admin see every job
-    if (isJobLimited(profileRes.data?.role)) {
-      const access = await isOnJob(supabase, { role: profileRes.data.role, userId: session.user.id, email: session.user.email }, id)
-      if (!access.ok) { setNotAssigned(true); setLoading(false); return }
+    if (isJobLimited(effectiveRole)) {
+      const access = await isOnJob(supabase, { role: effectiveRole, userId: session.user.id, email: session.user.email }, id)
+      if (!access.ok) {
+        setNotAssigned(true)
+        if (access.error) setJobErrMsg('Could not check your access to this job: ' + (access.error.message || 'unknown error'))
+        setLoading(false)
+        return
+      }
     }
+    const jobRes = await supabase.from('jobs').select('*').eq('id', id).single()
     if (jobRes.error || !jobRes.data) {
       setJobErrMsg(`Job not found (id: ${id}) — ${jobRes.error ? jobRes.error.code + ': ' + jobRes.error.message : 'no data returned'}`)
       setLoading(false)
       return
     }
+    // Commercial job opened here (old link / bookmark): send it to its own page once.
+    const dest = wrongPageHref(jobRes.data, 'residential', new URLSearchParams(window.location.search).get('tab'))
+    if (dest) { router.replace(dest); return }
     setJob(jobRes.data)
-    if (jobRes.data) setDetailsForm(jobRes.data)
+    setDetailsForm(jobRes.data)
 
     await Promise.all([
-      loadBudget(),
+      loadBudget(hide),
       loadContracts(),
       loadSubDirectory(),
       loadChangeOrders(),
+      loadSubCOs(),
       loadBillingSubmissions(),
       loadDrawRequests(),
       loadMilestones(),
@@ -270,125 +405,229 @@ function ResidentialJobDetailInner() {
     setLoading(false)
   }
 
-  async function loadBudget() {
-    const { data } = await supabase.from('budget_items').select('*').eq('job_id', id).order('cost_code')
+  async function loadBudget(hide = hideBudget) {
+    // hide_budget: only what other tabs need to name a line; no Cost/Bank amounts.
+    const cols = hide ? 'id, job_id, description, cost_code, sort_order' : '*'
+    const { data, error } = await supabase.from('budget_items').select(cols).eq('job_id', id).order('cost_code')
+    noteLoad('Budget', error)
     setBudgetItems(data || [])
   }
 
   async function loadContracts() {
-    const { data } = await supabase.from('subcontracts').select('*').eq('job_id', id).order('created_at')
+    const { data, error } = await supabase.from('subcontracts').select('*').eq('job_id', id).order('created_at')
+    noteLoad('Subcontracts', error)
     setContracts(data || [])
+    const ids = (data || []).map(c => c.id)
+    if (!ids.length) { setContractSov({}); return }
+    const { data: lines, error: sErr } = await supabase.from('subcontract_sov_lines').select('*').in('subcontract_id', ids).order('sort_order')
+    noteLoad('Subcontract SOV', sErr)
+    const map = {}
+    for (const l of lines || []) (map[l.subcontract_id] ||= []).push(l)
+    setContractSov(map)
   }
 
   async function loadSubDirectory() {
-    const { data } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
+    const { data, error } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
+    noteLoad('Sub directory', error)
     setSubDirectory(data || [])
   }
 
   async function loadChangeOrders() {
-    const { data } = await supabase.from('prime_change_orders').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('prime_change_orders').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    noteLoad('Change orders', error)
     setChangeOrders(data || [])
   }
 
+  // Sub change orders live on change_orders (no job_id): join through the contract.
+  async function loadSubCOs() {
+    const { data, error } = await supabase
+      .from('change_orders')
+      .select('*, subcontracts!inner(id, job_id, vendor_name)')
+      .eq('subcontracts.job_id', id)
+      .order('created_at', { ascending: false })
+    noteLoad('Sub change orders', error)
+    setSubCOs(data || [])
+  }
+
   async function loadBillingSubmissions() {
-    const { data } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
+    const { data, error } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
+    noteLoad('Sub billing', error)
     setBillingSubmissions(data || [])
+    // Line split per contract (same as commercial). Paged: a job can pass 1000 rows.
+    const PAGE = 1000
+    const all = []
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error: lErr } = await supabase
+        .from('billing_sov_lines')
+        .select('billing_submission_id, sov_line_id, amount, subcontract_sov_lines(subcontract_id), billing_submissions!inner(job_id)')
+        .eq('billing_submissions.job_id', id)
+        .order('billing_submission_id')
+        .order('sov_line_id')
+        .range(from, from + PAGE - 1)
+      if (lErr) { noteLoad('Billing lines', lErr); return }
+      all.push(...(page || []))
+      if (!page || page.length < PAGE) break
+    }
+    noteLoad('Billing lines', null)
+    setBillingLines(all)
   }
 
   async function loadDrawRequests() {
-    const res = await fetch(`/api/draw-requests?job_id=${id}`)
-    if (!res.ok) return
-    const { draws } = await res.json()
-    setDrawRequests(draws || [])
+    const r = await api(`/api/draw-requests?job_id=${encodeURIComponent(id)}`)
+    noteLoad('Draw requests', r.ok ? null : r.error)
+    if (r.ok) setDrawRequests(r.data.draws || [])
   }
 
   async function loadMilestones() {
     const { data, error } = await supabase.from('milestones').select('*').eq('job_id', id).order('due_date', { ascending: true })
-    if (error) console.error('Load milestones failed:', error.message)
+    noteLoad('Schedule', error)
     setMilestones(data || [])
   }
 
+  // Shared photos: job_photos (field app / this page) + daily report photos, all in
+  // the private daily-report-photos bucket through signed URLs (same as commercial).
   async function loadPhotos() {
-    const { data } = await supabase.from('job_photos').select('*').eq('job_id', id).order('created_at', { ascending: false })
-    setPhotos(data || [])
+    const [{ data: standalone, error: e1 }, { data: reports, error: e2 }] = await Promise.all([
+      supabase.from('job_photos').select('id, job_id, storage_path, file_name, caption, taken_at, created_at').eq('job_id', id).order('taken_at', { ascending: false }),
+      supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
+    ])
+    noteLoad('Photos', e1 || e2)
+    const all = [
+      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: (p.taken_at || p.created_at || '').split('T')[0], name: p.file_name })),
+      ...(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id }))),
+    ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+    setPhotos(all)
+    const paths = [...new Set(all.map(p => p.path))]
+    if (!paths.length) return
+    const thumbs = paths.filter(p => /\.jpg$/i.test(p)).map(p => p.replace(/\.jpg$/i, '_thumb.jpg'))
+    const { data: signed, error: sErr } = await supabase.storage.from('daily-report-photos').createSignedUrls([...paths, ...thumbs], 7200)
+    if (sErr) noteLoad('Photo links', sErr)
+    if (signed) setPhotoUrls(prev => { const u = { ...prev }; signed.forEach(d => { if (d.signedUrl) u[d.path] = d.signedUrl }); return u })
   }
 
+  // Canonical job_documents (private job-documents bucket) + the legacy job_docs rows, read-only.
   async function loadDocuments() {
-    try {
-      const res = await fetch(`/api/job-docs?job_id=${id}`)
-      if (!res.ok) return
-      const json = await res.json()
-      setDocuments(json.docs || json.data || [])
-    } catch {}
+    const r = await api(`/api/job-docs?job_id=${encodeURIComponent(id)}&include=documents`)
+    noteLoad('Documents', r.ok ? null : r.error)
+    if (!r.ok) return
+    setDocuments(r.data.documents || [])
+    setLegacyDocs(r.data.data || [])
   }
 
   async function loadContacts() {
-    const { data } = await supabase.from('job_contacts').select('*').eq('job_id', id).order('name')
+    const { data, error } = await supabase.from('job_contacts').select('*').eq('job_id', id).order('name')
+    noteLoad('Contacts', error)
     setContacts(data || [])
   }
 
   async function loadInspections() {
-    const { data } = await supabase.from('res_inspections').select('*').eq('job_id', id).order('scheduled_date')
+    const { data, error } = await supabase.from('res_inspections').select('*').eq('job_id', id).order('scheduled_date')
+    noteLoad('Inspections', error)
     setInspections(data || [])
   }
 
   async function loadLienWaivers() {
-    const { data } = await supabase.from('res_lien_waivers').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('res_lien_waivers').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    noteLoad('Lien waivers', error)
     setLienWaivers(data || [])
   }
 
   async function loadOwnerDraws() {
-    const { data } = await supabase.from('res_owner_draws').select('*').eq('job_id', id).order('draw_number')
-    setOwnerDraws(data || [])
+    const r = await api(`/api/res-owner-draws?job_id=${encodeURIComponent(id)}`)
+    noteLoad('Owner draws', r.ok ? null : r.error)
+    if (!r.ok) return
+    setOwnerDraws(r.data.draws || [])
+    setOwnerDrawsMigrated(!!r.data.migrated)
   }
 
+  // Shared punch list (punch_list_items via /api/punch-list): the field app and sub
+  // portal see the same items. res_punch_list is legacy (empty live) and read-only here.
   async function loadPunchList() {
-    const { data } = await supabase.from('res_punch_list').select('*').eq('job_id', id).order('created_at', { ascending: false })
-    setPunchList(data || [])
+    const r = await api(`/api/punch-list?job_id=${encodeURIComponent(id)}`)
+    noteLoad('Punch list', r.ok ? null : r.error)
+    if (r.ok) setPunchList(r.data.items || [])
+    const { data: legacy, error } = await supabase.from('res_punch_list').select('*').eq('job_id', id).order('created_at', { ascending: false })
+    if (!error) setLegacyPunch(legacy || [])
   }
 
   async function loadDirectCosts() {
-    const res = await fetch(`/api/direct-costs?job_id=${id}`)
-    if (!res.ok) return
-    const json = await res.json()
-    setDirectCosts(json.data || [])
+    const r = await api(`/api/direct-costs?job_id=${encodeURIComponent(id)}`)
+    noteLoad('Direct costs', r.ok ? null : r.error)
+    if (r.ok) setDirectCosts(r.data.data || [])
   }
 
+  // Read-only Field tab: what the super logs in the field app on this job.
+  async function loadFieldData() {
+    const [rep, rfis, del] = await Promise.all([
+      supabase.from('daily_reports').select('id, report_date, work_performed, issues, photos').eq('job_id', id).order('report_date', { ascending: false }).limit(60),
+      supabase.from('rfis').select('*').eq('job_id', id).order('created_at', { ascending: false }),
+      supabase.from('deliveries').select('id, material, vendor, status, expected_date, received_date').eq('job_id', id).order('expected_date', { ascending: true }),
+    ])
+    noteLoad('Field', rep.error || rfis.error || del.error)
+    setFieldData({ reports: rep.data || [], rfis: rfis.data || [], deliveries: del.data || [] })
+  }
+
+  async function loadTeamMembers() {
+    if (teamMembers.length) return
+    const r = await api('/api/team-members')
+    if (r.ok) setTeamMembers(r.data.members || [])
+    else setDetailsMsg('Error: could not load the team list — ' + r.error)
+  }
+
+  // Details save goes through /api/jobs/details: allow-listed fields, checked on the
+  // server (status spelling, PM is a staff login, billing schedule ranges, archive rule).
   async function saveDetails() {
     setSavingDetails(true)
     setDetailsMsg('')
-    // Guard against accidentally clearing a contract value that exists
-    const newCV = detailsForm.contract_value !== '' && detailsForm.contract_value != null
-      ? parseFloat(detailsForm.contract_value)
-      : null
-    if (!newCV && job.contract_value) {
-      const confirmed = window.confirm(
-        `Contract value will be cleared (currently $${Number(job.contract_value).toLocaleString()}). Are you sure?`
-      )
+    const newCV = detailsForm.contract_value !== '' && detailsForm.contract_value != null ? Number(detailsForm.contract_value) : null
+    if (newCV === null && job.contract_value) {
+      const confirmed = window.confirm(`Contract value will be cleared (currently $${Number(job.contract_value).toLocaleString()}). Are you sure?`)
       if (!confirmed) { setSavingDetails(false); return }
     }
-    const { error } = await supabase.from('jobs').update({
-      project_name: detailsForm.project_name,
-      job_number: detailsForm.job_number,
-      location: detailsForm.location,
-      start_date: detailsForm.start_date || null,
-      contract_value: newCV,
-      owner_name: detailsForm.owner_name,
-      owner_email: detailsForm.owner_email,
-      owner_phone: detailsForm.owner_phone,
-      owner_company: detailsForm.owner_company,
-      status: detailsForm.status,
-      scope_notes: detailsForm.scope_notes || null,
-    }).eq('id', id)
-    if (error) { setDetailsMsg('Error: ' + error.message) }
-    else {
-      const { data } = await supabase.from('jobs').select('*').eq('id', id).single()
-      if (data) { setJob(data); setDetailsForm(data) }
-      setEditingDetails(false)
-      setDetailsMsg('Saved')
-      setTimeout(() => setDetailsMsg(''), 3000)
+    const pmChanged = (detailsForm.pm_email || '') !== (job.pm_email || '')
+    if (pmChanged && job.pm_email && !window.confirm(`Change the PM from ${job.pm_email} to ${detailsForm.pm_email || 'nobody'}?\n\nJob assignments are not changed. If ${job.pm_email} only had access as the listed PM, they lose access to this job unless they are assigned.`)) { setSavingDetails(false); return }
+    const fields = {}
+    for (const k of ['project_name', 'job_number', 'location', 'start_date', 'owner_name', 'owner_email', 'owner_phone', 'owner_company', 'status', 'scope_notes', 'pm_email', 'permit_number', 'permit_date',
+      'sub_billing_start', 'sub_billing_frequency', 'sub_billing_due', 'sub_billing_anchor', 'owner_billing_start', 'owner_billing_frequency', 'owner_billing_due', 'owner_billing_anchor']) {
+      if (detailsForm[k] !== undefined) fields[k] = detailsForm[k]
     }
+    fields.contract_value = newCV
+    const r = await api('/api/jobs/details', jsonOpts('POST', { id, fields }))
     setSavingDetails(false)
+    if (!r.ok) { setDetailsMsg('Error: ' + r.error); return } // form stays open with the user's input
+    const fresh = r.data.job || job
+    setJob(fresh)
+    setDetailsForm(fresh)
+    setEditingDetails(false)
+    setDetailsMsg(r.data.unarchived ? 'Saved and unarchived (status set to Active).' : 'Saved')
+    setTimeout(() => setDetailsMsg(''), 4000)
+  }
+
+  // Complete Job & Report: status → complete through the same checked save
+  // (not Archive), then the residential completion report. A failed save
+  // reports the failure and no report is opened.
+  async function completeJob(markComplete) {
+    if (markComplete && !window.confirm('Mark this job as complete and generate the completion report?\n\nThis sets Status to Complete. It does not archive the job.')) return
+    setCompleting(true)
+    let saveErr = null
+    let saved = null
+    try {
+      // openHtml opens the window inside the tap (iOS), then fills it — or closes it on failure.
+      const shown = await openHtml(async () => {
+        if (markComplete) {
+          const r = await api('/api/jobs/details', jsonOpts('POST', { id, fields: { status: 'complete' } }))
+          if (!r.ok) { saveErr = r.error; return null }
+          saved = r.data.job || { ...job, status: 'complete' }
+        }
+        return buildCompletionReportHtml({ job: saved || job, s: summaryFigures(), logoUrl: `${window.location.origin}/logo.png` })
+      })
+      if (saveErr) { flash(false, 'Job was NOT marked complete: ' + saveErr); return }
+      if (saved) { setJob(saved); setDetailsForm(saved) }
+      if (markComplete) flash(true, shown ? 'Job marked complete.' : 'Job marked complete. Allow pop-ups to see the report.')
+      else if (!shown) flash(false, 'Could not open the report. Allow pop-ups for this site.')
+    } finally {
+      setCompleting(false)
+    }
   }
 
   // Calls /api/budget-items and returns { ok, data }. On failure, shows the
@@ -575,6 +814,40 @@ function ResidentialJobDetailInner() {
     }
   }
 
+  // Sub change orders: same review as the commercial page (status from pending only;
+  // approved ones get their SOV line server-side). They change committed cost, never
+  // the homeowner contract or the budget.
+  async function reviewSubCO(co, status) {
+    if (co.status !== 'pending') return
+    if (!window.confirm(`${status === 'approved' ? 'Approve' : 'Reject'} ${coNumberLabel(co, 'sub')} from ${co.subcontracts?.vendor_name || 'this sub'} for $${fmt(co.amount)}?`)) return
+    setReviewingSubCOId(co.id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const { data, error } = await supabase.from('change_orders')
+        .update({ status, reviewed_by: session?.user?.id || null, reviewed_at: new Date().toISOString() })
+        .eq('id', co.id).eq('status', 'pending').select('id')
+      if (error) { flash(false, 'Change order not updated: ' + error.message); return }
+      if (!data?.length) { flash(false, 'This change order was already handled. Refreshed.'); return }
+      if (status === 'approved') {
+        const r = await api('/api/sov-co-backfill', jsonOpts('POST', { subcontract_ids: [co.subcontract_id] }))
+        const why = !r.ok ? r.error : (r.data.errors || []).join('; ')
+        if (why) flash(false, 'Change order approved, but its SOV line could not be added to the subcontract: ' + why)
+        else flash(true, 'Sub change order approved.')
+      } else flash(true, 'Sub change order rejected.')
+    } finally {
+      await Promise.all([loadSubCOs(), loadContracts()])
+      setReviewingSubCOId(null)
+    }
+  }
+
+  // Homeowner change order print with signature lines. Printing changes nothing:
+  // not the base contract, not the budget, not the CO status.
+  function printCO(co) {
+    const approvedBefore = changeOrders.filter(c => c.status === 'approved' && c.id !== co.id).reduce((a, c) => a + Number(c.amount || 0), 0)
+    const html = buildChangeOrderHtml({ job, co, coLabel: coNumberLabel(co, 'prime'), baseContract: Number(job.contract_value || 0), approvedBefore, logoUrl: `${window.location.origin}/logo.png` })
+    openHtml(async () => html).then(shown => { if (!shown) flash(false, 'Could not open the print window. Allow pop-ups for this site.') })
+  }
+
   async function addSub(e) {
     e.preventDefault()
     setAddingSub(true)
@@ -625,7 +898,8 @@ function ResidentialJobDetailInner() {
 
   async function deleteSubcontract(contractId) {
     if (!confirm('Remove this subcontractor?')) return
-    await fetch('/api/subcontracts', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: contractId }) })
+    const r = await api('/api/subcontracts', jsonOpts('DELETE', { id: contractId }))
+    if (!r.ok) setSubMsg('Error: ' + r.error)
     await loadContracts()
   }
 
@@ -709,6 +983,9 @@ function ResidentialJobDetailInner() {
   }
 
   async function deleteBilling(billingId) {
+    const b = billingSubmissions.find(x => x.id === billingId)
+    const block = b && billingDeleteBlock(b)
+    if (block) { alert(block); return }
     if (!confirm('Delete this billing submission?')) return
     const { data: { session: bSession } } = await supabase.auth.getSession()
     const res = await fetch('/api/billing-entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId }) })
@@ -753,9 +1030,11 @@ function ResidentialJobDetailInner() {
     setSavingDrawBillings(true)
     try {
       const { data: { session: bSession } } = await supabase.auth.getSession()
-      await Promise.all(drawAddBillingIds.map(bid =>
-        fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
+      const results = await Promise.all(drawAddBillingIds.map(bid =>
+        api('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: bid, draw_request_id: drawId }) })
       ))
+      const failed = results.filter(r => !r.ok)
+      if (failed.length) alert(`${failed.length} billing(s) were not added to the draw: ` + failed.map(r => r.error).join('; '))
       setDrawAddBillingIds([])
       await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
     } catch {
@@ -767,87 +1046,21 @@ function ResidentialJobDetailInner() {
 
   async function removeBillingFromDraw(billingId) {
     const { data: { session: bSession } } = await supabase.auth.getSession()
-    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, draw_request_id: null }) })
+    const r = await api('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, draw_request_id: null }) })
+    if (!r.ok) alert('Could not take the billing off the draw: ' + r.error)
     await Promise.all([loadDrawRequests(), loadBillingSubmissions()])
   }
 
+  // Internal draw package. Every value (sub-typed descriptions included) is escaped
+  // in lib/residential-print.js before it reaches the print window.
   function printDraw(dr) {
-    const drCosts = directCosts.filter(c => c.draw_request_id === dr.id)
-    const drBillings = billingSubmissions.filter(b => b.draw_request_id === dr.id)
-    const costTotal = packagedDrawTotal(dr.id, drCosts, [])
-    const billingTotal = packagedDrawTotal(dr.id, [], drBillings)
-    const grandTotal = costTotal + billingTotal
-    const fmtN = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    const jobName = job?.project_name || job?.location || 'Project'
-    const jobAddress = job?.location && job?.project_name ? job.location : ''
-    const logoUrl = `${window.location.origin}/logo.png`
-    const drawNumStr = `Draw #${String(dr.draw_number || '').padStart(3, '0')}`
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${dr.title}</title><style>
-      *{box-sizing:border-box}
-      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111;margin:0;padding:0;font-size:13px;background:#fff}
-      .brand-bar{display:flex;align-items:center;justify-content:space-between;padding:20px 32px 16px;border-bottom:3px solid #e8590c}
-      .brand-left{display:flex;align-items:center;gap:12px}
-      .brand-name{font-size:15px;font-weight:700;color:#111;line-height:1.1}
-      .brand-tagline{font-size:11px;color:#888;letter-spacing:.5px;margin-top:1px}
-      .draw-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#aaa;text-align:right}
-      .draw-num{font-size:22px;font-weight:800;color:#e8590c;line-height:1;text-align:right}
-      .accent-bar{height:4px;background:linear-gradient(90deg,#e8590c,#f97316 60%,transparent)}
-      .content{padding:24px 32px 40px}
-      .doc-title{font-size:20px;font-weight:700;margin:0 0 4px}
-      .doc-meta{color:#666;font-size:12px;margin:0 0 24px}
-      .section{margin-bottom:24px}
-      .section-title{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#888;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:10px}
-      table{width:100%;border-collapse:collapse}
-      td,th{padding:7px 8px;text-align:left;border-bottom:1px solid #eee;font-size:12.5px}
-      th{font-weight:600;color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.5px;background:#f9f9f9}
-      .num{text-align:right;font-variant-numeric:tabular-nums}
-      .total-row td{font-weight:700;border-top:2px solid #111;border-bottom:none;padding-top:10px;background:#f5f5f5}
-      .grand-total{margin-top:24px;border-top:3px solid #e8590c;padding-top:14px;display:flex;justify-content:space-between;align-items:baseline}
-      .grand-total .label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-      .grand-total .amount{font-size:22px;font-weight:800;color:#e8590c;font-variant-numeric:tabular-nums}
-      .print-btn{position:fixed;top:12px;right:12px;background:#e8590c;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;z-index:999}
-      @media print{.print-btn{display:none}.accent-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-    </style></head><body>
-    <button class="print-btn" onclick="window.print()">Print / Save PDF</button>
-    <div class="brand-bar">
-      <div class="brand-left">
-        <img src="${logoUrl}" alt="NV Construction" width="40" height="40" style="object-fit:contain;border-radius:4px">
-        <div>
-          <div class="brand-name">NV Construction</div>
-          <div class="brand-tagline">Draw Request</div>
-        </div>
-      </div>
-      <div>
-        <div class="draw-label">Draw Request No.</div>
-        <div class="draw-num">${drawNumStr}</div>
-      </div>
-    </div>
-    <div class="accent-bar"></div>
-    <div class="content">
-      <p class="doc-title">${dr.title}</p>
-      <p class="doc-meta">${jobName}${jobAddress ? ' · ' + jobAddress : ''} · ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-      ${drCosts.length > 0 ? `<div class="section">
-        <div class="section-title">Direct Costs</div>
-        <table><thead><tr><th>Description</th><th>Date</th><th class="num">Amount</th></tr></thead><tbody>
-          ${drCosts.map(c => `<tr><td>${c.description || '—'}</td><td>${c.cost_date ? new Date(c.cost_date + 'T12:00:00Z').toLocaleDateString() : '—'}</td><td class="num">$${fmtN(c.amount)}</td></tr>`).join('')}
-          <tr class="total-row"><td colspan="2">Direct Costs Total</td><td class="num">$${fmtN(costTotal)}</td></tr>
-        </tbody></table>
-      </div>` : ''}
-      ${drBillings.length > 0 ? `<div class="section">
-        <div class="section-title">Sub Billing Submissions</div>
-        <table><thead><tr><th>Subcontractor</th><th>Period</th><th>Description</th><th class="num">Amount Billed</th><th>Status</th></tr></thead><tbody>
-          ${drBillings.map(b => {
-            const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '—'
-            return '<tr><td>' + (b.company_name || '—') + '</td><td>' + period + '</td><td>' + (b.work_description || '—') + '</td><td class="num">$' + fmtN(b.amount_billed) + '</td><td>' + b.status + '</td></tr>'
-          }).join('')}
-          <tr class="total-row"><td colspan="3">Sub Billings Total</td><td class="num">$${fmtN(billingTotal)}</td><td></td></tr>
-        </tbody></table>
-      </div>` : ''}
-      ${(drCosts.length > 0 || drBillings.length > 0) ? `<div class="grand-total"><span class="label">Grand Total</span><span class="amount">$${fmtN(grandTotal)}</span></div>` : ''}
-    </div>
-    <script>window.onload=()=>window.print()</script></body></html>`
-    const w = window.open('', '_blank')
-    if (w) { w.document.write(html); w.document.close() }
+    const html = buildDrawPackageHtml({
+      job, draw: dr,
+      costs: directCosts.filter(c => c.draw_request_id === dr.id),
+      billings: billingSubmissions.filter(b => b.draw_request_id === dr.id),
+      logoUrl: `${window.location.origin}/logo.png`,
+    })
+    openHtml(async () => html).then(shown => { if (!shown) flash(false, 'Could not open the print window. Allow pop-ups for this site.') })
   }
 
   async function addMilestone() {
@@ -884,79 +1097,104 @@ function ResidentialJobDetailInner() {
     await loadMilestones()
   }
 
+  // Upload to the shared private bucket and job_photos (same as the field app), so
+  // the photo shows on every page. A failed row insert removes the just-uploaded file.
   async function uploadPhoto(e) {
     const file = e.target.files?.[0]
+    if (photoInputRef.current) photoInputRef.current.value = ''
     if (!file) return
+    setPhotoMsg('')
+    if (!/^image\//.test(file.type || '')) { setPhotoMsg('Error: pick an image file.'); return }
+    if (file.size > 25 * 1024 * 1024) { setPhotoMsg('Error: file too large (max 25 MB).'); return }
     setUploadingPhoto(true)
-    const ext = file.name.split('.').pop()
-    const path = `${id}/${Date.now()}.${ext}`
-    const { error: upErr } = await supabase.storage.from('job-photos').upload(path, file)
-    if (upErr) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const rand = Math.random().toString(36).slice(2, 8)
+      const path = `${id}/gallery/${Date.now()}-${rand}-${safeFileName(file.name)}`
+      const { error: upErr } = await supabase.storage.from('daily-report-photos').upload(path, file, { contentType: file.type || undefined, upsert: false })
+      if (upErr) { setPhotoMsg('Error: upload failed — ' + upErr.message); return }
+      const { error: dbErr } = await supabase.from('job_photos').insert({ job_id: id, super_id: session?.user?.id || null, storage_path: path, file_name: file.name, caption: null, taken_at: new Date().toISOString() })
+      if (dbErr) {
+        await supabase.storage.from('daily-report-photos').remove([path])
+        setPhotoMsg('Error: photo not saved — ' + dbErr.message)
+        return
+      }
+      await loadPhotos()
+    } finally {
       setUploadingPhoto(false)
-      alert('Photo upload failed. Please try again.')
-      return
     }
-    const { data: { publicUrl } } = supabase.storage.from('job-photos').getPublicUrl(path)
-    await supabase.from('job_photos').insert({ job_id: id, url: publicUrl, caption: file.name })
-    await loadPhotos()
-    setUploadingPhoto(false)
   }
 
+  // Same guarded delete as the commercial page (/api/delete-photo checks role and job).
+  async function deletePhoto(photo) {
+    if (!window.confirm('Delete this photo? This cannot be undone.')) return
+    setDeletingPhoto(photo.path)
+    const r = await api('/api/delete-photo', jsonOpts('POST', { path: photo.path, fromReport: !!photo.fromReport, reportId: photo.reportId || null, jobId: id }))
+    setDeletingPhoto(null)
+    if (!r.ok) { setPhotoMsg('Error: delete failed — ' + r.error); return }
+    setLightbox(null)
+    await loadPhotos()
+  }
+
+  // New documents: job_documents + private job-documents bucket through the job-scoped
+  // /api/job-docs route (same records the field app and commercial page use).
   async function uploadDoc(e) {
     const file = e.target.files?.[0]
+    if (docInputRef.current) docInputRef.current.value = ''
     if (!file) return
     setUploadingDoc(true)
+    setDocMsg('')
     try {
-      const path = `${id}/${Date.now()}_${file.name}`
-      const urlRes = await fetch('/api/job-docs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upload-url-residential', path }),
-      })
-      const { signedUrl, path: storagePath, error: urlErr } = await urlRes.json()
-      if (urlErr || !signedUrl) throw new Error(urlErr || 'Could not get upload URL')
-      const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      const path = `${id}/${docCategory}/${Date.now()}-${safeFileName(file.name)}`
+      const urlRes = await api('/api/job-docs', jsonOpts('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data.signedUrl) throw new Error(urlRes.error || 'Could not get upload URL')
+      const up = await fetch(urlRes.data.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
       if (!up.ok) throw new Error('File upload failed')
-      const insertRes = await fetch('/api/job-docs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'insert-doc', job_id: id, url: storagePath, name: file.name, doc_type: 'general' }),
-      })
-      const insertData = await insertRes.json()
-      if (insertData.error) throw new Error(insertData.error)
+      const ins = await api('/api/job-docs', jsonOpts('POST', { action: 'insert-document', job_id: id, storage_path: path, file_name: file.name, category: docCategory }))
+      if (!ins.ok) throw new Error('File uploaded but the document record was not saved: ' + ins.error)
       await loadDocuments()
     } catch (err) {
-      alert('Upload failed: ' + err.message)
+      setDocMsg('Error: ' + err.message)
+    } finally {
+      setUploadingDoc(false)
     }
-    setUploadingDoc(false)
-    if (docInputRef.current) docInputRef.current.value = ''
   }
 
   // Called straight from the click so iOS keeps it as a user gesture
   async function openJobDoc(path) {
     let errMsg = ''
     const url = await openFile(async () => {
-      const res = await fetch(`/api/job-docs?path=${encodeURIComponent(path)}`)
-      const json = await res.json().catch(() => ({}))
-      if (!json.url) errMsg = json.error || ''
-      return json.url || null
+      const r = await api(`/api/job-docs?path=${encodeURIComponent(path)}`)
+      if (!r.ok) errMsg = r.error
+      return r.data?.url || null
     })
-    if (!url) alert('Could not open document' + (errMsg ? ': ' + errMsg : '.'))
+    if (!url) setDocMsg('Error: could not open document' + (errMsg ? ' — ' + errMsg : '.'))
+  }
+
+  async function deleteDoc(doc) {
+    if (!window.confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return
+    const r = await api(`/api/job-docs?id=${encodeURIComponent(doc.id)}`, { method: 'DELETE' })
+    if (!r.ok) { setDocMsg('Error: ' + r.error); return }
+    if (r.data.warning) setDocMsg('Error: ' + r.data.warning)
+    await loadDocuments()
   }
 
   async function addContact() {
     if (!newContact.name) return
     setAddingContact(true)
-    await supabase.from('job_contacts').insert({ job_id: id, name: newContact.name, role: newContact.role || null, phone: newContact.phone || null, email: newContact.email || null, company: newContact.company || null, notes: newContact.notes || null })
+    setContactMsg('')
+    const { error } = await supabase.from('job_contacts').insert({ job_id: id, name: newContact.name, role: newContact.role || null, phone: newContact.phone || null, email: newContact.email || null, company: newContact.company || null, notes: newContact.notes || null })
+    setAddingContact(false)
+    if (error) { setContactMsg('Error: ' + error.message); return } // form stays open
     await loadContacts()
     setNewContact({ name: '', role: '', phone: '', email: '', company: '', notes: '' })
     setShowAddContact(false)
-    setAddingContact(false)
   }
 
   async function deleteContact(contactId) {
     if (!confirm('Remove this contact?')) return
-    await supabase.from('job_contacts').delete().eq('id', contactId)
+    const { error } = await supabase.from('job_contacts').delete().eq('id', contactId)
+    if (error) setContactMsg('Error: ' + error.message)
     await loadContacts()
   }
 
@@ -1147,111 +1385,247 @@ function ResidentialJobDetailInner() {
     await loadDirectCosts()
   }
 
-  // ── Inspections ──
+  // ── Inspections ── (res_inspections: result / scheduled_date / actual_date / notes)
   async function addInspection() {
     if (!newInspection.inspection_type) return
     setAddingInspection(true)
-    await supabase.from('res_inspections').insert({ job_id: id, inspection_type: newInspection.inspection_type, scheduled_date: newInspection.scheduled_date || null, inspector_name: newInspection.inspector_name || null, result: newInspection.result, notes: newInspection.notes || null })
+    setInspectionMsg('')
+    const { error } = await supabase.from('res_inspections').insert({ job_id: id, inspection_type: newInspection.inspection_type, scheduled_date: newInspection.scheduled_date || null, inspector_name: newInspection.inspector_name || null, result: 'pending', notes: newInspection.notes || null })
+    setAddingInspection(false)
+    if (error) { setInspectionMsg('Error: ' + error.message); return }
     await loadInspections()
     setNewInspection({ inspection_type: 'Framing', scheduled_date: '', inspector_name: '', result: 'pending', notes: '' })
     setShowAddInspection(false)
-    setAddingInspection(false)
   }
 
-  async function updateInspectionResult(inspectionId, result) {
-    await supabase.from('res_inspections').update({ result, actual_date: result !== 'pending' ? todayCentral() : null }).eq('id', inspectionId)
+  // Record a result. Passed/failed set actual_date (the day it happened); back to
+  // pending clears it.
+  async function saveInspectionResult(ins, result, date) {
+    setInspectionMsg('')
+    const update = { result, actual_date: result === 'pending' ? null : (date || todayCentral()) }
+    const { error } = await supabase.from('res_inspections').update(update).eq('id', ins.id)
+    if (error) { setInspectionMsg('Error: ' + error.message); return false }
+    setInspEdit(null)
     await loadInspections()
+    return true
+  }
+
+  // Reschedule a not-yet-done inspection: new scheduled_date, still pending, no
+  // actual_date (it has not happened). The old date is kept in the notes.
+  async function rescheduleInspection(ins, newDate) {
+    if (!newDate) { setInspectionMsg('Error: pick the new date.'); return }
+    setInspectionMsg('')
+    const note = `Rescheduled from ${ins.scheduled_date ? fmtDate(ins.scheduled_date) : 'unscheduled'} on ${fmtDate(todayCentral())}.`
+    const { error } = await supabase.from('res_inspections').update({ scheduled_date: newDate, result: 'pending', actual_date: null, notes: [ins.notes, note].filter(Boolean).join('\n') }).eq('id', ins.id)
+    if (error) { setInspectionMsg('Error: ' + error.message); return }
+    setInspEdit(null)
+    await loadInspections()
+  }
+
+  // Re-inspection after a failure: a NEW pending row; the failed one keeps its result.
+  async function reinspect(ins, newDate) {
+    setInspectionMsg('')
+    const ref = `Re-inspection of ${ins.inspection_type} that failed${ins.actual_date ? ' on ' + fmtDate(ins.actual_date) : ''} (ref ${String(ins.id).slice(0, 8)}).`
+    const { error } = await supabase.from('res_inspections').insert({ job_id: id, inspection_type: ins.inspection_type, scheduled_date: newDate || null, inspector_name: ins.inspector_name || null, result: 'pending', notes: ref })
+    if (error) { setInspectionMsg('Error: ' + error.message); return }
+    setInspEdit(null)
+    await loadInspections()
+  }
+
+  // Optional: punch item for a failed inspection, through the shared punch API.
+  async function punchFromInspection(ins) {
+    if (!window.confirm(`Create a punch list item for the failed ${ins.inspection_type} inspection?`)) return
+    const { data: { session } } = await supabase.auth.getSession()
+    const r = await api('/api/punch-list', jsonOpts('POST', { job_id: id, title: `Fix failed ${ins.inspection_type} inspection`, description: ins.notes || null, created_by: session?.user?.id || null }))
+    if (!r.ok) { setInspectionMsg('Error: punch item not created — ' + r.error); return }
+    setInspectionMsg('Punch item created.')
+    await loadPunchList()
   }
 
   async function deleteInspection(inspectionId) {
     if (!confirm('Delete this inspection?')) return
-    await supabase.from('res_inspections').delete().eq('id', inspectionId)
+    const { error } = await supabase.from('res_inspections').delete().eq('id', inspectionId)
+    if (error) setInspectionMsg('Error: ' + error.message)
     await loadInspections()
   }
 
-  // ── Lien Waivers ──
+  // ── Lien Waivers ── manual log (res_lien_waivers). E-signed waivers come from billing.
   async function addLienWaiver() {
     if (!newWaiver.company_name) return
+    const amt = newWaiver.amount === '' ? null : Number(newWaiver.amount)
+    if (amt !== null && !Number.isFinite(amt)) { setWaiverMsg('Error: amount must be a number.'); return }
     setAddingWaiver(true)
-    await supabase.from('res_lien_waivers').insert({ job_id: id, company_name: newWaiver.company_name, subcontract_id: newWaiver.subcontract_id || null, waiver_type: newWaiver.waiver_type, amount: parseFloat(newWaiver.amount) || null, payment_date: newWaiver.payment_date || null, waiver_date: newWaiver.waiver_date || null, status: newWaiver.status, notes: newWaiver.notes || null })
+    setWaiverMsg('')
+    const { error } = await supabase.from('res_lien_waivers').insert({ job_id: id, company_name: newWaiver.company_name, subcontract_id: newWaiver.subcontract_id || null, waiver_type: newWaiver.waiver_type, amount: amt, payment_date: newWaiver.payment_date || null, waiver_date: newWaiver.waiver_date || null, status: newWaiver.status, notes: newWaiver.notes || null })
+    setAddingWaiver(false)
+    if (error) { setWaiverMsg('Error: ' + error.message); return }
     await loadLienWaivers()
     setNewWaiver({ company_name: '', subcontract_id: '', waiver_type: 'conditional', amount: '', payment_date: '', waiver_date: '', status: 'pending', notes: '' })
     setShowAddWaiver(false)
-    setAddingWaiver(false)
   }
 
   async function updateWaiverStatus(waiverId, status) {
     const update = { status }
     if (status === 'received') update.waiver_date = todayCentral()
-    await supabase.from('res_lien_waivers').update(update).eq('id', waiverId)
+    const { error } = await supabase.from('res_lien_waivers').update(update).eq('id', waiverId)
+    if (error) setWaiverMsg('Error: ' + error.message)
     await loadLienWaivers()
   }
 
   async function deleteWaiver(waiverId) {
     if (!confirm('Delete this waiver record?')) return
-    await supabase.from('res_lien_waivers').delete().eq('id', waiverId)
+    const { error } = await supabase.from('res_lien_waivers').delete().eq('id', waiverId)
+    if (error) setWaiverMsg('Error: ' + error.message)
     await loadLienWaivers()
   }
 
-  // ── Owner Draw ──
-  async function addOwnerDraw() {
-    if (!newOwnerDraw.amount_requested) return
-    const amount = parseFloat(newOwnerDraw.amount_requested)
-    if (!Number.isFinite(amount)) { alert('Amount requested must be a number.'); return }
-    // Linked to a packaged Draw Request → share its draw_number (that is the link);
-    // otherwise auto-increment as before.
-    const linked = newOwnerDraw.link_draw_request_id ? drawRequests.find(d => d.id === newOwnerDraw.link_draw_request_id) : null
-    const drawNum = linked?.draw_number != null
-      ? linked.draw_number
-      : (ownerDraws.length > 0 ? Math.max(...ownerDraws.map(d => d.draw_number || 0)) : 0) + 1
-    if (linked && ownerDraws.some(d => d.draw_number === drawNum)) {
-      if (!window.confirm(`An Owner/Lender Draw #${drawNum} already exists. Create another one with the same number?`)) return
+  function viewBillingWaiver(b) {
+    openHtml(async () => buildBillingWaiverHtml({ billing: b, job, origin: window.location.origin }))
+      .then(shown => { if (!shown) flash(false, 'Could not open the waiver. Allow pop-ups for this site.') })
+  }
+
+  // ── Owner / Lender Draw ── all writes through /api/res-owner-draws (job-checked).
+  function startDrawEdit(d = null) {
+    setDrawMsg('')
+    if (!d) {
+      setDrawEdit({ id: null, title: '', period_start: '', period_end: '', notes: '', amount_requested: '', link_draw_request_id: '', lines: {} })
+      return
     }
-    setAddingOwnerDraw(true)
-    const { error } = await supabase.from('res_owner_draws').insert({ job_id: id, draw_number: drawNum, title: newOwnerDraw.title || linked?.title || `Draw #${drawNum}`, period_start: newOwnerDraw.period_start || null, period_end: newOwnerDraw.period_end || null, amount_requested: amount, status: 'draft', notes: newOwnerDraw.notes || null })
-    setAddingOwnerDraw(false)
-    if (error) { alert('Failed to create draw: ' + error.message); return }
-    await loadOwnerDraws()
-    setNewOwnerDraw({ title: '', period_start: '', period_end: '', amount_requested: '', notes: '', link_draw_request_id: '' })
-    setShowAddOwnerDraw(false)
+    const lines = {}
+    for (const l of Array.isArray(d.schedule_lines) ? d.schedule_lines : []) lines[l.budget_item_id] = String(l.this_period)
+    setDrawEdit({ id: d.id, title: d.title || '', period_start: d.period_start || '', period_end: d.period_end || '', notes: d.notes || '', amount_requested: String(d.amount_requested ?? ''), lines })
   }
 
-  async function updateOwnerDrawStatus(drawId, status) {
-    const update = { status }
-    if (status === 'submitted') update.submitted_date = todayCentral()
-    if (status === 'funded') update.funded_date = todayCentral()
-    const { error } = await supabase.from('res_owner_draws').update(update).eq('id', drawId)
-    if (error) alert('Failed to update draw: ' + error.message)
+  async function saveDraw() {
+    if (!drawEdit) return
+    const lineEntries = Object.entries(drawEdit.lines || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    const hasLines = lineEntries.length > 0
+    const linesTotal = round2(lineEntries.reduce((a, [, v]) => a + Number(v || 0), 0))
+    const amount = hasLines ? linesTotal : Number(drawEdit.amount_requested)
+    if (!Number.isFinite(amount) || (drawEdit.amount_requested === '' && !hasLines)) { setDrawMsg('Error: enter the amount requested or fill in the Bank lines.'); return }
+    if (lineEntries.some(([, v]) => !Number.isFinite(Number(v)))) { setDrawMsg('Error: every line amount must be a number.'); return }
+    const linked = !drawEdit.id && drawEdit.link_draw_request_id ? drawRequests.find(d => d.id === drawEdit.link_draw_request_id) : null
+    if (linked && ownerDraws.some(d => d.draw_number === linked.draw_number && d.status !== 'void')) {
+      if (!window.confirm(`An Owner/Lender Draw #${linked.draw_number} already exists. Create another one with the same number?`)) return
+    }
+    const payload = {
+      title: drawEdit.title, period_start: drawEdit.period_start || null, period_end: drawEdit.period_end || null, notes: drawEdit.notes,
+      amount_requested: amount,
+      ...(hasLines || (drawEdit.id && ownerDraws.find(d => d.id === drawEdit.id)?.schedule_lines) ? { schedule_lines: lineEntries.map(([budget_item_id, v]) => ({ budget_item_id, this_period: Number(v) })) } : {}),
+    }
+    setDrawBusy(true)
+    setDrawMsg('')
+    const r = drawEdit.id
+      ? await api('/api/res-owner-draws', jsonOpts('PATCH', { id: drawEdit.id, action: 'edit', ...payload }))
+      : await api('/api/res-owner-draws', jsonOpts('POST', { job_id: id, ...payload, link_draw_request_id: drawEdit.link_draw_request_id || null }))
+    setDrawBusy(false)
+    if (!r.ok) { setDrawMsg('Error: ' + r.error); return } // form stays open
+    setDrawEdit(null)
     await loadOwnerDraws()
   }
 
-  async function deleteOwnerDraw(drawId) {
-    if (!confirm('Delete this draw request?')) return
-    const { error } = await supabase.from('res_owner_draws').delete().eq('id', drawId)
-    if (error) alert('Failed to delete draw: ' + error.message)
+  async function setDrawStatus(d, status) {
+    const msg = status === 'void'
+      ? `Void Draw #${d.draw_number}? It stays on record as void and no longer counts toward requested or funded totals. This can't be undone.`
+      : `Mark Draw #${d.draw_number} as ${status}?${status === 'submitted' ? '\n\nAfter submitting, its amount and schedule are locked.' : ''}`
+    if (!window.confirm(msg)) return
+    setDrawMsg('')
+    const r = await api('/api/res-owner-draws', jsonOpts('PATCH', { id: d.id, action: 'status', status }))
+    if (!r.ok) setDrawMsg('Error: ' + r.error)
     await loadOwnerDraws()
   }
 
-  // ── Punch List ──
+  async function recordFunding() {
+    if (!fundingDraw) return
+    const amt = Number(fundingDraw.amount_funded)
+    if (fundingDraw.amount_funded === '' || !Number.isFinite(amt) || amt < 0) { setDrawMsg('Error: enter the amount actually received.'); return }
+    setDrawBusy(true)
+    const r = await api('/api/res-owner-draws', jsonOpts('PATCH', { id: fundingDraw.id, action: 'fund', amount_funded: amt, funded_date: fundingDraw.funded_date || null }))
+    setDrawBusy(false)
+    if (!r.ok) { setDrawMsg('Error: ' + r.error); return }
+    setFundingDraw(null)
+    await loadOwnerDraws()
+  }
+
+  async function deleteOwnerDraw(d) {
+    if (!confirm(`Delete draft Draw #${d.draw_number}?`)) return
+    const r = await api(`/api/res-owner-draws?id=${encodeURIComponent(d.id)}`, { method: 'DELETE' })
+    if (!r.ok) setDrawMsg('Error: ' + r.error)
+    await loadOwnerDraws()
+  }
+
+  // Attachments go to the private job-documents bucket under the draw's folder.
+  async function attachToDraw(d, file) {
+    if (!file) return
+    setDrawBusy(true)
+    setDrawMsg('')
+    try {
+      const path = `${id}/owner-draws/${d.id}/${Date.now()}-${safeFileName(file.name)}`
+      const urlRes = await api('/api/job-docs', jsonOpts('POST', { action: 'upload-url', path }))
+      if (!urlRes.ok || !urlRes.data.signedUrl) throw new Error(urlRes.error || 'Could not get upload URL')
+      const up = await fetch(urlRes.data.signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!up.ok) throw new Error('File upload failed')
+      const r = await api('/api/res-owner-draws', jsonOpts('PATCH', { id: d.id, action: 'attach', path, name: file.name }))
+      if (!r.ok) throw new Error(r.error)
+      await loadOwnerDraws()
+    } catch (err) {
+      setDrawMsg('Error: ' + err.message)
+    } finally {
+      setDrawBusy(false)
+    }
+  }
+
+  function drawScheduleFor(d) {
+    const prior = priorDrawnByLine(ownerDraws, { excludeId: d?.id || null, drawNumber: d?.draw_number ?? null })
+    const thisByLine = {}
+    for (const l of Array.isArray(d?.schedule_lines) ? d.schedule_lines : []) thisByLine[l.budget_item_id] = Number(l.this_period || 0)
+    // Submitted draws print the snapshot taken when saved (description / scheduled value).
+    const snapshot = d && d.status !== 'draft' && Array.isArray(d.schedule_lines)
+    const items = budgetItems.map(b => {
+      const snap = snapshot ? d.schedule_lines.find(l => l.budget_item_id === b.id) : null
+      return snap ? { ...b, description: snap.description || b.description, owner_amount: snap.scheduled_value } : b
+    })
+    return buildDrawSchedule(items, prior, thisByLine)
+  }
+
+  function printOwnerDraw(d) {
+    const html = buildOwnerDrawHtml({ job, draw: d, schedule: drawScheduleFor(d), revised: revisedContract(job, changeOrders), logoUrl: `${window.location.origin}/logo.png` })
+    openHtml(async () => html).then(shown => { if (!shown) setDrawMsg('Error: could not open the print window. Allow pop-ups for this site.') })
+  }
+
+  // ── Punch List ── shared punch_list_items through /api/punch-list
   async function addPunchItem() {
-    if (!newPunch.description) return
+    if (!newPunch.title.trim()) return
     setAddingPunch(true)
-    const dirEntry = newPunch.subcontract_id ? contracts.find(c => c.id === newPunch.subcontract_id) : null
-    await supabase.from('res_punch_list').insert({ job_id: id, description: newPunch.description, assigned_to: dirEntry?.vendor_name || newPunch.assigned_to || null, subcontract_id: newPunch.subcontract_id || null, due_date: newPunch.due_date || null, status: 'open', notes: newPunch.notes || null })
-    await loadPunchList()
-    setNewPunch({ description: '', assigned_to: '', subcontract_id: '', due_date: '', status: 'open', notes: '' })
-    setShowAddPunch(false)
+    setPunchMsg('')
+    const { data: { session } } = await supabase.auth.getSession()
+    const contract = newPunch.subcontract_id ? contracts.find(c => c.id === newPunch.subcontract_id) : null
+    const r = await api('/api/punch-list', jsonOpts('POST', {
+      job_id: id, title: newPunch.title.trim(), description: newPunch.description || null,
+      assigned_company: contract?.vendor_name || newPunch.assigned_company || null,
+      assigned_sub_id: contract?.sub_id || null,
+      due_date: newPunch.due_date || null, created_by: session?.user?.id || null,
+    }))
     setAddingPunch(false)
+    if (!r.ok) { setPunchMsg('Error: ' + r.error); return }
+    await loadPunchList()
+    setNewPunch({ title: '', description: '', subcontract_id: '', assigned_company: '', due_date: '' })
+    setShowAddPunch(false)
   }
 
   async function updatePunchStatus(itemId, status) {
-    await supabase.from('res_punch_list').update({ status, completed_date: status === 'done' ? todayCentral() : null }).eq('id', itemId)
+    setPunchBusyId(itemId)
+    setPunchMsg('')
+    const r = await api('/api/punch-list', jsonOpts('PATCH', { id: itemId, status }))
+    setPunchBusyId(null)
+    if (!r.ok) setPunchMsg('Error: ' + r.error)
     await loadPunchList()
   }
 
   async function deletePunchItem(itemId) {
     if (!confirm('Delete this punch list item?')) return
-    await supabase.from('res_punch_list').delete().eq('id', itemId)
+    const r = await api(`/api/punch-list?id=${encodeURIComponent(itemId)}`, { method: 'DELETE' })
+    if (!r.ok) setPunchMsg('Error: ' + r.error)
     await loadPunchList()
   }
 
@@ -1316,6 +1690,24 @@ function ResidentialJobDetailInner() {
     setImportingItems(false)
   }
 
+  // Figures for the completion report, from the same data as the tabs.
+  function summaryFigures() {
+    const f = ownerDrawFunding(ownerDraws)
+    return {
+      baseContract: Number(job?.contract_value || 0),
+      approvedCOs: approvedCOTotal(changeOrders),
+      revised: revisedContract(job, changeOrders),
+      bankTotal: hideBudget ? null : budgetItems.reduce((a, b) => a + Number(bankAmount(b) || 0), 0),
+      costBudget: hideBudget ? null : budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0),
+      committed: committedTotalForLines(contracts, subCOs, budgetItems),
+      approvedDc: approvedDcTotal(directCosts),
+      approvedBilling: billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0),
+      requested: f.requested,
+      fundedKnown: f.fundedKnown,
+      unknownFunded: f.unknownFunded,
+    }
+  }
+
   if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#6b7280' }}>Loading...</div></div>
   if (jobErrMsg && !job) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', gap: '1rem' }}>
@@ -1334,20 +1726,79 @@ function ResidentialJobDetailInner() {
   )
   if (!job) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}><div style={{ color: '#6b7280' }}>Project not found.</div></div>
 
+  // ── Shared figures (Overview, header KPIs, tabs and the completion report use the same ones) ──
   const approvedCOs = approvedCOTotal(changeOrders)
   const baseContract = Number(job.contract_value || 0)
   const revisedContractTotal = revisedContract(job, changeOrders)
   const budgetTotal = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
   const bankTotal = budgetItems.reduce((a, b) => a + Number(bankAmount(b) || 0), 0)
   // Only warn when there is a budget and a contract to compare
-  const canCompareBudget = budgetItems.length > 0 && job.contract_value != null
+  const canCompareBudget = !hideBudget && budgetItems.length > 0 && job.contract_value != null
   // Compare Cost and Bank totals to jobs.contract_value
   const costVsContract = canCompareBudget && amountsDiffer(budgetTotal, baseContract)
   const bankVsContract = canCompareBudget && amountsDiffer(bankTotal, baseContract)
   const BUDGET_COLS = '3fr 1fr 1fr 1fr 1fr 1fr 1fr 80px'
-  const committedTotal = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
-  const dcTotal = directCosts.reduce((a, d) => a + (d.is_credit ? -1 : 1) * Number(d.amount || 0), 0)
+  // Committed = subcontracts split by budget_allocations + approved sub COs (same
+  // code as commercial), summed over the lines so the card matches the rows.
+  const committedTotal = committedTotalForLines(contracts, subCOs, budgetItems)
+  const unlinked = unlinkedContracts(contracts)
+  // Approved direct costs only, credits negative (pending / rejected excluded)
+  const dcTotal = approvedDcTotal(directCosts)
+  const dcOnLines = budgetItems.reduce((a, b) => a + approvedDcTotal(directCosts, b.id), 0)
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+  const funding = ownerDrawFunding(ownerDraws)
+  const fundedPct = pctFunded(funding, revisedContractTotal)
+  const lastDraw = [...ownerDraws].filter(d => d.status !== 'void').sort((a, b) => Number(b.draw_number || 0) - Number(a.draw_number || 0))[0] || null
+  const pendingCosts = directCosts.filter(c => c.status === 'pending')
+  const pendingPrimeCOs = changeOrders.filter(c => c.status === 'pending')
+  const pendingSubCOs = subCOs.filter(c => c.status === 'pending')
+  const pendingBillings = billingSubmissions.filter(b => b.status === 'pending')
+  const openPunch = punchList.filter(p => p.status !== 'approved')
+  const upcomingInspections = inspections.filter(i => (i.result || 'pending') === 'pending').sort((a, b) => String(a.scheduled_date || '9999').localeCompare(String(b.scheduled_date || '9999')))
+  const billingAlloc = allocateJobBillings({
+    contracts,
+    sovLines: billingLines.filter(l => l.subcontract_sov_lines?.subcontract_id).map(l => ({ id: l.sov_line_id, subcontract_id: l.subcontract_sov_lines.subcontract_id })),
+    submissions: billingSubmissions,
+    billingLines,
+  })
+  const canPM = atLeastPM(userRole)
+  const isOwnerRole = isPrincipal(userRole)
+  const statusNorm = job.status === 'on-hold' ? 'on_hold' : job.status
+  const NAV_GROUPS = [
+    {
+      group: 'Project',
+      items: [
+        { key: 'overview', label: 'Overview' },
+        { key: 'details', label: 'Details' },
+        { key: 'contacts', label: 'Contacts' },
+        { key: 'documents', label: 'Documents' },
+        { key: 'photos', label: 'Photos' },
+        { key: 'schedule', label: 'Schedule' },
+      ],
+    },
+    {
+      group: 'Financials',
+      items: [
+        ...(!hideBudget ? [{ key: 'budget', label: 'Budget' }] : []),
+        { key: 'costs', label: 'Direct Costs', badge: pendingCosts.length || null, alert: pendingCosts.length > 0 },
+        { key: 'subs', label: 'Subs' },
+        { key: 'changeorders', label: 'Change Orders', badge: (pendingPrimeCOs.length + pendingSubCOs.length) || null, alert: (pendingPrimeCOs.length + pendingSubCOs.length) > 0 },
+        { key: 'billing', label: 'Sub Billing', badge: pendingBillings.length || null, alert: pendingBillings.length > 0 },
+        { key: 'ownerdraw', label: 'Owner Draw' },
+        { key: 'lienWaivers', label: 'Lien Waivers' },
+      ],
+    },
+    {
+      group: 'Field',
+      items: [
+        { key: 'field', label: 'Field' },
+        { key: 'inspections', label: 'Inspections', badge: upcomingInspections.length || null },
+        { key: 'punchlist', label: 'Punch List', badge: openPunch.length || null, alert: punchList.some(p => p.status === 'open' || p.status === 'sub_complete') },
+      ],
+    },
+  ]
+  // A tab hidden for this user (Budget with hide_budget) shows Overview instead.
+  const visibleTab = NAV_GROUPS.some(g => g.items.some(i => i.key === activeTab)) ? activeTab : 'overview'
 
   return (
     <div style={s.page}>
@@ -1368,17 +1819,46 @@ function ResidentialJobDetailInner() {
       <main style={s.main} className="rx-main">
         <button style={s.backBtn} onClick={() => router.push('/dashboard?tab=residential')}>← Back to Residential</button>
         {profileLoadError && <div style={{ ...s.errMsg, marginBottom: '10px' }}>Could not load your profile — please refresh the page.</div>}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-          <div>
-            <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
-            <p style={s.jobMeta}>
-              {job.owner_name ? job.owner_name + ' · ' : ''}
-              {job.location ? job.location + ' · ' : ''}
-              {job.start_date ? 'Started ' + fmtDate(job.start_date) : ''}
-              {job.status ? ' · ' + job.status.toUpperCase() : ''}
-            </p>
+        {toast && (
+          <div role="status" style={{ background: toast.ok ? '#f0fdf4' : '#fef2f2', border: `1px solid ${toast.ok ? '#bbf7d0' : '#fecaca'}`, color: toast.ok ? '#15803d' : '#dc2626', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+            <span>{toast.text}</span>
+            <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: 0 }}>×</button>
           </div>
-          <span style={s.badge(job.status === 'complete' ? 'gray' : job.status === 'on-hold' ? 'amber' : 'green')}>{job.status === 'complete' ? 'COMPLETE' : job.status === 'on-hold' ? 'ON HOLD' : 'ACTIVE'}</span>
+        )}
+        {Object.keys(loadErrors).length > 0 && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', lineHeight: 1.5 }}>
+            <strong>Some data didn't load</strong>, so those tabs may look empty: {Object.entries(loadErrors).map(([k, v]) => `${k} (${v})`).join(' · ')}
+          </div>
+        )}
+        <div className="rx-stack-sm" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', gap: '12px' }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={s.jobTitle}>#{job.job_number} — {job.project_name}</h1>
+            <p style={{ ...s.jobMeta, marginBottom: '6px' }}>
+              {job.owner_name ? job.owner_name + ' · ' : ''}
+              {job.location ? job.location : ''}
+              {job.start_date ? ' · Started ' + fmtDate(job.start_date) : ''}
+              {job.permit_number ? ' · Permit ' + job.permit_number : ''}
+            </p>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <span style={s.badge(statusNorm === 'complete' ? 'gray' : statusNorm === 'on_hold' ? 'amber' : 'green')}>{statusNorm === 'complete' ? 'COMPLETE' : statusNorm === 'on_hold' ? 'ON HOLD' : 'ACTIVE'}</span>
+              {job.archived && <span style={s.badge('gray')}>ARCHIVED</span>}
+            </div>
+          </div>
+          {canPM && !job.archived && (
+            statusNorm !== 'complete'
+              ? <button style={{ ...s.btnGreen, padding: '9px 16px', textTransform: 'uppercase', letterSpacing: '1px', opacity: completing ? 0.6 : 1 }} disabled={completing} onClick={() => completeJob(true)}>{completing ? 'Working…' : '✓ Complete Job & Report'}</button>
+              : <button style={{ ...s.btnSmGray, padding: '9px 16px' }} disabled={completing} onClick={() => completeJob(false)}>{completing ? 'Working…' : 'Generate Report'}</button>
+          )}
+        </div>
+
+        {/* Header KPIs — Contract is the base; Revised adds approved prime (homeowner) COs only. */}
+        <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '1.5rem' }}>
+          <div style={s.statCard}><div style={s.statLabel}>Contract (base)</div><div style={s.statValue()}>${fmt(baseContract)}</div></div>
+          <div style={s.statCard} title="Base contract + approved homeowner change orders"><div style={s.statLabel}>Revised</div><div style={s.statValue()}>${fmt(revisedContractTotal)}</div><div style={{ fontSize: '11px', color: '#6b7280' }}>{changeOrders.filter(c => c.status === 'approved').length} approved CO{changeOrders.filter(c => c.status === 'approved').length !== 1 ? 's' : ''}</div></div>
+          {!hideBudget && <div style={s.statCard} title="Sum of Bank amounts on the budget lines"><div style={s.statLabel}>Bank</div><div style={s.statValue()}>${fmt(bankTotal)}</div></div>}
+          <div style={s.statCard} title="Owner/lender draws submitted, approved or funded (void and draft excluded)"><div style={s.statLabel}>Requested</div><div style={s.statValue()}>${fmt(funding.requested)}</div></div>
+          <div style={s.statCard} title="Cash actually recorded as received on funded draws"><div style={s.statLabel}>Funded</div><div style={s.statValue('#15803d')}>${fmt(funding.fundedKnown)}</div>{funding.unknownFunded > 0 && <div style={{ fontSize: '11px', color: '#92400e' }}>+ {funding.unknownFunded} funded, amount unknown</div>}</div>
+          <div style={s.statCard} title="Funded cash ÷ revised contract"><div style={s.statLabel}>% Funded</div><div style={s.statValue()}>{fundedPct === null ? '—' : fundedPct.toFixed(1) + '%'}</div><div style={{ fontSize: '11px', color: '#6b7280' }}>{fundedPct === null ? (funding.unknownFunded > 0 ? 'unknown (legacy draw)' : 'no revised contract') : 'of revised contract'}</div></div>
         </div>
 
         {/* SIDEBAR + CONTENT */}
@@ -1386,41 +1866,11 @@ function ResidentialJobDetailInner() {
 
           {/* Left sidebar nav */}
           <aside className="rx-sidebar" style={{ width: '180px', flexShrink: 0, position: 'sticky', top: '72px', maxHeight: 'calc(100vh - 92px)', overflowY: 'auto', borderRadius: '12px', padding: '12px', alignSelf: 'flex-start' }}>
-            {[
-              {
-                group: 'Project',
-                items: [
-                  { key: 'details', label: 'Details' },
-                  { key: 'contacts', label: 'Contacts' },
-                  { key: 'documents', label: 'Documents' },
-                  { key: 'photos', label: 'Photos' },
-                  { key: 'schedule', label: 'Schedule' },
-                ],
-              },
-              {
-                group: 'Financials',
-                items: [
-                  { key: 'budget', label: 'Budget' },
-                  { key: 'costs', label: 'Direct Costs', badge: directCosts.filter(c => c.status === 'pending').length || null, alert: directCosts.filter(c => c.status === 'pending').length > 0 },
-                  { key: 'subs', label: 'Subs' },
-                  { key: 'changeorders', label: 'Change Orders', badge: changeOrders.filter(c => c.status === 'pending').length || null, alert: changeOrders.filter(c => c.status === 'pending').length > 0 },
-                  { key: 'billing', label: 'Sub Billing', badge: billingSubmissions.filter(b => b.status === 'pending').length || null, alert: billingSubmissions.filter(b => b.status === 'pending').length > 0 },
-                  { key: 'ownerdraw', label: 'Owner Draw' },
-                  { key: 'lienWaivers', label: 'Lien Waivers' },
-                ],
-              },
-              {
-                group: 'Field',
-                items: [
-                  { key: 'inspections', label: 'Inspections' },
-                  { key: 'punchlist', label: 'Punch List', badge: punchList.filter(p => p.status !== 'done').length || null, alert: punchList.filter(p => p.status === 'open').length > 0 },
-                ],
-              },
-            ].map(({ group, items }) => (
+            {NAV_GROUPS.map(({ group, items }) => (
               <div key={group} style={{ marginBottom: '20px' }}>
                 <div className="rx-sidebar-group">{group}</div>
                 {items.map(({ key, label, badge, alert }) => {
-                  const active = activeTab === key
+                  const active = visibleTab === key
                   return (
                     <button key={key} className={`rx-sidebar-btn${active ? ' rx-active' : ''}`} onClick={() => setActiveTab(key)}>
                       <span>{label}</span>
@@ -1435,51 +1885,107 @@ function ResidentialJobDetailInner() {
           {/* Main content */}
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Mobile nav */}
-            <select className="rx-mobile-nav-select" value={activeTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#111827', fontSize: '16px', marginBottom: '1.25rem' }}>
-              <optgroup label="Project">
-                <option value="details">Details</option>
-                <option value="contacts">Contacts</option>
-                <option value="documents">Documents</option>
-                <option value="photos">Photos</option>
-                <option value="schedule">Schedule</option>
-              </optgroup>
-              <optgroup label="Financials">
-                <option value="budget">Budget</option>
-                <option value="costs">Direct Costs</option>
-                <option value="subs">Subs</option>
-                <option value="changeorders">Change Orders</option>
-                <option value="billing">Sub Billing</option>
-                <option value="ownerdraw">Owner Draw</option>
-                <option value="lienWaivers">Lien Waivers</option>
-              </optgroup>
-              <optgroup label="Field">
-                <option value="inspections">Inspections</option>
-                <option value="punchlist">Punch List</option>
-              </optgroup>
+            <select className="rx-mobile-nav-select" value={visibleTab} onChange={e => setActiveTab(e.target.value)} style={{ width: '100%', padding: '11px 14px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', color: '#111827', fontSize: '16px', marginBottom: '1.25rem' }}>
+              {NAV_GROUPS.map(({ group, items }) => (
+                <optgroup key={group} label={group}>
+                  {items.map(({ key, label, badge }) => <option key={key} value={key}>{label}{badge ? ` (${badge})` : ''}</option>)}
+                </optgroup>
+              ))}
             </select>
 
       {/* BODY */}
       <div style={s.body}>
 
-        {/* ── DETAILS ── */}
-        {activeTab === 'details' && (
+        {/* ── OVERVIEW ── */}
+        {visibleTab === 'overview' && (
           <>
-            {/* Summary stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
-              <div style={s.statCard}><div style={s.statLabel}>Contract Value</div><div style={s.statValue()}>${fmt(job.contract_value)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Approved COs</div><div style={s.statValue('#e8590c')}>${fmt(approvedCOs)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Sub Billing Approved</div><div style={s.statValue('#15803d')}>${fmt(approvedBillingTotal)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Budget Items</div><div style={s.statValue()}>{budgetItems.length}</div></div>
+            <div className="rx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div style={s.card}>
+                <p style={s.cardTitle}>Financial Summary</p>
+                {[
+                  ['Contract (base)', '$' + fmt(baseContract)],
+                  ['Approved homeowner COs', '$' + fmt(approvedCOs)],
+                  ['Revised contract', '$' + fmt(revisedContractTotal)],
+                  ...(!hideBudget ? [['Bank schedule total', '$' + fmt(bankTotal)], ['Cost budget', '$' + fmt(budgetTotal)]] : []),
+                  ['Sub committed (incl. approved sub COs)', '$' + fmt(committedTotal)],
+                  ['Approved direct costs (net of credits)', '$' + fmt(dcTotal)],
+                  ['Approved sub billing', '$' + fmt(approvedBillingTotal)],
+                  ['Owner draws requested', '$' + fmt(funding.requested)],
+                  ['Owner draws funded (recorded)', '$' + fmt(funding.fundedKnown) + (funding.unknownFunded ? ` + ${funding.unknownFunded} unknown` : '')],
+                ].map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                    <span style={{ color: '#6b7280' }}>{k}</span><span style={{ fontFamily: 'monospace', color: '#111827', whiteSpace: 'nowrap' }}>{v}</span>
+                  </div>
+                ))}
+                {unlinked.length > 0 && <div style={{ marginTop: '8px', fontSize: '12px', color: '#c2410c' }}>⚠ {unlinked.length} subcontract{unlinked.length !== 1 ? 's are' : ' is'} not linked to a budget line and not in Committed.</div>}
+              </div>
+              <div style={s.card}>
+                <p style={s.cardTitle}>Needs Attention</p>
+                {[
+                  { n: pendingCosts.length, label: 'direct cost(s) waiting for approval', tab: 'costs' },
+                  { n: pendingPrimeCOs.length, label: 'homeowner change order(s) pending', tab: 'changeorders' },
+                  { n: pendingSubCOs.length, label: 'sub change order(s) pending', tab: 'changeorders' },
+                  { n: pendingBillings.length, label: 'sub billing(s) pending', tab: 'billing' },
+                  { n: punchList.filter(p => p.status === 'sub_complete').length, label: 'punch item(s) marked done by the sub', tab: 'punchlist' },
+                  { n: funding.unknownFunded, label: 'funded draw(s) with no recorded amount', tab: 'ownerdraw' },
+                ].filter(x => x.n > 0).map(x => (
+                  <button key={x.label} onClick={() => setActiveTab(x.tab)} style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 0', background: 'none', border: 'none', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', textAlign: 'left', fontSize: '13px', color: '#111827' }}>
+                    <span><strong style={{ color: '#c2410c' }}>{x.n}</strong> {x.label}</span><span style={{ color: '#9ca3af' }}>›</span>
+                  </button>
+                ))}
+                {pendingCosts.length + pendingPrimeCOs.length + pendingSubCOs.length + pendingBillings.length + funding.unknownFunded + punchList.filter(p => p.status === 'sub_complete').length === 0 && <div style={{ fontSize: '13px', color: '#15803d' }}>Nothing waiting.</div>}
+              </div>
+              <div style={s.card}>
+                <p style={s.cardTitle}>Upcoming Inspections</p>
+                {upcomingInspections.length === 0 ? <div style={{ fontSize: '13px', color: '#9ca3af' }}>None scheduled.</div> : upcomingInspections.slice(0, 5).map(i => (
+                  <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                    <span>{i.inspection_type}</span><span style={{ color: '#6b7280' }}>{fmtDate(i.scheduled_date)}</span>
+                  </div>
+                ))}
+                {job.permit_number && <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>Permit {job.permit_number}{job.permit_date ? ' · ' + fmtDate(job.permit_date) : ''}</div>}
+              </div>
+              <div style={s.card}>
+                <p style={s.cardTitle}>Punch & Last Draw</p>
+                <div style={{ fontSize: '13px', marginBottom: '10px' }}><strong>{openPunch.length}</strong> open punch item{openPunch.length !== 1 ? 's' : ''}{punchList.length ? ` of ${punchList.length}` : ''}</div>
+                {lastDraw ? (
+                  <div style={{ fontSize: '13px' }}>
+                    Draw #{lastDraw.draw_number} — {lastDraw.title} · ${fmt(lastDraw.amount_requested)} · <span style={s.badge(lastDraw.status === 'funded' ? 'green' : lastDraw.status === 'draft' ? 'gray' : 'orange')}>{lastDraw.status}</span>
+                    {lastDraw.status === 'funded' && <div style={{ fontSize: '12px', color: drawFundedAmount(lastDraw) === null ? '#92400e' : '#6b7280', marginTop: '4px' }}>{drawFundedAmount(lastDraw) === null ? 'Funded amount not recorded (legacy)' : `Received $${fmt(lastDraw.amount_funded)}`}</div>}
+                  </div>
+                ) : <div style={{ fontSize: '13px', color: '#9ca3af' }}>No owner/lender draws yet.</div>}
+              </div>
+              <div style={s.card}>
+                <p style={s.cardTitle}>Key Contacts</p>
+                {job.owner_name && <div style={{ fontSize: '13px', padding: '4px 0' }}><strong>{job.owner_name}</strong> <span style={{ color: '#6b7280' }}>· Homeowner{job.owner_phone ? ' · ' + job.owner_phone : ''}{job.owner_email ? ' · ' + job.owner_email : ''}</span></div>}
+                {job.pm_email && <div style={{ fontSize: '13px', padding: '4px 0' }}><strong>PM</strong> <span style={{ color: '#6b7280' }}>· {job.pm_email}</span></div>}
+                {contacts.slice(0, 4).map(c => <div key={c.id} style={{ fontSize: '13px', padding: '4px 0' }}><strong>{c.name}</strong> <span style={{ color: '#6b7280' }}>{c.role ? '· ' + c.role : ''}{c.phone ? ' · ' + c.phone : ''}</span></div>)}
+                {!job.owner_name && !job.pm_email && contacts.length === 0 && <div style={{ fontSize: '13px', color: '#9ca3af' }}>No contacts yet.</div>}
+              </div>
+              <div style={s.card}>
+                <p style={s.cardTitle}>Quick Actions</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button style={s.btnSmGray} onClick={() => { setActiveTab('costs'); setShowDcForm(true) }}>+ Log cost</button>
+                  <button style={s.btnSmGray} onClick={() => { setActiveTab('changeorders'); setShowAddCO(true) }}>+ Change order</button>
+                  <button style={s.btnSmGray} onClick={() => { setActiveTab('ownerdraw'); startDrawEdit(null) }}>+ Owner draw</button>
+                  <button style={s.btnSmGray} onClick={() => { setActiveTab('inspections'); setShowAddInspection(true) }}>+ Inspection</button>
+                  <button style={s.btnSmGray} onClick={() => { setActiveTab('punchlist'); setShowAddPunch(true) }}>+ Punch item</button>
+                </div>
+              </div>
             </div>
+          </>
+        )}
 
+        {/* ── DETAILS ── */}
+        {visibleTab === 'details' && (
+          <>
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div className="rx-stack-sm" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Project Details</p>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                   {detailsMsg && <span style={detailsMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{detailsMsg}</span>}
                   {editingDetails
-                    ? <><button style={s.btn} onClick={saveDetails} disabled={savingDetails}>{savingDetails ? 'Saving...' : 'Save'}</button><button style={s.btnGray} onClick={() => { setEditingDetails(false); setDetailsForm(job) }}>Cancel</button></>
-                    : <button style={s.btnSm} onClick={() => setEditingDetails(true)}>Edit</button>}
+                    ? <><button style={s.btn} onClick={saveDetails} disabled={savingDetails}>{savingDetails ? 'Saving...' : 'Save'}</button><button style={s.btnGray} onClick={() => { setEditingDetails(false); setDetailsForm(job); setDetailsMsg('') }}>Cancel</button></>
+                    : ['principal', 'pm', 'apm', 'admin'].includes(userRole) && <button style={s.btnSm} onClick={() => { setEditingDetails(true); setDetailsForm({ ...job, status: statusNorm }); loadTeamMembers() }}>Edit</button>}
                 </div>
               </div>
 
@@ -1491,16 +1997,31 @@ function ResidentialJobDetailInner() {
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Property address</label><input style={s.input} value={detailsForm.location || ''} onChange={e => setDetailsForm(f => ({ ...f, location: e.target.value }))} /></div>
-                    <div><label style={s.label}>Contract value</label><input style={s.input} type="number" value={detailsForm.contract_value || ''} onChange={e => setDetailsForm(f => ({ ...f, contract_value: e.target.value }))} /></div>
+                    <div><label style={s.label}>Contract value (base)</label><input style={s.input} type="number" value={detailsForm.contract_value ?? ''} onChange={e => setDetailsForm(f => ({ ...f, contract_value: e.target.value }))} /></div>
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Start date</label><input style={s.input} type="date" value={detailsForm.start_date || ''} onChange={e => setDetailsForm(f => ({ ...f, start_date: e.target.value }))} /></div>
                     <div><label style={s.label}>Status</label>
-                      <select style={s.select} value={detailsForm.status || 'active'} onChange={e => setDetailsForm(f => ({ ...f, status: e.target.value }))}>
+                      <select style={s.select} value={detailsForm.status || 'active'} disabled={!!job.archived && !isOwnerRole} onChange={e => setDetailsForm(f => ({ ...f, status: e.target.value }))}>
                         <option value="active">Active</option>
                         <option value="complete">Complete</option>
-                        <option value="on-hold">On Hold</option>
+                        <option value="on_hold">On Hold</option>
                       </select>
+                      {job.archived && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{isOwnerRole ? 'Archived. Setting Status to Active unarchives it.' : 'Archived. Only an Owner can change its status.'}</div>}
+                    </div>
+                  </div>
+                  <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
+                    <div>
+                      <label style={s.label}>PM contact</label>
+                      <select style={s.select} value={detailsForm.pm_email || ''} onChange={e => setDetailsForm(f => ({ ...f, pm_email: e.target.value }))}>
+                        <option value="">— No PM —</option>
+                        {detailsForm.pm_email && !teamMembers.some(m => (m.email || '').toLowerCase() === String(detailsForm.pm_email).toLowerCase()) && <option value={detailsForm.pm_email}>{detailsForm.pm_email}</option>}
+                        {teamMembers.filter(m => ['principal', 'pm', 'apm'].includes(m.role) && m.email).map(m => <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role === 'principal' ? 'OWNER' : m.role.toUpperCase()})</option>)}
+                      </select>
+                    </div>
+                    <div className="rx-grid-2" style={s.grid2}>
+                      <div><label style={s.label}>Permit number</label><input style={s.input} value={detailsForm.permit_number || ''} onChange={e => setDetailsForm(f => ({ ...f, permit_number: e.target.value }))} /></div>
+                      <div><label style={s.label}>Permit date</label><input style={s.input} type="date" value={detailsForm.permit_date || ''} onChange={e => setDetailsForm(f => ({ ...f, permit_date: e.target.value }))} /></div>
                     </div>
                   </div>
                   <div style={{ marginBottom: '12px' }}>
@@ -1509,31 +2030,41 @@ function ResidentialJobDetailInner() {
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Owner name</label><input style={s.input} value={detailsForm.owner_name || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_name: e.target.value }))} /></div>
-                    <div><label style={s.label}>Owner company</label><input style={s.input} value={detailsForm.owner_company || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_company: e.target.value }))} /></div>
+                    <div><label style={s.label}>Owner company / lender</label><input style={s.input} value={detailsForm.owner_company || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_company: e.target.value }))} /></div>
                   </div>
                   <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                     <div><label style={s.label}>Owner email</label><input style={s.input} type="email" value={detailsForm.owner_email || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_email: e.target.value }))} /></div>
                     <div><label style={s.label}>Owner phone</label><input style={s.input} value={detailsForm.owner_phone || ''} onChange={e => setDetailsForm(f => ({ ...f, owner_phone: e.target.value }))} /></div>
                   </div>
+                  <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '4px' }}>
+                    <BillingScheduleFields title="Subcontractor billing" prefix="sub" form={detailsForm} setForm={setDetailsForm} />
+                    <BillingScheduleFields title="Owner / lender billing" prefix="owner" form={detailsForm} setForm={setDetailsForm} />
+                  </div>
+                  {detailsMsg.startsWith('Error') && <div style={{ ...s.errMsg, marginTop: '8px' }}>{detailsMsg}</div>}
                 </>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                <div className="rx-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                   {[
                     ['Job Number', job.job_number],
                     ['Project Name', job.project_name],
                     ['Address', job.location],
-                    ['Start Date', fmtDate(job.start_date)],
-                    ['Contract Value', job.contract_value ? '$' + fmt(job.contract_value) : '—'],
-                    ['Revised Contract', job.contract_value || approvedCOs ? '$' + fmt(revisedContractTotal) : '—'],
+                    ['Start Date', job.start_date ? fmtDate(job.start_date) : null],
+                    ['Contract (base)', job.contract_value != null ? '$' + fmt(job.contract_value) : null],
+                    ['Revised Contract', job.contract_value || approvedCOs ? '$' + fmt(revisedContractTotal) : null],
+                    ['PM', job.pm_email],
+                    ['Permit', job.permit_number ? job.permit_number + (job.permit_date ? ' · ' + fmtDate(job.permit_date) : '') : null],
+                    ['Status', statusNorm === 'on_hold' ? 'On hold' : statusNorm + (job.archived ? ' (archived)' : '')],
                     ['Owner Name', job.owner_name],
+                    ['Owner Company / Lender', job.owner_company],
                     ['Owner Email', job.owner_email],
                     ['Owner Phone', job.owner_phone],
-                    ['Status', job.status],
+                    ['Sub Billing', billingScheduleLabel(job, 'sub')],
+                    ['Owner Billing', billingScheduleLabel(job, 'owner')],
                     ['Notes', job.scope_notes],
                   ].map(([label, val]) => (
                     <div key={label}>
                       <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '3px' }}>{label}</div>
-                      <div style={{ fontSize: '14px', color: val ? '#111827' : '#9ca3af' }}>{val || '—'}</div>
+                      <div style={{ fontSize: '14px', color: val ? '#111827' : '#9ca3af', whiteSpace: label === 'Notes' ? 'pre-wrap' : undefined, wordBreak: 'break-word' }}>{val || '—'}</div>
                     </div>
                   ))}
                 </div>
@@ -1543,14 +2074,25 @@ function ResidentialJobDetailInner() {
         )}
 
         {/* ── BUDGET ── */}
-        {activeTab === 'budget' && (
+        {visibleTab === 'budget' && !hideBudget && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+            <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
               <div style={s.statCard}><div style={s.statLabel}>Cost Total</div><div style={s.statValue()}>${fmt(budgetTotal)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Bank Total</div><div style={s.statValue()}>${fmt(bankTotal)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Sub Committed</div><div style={s.statValue('#60a5fa')}>${fmt(committedTotal)}</div></div>
-              <div style={s.statCard}><div style={s.statLabel}>Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(dcTotal)}</div></div>
+              <div style={s.statCard} title="Subcontracts (split by allocation) + approved sub change orders"><div style={s.statLabel}>Sub Committed</div><div style={s.statValue('#1d4ed8')}>${fmt(committedTotal)}</div></div>
+              <div style={s.statCard} title="Approved only; returns/credits subtract"><div style={s.statLabel}>Approved Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(dcTotal)}</div></div>
             </div>
+
+            {unlinked.length > 0 && (
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+                ⚠ {unlinked.length} subcontract{unlinked.length !== 1 ? 's' : ''} not linked to any budget line and not counted in Committed: {unlinked.map(c => c.vendor_name || 'Unnamed').join(', ')}
+              </div>
+            )}
+            {amountsDiffer(dcTotal, dcOnLines) && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>
+                ${fmt(dcTotal - dcOnLines)} of approved direct costs is not on a budget line, so it is in the card total but not in Spent below.
+              </div>
+            )}
 
             {(costVsContract || bankVsContract) && (
               <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
@@ -1611,11 +2153,11 @@ function ResidentialJobDetailInner() {
                         </div>
                       </div>
                       <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', position: 'sticky', top: 0, background: '#f9fafb' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, background: '#f9fafb' }}>
                           {['', 'Description', 'Section', 'Amount'].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                         </div>
                         {parsedItems.map((item, i) => (
-                          <label key={i} style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '8px 0', borderBottom: '1px solid #111', alignItems: 'center', cursor: 'pointer' }}>
+                          <label key={i} style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f3f4f6', alignItems: 'center', cursor: 'pointer' }}>
                             <input type="checkbox" checked={selectedImportIds.has(i)} onChange={e => {
                               setSelectedImportIds(prev => {
                                 const next = new Set(prev)
@@ -1628,7 +2170,7 @@ function ResidentialJobDetailInner() {
                             <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.amount)}</span>
                           </label>
                         ))}
-                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #222' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '28px 3fr 1fr 1fr', gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #e5e7eb' }}>
                           <span />
                           <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' }}>Selected total</span>
                           <span />
@@ -1660,12 +2202,12 @@ function ResidentialJobDetailInner() {
               ) : (
                 <>
                   <div style={{ overflowX: 'auto' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222', minWidth: '800px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb', minWidth: '800px' }}>
                     {['Description', 'Code', 'Cost', 'Bank', 'Committed', 'Spent', 'Variance', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                   </div>
                   {budgetItems.map(item => {
-                    const committed = contracts.filter(c => c.budget_item_id === item.id).reduce((a, c) => a + Number(c.contract_value || 0), 0)
-                    const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
+                    const committed = contractCommittedForItem(contracts, subCOs, item.id)
+                    const spent = approvedDcTotal(directCosts, item.id)
                     const budgeted = Number(item.budget_amount || 0)
                     const variance = budgeted - committed - spent
                     const over = variance < 0
@@ -1675,7 +2217,7 @@ function ResidentialJobDetailInner() {
                         <input style={{ ...s.input, fontSize: '12px' }} value={editBudgetForm.cost_code || ''} onChange={e => setEditBudgetForm(f => ({ ...f, cost_code: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} type="number" title="Cost" value={editBudgetForm.budget_amount ?? ''} onChange={e => setEditBudgetForm(f => ({ ...f, budget_amount: e.target.value }))} />
                         <input style={{ ...s.input, fontSize: '12px' }} type="number" title="Bank (blank = same as Cost)" placeholder="= Cost" value={editBudgetForm.owner_amount ?? ''} onChange={e => setEditBudgetForm(f => ({ ...f, owner_amount: e.target.value }))} />
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committed)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#1d4ed8' }}>${fmt(committed)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spent)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: over ? '#dc2626' : '#15803d' }}>{over ? '-' : ''}${fmt(Math.abs(variance))}</span>
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -1689,8 +2231,8 @@ function ResidentialJobDetailInner() {
                         <span style={{ fontSize: '12px', color: '#6b7280', fontFamily: 'monospace' }}>{item.cost_code || '—'}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(item.budget_amount)}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', color: item.owner_amount == null ? '#9ca3af' : '#111827' }} title={item.owner_amount == null ? 'Same as Cost' : undefined}>${fmt(bankAmount(item))}</span>
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: committed > 0 ? '#60a5fa' : '#555' }}>${fmt(committed)}</span>
-                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: spent > 0 ? '#e8590c' : '#555' }}>${fmt(spent)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: committed > 0 ? '#1d4ed8' : '#9ca3af' }}>${fmt(committed)}</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'monospace', color: spent > 0 ? '#e8590c' : spent < 0 ? '#dc2626' : '#9ca3af' }}>{spent < 0 ? '−' : ''}${fmt(Math.abs(spent))}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace', fontWeight: '700', color: over ? '#dc2626' : variance < budgeted * 0.1 ? '#f59e0b' : '#15803d' }}>
                           {over ? '-' : ''}${fmt(Math.abs(variance))}
                         </span>
@@ -1701,13 +2243,13 @@ function ResidentialJobDetailInner() {
                       </div>
                     )
                   })}
-                  <div style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #333', minWidth: '800px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: BUDGET_COLS, gap: '10px', padding: '10px 0', marginTop: '4px', borderTop: '1px solid #d1d5db', minWidth: '800px' }}>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase' }}>Total</span>
                     <span />
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(budgetTotal)}</span>
                     <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(bankTotal)}</span>
-                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#60a5fa' }}>${fmt(committedTotal)}</span>
-                    {(() => { const spentTotal = directCosts.filter(c => c.status === 'approved' && budgetItems.some(b => b.id === c.budget_item_id)).reduce((a, c) => a + Number(c.amount || 0), 0); const v = budgetTotal - committedTotal - spentTotal; return (<>
+                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#1d4ed8' }}>${fmt(committedTotal)}</span>
+                    {(() => { const spentTotal = dcOnLines; const v = budgetTotal - committedTotal - spentTotal; return (<>
                       <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: '#e8590c' }}>${fmt(spentTotal)}</span>
                       <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace', color: v < 0 ? '#dc2626' : '#15803d' }}>{v < 0 ? '-' : ''}${fmt(Math.abs(v))}</span>
                     </>) })()}
@@ -1721,7 +2263,7 @@ function ResidentialJobDetailInner() {
         )}
 
         {/* ── COSTS ── */}
-        {activeTab === 'costs' && (() => {
+        {visibleTab === 'costs' && (() => {
           const approvedExpenses = directCosts.filter(c => c.status === 'approved' && !c.is_credit).reduce((a, c) => a + Number(c.amount || 0), 0)
           const approvedCredits = directCosts.filter(c => c.status === 'approved' && c.is_credit).reduce((a, c) => a + Number(c.amount || 0), 0)
           const approvedTotal = approvedExpenses - approvedCredits
@@ -1736,7 +2278,7 @@ function ResidentialJobDetailInner() {
           })
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${approvedCredits > 0 ? 4 : 3}, 1fr)`, gap: '12px', marginBottom: '20px' }}>
+              <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: `repeat(${approvedCredits > 0 ? 4 : 3}, 1fr)`, gap: '12px', marginBottom: '20px' }}>
                 <div style={s.statCard}><div style={s.statLabel}>Net Approved</div><div style={s.statValue('#15803d')}>${fmt(approvedTotal)}</div></div>
                 {approvedCredits > 0 && <div style={s.statCard}><div style={s.statLabel}>Credits Applied</div><div style={s.statValue('#dc2626')}>−${fmt(approvedCredits)}</div></div>}
                 <div style={s.statCard}><div style={s.statLabel}>Pending Approval</div><div style={s.statValue(pendingCount > 0 ? '#e8590c' : undefined)}>{pendingCount}</div></div>
@@ -1760,7 +2302,7 @@ function ResidentialJobDetailInner() {
                 {showDcForm && (
                   <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
                     <form onSubmit={submitDC}>
-                      <div style={{ ...s.grid3, marginBottom: '12px' }}>
+                      <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '12px' }}>
                         <div>
                           <label style={s.label}>Date *</label>
                           <input type="date" style={s.input} required value={dcForm.cost_date} onChange={e => setDcForm(f => ({ ...f, cost_date: e.target.value }))} />
@@ -1776,7 +2318,7 @@ function ResidentialJobDetailInner() {
                           <input type="number" step="0.01" min="0" style={s.input} required placeholder="0.00" value={dcForm.amount} onChange={e => setDcForm(f => ({ ...f, amount: e.target.value }))} />
                         </div>
                       </div>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '12px' }}>
                         <div>
                           <label style={s.label}>Description *</label>
                           <input style={s.input} required placeholder="Lumber delivery, Concrete pour..." value={dcForm.description} onChange={e => setDcForm(f => ({ ...f, description: e.target.value }))} />
@@ -1789,7 +2331,7 @@ function ResidentialJobDetailInner() {
                           </select>
                         </div>
                       </div>
-                      <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                      <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '12px' }}>
                         <div>
                           <label style={s.label}>Notes</label>
                           <input style={s.input} placeholder="Optional notes..." value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} />
@@ -1812,7 +2354,7 @@ function ResidentialJobDetailInner() {
 
                 {/* Status filter */}
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                  {[['all', 'All', directCosts.length], ['pending', 'Pending', pendingCount], ['approved', 'Approved', directCosts.filter(c => c.status === 'approved').length]].map(([k, label, count]) => (
+                  {[['all', 'All', directCosts.length], ['pending', 'Pending', pendingCount], ['approved', 'Approved', directCosts.filter(c => c.status === 'approved').length], ['rejected', 'Rejected', directCosts.filter(c => c.status === 'rejected').length]].map(([k, label, count]) => (
                     <button key={k} onClick={() => setDcStatusFilter(k)} style={{ padding: '4px 12px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${dcStatusFilter === k ? '#e8590c' : '#d1d5db'}`, background: dcStatusFilter === k ? '#fff7ed' : 'transparent', color: dcStatusFilter === k ? '#e8590c' : '#6b7280' }}>
                       {label} ({count})
                     </button>
@@ -1895,16 +2437,16 @@ function ResidentialJobDetailInner() {
                         )}
                         {editingCostId === c.id && (
                           <div style={{ marginTop: '12px', padding: '14px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                            <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                            <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                               <div><label style={s.label}>Date</label><input type="date" style={s.input} value={editCostForm.cost_date} onChange={e => setEditCostForm(f => ({ ...f, cost_date: e.target.value }))} /></div>
                               <div><label style={s.label}>Category</label><select style={s.select} value={editCostForm.category} onChange={e => setEditCostForm(f => ({ ...f, category: e.target.value }))}>{['Materials','Labor','Equipment','Subcontractor','Permits','Fees','Meals/Entertainment','Other'].map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
                               <div><label style={s.label}>Amount ($)</label><input type="number" step="0.01" min="0" style={s.input} value={editCostForm.amount} onChange={e => setEditCostForm(f => ({ ...f, amount: e.target.value }))} /></div>
                             </div>
-                            <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                            <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
                               <div><label style={s.label}>Description</label><input style={s.input} value={editCostForm.description} onChange={e => setEditCostForm(f => ({ ...f, description: e.target.value }))} /></div>
                               <div><label style={s.label}>Budget Line</label><select style={s.select} value={editCostForm.budget_item_id} onChange={e => setEditCostForm(f => ({ ...f, budget_item_id: e.target.value }))}><option value="">— Unassigned —</option>{budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}</select></div>
                             </div>
-                            <div style={{ ...s.grid2 }}>
+                            <div className="rx-grid-2" style={{ ...s.grid2 }}>
                               <div><label style={s.label}>Notes</label><input style={s.input} value={editCostForm.notes} onChange={e => setEditCostForm(f => ({ ...f, notes: e.target.value }))} /></div>
                               <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
                                 <button style={s.btn} onClick={saveEditedCost} disabled={savingEditCost}>{savingEditCost ? 'Saving…' : 'Save Changes'}</button>
@@ -1922,14 +2464,14 @@ function ResidentialJobDetailInner() {
           )
         })()}
 
-        {/* ── SUBS ── */}
-        {activeTab === 'subs' && (
+        {/* ── SUBS ── companies + contracts on this job (shared subcontracts / job assignments) */}
+        {visibleTab === 'subs' && (
           <div style={s.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px', flexWrap: 'wrap' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Subcontractors ({contracts.length})</p>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {subMsg && !showAddSubForm && <span style={subMsg.startsWith('Error') ? s.errMsg : s.successMsg}>{subMsg}</span>}
-                <button style={s.btnSm} onClick={() => { setShowAddSubForm(v => !v); setSubMsg('') }}>{showAddSubForm ? 'Cancel' : '+ Add Sub'}</button>
+                {canPM && <button style={s.btnSm} onClick={() => { setShowAddSubForm(v => !v); setSubMsg('') }}>{showAddSubForm ? 'Cancel' : '+ Add Sub'}</button>}
               </div>
             </div>
 
@@ -1947,12 +2489,12 @@ function ResidentialJobDetailInner() {
                   </div>
                 )}
                 {!newSubForm.dir_id && (
-                  <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                  <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '12px' }}>
                     <div><label style={s.label}>Company Name *</label><input style={s.input} value={newSubForm.company_name} onChange={e => setNewSubForm(f => ({ ...f, company_name: e.target.value }))} placeholder="ABC Framing..." /></div>
                     <div><label style={s.label}>Trade / Scope</label><input style={s.input} value={newSubForm.trade} onChange={e => setNewSubForm(f => ({ ...f, trade: e.target.value }))} placeholder="Framing, Electrical..." /></div>
                   </div>
                 )}
-                <div style={{ ...s.grid2, marginBottom: '12px' }}>
+                <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '12px' }}>
                   <div>
                     <label style={s.label}>Contract Value ($)</label>
                     <input style={s.input} type="number" step="0.01" min="0" placeholder="0.00" value={newSubForm.contract_value} onChange={e => setNewSubForm(f => ({ ...f, contract_value: e.target.value }))} />
@@ -1972,55 +2514,110 @@ function ResidentialJobDetailInner() {
               </form>
             )}
 
+            {unlinked.length > 0 && <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px' }}>⚠ Not linked to a budget line (not in Committed): {unlinked.map(c => c.vendor_name || 'Unnamed').join(', ')}</div>}
             {contracts.length === 0 ? (
               <div style={s.emptyMsg}>No subcontractors yet. Add a sub to get started.</div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                  {['Company', 'Trade', 'Budget Line', 'Contract $', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
-                </div>
-                {contracts.map(c => {
-                  const budgetLine = budgetItems.find(b => b.id === c.budget_item_id)
-                  const isEditing = editingSubId === c.id
-                  return isEditing ? (
-                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '8px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
+            ) : contracts.map(c => {
+              const isEditing = editingSubId === c.id
+              const signed = isSubcontractSigned(c)
+              const cos = subCOs.filter(co => co.subcontract_id === c.id)
+              const approvedCo = cos.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+              const revisedValue = contractRevisedValue(c, subCOs)
+              const alloc = billingAlloc.byContract[c.id] || { billedApproved: 0, retainageApproved: 0, submissions: [] }
+              const billed = alloc.billedApproved
+              const pctBilled = revisedValue > 0 ? (billed / revisedValue) * 100 : null
+              const lines = (c.budget_allocations && c.budget_allocations.length)
+                ? c.budget_allocations.map(a => `${budgetItems.find(b => b.id === a.budget_item_id)?.description || 'Unknown line'} $${fmt(a.amount)}`)
+                : (c.budget_item_id ? [budgetItems.find(b => b.id === c.budget_item_id)?.description || 'Unknown line'] : [])
+              const dir = subDirectory.find(d => sameCompany(d.company_name, c.vendor_name))
+              const coi = !dir ? null : !dir.coi_url ? { t: 'COI missing', c: 'red' } : dir.coi_expiration && isBeforeTodayCentral(dir.coi_expiration) ? { t: `COI expired ${fmtDate(dir.coi_expiration)}`, c: 'red' } : { t: dir.coi_expiration ? `COI to ${fmtDate(dir.coi_expiration)}` : 'COI on file', c: 'green' }
+              const subBillings = alloc.submissions.map(x => x.submission)
+              const waiversSigned = subBillings.filter(b => b.lien_waiver_signed_at).length
+              const waiversOut = subBillings.filter(b => b.status === 'approved' && !b.lien_waiver_signed_at).length
+              const sov = contractSov[c.id] || []
+              return (
+                <div key={c.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' }}>
+                  {isEditing ? (
+                    <div className="rx-grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '10px', alignItems: 'center' }}>
                       <input style={{ ...s.input, fontSize: '12px' }} value={editSubForm.vendor_name || ''} onChange={e => setEditSubForm(f => ({ ...f, vendor_name: e.target.value }))} />
                       <input style={{ ...s.input, fontSize: '12px' }} placeholder="Trade / scope" value={editSubForm.description || ''} onChange={e => setEditSubForm(f => ({ ...f, description: e.target.value }))} />
-                      <select style={{ ...s.select, fontSize: '12px' }} value={editSubForm.budget_item_id || ''} onChange={e => setEditSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
+                      <select style={{ ...s.select, fontSize: '12px' }} value={editSubForm.budget_item_id || ''} disabled={!!(c.budget_allocations && c.budget_allocations.length)} title={c.budget_allocations?.length ? 'Split across several lines (budget_allocations)' : undefined} onChange={e => setEditSubForm(f => ({ ...f, budget_item_id: e.target.value }))}>
                         <option value="">— None —</option>
                         {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
                       </select>
-                      <input style={{ ...s.input, fontSize: '12px' }} type="number" value={editSubForm.contract_value || ''} onChange={e => setEditSubForm(f => ({ ...f, contract_value: e.target.value }))} />
+                      <input style={{ ...s.input, fontSize: '12px' }} type="number" disabled={signed} title={signed ? 'Signed contract: amount is locked' : undefined} value={editSubForm.contract_value ?? ''} onChange={e => setEditSubForm(f => ({ ...f, contract_value: e.target.value }))} />
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button style={s.btnGreen} onClick={() => saveSubEdit(c.id)}>Save</button>
                         <button style={s.btnSmGray} onClick={() => setEditingSubId(null)}>×</button>
                       </div>
                     </div>
                   ) : (
-                    <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 120px', gap: '10px', padding: '12px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', color: '#111827' }}>{c.vendor_name || '—'}</span>
-                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{c.description || '—'}</span>
-                      <span style={{ fontSize: '12px', color: budgetLine ? '#60a5fa' : '#444' }}>{budgetLine?.description || '—'}</span>
-                      <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.contract_value)}</span>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button style={s.btnSmGray} onClick={() => { setEditingSubId(c.id); setEditSubForm(c) }}>Edit</button>
-                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteSubcontract(c.id)}>×</button>
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{c.vendor_name || '—'}</div>
+                          <div style={{ fontSize: '12px', color: '#6b7280' }}>{c.description || '—'}{lines.length ? ' · ' + lines.join(', ') : ' · no budget line'}</div>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                            <span style={s.badge(signed ? 'green' : 'gray')}>{signed ? 'SIGNED' : (c.status || 'unsigned').toUpperCase()}</span>
+                            {coi && <span style={s.badge(coi.c)}>{coi.t}</span>}
+                            {waiversSigned > 0 && <span style={s.badge('green')}>{waiversSigned} waiver{waiversSigned !== 1 ? 's' : ''} signed</span>}
+                            {waiversOut > 0 && <span style={s.badge('amber')}>{waiversOut} waiver{waiversOut !== 1 ? 's' : ''} outstanding</span>}
+                            {c.generated_contract_path && <span style={s.badge('blue')}>Contract generated</span>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {c.company_id && <button style={s.btnSmGray} onClick={() => setOpenCompanyId(openCompanyId === c.id ? null : c.id)}>{openCompanyId === c.id ? 'Hide people' : 'People & access'}</button>}
+                          {canPM && <button style={s.btnSmGray} onClick={() => { setEditingSubId(c.id); setEditSubForm(c) }}>Edit</button>}
+                          {canPM && <button style={{ ...s.btnSmGray, color: '#dc2626', ...(signed ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={signed} title={signed ? 'Signed contracts can’t be removed' : 'Remove (refused if anything was billed or signed)'} onClick={() => deleteSubcontract(c.id)}>Remove</button>}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 0', borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>Total: ${fmt(committedTotal)}</span>
+                      <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginTop: '10px' }}>
+                        {[
+                          ['Contract', '$' + fmt(c.contract_value)],
+                          ['Approved COs', '$' + fmt(approvedCo)],
+                          ['Revised', '$' + fmt(revisedValue)],
+                          ['Billed (approved)', '$' + fmt(billed)],
+                          ['% Billed', pctBilled === null ? '—' : pctBilled.toFixed(0) + '%'],
+                          ['Remaining', '$' + fmt(revisedValue - billed)],
+                          ['Retainage', (c.retainage_pct != null ? c.retainage_pct + '% · ' : '') + '$' + fmt(alloc.retainageApproved) + ' held'],
+                        ].map(([k, v]) => (
+                          <div key={k} style={{ background: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '6px', padding: '6px 8px' }}>
+                            <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{k}</div>
+                            <div style={{ fontSize: '13px', fontFamily: 'monospace', color: k === 'Remaining' && revisedValue - billed < 0 ? '#dc2626' : '#111827' }}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {(sov.length > 0 || cos.length > 0) && (
+                        <details style={{ marginTop: '8px' }}>
+                          <summary style={{ fontSize: '12px', color: '#374151', cursor: 'pointer' }}>{sov.length} SOV line{sov.length !== 1 ? 's' : ''} · {cos.length} sub CO{cos.length !== 1 ? 's' : ''}</summary>
+                          <div className="rx-scroll-x" style={{ marginTop: '6px' }}>
+                            {sov.map(l => <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid #f3f4f6', minWidth: '320px' }}><span>{l.description}</span><span style={{ fontFamily: 'monospace' }}>${fmt(l.scheduled_value)}</span></div>)}
+                            {cos.map(co => <div key={co.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid #f3f4f6', minWidth: '320px' }}><span>{coNumberLabel(co, 'sub')} · {co.description || '—'} · {co.status}</span><span style={{ fontFamily: 'monospace' }}>${fmt(co.amount)}</span></div>)}
+                          </div>
+                        </details>
+                      )}
+                      {openCompanyId === c.id && c.company_id && (
+                        <div style={{ marginTop: '10px' }}>
+                          <CompanyPeoplePanel companyId={c.company_id} companyName={c.vendor_name} jobId={id} jobLabel={job?.project_name} onChanged={loadContracts} />
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-              </>
+              )
+            })}
+            {contracts.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 0', borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>Committed: ${fmt(committedTotal)}</span>
+              </div>
             )}
           </div>
         )}
 
         {/* ── CHANGE ORDERS ── */}
-        {activeTab === 'changeorders' && (
+        {visibleTab === 'changeorders' && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+            <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
               <div style={s.statCard}><div style={s.statLabel}>Pending COs</div><div style={s.statValue('#e8590c')}>{changeOrders.filter(c => c.status === 'pending').length}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Approved COs</div><div style={s.statValue('#15803d')}>${fmt(approvedCOs)}</div></div>
               <div style={s.statCard}><div style={s.statLabel}>Revised Contract</div><div style={s.statValue()}>${fmt(revisedContractTotal)}</div></div>
@@ -2028,13 +2625,13 @@ function ResidentialJobDetailInner() {
 
             <div style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <p style={{ ...s.cardTitle, margin: 0 }}>Change Orders ({changeOrders.length})</p>
-                <button style={s.btnSm} onClick={() => setShowAddCO(v => !v)}>{showAddCO ? 'Cancel' : '+ Add CO'}</button>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Homeowner Change Orders ({changeOrders.length})</p>
+                {canPM && <button style={s.btnSm} onClick={() => setShowAddCO(v => !v)}>{showAddCO ? 'Cancel' : '+ Add CO'}</button>}
               </div>
 
               {showAddCO && (
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                  <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
                     <div><label style={s.label}>Description *</label><input style={s.input} placeholder="Additional scope..." value={newCO.description} onChange={e => setNewCO(f => ({ ...f, description: e.target.value }))} autoFocus /></div>
                     <div><label style={s.label}>Amount *</label><input style={s.input} type="number" placeholder="0.00" value={newCO.amount} onChange={e => setNewCO(f => ({ ...f, amount: e.target.value }))} /></div>
                   </div>
@@ -2063,8 +2660,8 @@ function ResidentialJobDetailInner() {
                   const busy = reviewingCOId === co.id
                   return (
                   <div key={co.id} style={{ padding: '14px 0', borderBottom: '1px solid #e5e7eb' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}><span style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace', marginRight: '8px' }}>{coNumberLabel(co, 'prime')}</span>{co.description}</div>
                         {co.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{co.notes}</div>}
                         <div style={{ fontSize: '12px', color: '#9ca3af' }}>
@@ -2073,11 +2670,12 @@ function ResidentialJobDetailInner() {
                           {co.status === 'approved' && (co.budget_applied ? ' · Applied to budget' : ' · Not applied to budget')}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <span style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'monospace', color: Number(co.amount) >= 0 ? '#15803d' : '#dc2626' }}>
                           {Number(co.amount) >= 0 ? '+' : ''}${fmt(co.amount)}
                         </span>
                         <span style={s.badge(statusColor[co.status] || 'gray')}>{co.status}</span>
+                        <button style={s.btnSmGray} title="Printable change order with homeowner and contractor signature lines" onClick={() => printCO(co)}>Print CO</button>
                       </div>
                     </div>
                     {co.status === 'pending' && atLeastPM(profile?.role) && (
@@ -2102,11 +2700,32 @@ function ResidentialJobDetailInner() {
                 })
               )}
             </div>
+
+            <div style={s.card}>
+              <p style={s.cardTitle}>Sub Change Orders ({subCOs.length})</p>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>From subcontractors (sub portal or office). Approved ones add to that sub's committed cost; they do not change the homeowner contract.</div>
+              {subCOs.length === 0 ? <div style={s.emptyMsg}>No sub change orders.</div> : subCOs.map(co => (
+                <div key={co.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap', padding: '10px 0', borderBottom: '1px solid #e5e7eb' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}><span style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace', marginRight: '8px' }}>{coNumberLabel(co, 'sub')}</span>{co.description || '—'}</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>{co.subcontracts?.vendor_name || '—'}{co.created_at ? ' · ' + new Date(co.created_at).toLocaleDateString() : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>${fmt(co.amount)}</span>
+                    <span style={s.badge(statusColor[co.status] || 'gray')}>{co.status}</span>
+                    {co.status === 'pending' && canPM && <>
+                      <button style={s.btnGreen} disabled={reviewingSubCOId === co.id} onClick={() => reviewSubCO(co, 'approved')}>Approve</button>
+                      <button style={s.btnRed} disabled={reviewingSubCOId === co.id} onClick={() => reviewSubCO(co, 'rejected')}>Reject</button>
+                    </>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </>
         )}
 
         {/* ── BILLING ── */}
-        {activeTab === 'billing' && (
+        {visibleTab === 'billing' && (
           <>
             <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
               {[['submissions', 'Sub Billing'], ['draws', 'Draw Requests']].map(([id2, label]) => (
@@ -2123,12 +2742,13 @@ function ResidentialJobDetailInner() {
 
                 {showBillingForm && (
                   <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                    <div className="rx-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Subcontractor</label>
                         <select style={s.select} value={billingForm._contract_id} onChange={e => {
                           const c = contracts.find(x => x.id === e.target.value)
-                          setBillingForm(f => ({ ...f, _contract_id: e.target.value, sub_id: c?.sub_id || '', company_name: c?.vendor_name || f.company_name }))
+                          // Retainage defaults to the contract's rate (still editable per billing)
+                          setBillingForm(f => ({ ...f, _contract_id: e.target.value, sub_id: c?.sub_id || '', company_name: c?.vendor_name || f.company_name, retainage_pct: c?.retainage_pct != null ? String(c.retainage_pct) : f.retainage_pct }))
                         }}>
                           <option value="">— Select or enter below —</option>
                           {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
@@ -2167,9 +2787,17 @@ function ResidentialJobDetailInner() {
                     return (
                       <div key={b.id} style={{ padding: '12px 0', borderBottom: '1px solid #e5e7eb' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-                          <div>
+                          <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{b.company_name}</div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>{period}{b.work_description ? ' · ' + b.work_description : ''}</div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                              {b.lien_waiver_signed_at
+                                ? <span style={s.badge('green')}>WAIVER SIGNED</span>
+                                : b.status === 'approved' && b.lien_waiver_sent_at ? <span style={s.badge('amber')}>WAIVER SENT</span>
+                                : b.status === 'approved' ? <span style={s.badge('gray')}>NO WAIVER YET</span> : null}
+                              {b.lien_waiver_received && <span style={s.badge('green')}>WAIVER RECEIVED</span>}
+                              {b.paid_at && <span style={s.badge('blue')}>PAID {new Date(b.paid_at).toLocaleDateString()}</span>}
+                            </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <div style={{ textAlign: 'right' }}>
@@ -2181,7 +2809,9 @@ function ResidentialJobDetailInner() {
                               <button onClick={() => updateBillingStatus(b.id, 'approved')} style={s.btnGreen}>Approve</button>
                               <button onClick={() => updateBillingStatus(b.id, 'rejected')} style={s.btnRed}>Reject</button>
                             </>)}
-                            <button onClick={() => deleteBilling(b.id)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                            {b.doc_url && <button style={s.btnSmGray} title="Open the sub's invoice" onClick={() => openStorageFile(supabase, 'billing-docs', b.doc_url, 3600).then(u => { if (!u) alert('Could not open the invoice.') })}>📎 Invoice</button>}
+                            {b.lien_waiver_signed_at && <button style={s.btnSmGray} onClick={() => viewBillingWaiver(b)}>View Waiver</button>}
+                            {canPM && !billingDeleteBlock(b) && <button title="Delete this billing" onClick={() => deleteBilling(b.id)} style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>×</button>}
                           </div>
                         </div>
                       </div>
@@ -2256,7 +2886,7 @@ function ResidentialJobDetailInner() {
                           <div style={{ padding: '0 14px 14px', borderTop: '1px solid #e5e7eb' }}>
                             <p style={{ ...s.cardTitle, marginTop: '12px' }}>Direct Costs</p>
                             {drCosts.length === 0 ? <div style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '10px' }}>No costs added to this draw.</div> : drCosts.map(c => (
-                              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #111' }}>
+                              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
                                 <span style={{ fontSize: '13px', color: '#6b7280' }}>{c.description}</span>
                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                                   <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(c.amount)}</span>
@@ -2283,7 +2913,7 @@ function ResidentialJobDetailInner() {
 
                             <p style={{ ...s.cardTitle, marginTop: '16px' }}>Sub Billings</p>
                             {drBillings.length === 0 ? <div style={{ fontSize: '13px', color: '#9ca3af', marginBottom: '10px' }}>No sub billings added to this draw.</div> : drBillings.map(b => (
-                              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #111' }}>
+                              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
                                 <div>
                                   <span style={{ fontSize: '13px', color: '#6b7280' }}>{b.company_name}</span>
                                   {b.work_description ? <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '8px' }}>{b.work_description}</span> : null}
@@ -2324,7 +2954,7 @@ function ResidentialJobDetailInner() {
         )}
 
         {/* ── SCHEDULE ── */}
-        {activeTab === 'schedule' && (
+        {visibleTab === 'schedule' && (
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Milestones ({milestones.length})</p>
@@ -2333,7 +2963,7 @@ function ResidentialJobDetailInner() {
 
             {showAddMilestone && (
               <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                   <div><label style={s.label}>Milestone *</label><input style={s.input} placeholder="Demo complete, Framing..." value={newMilestone.title} onChange={e => setNewMilestone(f => ({ ...f, title: e.target.value }))} autoFocus /></div>
                   <div><label style={s.label}>Due date</label><input style={s.input} type="date" value={newMilestone.due_date} onChange={e => setNewMilestone(f => ({ ...f, due_date: e.target.value }))} /></div>
                   <div><label style={s.label}>Status</label>
@@ -2351,12 +2981,12 @@ function ResidentialJobDetailInner() {
             {milestones.length === 0 ? (
               <div style={s.emptyMsg}>No milestones yet. Add project milestones to track schedule.</div>
             ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
+              <div className="rx-scroll-x">
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb', minWidth: '560px' }}>
                   {['Milestone', 'Due date', 'Completed', 'Status', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {milestones.map(m => (
-                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
+                  <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '560px' }}>
                     <span style={{ fontSize: '13px', color: '#111827' }}>{m.title}</span>
                     <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(m.due_date)}</span>
                     <span style={{ fontSize: '12px', color: m.completed_date ? '#15803d' : '#9ca3af' }}>{fmtDate(m.completed_date)}</span>
@@ -2368,30 +2998,99 @@ function ResidentialJobDetailInner() {
                     </div>
                   </div>
                 ))}
-              </>
+              </div>
             )}
           </div>
         )}
 
-        {/* ── PHOTOS ── */}
-        {activeTab === 'photos' && (
+        {/* ── PHOTOS ── shared job_photos + daily report photos (private bucket, signed links) */}
+        {visibleTab === 'photos' && (
           <div style={s.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px', flexWrap: 'wrap' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Photos ({photos.length})</p>
               <div>
                 <input type="file" ref={photoInputRef} accept="image/*" style={{ display: 'none' }} onChange={uploadPhoto} />
                 <button style={s.btnSm} onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto}>{uploadingPhoto ? 'Uploading...' : '+ Upload Photo'}</button>
               </div>
             </div>
-
+            {photoMsg && <div style={{ ...(photoMsg.startsWith('Error') ? s.errMsg : s.successMsg), marginBottom: '10px' }}>{photoMsg}</div>}
             {photos.length === 0 ? (
-              <div style={s.emptyMsg}>No photos yet.</div>
+              <div style={s.emptyMsg}>No photos yet. Photos from the field app and daily reports show here too.</div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
-                {photos.map(p => (
-                  <div key={p.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
-                    <img src={p.url} alt={p.caption || 'Photo'} style={{ width: '100%', height: '140px', objectFit: 'cover', display: 'block' }} />
-                    {p.caption && <div style={{ padding: '6px 10px', fontSize: '11px', color: '#6b7280', background: '#f9fafb' }}>{p.caption}</div>}
+              <div className="rx-grid-photos" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+                {photos.map((p, i) => {
+                  const thumb = photoUrls[p.path.replace(/\.jpg$/i, '_thumb.jpg')] || photoUrls[p.path]
+                  return (
+                    <button key={p.key} onClick={() => setLightbox(i)} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb', padding: 0, background: '#f9fafb', cursor: 'pointer', textAlign: 'left' }}>
+                      {thumb ? <img src={thumb} alt={p.caption || p.name || 'Photo'} loading="lazy" style={{ width: '100%', height: '130px', objectFit: 'cover', display: 'block' }} /> : <div style={{ height: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: '#9ca3af' }}>Unavailable</div>}
+                      <div style={{ padding: '6px 8px', fontSize: '11px', color: '#6b7280' }}>{p.date ? fmtDate(p.date) : ''}{p.fromReport ? ' · Daily report' : ''}{p.caption ? ' · ' + p.caption : ''}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {lightbox !== null && photos[lightbox] && (() => {
+              const p = photos[lightbox]
+              return (
+                <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 2000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                  <div onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '80vh' }}>
+                    {photoUrls[p.path] ? <img src={photoUrls[p.path]} alt={p.caption || 'Photo'} style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', display: 'block' }} /> : <div style={{ color: '#fff' }}>Photo unavailable</div>}
+                  </div>
+                  <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <button style={s.btnSmGray} disabled={lightbox === 0} onClick={() => setLightbox(lightbox - 1)}>‹ Prev</button>
+                    <span style={{ color: '#e5e7eb', fontSize: '12px' }}>{lightbox + 1} / {photos.length}{p.caption ? ' · ' + p.caption : ''}</span>
+                    <button style={s.btnSmGray} disabled={lightbox === photos.length - 1} onClick={() => setLightbox(lightbox + 1)}>Next ›</button>
+                    {['principal', 'pm', 'admin'].includes(userRole) && <button style={s.btnRed} disabled={deletingPhoto === p.path} onClick={() => deletePhoto(p)}>{deletingPhoto === p.path ? 'Deleting…' : 'Delete'}</button>}
+                    <button style={s.btnSmGray} onClick={() => setLightbox(null)}>Close</button>
+                  </div>
+                  {photoMsg && <div style={{ color: '#fecaca', fontSize: '13px', marginTop: '8px' }}>{photoMsg}</div>}
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* ── DOCUMENTS ── job_documents (shared with field app / commercial) + read-only legacy */}
+        {visibleTab === 'documents' && (
+          <div style={s.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px', flexWrap: 'wrap' }}>
+              <p style={{ ...s.cardTitle, margin: 0 }}>Documents ({documents.length})</p>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select style={{ ...s.select, width: 'auto' }} value={docCategory} onChange={e => setDocCategory(e.target.value)}>
+                  {JOB_DOC_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+                <input type="file" ref={docInputRef} style={{ display: 'none' }} onChange={uploadDoc} />
+                <button style={s.btnSm} onClick={() => docInputRef.current?.click()} disabled={uploadingDoc}>{uploadingDoc ? 'Uploading...' : '+ Upload Doc'}</button>
+              </div>
+            </div>
+            {docMsg && <div style={{ ...(docMsg.startsWith('Error') ? s.errMsg : s.successMsg), marginBottom: '10px' }}>{docMsg}</div>}
+            {documents.length === 0 ? (
+              <div style={s.emptyMsg}>No documents yet. Upload contracts, permits, or other project docs.</div>
+            ) : (
+              documents.map(doc => (
+                <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', color: '#111827', wordBreak: 'break-word' }}>{doc.file_name}</div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>{docCategoryLabel(doc.category)}{doc.uploaded_at ? ' · ' + new Date(doc.uploaded_at).toLocaleDateString() : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    <button onClick={() => openJobDoc(doc.storage_path)} style={{ fontSize: '12px', color: '#e8590c', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View →</button>
+                    {['principal', 'pm', 'apm', 'admin'].includes(userRole) && <button onClick={() => deleteDoc(doc)} style={{ fontSize: '12px', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Delete</button>}
+                  </div>
+                </div>
+              ))
+            )}
+            {legacyDocs.length > 0 && (
+              <div style={{ marginTop: '18px' }}>
+                <p style={{ ...s.cardTitle, marginBottom: '6px' }}>Older documents (read-only)</p>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>Uploaded before documents were shared with the field app. Kept as they are.</div>
+                {legacyDocs.map(doc => (
+                  <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', color: '#111827', wordBreak: 'break-word' }}>{doc.name}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280' }}>{doc.doc_type || 'general'}{doc.created_at ? ' · ' + new Date(doc.created_at).toLocaleDateString() : ''}</div>
+                    </div>
+                    {doc.url && <button onClick={() => openJobDoc(doc.url)} style={{ fontSize: '12px', color: '#e8590c', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>View →</button>}
                   </div>
                 ))}
               </div>
@@ -2399,46 +3098,24 @@ function ResidentialJobDetailInner() {
           </div>
         )}
 
-        {/* ── DOCUMENTS ── */}
-        {activeTab === 'documents' && (
-          <div style={s.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <p style={{ ...s.cardTitle, margin: 0 }}>Documents ({documents.length})</p>
-              <div>
-                <input type="file" ref={docInputRef} style={{ display: 'none' }} onChange={uploadDoc} />
-                <button style={s.btnSm} onClick={() => docInputRef.current?.click()} disabled={uploadingDoc}>{uploadingDoc ? 'Uploading...' : '+ Upload Doc'}</button>
-              </div>
-            </div>
-
-            {documents.length === 0 ? (
-              <div style={s.emptyMsg}>No documents yet. Upload contracts, permits, or other project docs.</div>
-            ) : (
-              documents.map(doc => (
-                <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #e5e7eb' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', color: '#111827' }}>{doc.name}</div>
-                    <div style={{ fontSize: '11px', color: '#6b7280' }}>{doc.doc_type || 'general'}{doc.created_at ? ' · ' + new Date(doc.created_at).toLocaleDateString() : ''}</div>
-                  </div>
-                  <button onClick={() => openJobDoc(doc.url)} style={{ fontSize: '12px', color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View →</button>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
         {/* ── INSPECTIONS ── */}
-        {activeTab === 'inspections' && (() => {
+        {visibleTab === 'inspections' && (() => {
           const TYPES = ['Foundation','Framing','Rough Plumbing','Rough Electrical','Rough HVAC','Insulation','Drywall','Final Plumbing','Final Electrical','Final HVAC','Final']
           const resultColor = { pending: 'orange', passed: 'green', failed: 'red', rescheduled: 'blue' }
           return (
             <div style={s.card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '8px', flexWrap: 'wrap' }}>
                 <p style={{ ...s.cardTitle, margin: 0 }}>Inspections ({inspections.length})</p>
                 <button style={s.btnSm} onClick={() => setShowAddInspection(v => !v)}>{showAddInspection ? 'Cancel' : '+ Add Inspection'}</button>
               </div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '14px' }}>
+                Permit: {job.permit_number ? <strong style={{ color: '#111827' }}>{job.permit_number}</strong> : 'not set'}{job.permit_date ? ' · issued ' + fmtDate(job.permit_date) : ''}
+                {' · '}<button onClick={() => { setActiveTab('details'); setEditingDetails(true); setDetailsForm({ ...job, status: statusNorm }); loadTeamMembers() }} style={{ background: 'none', border: 'none', color: '#e8590c', cursor: 'pointer', padding: 0, fontSize: '12px', fontWeight: 600 }}>Edit on Details</button>
+              </div>
+              {inspectionMsg && <div style={{ ...(inspectionMsg.startsWith('Error') ? s.errMsg : s.successMsg), marginBottom: '10px' }}>{inspectionMsg}</div>}
               {showAddInspection && (
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                  <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                  <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                     <div>
                       <label style={s.label}>Inspection Type *</label>
                       <select style={s.select} value={newInspection.inspection_type} onChange={e => setNewInspection(f => ({ ...f, inspection_type: e.target.value }))}>
@@ -2455,63 +3132,114 @@ function ResidentialJobDetailInner() {
                       <input style={s.input} placeholder="City inspector..." value={newInspection.inspector_name} onChange={e => setNewInspection(f => ({ ...f, inspector_name: e.target.value }))} />
                     </div>
                   </div>
-                  <div style={{ ...s.grid2, marginBottom: '10px' }}>
-                    <div>
-                      <label style={s.label}>Notes</label>
-                      <input style={s.input} value={newInspection.notes} onChange={e => setNewInspection(f => ({ ...f, notes: e.target.value }))} placeholder="Permit #, notes..." />
-                    </div>
+                  <div style={{ marginBottom: '10px' }}>
+                    <label style={s.label}>Notes</label>
+                    <input style={s.input} value={newInspection.notes} onChange={e => setNewInspection(f => ({ ...f, notes: e.target.value }))} placeholder="Notes..." />
                   </div>
                   <button style={s.btn} onClick={addInspection} disabled={addingInspection}>{addingInspection ? 'Adding...' : 'Add Inspection'}</button>
                 </div>
               )}
               {inspections.length === 0 ? (
                 <div style={s.emptyMsg}>No inspections yet. Track each building department inspection here.</div>
-              ) : (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
-                    {['Type', 'Scheduled', 'Inspector', 'Result', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
-                  </div>
-                  {inspections.map(ins => (
-                    <div key={ins.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 160px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontSize: '13px', color: '#111827' }}>{ins.inspection_type}</div>
-                        {ins.notes && <div style={{ fontSize: '11px', color: '#6b7280' }}>{ins.notes}</div>}
+              ) : inspections.map(ins => {
+                const result = ins.result || 'pending'
+                const editing = inspEdit?.id === ins.id ? inspEdit : null
+                return (
+                  <div key={ins.id} style={{ padding: '10px 0', borderBottom: '1px solid #e5e7eb' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{ins.inspection_type} <span style={s.badge(resultColor[result] || 'gray')}>{result}</span></div>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                          Scheduled {fmtDate(ins.scheduled_date)}{ins.actual_date ? ` · ${result === 'pending' ? 'Done' : result === 'passed' ? 'Passed' : 'Inspected'} ${fmtDate(ins.actual_date)}` : ''}{ins.inspector_name ? ' · ' + ins.inspector_name : ''}
+                        </div>
+                        {ins.notes && <div style={{ fontSize: '11px', color: '#6b7280', whiteSpace: 'pre-wrap' }}>{ins.notes}</div>}
                       </div>
-                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(ins.scheduled_date)}</span>
-                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{ins.inspector_name || '—'}</span>
-                      <span style={s.badge(resultColor[ins.result] || 'gray')}>{ins.result}</span>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        {ins.result !== 'passed' && <button style={s.btnGreen} onClick={() => updateInspectionResult(ins.id, 'passed')}>Pass</button>}
-                        {ins.result !== 'failed' && <button style={s.btnRed} onClick={() => updateInspectionResult(ins.id, 'failed')}>Fail</button>}
-                        {ins.result !== 'pending' && <button style={s.btnSmGray} onClick={() => updateInspectionResult(ins.id, 'pending')}>Reset</button>}
-                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteInspection(ins.id)}>×</button>
+                        {result === 'pending' && <>
+                          <button style={s.btnGreen} onClick={() => setInspEdit({ id: ins.id, mode: 'result', result: 'passed', date: todayCentral() })}>Pass</button>
+                          <button style={s.btnRed} onClick={() => setInspEdit({ id: ins.id, mode: 'result', result: 'failed', date: todayCentral() })}>Fail</button>
+                          <button style={s.btnSmGray} onClick={() => setInspEdit({ id: ins.id, mode: 'reschedule', date: '' })}>Reschedule</button>
+                        </>}
+                        {result === 'failed' && <>
+                          <button style={s.btnSm} onClick={() => setInspEdit({ id: ins.id, mode: 'reinspect', date: '' })}>Re-inspect</button>
+                          <button style={s.btnSmGray} onClick={() => punchFromInspection(ins)}>+ Punch item</button>
+                        </>}
+                        {result !== 'pending' && <button style={s.btnSmGray} onClick={() => setInspEdit({ id: ins.id, mode: 'result', result, date: ins.actual_date || todayCentral() })}>Edit result</button>}
+                        {canPM && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteInspection(ins.id)}>×</button>}
                       </div>
                     </div>
-                  ))}
-                </>
-              )}
+                    {editing && (
+                      <div style={{ ...s.inlineForm, marginTop: '8px', marginBottom: 0, display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                        {editing.mode === 'result' && (
+                          <div>
+                            <label style={s.label}>Result</label>
+                            <select style={{ ...s.select, width: 'auto' }} value={editing.result} onChange={e => setInspEdit(x => ({ ...x, result: e.target.value }))}>
+                              <option value="passed">Passed</option>
+                              <option value="failed">Failed</option>
+                              <option value="pending">Pending (not done)</option>
+                            </select>
+                          </div>
+                        )}
+                        {!(editing.mode === 'result' && editing.result === 'pending') && (
+                          <div>
+                            <label style={s.label}>{editing.mode === 'result' ? 'Date inspected' : editing.mode === 'reschedule' ? 'New date' : 'Re-inspection date'}</label>
+                            <input type="date" style={{ ...s.input, width: 'auto' }} value={editing.date || ''} onChange={e => setInspEdit(x => ({ ...x, date: e.target.value }))} />
+                          </div>
+                        )}
+                        <button style={s.btn} onClick={() => editing.mode === 'result' ? saveInspectionResult(ins, editing.result, editing.date) : editing.mode === 'reschedule' ? rescheduleInspection(ins, editing.date) : reinspect(ins, editing.date)}>
+                          {editing.mode === 'result' ? 'Save result' : editing.mode === 'reschedule' ? 'Reschedule' : 'Add re-inspection'}
+                        </button>
+                        <button style={s.btnGray} onClick={() => setInspEdit(null)}>Cancel</button>
+                        {editing.mode === 'reinspect' && <div style={{ fontSize: '11px', color: '#6b7280', width: '100%' }}>Adds a new pending inspection; this failed one keeps its result.</div>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )
         })()}
 
-        {/* ── LIEN WAIVERS ── */}
-        {activeTab === 'lienWaivers' && (() => {
-          const pendingWaivers = lienWaivers.filter(w => w.status === 'pending')
+        {/* ── LIEN WAIVERS ── e-signed waivers on sub billings first; manual log second */}
+        {visibleTab === 'lienWaivers' && (() => {
+          const approvedBillings = billingSubmissions.filter(b => b.status === 'approved')
+          const signed = approvedBillings.filter(b => b.lien_waiver_signed_at)
+          const sentOnly = approvedBillings.filter(b => !b.lien_waiver_signed_at && b.lien_waiver_sent_at)
+          const notSent = approvedBillings.filter(b => !b.lien_waiver_signed_at && !b.lien_waiver_sent_at)
+          const pendingManual = lienWaivers.filter(w => w.status === 'pending')
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-                <div style={s.statCard}><div style={s.statLabel}>Pending Waivers</div><div style={s.statValue(pendingWaivers.length > 0 ? '#e8590c' : undefined)}>{pendingWaivers.length}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#15803d')}>{lienWaivers.filter(w => w.status === 'received').length}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Total Waived</div><div style={s.statValue()}>${fmt(lienWaivers.filter(w => w.status === 'received').reduce((a, w) => a + Number(w.amount || 0), 0))}</div></div>
+              <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>E-signed</div><div style={s.statValue('#15803d')}>{signed.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Sent, not signed</div><div style={s.statValue(sentOnly.length ? '#e8590c' : undefined)}>{sentOnly.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Manual log pending</div><div style={s.statValue(pendingManual.length ? '#e8590c' : undefined)}>{pendingManual.length}</div></div>
+              </div>
+              {waiverMsg && <div style={{ ...(waiverMsg.startsWith('Error') ? s.errMsg : s.successMsg), marginBottom: '10px' }}>{waiverMsg}</div>}
+              <div style={s.card}>
+                <p style={s.cardTitle}>Waivers on approved sub billings</p>
+                {approvedBillings.length === 0 ? <div style={s.emptyMsg}>No approved sub billings yet.</div> : [...signed, ...sentOnly, ...notSent].map(b => (
+                  <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '10px 0', borderBottom: '1px solid #e5e7eb' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#111827' }}>{b.company_name}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>${fmt(b.amount_billed)}{b.billing_period ? ' · ' + new Date(b.billing_period + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : ''}{b.lien_waiver_signed_at ? ` · signed ${new Date(b.lien_waiver_signed_at).toLocaleDateString()}${b.lien_waiver_signer_name ? ' by ' + b.lien_waiver_signer_name : ''}` : b.lien_waiver_sent_at ? ` · sent ${new Date(b.lien_waiver_sent_at).toLocaleDateString()}` : ''}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {b.lien_waiver_signed_at ? <span style={s.badge('green')}>E-SIGNED</span> : b.lien_waiver_sent_at ? <span style={s.badge('amber')}>SENT</span> : <span style={s.badge('gray')}>NOT SENT</span>}
+                      {b.lien_waiver_received && <span style={s.badge('green')}>RECEIVED</span>}
+                      {b.lien_waiver_signed_at && <button style={s.btnSmGray} onClick={() => viewBillingWaiver(b)}>View</button>}
+                    </div>
+                  </div>
+                ))}
               </div>
               <div style={s.card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <p style={{ ...s.cardTitle, margin: 0 }}>Lien Waivers ({lienWaivers.length})</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Manual waiver log ({lienWaivers.length})</p>
                   <button style={s.btnSm} onClick={() => setShowAddWaiver(v => !v)}>{showAddWaiver ? 'Cancel' : '+ Add Waiver'}</button>
                 </div>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>Paper or emailed waivers you track by hand. These are records only, not e-signatures.</div>
                 {showAddWaiver && (
                   <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                    <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Subcontractor *</label>
                         <select style={s.select} value={newWaiver.subcontract_id} onChange={e => {
@@ -2535,7 +3263,7 @@ function ResidentialJobDetailInner() {
                         <input type="number" step="0.01" style={s.input} placeholder="0.00" value={newWaiver.amount} onChange={e => setNewWaiver(f => ({ ...f, amount: e.target.value }))} />
                       </div>
                     </div>
-                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                    <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Payment Date</label>
                         <input type="date" style={s.input} value={newWaiver.payment_date} onChange={e => setNewWaiver(f => ({ ...f, payment_date: e.target.value }))} />
@@ -2556,154 +3284,207 @@ function ResidentialJobDetailInner() {
                   </div>
                 )}
                 {lienWaivers.length === 0 ? (
-                  <div style={s.emptyMsg}>No lien waivers yet. Track conditional and unconditional waivers from each sub upon payment.</div>
+                  <div style={s.emptyMsg}>No manual waivers logged.</div>
                 ) : (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #222' }}>
+                  <div className="rx-scroll-x">
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb', minWidth: '620px' }}>
                       {['Company', 'Type', 'Amount', 'Paid', 'Received', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                     </div>
                     {lienWaivers.map(w => (
-                      <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', background: w.status === 'pending' ? '#0d0a00' : 'transparent' }}>
-                        <span style={{ fontSize: '13px', color: '#111827' }}>{w.company_name}</span>
+                      <div key={w.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', background: w.status === 'pending' ? '#fffbeb' : 'transparent', minWidth: '620px' }}>
+                        <span style={{ fontSize: '13px', color: '#111827' }}>{w.company_name} <span style={{ fontSize: '10px', color: '#6b7280' }}>· manual</span></span>
                         <span style={s.badge(w.waiver_type === 'conditional' ? 'blue' : 'green')}>{w.waiver_type === 'conditional' ? 'Conditional' : 'Unconditional'}</span>
                         <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>{w.amount ? '$' + fmt(w.amount) : '—'}</span>
                         <span style={{ fontSize: '12px', color: '#6b7280' }}>{fmtDate(w.payment_date)}</span>
-                        <span style={{ fontSize: '12px', color: w.waiver_date ? '#15803d' : '#e8590c' }}>{fmtDate(w.waiver_date)}</span>
+                        <span style={{ fontSize: '12px', color: w.waiver_date ? '#15803d' : '#c2410c' }}>{fmtDate(w.waiver_date)}</span>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           {w.status === 'pending' && <button style={s.btnGreen} onClick={() => updateWaiverStatus(w.id, 'received')}>Received</button>}
-                          <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteWaiver(w.id)}>×</button>
+                          {canPM && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteWaiver(w.id)}>×</button>}
                         </div>
                       </div>
                     ))}
-                  </>
+                  </div>
                 )}
               </div>
             </>
           )
         })()}
 
-        {/* ── OWNER DRAW ── */}
-        {activeTab === 'ownerdraw' && (() => {
-          const totalFunded = ownerDraws.filter(d => d.status === 'funded').reduce((a, d) => a + Number(d.amount_requested || 0), 0)
-          const totalRequested = ownerDraws.reduce((a, d) => a + Number(d.amount_requested || 0), 0)
-          const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
-          const approvedCostTotal = directCosts.filter(c => c.status === 'approved').reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
-          const drawStatusColor = { draft: 'gray', submitted: 'orange', approved: 'blue', funded: 'green' }
+        {/* ── OWNER DRAW ── owner/lender draws against the Bank schedule (writes via /api/res-owner-draws) */}
+        {visibleTab === 'ownerdraw' && (() => {
+          const drawStatusColor = { draft: 'gray', submitted: 'orange', approved: 'blue', funded: 'green', void: 'red' }
           const packagedAllTotal = drawRequests.reduce((a, dr) => a + packagedDrawTotal(dr.id, directCosts, billingSubmissions), 0)
-          const fundedVsPackaged = drawRequests.length > 0 && amountsDiffer(totalFunded, packagedAllTotal)
+          const fundedVsPackaged = drawRequests.length > 0 && funding.unknownFunded === 0 && funding.fundedKnown > 0 && amountsDiffer(funding.fundedKnown, packagedAllTotal)
+          const editing = drawEdit
+          const editingRow = editing?.id ? ownerDraws.find(d => d.id === editing.id) : null
+          const editSchedule = editing && !hideBudget ? buildDrawSchedule(budgetItems, priorDrawnByLine(ownerDraws, { excludeId: editing.id, drawNumber: editingRow?.draw_number ?? null }), Object.fromEntries(Object.entries(editing.lines || {}).map(([k, v]) => [k, Number(v) || 0]))) : null
+          const linesEntered = editing && Object.values(editing.lines || {}).some(v => v !== '' && v !== null && v !== undefined)
+          const linkedPick = editing && !editing.id && editing.link_draw_request_id ? drawRequests.find(d => d.id === editing.link_draw_request_id) : null
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                <div style={s.statCard}><div style={s.statLabel}>Total Requested</div><div style={s.statValue()}>${fmt(totalRequested)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Total Funded</div><div style={s.statValue('#15803d')}>${fmt(totalFunded)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Packaged Draws</div><div style={s.statValue('#7c3aed')}>${fmt(packagedAllTotal)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Approved Sub Billing</div><div style={s.statValue('#60a5fa')}>${fmt(approvedBillingTotal)}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Approved Direct Costs</div><div style={s.statValue('#e8590c')}>${fmt(approvedCostTotal)}</div></div>
+              {ownerDrawsMigrated === false && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
+                  <strong>Database migration 046 is not applied yet.</strong> You can create and edit draft draws (total only), submit and approve them. Bank-line schedules, recording the amount funded, attachments and Void need the migration and will say so instead of saving.
+                </div>
+              )}
+              <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard} title="Submitted, approved and funded draws (draft and void excluded)"><div style={s.statLabel}>Requested</div><div style={s.statValue()}>${fmt(funding.requested)}</div></div>
+                <div style={s.statCard} title="Cash recorded as received"><div style={s.statLabel}>Funded (recorded)</div><div style={s.statValue('#15803d')}>${fmt(funding.fundedKnown)}</div>{funding.unknownFunded > 0 && <div style={{ fontSize: '11px', color: '#92400e' }}>{funding.unknownFunded} funded draw{funding.unknownFunded !== 1 ? 's' : ''}: amount unknown</div>}</div>
+                <div style={s.statCard} title="Requested minus received, on funded draws whose amount is known"><div style={s.statLabel}>Held back / variance</div><div style={s.statValue(funding.variance > 0 ? '#c2410c' : undefined)}>${fmt(funding.variance)}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>% Funded</div><div style={s.statValue()}>{fundedPct === null ? '—' : fundedPct.toFixed(1) + '%'}</div><div style={{ fontSize: '11px', color: '#6b7280' }}>{fundedPct === null ? (funding.unknownFunded ? 'unknown (legacy draw)' : 'no revised contract') : 'of revised $' + fmt(revisedContractTotal)}</div></div>
+                <div style={s.statCard} title="Billing → Draw Requests (internal packages)"><div style={s.statLabel}>Packaged Draws</div><div style={s.statValue('#7c3aed')}>${fmt(packagedAllTotal)}</div></div>
               </div>
               {fundedVsPackaged && (
                 <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
-                  <strong>Funded draws don't match packaged Draw Requests.</strong> Funded owner/lender draws total ${fmt(totalFunded)}; packaged Draw Requests (Billing → Draw Requests) total ${fmt(packagedAllTotal)} ({totalFunded - packagedAllTotal > 0 ? '+' : '−'}${fmt(Math.abs(totalFunded - packagedAllTotal))}).
+                  <strong>Funded draws don't match packaged Draw Requests.</strong> Recorded funding ${fmt(funding.fundedKnown)}; packaged Draw Requests ${fmt(packagedAllTotal)}.
                 </div>
               )}
+              {drawMsg && <div style={{ background: drawMsg.startsWith('Error') ? '#fef2f2' : '#f0fdf4', border: `1px solid ${drawMsg.startsWith('Error') ? '#fecaca' : '#bbf7d0'}`, color: drawMsg.startsWith('Error') ? '#dc2626' : '#15803d', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px' }}>{drawMsg}</div>}
               <div style={s.card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <p style={{ ...s.cardTitle, margin: 0 }}>Owner/Lender Draw Requests ({ownerDraws.length})</p>
-                  <button style={s.btnSm} onClick={() => setShowAddOwnerDraw(v => !v)}>{showAddOwnerDraw ? 'Cancel' : '+ New Draw'}</button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px', flexWrap: 'wrap' }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Owner/Lender Draws ({ownerDraws.length})</p>
+                  {!editing && <button style={s.btnSm} onClick={() => startDrawEdit(null)}>+ New Draw</button>}
                 </div>
-                {showAddOwnerDraw && (
+
+                {editing && (
                   <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                    <div style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', borderRadius: '6px', padding: '10px 14px', marginBottom: '14px', fontSize: '12px', color: '#6b7280' }}>
-                      Current approved sub billing: <strong style={{ color: '#15803d' }}>${fmt(approvedBillingTotal)}</strong> &nbsp;·&nbsp;
-                      Direct costs: <strong style={{ color: '#e8590c' }}>${fmt(approvedCostTotal)}</strong> &nbsp;·&nbsp;
-                      Combined: <strong style={{ color: '#111827' }}>${fmt(approvedBillingTotal + approvedCostTotal)}</strong>
+                    <p style={{ ...s.cardTitle, marginBottom: '10px' }}>{editing.id ? `Edit draft Draw #${editingRow?.draw_number ?? ''}` : 'New draw (draft)'}</p>
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', fontSize: '12px', color: '#374151' }}>
+                      For reference — approved sub billing <strong>${fmt(approvedBillingTotal)}</strong> · approved direct costs <strong>${fmt(dcTotal)}</strong>. The owner/lender request is set by you (or the Bank lines below), not copied from internal costs.
                     </div>
-                    {drawRequests.length > 0 && (
+                    {!editing.id && drawRequests.length > 0 && (
                       <div style={{ marginBottom: '10px' }}>
-                        <label style={s.label}>Link to packaged Draw Request</label>
-                        <select style={s.select} value={newOwnerDraw.link_draw_request_id} onChange={e => {
-                          const dr = drawRequests.find(d => d.id === e.target.value)
-                          setNewOwnerDraw(f => ({
-                            ...f,
-                            link_draw_request_id: e.target.value,
-                            amount_requested: dr ? packagedDrawTotal(dr.id, directCosts, billingSubmissions).toFixed(2) : f.amount_requested,
-                          }))
-                        }}>
+                        <label style={s.label}>Use the number of a packaged Draw Request (optional)</label>
+                        <select style={s.select} value={editing.link_draw_request_id || ''} onChange={e => setDrawEdit(x => ({ ...x, link_draw_request_id: e.target.value }))}>
                           <option value="">— Not linked (next draw number) —</option>
                           {drawRequests.map(dr => {
-                            const taken = ownerDraws.some(d => d.draw_number === dr.draw_number)
-                            return <option key={dr.id} value={dr.id}>#{dr.draw_number} · {dr.title} · ${fmt(packagedDrawTotal(dr.id, directCosts, billingSubmissions))}{taken ? ' (already has an owner draw)' : ''}</option>
+                            const taken = ownerDraws.some(d => d.draw_number === dr.draw_number && d.status !== 'void')
+                            return <option key={dr.id} value={dr.id}>#{dr.draw_number} · {dr.title} · packaged ${fmt(packagedDrawTotal(dr.id, directCosts, billingSubmissions))}{taken ? ' (already has an owner draw)' : ''}</option>
                           })}
                         </select>
-                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Uses that request's draw number and fills in its packaged total. You can still change the amount.</div>
+                        {linkedPick && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Packaged total ${fmt(packagedDrawTotal(linkedPick.id, directCosts, billingSubmissions))} — shown for comparison only.</div>}
                       </div>
                     )}
-                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
-                      <div>
-                        <label style={s.label}>Draw Title</label>
-                        <input style={s.input} placeholder={`Draw #${ownerDraws.length + 1}`} value={newOwnerDraw.title} onChange={e => setNewOwnerDraw(f => ({ ...f, title: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label style={s.label}>Period Start</label>
-                        <input type="date" style={s.input} value={newOwnerDraw.period_start} onChange={e => setNewOwnerDraw(f => ({ ...f, period_start: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label style={s.label}>Period End</label>
-                        <input type="date" style={s.input} value={newOwnerDraw.period_end} onChange={e => setNewOwnerDraw(f => ({ ...f, period_end: e.target.value }))} />
-                      </div>
+                    <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Draw Title</label><input style={s.input} placeholder="Draw #…" value={editing.title} onChange={e => setDrawEdit(x => ({ ...x, title: e.target.value }))} /></div>
+                      <div><label style={s.label}>Period Start</label><input type="date" style={s.input} value={editing.period_start} onChange={e => setDrawEdit(x => ({ ...x, period_start: e.target.value }))} /></div>
+                      <div><label style={s.label}>Period End</label><input type="date" style={s.input} value={editing.period_end} onChange={e => setDrawEdit(x => ({ ...x, period_end: e.target.value }))} /></div>
                     </div>
-                    <div style={{ ...s.grid2, marginBottom: '10px' }}>
+                    {editSchedule && budgetItems.length > 0 && (
+                      <div className="rx-scroll-x" style={{ marginBottom: '10px' }}>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px' }}>Bank schedule — fill "This draw" per line (optional). The amount requested becomes the line total.</div>
+                        <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '12px' }}>
+                          <thead><tr>{['Line', 'Scheduled', 'Previous', 'This draw', 'Total', '%', 'Balance'].map(h => <th key={h} style={{ textAlign: h === 'Line' ? 'left' : 'right', padding: '6px', borderBottom: '1px solid #e5e7eb', color: '#6b7280', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {editSchedule.rows.map(r => (
+                              <tr key={r.budget_item_id}>
+                                <td style={{ padding: '4px 6px', borderBottom: '1px solid #f3f4f6' }}>{r.cost_code ? r.cost_code + ' · ' : ''}{r.description}</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', borderBottom: '1px solid #f3f4f6' }}>${fmt(r.scheduled)}</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', borderBottom: '1px solid #f3f4f6' }}>${fmt(r.previous)}</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}><input type="number" step="0.01" style={{ ...s.input, width: '110px', padding: '4px 6px', textAlign: 'right' }} value={editing.lines?.[r.budget_item_id] ?? ''} onChange={e => setDrawEdit(x => ({ ...x, lines: { ...(x.lines || {}), [r.budget_item_id]: e.target.value } }))} /></td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', borderBottom: '1px solid #f3f4f6' }}>${fmt(r.total)}</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}>{r.pct === null ? '—' : r.pct.toFixed(1) + '%'}</td>
+                                <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', color: r.balance < 0 ? '#dc2626' : undefined, borderBottom: '1px solid #f3f4f6' }}>${fmt(r.balance)}</td>
+                              </tr>
+                            ))}
+                            <tr style={{ fontWeight: 700 }}>
+                              <td style={{ padding: '6px' }}>Total</td>
+                              <td style={{ padding: '6px', textAlign: 'right', fontFamily: 'monospace' }}>${fmt(editSchedule.totals.scheduled)}</td>
+                              <td style={{ padding: '6px', textAlign: 'right', fontFamily: 'monospace' }}>${fmt(editSchedule.totals.previous)}</td>
+                              <td style={{ padding: '6px', textAlign: 'right', fontFamily: 'monospace' }}>${fmt(editSchedule.totals.this_period)}</td>
+                              <td style={{ padding: '6px', textAlign: 'right', fontFamily: 'monospace' }}>${fmt(editSchedule.totals.total)}</td>
+                              <td style={{ padding: '6px', textAlign: 'right' }}>{editSchedule.totals.pct === null ? '—' : editSchedule.totals.pct.toFixed(1) + '%'}</td>
+                              <td style={{ padding: '6px', textAlign: 'right', fontFamily: 'monospace' }}>${fmt(editSchedule.totals.balance)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Amount Requested ($) *</label>
-                        <input type="number" step="0.01" style={s.input} placeholder="0.00" value={newOwnerDraw.amount_requested} onChange={e => setNewOwnerDraw(f => ({ ...f, amount_requested: e.target.value }))} autoFocus />
+                        {linesEntered
+                          ? <div style={{ ...s.input, background: '#f3f4f6', fontFamily: 'monospace' }}>${fmt(editSchedule?.totals.this_period || 0)} (line total)</div>
+                          : <input type="number" step="0.01" style={s.input} placeholder="0.00" value={editing.amount_requested} onChange={e => setDrawEdit(x => ({ ...x, amount_requested: e.target.value }))} />}
                       </div>
-                      <div>
-                        <label style={s.label}>Notes</label>
-                        <input style={s.input} value={newOwnerDraw.notes} onChange={e => setNewOwnerDraw(f => ({ ...f, notes: e.target.value }))} placeholder="Bank loan #, inspector contact..." />
-                      </div>
+                      <div><label style={s.label}>Notes</label><input style={s.input} value={editing.notes} onChange={e => setDrawEdit(x => ({ ...x, notes: e.target.value }))} placeholder="Bank loan #, inspector contact..." /></div>
                     </div>
-                    <button style={s.btn} onClick={addOwnerDraw} disabled={addingOwnerDraw || !newOwnerDraw.amount_requested}>{addingOwnerDraw ? 'Creating...' : 'Create Draw Request'}</button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button style={s.btn} onClick={saveDraw} disabled={drawBusy}>{drawBusy ? 'Saving…' : editing.id ? 'Save draft' : 'Create draft'}</button>
+                      <button style={s.btnGray} onClick={() => { setDrawEdit(null); setDrawMsg('') }}>Cancel</button>
+                    </div>
                   </div>
                 )}
+
                 {ownerDraws.length === 0 ? (
                   <div style={s.emptyMsg}>No owner draw requests yet. Create one to request funds from the construction lender or owner.</div>
                 ) : (
                   ownerDraws.map(d => {
                     const linkedDR = drawRequests.find(dr => dr.draw_number != null && dr.draw_number === d.draw_number)
                     const linkedTotal = linkedDR ? packagedDrawTotal(linkedDR.id, directCosts, billingSubmissions) : null
-                    const mismatch = linkedDR && amountsDiffer(d.amount_requested, linkedTotal)
+                    const mismatch = linkedDR && d.status !== 'void' && amountsDiffer(d.amount_requested, linkedTotal)
+                    const received = drawFundedAmount(d)
+                    const isFunding = fundingDraw?.id === d.id
+                    const attachments = Array.isArray(d.attachments) ? d.attachments : []
                     return (
-                    <div key={d.id} style={{ border: `1px solid ${d.status === 'funded' ? '#bbf7d0' : d.status === 'submitted' ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '10px' }}>
+                    <div key={d.id} style={{ border: `1px solid ${d.status === 'funded' ? '#bbf7d0' : d.status === 'submitted' ? '#fed7aa' : d.status === 'void' ? '#fecaca' : '#e5e7eb'}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '10px', opacity: d.status === 'void' ? 0.7 : 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                        <div>
-                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>Draw #{d.draw_number} — {d.title}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', marginBottom: '4px', textDecoration: d.status === 'void' ? 'line-through' : 'none' }}>Draw #{d.draw_number} — {d.title}</div>
                           <div style={{ fontSize: '12px', color: '#6b7280' }}>
                             {d.period_start && d.period_end ? `${fmtDate(d.period_start)} – ${fmtDate(d.period_end)}` : d.period_start ? `From ${fmtDate(d.period_start)}` : ''}
                             {d.submitted_date && ` · Submitted ${fmtDate(d.submitted_date)}`}
                             {d.funded_date && ` · Funded ${fmtDate(d.funded_date)}`}
+                            {Array.isArray(d.schedule_lines) && d.schedule_lines.length ? ` · ${d.schedule_lines.length} Bank line${d.schedule_lines.length !== 1 ? 's' : ''}` : ''}
                             {d.notes && ` · ${d.notes}`}
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'monospace', color: '#111827' }}>${fmt(d.amount_requested)}</span>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '18px', fontWeight: '800', fontFamily: 'monospace', color: '#111827' }}>${fmt(d.amount_requested)}</div>
+                            {d.status === 'funded' && (received === null
+                              ? <div style={{ fontSize: '11px', color: '#92400e' }}>Received: unknown (not recorded)</div>
+                              : <div style={{ fontSize: '11px', color: '#15803d' }}>Received ${fmt(received)}{amountsDiffer(received, d.amount_requested) ? ` · variance $${fmt(Number(d.amount_requested || 0) - received)}` : ''}</div>)}
+                          </div>
                           <span style={s.badge(drawStatusColor[d.status] || 'gray')}>{d.status}</span>
                         </div>
                       </div>
-                      {linkedDR && (
-                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
-                          Packaged Draw Request: {linkedDR.title} · ${fmt(linkedTotal)}
-                        </div>
-                      )}
+                      {linkedDR && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>Packaged Draw Request: {linkedDR.title} · ${fmt(linkedTotal)}</div>}
                       {mismatch && (
                         <div style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', marginTop: '6px' }}>
                           Amount requested (${fmt(d.amount_requested)}) differs from the packaged total (${fmt(linkedTotal)}) by ${fmt(Math.abs(Number(d.amount_requested || 0) - linkedTotal))}.
                         </div>
                       )}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                        {d.status === 'draft' && <button style={s.btnSm} onClick={() => updateOwnerDrawStatus(d.id, 'submitted')}>Submit to Owner/Bank</button>}
-                        {d.status === 'submitted' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'approved')}>Mark Approved</button>}
-                        {d.status === 'approved' && <button style={s.btnGreen} onClick={() => updateOwnerDrawStatus(d.id, 'funded')}>Mark Funded</button>}
-                        {d.status !== 'funded' && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteOwnerDraw(d.id)}>Delete</button>}
-                      </div>
+                      {attachments.length > 0 && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                          {attachments.map(att => <button key={att.path} style={{ ...s.btnSmGray, fontSize: '11px' }} onClick={() => openJobDoc(att.path)}>📎 {att.name || 'Attachment'}</button>)}
+                        </div>
+                      )}
+                      {isFunding && (
+                        <div style={{ ...s.inlineForm, marginTop: '10px', marginBottom: 0, display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div><label style={s.label}>Amount received ($)</label><input type="number" step="0.01" min="0" style={{ ...s.input, width: '160px' }} value={fundingDraw.amount_funded} onChange={e => setFundingDraw(f => ({ ...f, amount_funded: e.target.value }))} autoFocus /></div>
+                          <div><label style={s.label}>Date funded</label><input type="date" style={{ ...s.input, width: 'auto' }} value={fundingDraw.funded_date} onChange={e => setFundingDraw(f => ({ ...f, funded_date: e.target.value }))} /></div>
+                          <button style={s.btnGreen} onClick={recordFunding} disabled={drawBusy}>{drawBusy ? 'Saving…' : 'Record funding'}</button>
+                          <button style={s.btnSmGray} onClick={() => setFundingDraw(null)}>Cancel</button>
+                          <div style={{ fontSize: '11px', color: '#6b7280', width: '100%' }}>Enter what the owner/lender actually paid. A partial amount is fine; the difference shows as variance.</div>
+                        </div>
+                      )}
+                      {d.status !== 'void' && (
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                          <button style={s.btnSmGray} onClick={() => printOwnerDraw(d)}>Print</button>
+                          {isDrawEditable(d) && <button style={s.btnSmGray} onClick={() => startDrawEdit(d)}>Edit</button>}
+                          {d.status === 'draft' && <button style={s.btnSm} onClick={() => setDrawStatus(d, 'submitted')}>Submit to Owner/Bank</button>}
+                          {d.status === 'submitted' && <button style={s.btnGreen} onClick={() => setDrawStatus(d, 'approved')}>Mark Approved</button>}
+                          {(d.status === 'submitted' || d.status === 'approved') && <button style={s.btnGreen} onClick={() => setFundingDraw({ id: d.id, amount_funded: String(d.amount_requested ?? ''), funded_date: todayCentral() })}>Record Funding</button>}
+                          {d.status === 'funded' && received === null && <button style={s.btnSmGray} onClick={() => setFundingDraw({ id: d.id, amount_funded: '', funded_date: d.funded_date || todayCentral() })}>Record amount received</button>}
+                          <label style={{ ...s.btnSmGray, display: 'inline-flex', alignItems: 'center', cursor: drawBusy ? 'wait' : 'pointer' }}>
+                            📎 Attach
+                            <input type="file" style={{ display: 'none' }} disabled={drawBusy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; attachToDraw(d, f) }} />
+                          </label>
+                          {d.status === 'draft' && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deleteOwnerDraw(d)}>Delete</button>}
+                          {d.status !== 'draft' && d.status !== 'funded' && canPM && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => setDrawStatus(d, 'void')}>Void</button>}
+                        </div>
+                      )}
                     </div>
                     )
                   })
@@ -2713,100 +3494,146 @@ function ResidentialJobDetailInner() {
           )
         })()}
 
-        {/* ── PUNCH LIST ── */}
-        {activeTab === 'punchlist' && (() => {
-          const openCount = punchList.filter(p => p.status === 'open').length
-          const inProgressCount = punchList.filter(p => p.status === 'in-progress').length
-          const doneCount = punchList.filter(p => p.status === 'done').length
+        {/* ── PUNCH LIST ── shared punch_list_items (field app + sub portal see the same items) */}
+        {visibleTab === 'punchlist' && (() => {
+          const count = st => punchList.filter(p => p.status === st).length
+          const pColor = { open: 'orange', sub_complete: 'amber', approved: 'green', rejected: 'red' }
           return (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
-                <div style={s.statCard}><div style={s.statLabel}>Open</div><div style={s.statValue(openCount > 0 ? '#e8590c' : undefined)}>{openCount}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>In Progress</div><div style={s.statValue('#60a5fa')}>{inProgressCount}</div></div>
-                <div style={s.statCard}><div style={s.statLabel}>Done</div><div style={s.statValue('#15803d')}>{doneCount}</div></div>
+              <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Open</div><div style={s.statValue(count('open') ? '#e8590c' : undefined)}>{count('open')}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Sub says done</div><div style={s.statValue(count('sub_complete') ? '#a16207' : undefined)}>{count('sub_complete')}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Approved</div><div style={s.statValue('#15803d')}>{count('approved')}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Rejected</div><div style={s.statValue(count('rejected') ? '#dc2626' : undefined)}>{count('rejected')}</div></div>
               </div>
               <div style={s.card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '8px', flexWrap: 'wrap' }}>
                   <p style={{ ...s.cardTitle, margin: 0 }}>Punch List ({punchList.length})</p>
                   <button style={s.btnSm} onClick={() => setShowAddPunch(v => !v)}>{showAddPunch ? 'Cancel' : '+ Add Item'}</button>
                 </div>
+                {punchMsg && <div style={{ ...(punchMsg.startsWith('Error') ? s.errMsg : s.successMsg), marginBottom: '10px' }}>{punchMsg}</div>}
                 {showAddPunch && (
                   <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                    <div style={{ marginBottom: '10px' }}>
-                      <label style={s.label}>Description *</label>
-                      <input style={s.input} autoFocus placeholder="Touch-up paint in master bedroom..." value={newPunch.description} onChange={e => setNewPunch(f => ({ ...f, description: e.target.value }))} />
+                    <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
+                      <div><label style={s.label}>Title *</label><input style={s.input} autoFocus placeholder="Touch-up paint in master bedroom..." value={newPunch.title} onChange={e => setNewPunch(f => ({ ...f, title: e.target.value }))} /></div>
+                      <div><label style={s.label}>Details</label><input style={s.input} value={newPunch.description} onChange={e => setNewPunch(f => ({ ...f, description: e.target.value }))} placeholder="Location, details..." /></div>
                     </div>
-                    <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                    <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
                       <div>
                         <label style={s.label}>Assign to Sub</label>
-                        <select style={s.select} value={newPunch.subcontract_id} onChange={e => setNewPunch(f => ({ ...f, subcontract_id: e.target.value, assigned_to: '' }))}>
-                          <option value="">— Select sub or enter below —</option>
-                          {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}</option>)}
+                        <select style={s.select} value={newPunch.subcontract_id} onChange={e => setNewPunch(f => ({ ...f, subcontract_id: e.target.value, assigned_company: '' }))}>
+                          <option value="">— Select sub or type a company —</option>
+                          {contracts.map(c => <option key={c.id} value={c.id}>{c.vendor_name}{c.sub_id ? '' : ' (no portal login)'}</option>)}
                         </select>
-                        {!newPunch.subcontract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Or type name / trade..." value={newPunch.assigned_to} onChange={e => setNewPunch(f => ({ ...f, assigned_to: e.target.value }))} />}
+                        {!newPunch.subcontract_id && <input style={{ ...s.input, marginTop: '6px' }} placeholder="Or type a company / trade..." value={newPunch.assigned_company} onChange={e => setNewPunch(f => ({ ...f, assigned_company: e.target.value }))} />}
                       </div>
-                      <div>
-                        <label style={s.label}>Due Date</label>
-                        <input type="date" style={s.input} value={newPunch.due_date} onChange={e => setNewPunch(f => ({ ...f, due_date: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label style={s.label}>Notes</label>
-                        <input style={s.input} value={newPunch.notes} onChange={e => setNewPunch(f => ({ ...f, notes: e.target.value }))} placeholder="Location, details..." />
-                      </div>
+                      <div><label style={s.label}>Due Date</label><input type="date" style={s.input} value={newPunch.due_date} onChange={e => setNewPunch(f => ({ ...f, due_date: e.target.value }))} /></div>
                     </div>
-                    <button style={s.btn} onClick={addPunchItem} disabled={addingPunch || !newPunch.description}>{addingPunch ? 'Adding...' : 'Add to Punch List'}</button>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '8px' }}>A sub with a portal login is notified and sees the item in the sub portal.</div>
+                    <button style={s.btn} onClick={addPunchItem} disabled={addingPunch || !newPunch.title.trim()}>{addingPunch ? 'Adding...' : 'Add to Punch List'}</button>
                   </div>
                 )}
                 {punchList.length === 0 ? (
-                  <div style={s.emptyMsg}>Punch list is clear. Add items as you approach project closeout.</div>
-                ) : (
-                  punchList.map(p => {
-                    const assignedSub = p.subcontract_id ? contracts.find(c => c.id === p.subcontract_id) : null
-                    return (
-                      <div key={p.id} style={{ border: `1px solid ${p.status === 'done' ? '#bbf7d0' : p.status === 'in-progress' ? '#bfdbfe' : '#e5e7eb'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '8px', opacity: p.status === 'done' ? 0.65 : 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: '600', color: p.status === 'done' ? '#9ca3af' : '#111827', textDecoration: p.status === 'done' ? 'line-through' : 'none', marginBottom: '3px' }}>{p.description}</div>
-                            <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                              {(assignedSub?.vendor_name || p.assigned_to) && <span style={{ color: '#60a5fa' }}>{assignedSub?.vendor_name || p.assigned_to}</span>}
-                              {p.due_date && <span> · Due {fmtDate(p.due_date)}</span>}
-                              {p.notes && <span> · {p.notes}</span>}
-                              {p.completed_date && <span style={{ color: '#15803d' }}> · Completed {fmtDate(p.completed_date)}</span>}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <span style={s.badge(statusColor[p.status] || 'gray')}>{p.status}</span>
-                            {p.status === 'open' && <button style={s.btnSmGray} onClick={() => updatePunchStatus(p.id, 'in-progress')}>Start</button>}
-                            {p.status !== 'done' && <button style={s.btnGreen} onClick={() => updatePunchStatus(p.id, 'done')}>Done</button>}
-                            {p.status === 'done' && <button style={s.btnSmGray} onClick={() => updatePunchStatus(p.id, 'open')}>Reopen</button>}
-                            <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deletePunchItem(p.id)}>×</button>
-                          </div>
+                  <div style={s.emptyMsg}>Punch list is clear. Items from the field app and sub portal show here too.</div>
+                ) : punchList.map(p => (
+                  <div key={p.id} style={{ border: `1px solid ${p.status === 'approved' ? '#bbf7d0' : p.status === 'sub_complete' ? '#fde68a' : p.status === 'rejected' ? '#fecaca' : '#e5e7eb'}`, borderRadius: '8px', padding: '12px 14px', marginBottom: '8px', opacity: p.status === 'approved' ? 0.7 : 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: p.status === 'approved' ? '#6b7280' : '#111827', textDecoration: p.status === 'approved' ? 'line-through' : 'none', marginBottom: '3px' }}>{p.title}</div>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                          {p.assigned_company && <span style={{ color: '#1d4ed8' }}>{p.assigned_company}</span>}
+                          {p.due_date && <span style={{ color: isBeforeTodayCentral(p.due_date) && p.status !== 'approved' ? '#dc2626' : undefined }}> · Due {fmtDate(p.due_date)}</span>}
+                          {p.description && <span> · {p.description}</span>}
+                          {p.completed_at && <span> · Sub marked done {new Date(p.completed_at).toLocaleDateString()}</span>}
+                          {p.pm_approved_at && <span style={{ color: '#15803d' }}> · Approved {new Date(p.pm_approved_at).toLocaleDateString()}</span>}
                         </div>
+                        {p.pm_notes && <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>PM note: {p.pm_notes}</div>}
                       </div>
-                    )
-                  })
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={s.badge(pColor[p.status] || 'gray')}>{String(p.status || '').replace('_', ' ')}</span>
+                        {p.status === 'sub_complete' && <>
+                          <button style={s.btnGreen} disabled={punchBusyId === p.id} onClick={() => updatePunchStatus(p.id, 'approved')}>Approve</button>
+                          <button style={s.btnRed} disabled={punchBusyId === p.id} onClick={() => updatePunchStatus(p.id, 'rejected')}>Reject</button>
+                        </>}
+                        {p.status === 'open' && <button style={s.btnGreen} disabled={punchBusyId === p.id} onClick={() => updatePunchStatus(p.id, 'approved')}>Mark Done</button>}
+                        {(p.status === 'rejected' || p.status === 'approved') && <button style={s.btnSmGray} disabled={punchBusyId === p.id} onClick={() => updatePunchStatus(p.id, 'open')}>Reopen</button>}
+                        {canPM && <button style={{ ...s.btnSmGray, color: '#dc2626' }} onClick={() => deletePunchItem(p.id)}>×</button>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {legacyPunch.length > 0 && (
+                  <div style={{ marginTop: '16px' }}>
+                    <p style={{ ...s.cardTitle, marginBottom: '6px' }}>Older punch items (read-only)</p>
+                    {legacyPunch.map(p => <div key={p.id} style={{ fontSize: '12px', color: '#6b7280', padding: '4px 0', borderBottom: '1px solid #f3f4f6' }}>{p.description} · {p.status}{p.assigned_to ? ' · ' + p.assigned_to : ''}</div>)}
+                  </div>
                 )}
               </div>
             </>
           )
         })()}
 
+        {/* ── FIELD ── read-only: daily reports, RFIs, deliveries from the field app */}
+        {visibleTab === 'field' && (
+          <>
+            {!fieldData ? <div style={s.emptyMsg}>Loading field activity…</div> : (
+              <>
+                <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                  <div style={s.statCard}><div style={s.statLabel}>Daily reports</div><div style={s.statValue()}>{fieldData.reports.length}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Open RFIs</div><div style={s.statValue(fieldData.rfis.some(r => r.status === 'open') ? '#e8590c' : undefined)}>{fieldData.rfis.filter(r => r.status === 'open').length}</div></div>
+                  <div style={s.statCard}><div style={s.statLabel}>Deliveries pending</div><div style={s.statValue()}>{fieldData.deliveries.filter(d => !d.received_date).length}</div></div>
+                </div>
+                <div style={s.card}>
+                  <p style={s.cardTitle}>Daily Reports</p>
+                  {fieldData.reports.length === 0 ? <div style={s.emptyMsg}>No daily reports. Supers file them in the field app.</div> : fieldData.reports.map(r => (
+                    <div key={r.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                      <div style={{ fontWeight: 600 }}>{fmtDate(r.report_date)}{Array.isArray(r.photos) && r.photos.length ? ` · ${r.photos.length} photo${r.photos.length !== 1 ? 's' : ''}` : ''}</div>
+                      {r.work_performed && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.work_performed}</div>}
+                      {r.issues && <div style={{ color: '#b91c1c', whiteSpace: 'pre-wrap' }}>Issues: {r.issues}</div>}
+                    </div>
+                  ))}
+                </div>
+                <div style={s.card}>
+                  <p style={s.cardTitle}>RFIs</p>
+                  {fieldData.rfis.length === 0 ? <div style={s.emptyMsg}>No RFIs.</div> : fieldData.rfis.map(r => (
+                    <div key={r.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}><strong>{r.title}</strong><span style={s.badge(r.status === 'open' ? 'orange' : 'gray')}>{r.status}</span></div>
+                      {r.description && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.description}</div>}
+                      {r.response && <div style={{ color: '#15803d', whiteSpace: 'pre-wrap' }}>Response: {r.response}</div>}
+                    </div>
+                  ))}
+                </div>
+                <div style={s.card}>
+                  <p style={s.cardTitle}>Deliveries</p>
+                  {fieldData.deliveries.length === 0 ? <div style={s.emptyMsg}>No deliveries.</div> : fieldData.deliveries.map(d => (
+                    <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                      <span>{d.material || '—'}{d.vendor ? ' · ' + d.vendor : ''}</span>
+                      <span style={{ color: '#6b7280' }}>{d.received_date ? 'Received ' + fmtDate(d.received_date) : 'Expected ' + fmtDate(d.expected_date)}{d.status ? ' · ' + d.status : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
         {/* ── CONTACTS ── */}
-        {activeTab === 'contacts' && (
+        {visibleTab === 'contacts' && (
           <div style={s.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Contacts ({contacts.length})</p>
               <button style={s.btnSm} onClick={() => setShowAddContact(v => !v)}>{showAddContact ? 'Cancel' : '+ Add Contact'}</button>
             </div>
 
+            {contactMsg && <div style={{ ...s.errMsg, marginBottom: '10px' }}>{contactMsg}</div>}
             {showAddContact && (
               <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
-                <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                   <div><label style={s.label}>Name *</label><input style={s.input} value={newContact.name} onChange={e => setNewContact(f => ({ ...f, name: e.target.value }))} autoFocus /></div>
                   <div><label style={s.label}>Role</label><input style={s.input} placeholder="Architect, Inspector..." value={newContact.role} onChange={e => setNewContact(f => ({ ...f, role: e.target.value }))} /></div>
                   <div><label style={s.label}>Company</label><input style={s.input} value={newContact.company} onChange={e => setNewContact(f => ({ ...f, company: e.target.value }))} /></div>
                 </div>
-                <div style={{ ...s.grid3, marginBottom: '10px' }}>
+                <div className="rx-grid-3" style={{ ...s.grid3, marginBottom: '10px' }}>
                   <div><label style={s.label}>Phone</label><input style={s.input} value={newContact.phone} onChange={e => setNewContact(f => ({ ...f, phone: e.target.value }))} /></div>
                   <div><label style={s.label}>Email</label><input style={s.input} type="email" value={newContact.email} onChange={e => setNewContact(f => ({ ...f, email: e.target.value }))} /></div>
                   <div><label style={s.label}>Notes</label><input style={s.input} value={newContact.notes} onChange={e => setNewContact(f => ({ ...f, notes: e.target.value }))} /></div>
@@ -2818,12 +3645,12 @@ function ResidentialJobDetailInner() {
             {contacts.length === 0 ? (
               <div style={s.emptyMsg}>No contacts yet. Add the owner, architect, inspector, or other key contacts.</div>
             ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb' }}>
+              <div className="rx-scroll-x">
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '0 0 8px', borderBottom: '1px solid #e5e7eb', minWidth: '560px' }}>
                   {['Name', 'Role', 'Phone', 'Email', ''].map(h => <div key={h} style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700' }}>{h}</div>)}
                 </div>
                 {contacts.map(c => (
-                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center' }}>
+                  <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 40px', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e5e7eb', alignItems: 'center', minWidth: '560px' }}>
                     <div>
                       <div style={{ fontSize: '13px', color: '#111827' }}>{c.name}</div>
                       {c.company && <div style={{ fontSize: '11px', color: '#6b7280' }}>{c.company}</div>}
@@ -2834,7 +3661,7 @@ function ResidentialJobDetailInner() {
                     <button style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px' }} onClick={() => deleteContact(c.id)}>×</button>
                   </div>
                 ))}
-              </>
+              </div>
             )}
           </div>
         )}
@@ -2862,7 +3689,7 @@ function ResidentialJobDetailInner() {
       {aiOpen && (
         <div style={{
           position: 'fixed', bottom: '88px', right: '24px', zIndex: 1099,
-          width: '360px', maxHeight: '520px',
+          width: 'min(360px, calc(100vw - 32px))', maxHeight: '520px',
           background: '#0f0f1a', border: '1px solid #2a2a3e', borderRadius: '16px',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           boxShadow: '0 8px 40px rgba(0,0,0,0.55)',

@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
 import { openFile, openStorageFile } from '../../lib/open-file'
 import { isPartner } from '../../lib/partners'
+import { jobHrefById } from '../../lib/job-links'
 import BotAccessPanel from './BotAccessPanel'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 
@@ -255,7 +256,7 @@ export default function AdminPortal() {
       if (!devIsAdminOverride && (!prof || (prof.role !== 'admin' && !isPartner(prof.id)))) { router.push('/login'); return }
       setProfile(devIsAdminOverride ? { ...prof, role: 'admin' } : prof)
       const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, membersRes] = await Promise.all([
-        supabase.from('jobs').select('id, job_number, project_name, payment_type').order('created_at', { ascending: false }),
+        supabase.from('jobs').select('id, job_number, project_name, payment_type, job_type').order('created_at', { ascending: false }),
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('profiles').select('id, full_name').in('role', ['principal', 'pm', 'apm', 'admin', 'super']),
         supabase.from('companies').select('*'),
@@ -1340,7 +1341,7 @@ export default function AdminPortal() {
                             const badge = PO_BADGE[po.status] || PO_BADGE.draft
                             const date = po.issued_date || po.created_at
                             return (
-                              <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => router.push(`/jobdetail?id=${po.job_id}&tab=po`)}>
+                              <tr key={po.id} style={{ cursor: 'pointer' }} onClick={() => router.push(jobHrefById(po.job_id, jobs, 'po'))}>
                                 <td style={s.td}><span style={{ color: '#111827' }}>#{po.jobs?.job_number}</span><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{po.jobs?.project_name}</span></td>
                                 <td style={s.td}><span style={{ fontWeight: '600', color: '#111827' }}>{po.po_number}</span>{po.description && <><br /><span style={{ fontSize: '11px', color: '#6b7280' }}>{po.description}</span></>}</td>
                                 <td style={s.td}>{po.vendor_name}</td>

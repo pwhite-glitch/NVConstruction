@@ -186,6 +186,9 @@ textarea:focus {
   /* Mobile section nav dropdown */
   .rx-mobile-nav-select { display: block !important; }
 
+  /* DEV role badge sits above the dashboard bottom nav (60px + home indicator) */
+  .nv-dev-badge { bottom: calc(72px + env(safe-area-inset-bottom)) !important; }
+
   /* Photo grid: 3-col on mobile */
   .rx-grid-photos { grid-template-columns: repeat(3, 1fr) !important; }
 

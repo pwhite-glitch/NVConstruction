@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { atLeastPM } from '../../../lib/roles'
+import { jobHref } from '../../../lib/job-links'
 
 // ── Section definitions ───────────────────────────────────────────────────────
 
@@ -1448,7 +1449,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
 
   useEffect(() => {
     if (pkg?.job_id) {
-      supabase.from('jobs').select('id, job_number, project_name').eq('id', pkg.job_id).maybeSingle()
+      supabase.from('jobs').select('id, job_number, project_name, job_type').eq('id', pkg.job_id).maybeSingle()
         .then(({ data }) => { if (data) setLinkedJob(data) })
     }
   }, [pkg?.job_id])
@@ -1559,7 +1560,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
           <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#15803d', fontWeight: '600' }}>Linked Job</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p style={{ margin: 0, fontSize: '13px', color: '#111827' }}>{linkedJob.job_number} — {linkedJob.project_name}</p>
-            <a href={`/jobdetail?id=${linkedJob.id}`} style={{ ...s.btnSec, textDecoration: 'none', padding: '5px 12px', fontSize: '12px' }}>Open Job →</a>
+            <a href={jobHref(linkedJob)} style={{ ...s.btnSec, textDecoration: 'none', padding: '5px 12px', fontSize: '12px' }}>Open Job →</a>
           </div>
         </div>
       )}

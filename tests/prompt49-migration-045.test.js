@@ -15,7 +15,9 @@ const topLevel = code.replace(/\$\$[\s\S]*?\$\$/g, '$$$$').replace(/\$migration\
 describe('migration 045 definitions', () => {
   test('is the next number after 044 and says it is not applied', () => {
     const nums = fs.readdirSync(dir).map(f => parseInt(f, 10)).filter(Number.isFinite)
-    expect(Math.max(...nums)).toBe(45)
+    // 045 follows 044 and its number is unique (later migrations, e.g. 046, may exist)
+    expect(nums).toContain(44)
+    expect(nums.filter(n => n === 45)).toHaveLength(1)
     expect(sql).toMatch(/NOT APPLIED/)
   })
   test('PROPOSED nullable co_number on both CO tables, scoped unique indexes', () => {

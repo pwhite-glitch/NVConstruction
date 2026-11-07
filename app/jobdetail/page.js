@@ -5,6 +5,8 @@ import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { statusSaveClearsArchived } from '../../lib/job-lifecycle'
+import { safePageTab, wrongPageHref } from '../../lib/job-links'
+import { contractCommittedForItem } from '../../lib/residential-money'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
@@ -614,7 +616,8 @@ function JobDetailInner() {
     const paramTab = searchParams.get('tab')
     const paramWeek = searchParams.get('week')
     if (paramId) setId(paramId)
-    if (paramTab) setActiveTab(paramTab)
+    // Unknown keys (e.g. a residential-only tab) fall back to Overview, never a blank pane.
+    if (paramTab) setActiveTab(safePageTab(paramTab, false, 'overview'))
     if (paramWeek && /^\d{4}-\d{2}-\d{2}$/.test(paramWeek)) setLookaheadWeekStart(mondayOf(paramWeek))
   }, [searchParams])
 
@@ -688,6 +691,9 @@ function JobDetailInner() {
         setLoading(false)
         return
       }
+      // Residential job opened here (old link, email, notification): its own page, once.
+      const wrongPage = wrongPageHref(jobData, 'commercial', new URLSearchParams(window.location.search).get('tab'))
+      if (wrongPage) { router.replace(wrongPage); return }
       setJob(jobData)
       setForm(jobData)
       setContractValueUnlocked(false)
@@ -4841,45 +4847,8 @@ ${attachmentHtml}
   }
 
   function committedForItem(budgetItemId) {
-    const contractCommitted = contracts.reduce((total, c) => {
-      const base = Number(c.contract_value || 0)
-      const allocs = c.budget_allocations
-      let baseAmount = 0
-      if (allocs && allocs.length > 0) {
-        const match = allocs.find(a => a.budget_item_id === budgetItemId)
-        if (match) {
-          // Use contract_value (not adjusted) so CO amounts are tracked separately below
-          const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
-          const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
-          baseAmount = pct * base
-        }
-      } else if (c.budget_item_id === budgetItemId) {
-        baseAmount = base
-      }
-      // Add approved CO amounts from this subcontract
-      const coAmount = allCOs
-        .filter(co => co.subcontract_id === c.id && co.status === 'approved')
-        .reduce((coTotal, co) => {
-          const sovLines = (co.sov || []).filter(s => s.budget_item_id)
-          if (sovLines.length > 0) {
-            // Explicit SOV assignment — use only the matching line
-            const sovMatch = sovLines.find(s => s.budget_item_id === budgetItemId)
-            return coTotal + (sovMatch ? Number(sovMatch.amount || 0) : 0)
-          }
-          // No explicit SOV — fall back to parent subcontract's budget allocation
-          const coAmt = Number(co.amount || 0)
-          if (allocs && allocs.length > 0) {
-            const match = allocs.find(a => a.budget_item_id === budgetItemId)
-            if (!match) return coTotal
-            const totalAlloc = allocs.reduce((s, a) => s + Number(a.amount || 0), 0)
-            const pct = totalAlloc > 0 ? Number(match.amount) / totalAlloc : 0
-            return coTotal + pct * coAmt
-          }
-          if (c.budget_item_id === budgetItemId) return coTotal + coAmt
-          return coTotal
-        }, 0)
-      return total + baseAmount + coAmount
-    }, 0)
+    // Subcontracts + approved sub COs: shared with the residential page (lib/residential-money.js)
+    const contractCommitted = contractCommittedForItem(contracts, allCOs, budgetItemId)
     const dcCommitted = directCosts
       .filter(c => c.status === 'approved' && c.budget_item_id === budgetItemId)
       .reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
@@ -14902,7 +14871,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
       {aiOpen && (
         <div style={{
           position: 'fixed', bottom: '88px', right: '24px', zIndex: 1099,
-          width: '360px', maxHeight: '520px',
+          width: 'min(360px, calc(100vw - 32px))', maxHeight: '520px',
           background: '#0f0f1a', border: '1px solid #2a2a3e', borderRadius: '16px',
           display: 'flex', flexDirection: 'column', overflow: 'hidden',
           boxShadow: '0 8px 40px rgba(0,0,0,0.55)',

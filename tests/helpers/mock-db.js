@@ -3,11 +3,13 @@
 //   mockState.db = { table: [rows] }
 //   mockState.missingCols = { table: ['col'] }   → writes naming that column fail like PostgREST
 //   mockState.failSelect = { table: 'message' }  → reads of that table fail
+//   mockState.missingSelectCols = { table: ['col'] } → reads naming that column fail (42703)
+//   mockState.authUsers = [{ id, email }]        → auth.admin.listUsers()
 //   mockState.rpc = { fnName: (args, db) => ({ data, error }) }
 //   mockState.beforeWrite = (table, op) => {}    → simulate a concurrent change between read and write
 //   mockState.calls = [{ table, op, payload }]   → what was written
 
-const mockState = { db: {}, missingCols: {}, failSelect: {}, rpc: {}, beforeWrite: null, calls: [] }
+const mockState = { db: {}, missingCols: {}, failSelect: {}, missingSelectCols: {}, authUsers: [], rpc: {}, beforeWrite: null, calls: [] }
 
 const get = (r, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r)
 
@@ -42,6 +44,10 @@ function query(table) {
   }
   const run = () => {
     if (op === 'select' && mockState.failSelect[table]) return { data: null, error: { message: mockState.failSelect[table] } }
+    if (op === 'select' && typeof cols === 'string') {
+      const col = (mockState.missingSelectCols?.[table] || []).find(c => new RegExp(`\\b${c}\\b`).test(cols))
+      if (col) return { data: null, error: { message: `column ${table}.${col} does not exist`, code: '42703' } }
+    }
     if (op === 'insert') {
       const err = missing(payload)
       if (err) return { data: null, error: err }
@@ -118,8 +124,16 @@ const client = {
     mockState.calls.push({ table: `rpc:${fn}`, op: 'rpc', payload: args })
     return impl(args, mockState.db)
   },
-  storage: { from: () => ({ upload: async p => ({ data: { path: p }, error: null }), createSignedUrl: async p => ({ data: { signedUrl: `https://signed/${p}` }, error: null }) }) },
-  auth: { admin: { getUserById: async id => ({ data: { user: { id, email: `${id}@x.com` } } }) } },
+  storage: { from: bucket => ({
+    upload: async p => ({ data: { path: p }, error: null }),
+    createSignedUrl: async p => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),
+    createSignedUploadUrl: async p => ({ data: { signedUrl: `https://upload/${p}` }, error: null }),
+    remove: async paths => { mockState.calls.push({ table: `storage:${bucket}`, op: 'remove', payload: paths }); return { data: paths, error: null } },
+  }) },
+  auth: { admin: {
+    getUserById: async id => ({ data: { user: { id, email: `${id}@x.com` } } }),
+    listUsers: async () => ({ data: { users: mockState.authUsers || [] }, error: null }),
+  } },
 }
 
 module.exports = {
@@ -129,6 +143,8 @@ module.exports = {
     mockState.db = db
     mockState.missingCols = {}
     mockState.failSelect = {}
+    mockState.missingSelectCols = {}
+    mockState.authUsers = []
     mockState.rpc = {}
     mockState.beforeWrite = null
     mockState.calls = []

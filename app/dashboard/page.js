@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
@@ -20,6 +20,9 @@ import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { isConverted } from '../../lib/estimate-pipeline'
 import { inActiveJobList, inCompletedJobList, isActiveStatusJob } from '../../lib/job-lifecycle'
 import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJobIds, homePathForRole } from '../../lib/roles'
+import { resolveDashboardTab, tabFromSearch, dashboardUrlForTab } from '../../lib/dashboard-tabs'
+import { jobHref, jobHrefById, isResidentialJob } from '../../lib/job-links'
+import { ownerDrawFunding, pctFunded } from '../../lib/owner-draws'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -259,6 +262,20 @@ export default function Dashboard() {
     return true
   }
   function setActiveTab(tab) { if (tab === activeTab || leaveScope()) setActiveTabValue(tab) }
+  // ?tab= handling: the inbound tab waits until the role's nav is known (then it is
+  // checked against it), the open tab is mirrored into the URL, back/forward work.
+  const inboundTabRef = useRef(null)   // ?tab= on arrival, until applied
+  const navKeysRef = useRef([])        // tab keys this (effective) role can open
+  const popRef = useRef(false)         // the current tab change came from back/forward
+  const activeTabRef = useRef('overview')
+  const scopeDirtyRef = useRef(false)
+  const scopedLoadRef = useRef(false)  // last job load was assignment-scoped (PM/APM)
+  activeTabRef.current = activeTab
+  scopeDirtyRef.current = scopeDirty
+  const [jobsLoadError, setJobsLoadError] = useState('')
+  const [resDraws, setResDraws] = useState({ byJob: {}, unknownFields: false, error: '' })
+  const [resPrimeCOs, setResPrimeCOs] = useState({})
+  const [resJobSort, setResJobSort] = useState('name')
   const [filterStatus, setFilterStatus] = useState('pending')
   const [filterJob, setFilterJob] = useState('')
   const [filterTrade, setFilterTrade] = useState('')
@@ -556,6 +573,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function load() {
+      inboundTabRef.current = tabFromSearch(window.location.search)
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
@@ -582,14 +600,14 @@ export default function Dashboard() {
       } catch {}
       // PM/APM: only their jobs (assignment OR pm_email). Principal/admin: every job.
       const jobIds = await myJobIds(effectiveProf.role, session)
-      if (jobIds) setAssignedJobIds(jobIds)
+      // null (Owner/admin: every job) also clears an older role's assignment list
+      setAssignedJobIds(jobIds)
+      scopedLoadRef.current = jobIds !== null
       await loadAll(jobIds)
       loadTeamData()
       loadLookaheadReview()
       loadDcQueue()
-      // /dashboard?tab=lookahead or ?tab=direct-costs opens that tab
-      const urlTab = new URLSearchParams(window.location.search).get('tab')
-      if (urlTab === 'lookahead' || urlTab === 'direct-costs') setActiveTabValue(urlTab)
+      // ?tab= is applied by the effect below once the role's nav items are known
       setLoading(false)
     }
     load()
@@ -601,15 +619,56 @@ export default function Dashboard() {
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
       const devRole = localStorage.getItem('nvc_dev_role')
       const role = (devRole && isPrincipal(prof?.role)) ? devRole : prof?.role
-      if (isJobLimited(role)) {
+      // PM/APM: refresh their job list. Owner/admin after a scoped (PM/APM) load:
+      // drop the old assignment filter and load every job again.
+      if (isJobLimited(role) || scopedLoadRef.current) {
         const jobIds = await myJobIds(role, session)
         setAssignedJobIds(jobIds)
+        scopedLoadRef.current = jobIds !== null
         await loadAll(jobIds)
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [router])
+
+  // Apply ?tab= once (checked against the role's nav), then keep the URL in step.
+  // Invalid or not-allowed keys fall back to Overview (no loop: Overview is always allowed).
+  useEffect(() => {
+    if (loading || !profile) return
+    const allowed = navKeysRef.current
+    if (!allowed.length) return
+    if (inboundTabRef.current !== null) {
+      const t = resolveDashboardTab(inboundTabRef.current, allowed)
+      inboundTabRef.current = null
+      window.history.replaceState(window.history.state, '', dashboardUrlForTab(window.location, t))
+      if (t !== activeTab) { setActiveTabValue(t); return }
+    }
+    if (!allowed.includes(activeTab)) { popRef.current = true; setActiveTabValue('overview'); return }
+    const want = dashboardUrlForTab(window.location, activeTab)
+    const cur = window.location.pathname + window.location.search + window.location.hash
+    if (want !== cur) {
+      if (popRef.current) window.history.replaceState(window.history.state, '', want)
+      else window.history.pushState(window.history.state, '', want)
+    }
+    popRef.current = false
+  }, [loading, profile, activeTab, userPerms])
+
+  useEffect(() => {
+    function onPop() {
+      const next = resolveDashboardTab(tabFromSearch(window.location.search), navKeysRef.current)
+      if (next === activeTabRef.current) return
+      if (scopeDirtyRef.current && !window.confirm('Discard unsaved scope changes?')) {
+        window.history.pushState(window.history.state, '', dashboardUrlForTab(window.location, activeTabRef.current))
+        return
+      }
+      setScopeDirty(false)
+      popRef.current = true
+      setActiveTabValue(next)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   useEffect(() => {
     if (activeTab === 'estimator') { loadEstimates(); loadBidPackages(assignedJobIds) }
@@ -897,9 +956,11 @@ export default function Dashboard() {
     }
     const { data: subs } = await billingQ
     setSubmissions(subs || [])
-    const { data: jobList } = await jobsQ
+    const { data: jobList, error: jobsErr } = await jobsQ
+    setJobsLoadError(jobsErr ? jobsErr.message : '')
     setJobs(jobList || [])
     if (jobList?.length) loadCoverUrls(jobList)
+    loadResidentialStats(jobList || [])
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
     const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
@@ -922,6 +983,27 @@ export default function Dashboard() {
       })
       setCoverUrls(prev => ({ ...prev, ...urls }))
     }
+  }
+
+  // Residential cards: owner/lender draws and approved homeowner COs for every
+  // residential job in two queries (no per-job requests). amount_funded is the
+  // PROPOSED 046 column; before it exists funded cash is "unknown", never assumed.
+  async function loadResidentialStats(jobList) {
+    const ids = jobList.filter(isResidentialJob).map(j => j.id)
+    if (!ids.length) { setResDraws({ byJob: {}, unknownFields: false, error: '' }); setResPrimeCOs({}); return }
+    let unknownFields = false
+    let { data: draws, error } = await supabase.from('res_owner_draws').select('job_id, status, amount_requested, amount_funded').in('job_id', ids)
+    if (error && /amount_funded|does not exist|schema cache/i.test(error.message || '')) {
+      unknownFields = true
+      ;({ data: draws, error } = await supabase.from('res_owner_draws').select('job_id, status, amount_requested').in('job_id', ids))
+    }
+    const byJob = {}
+    for (const d of draws || []) (byJob[d.job_id] ||= []).push(d)
+    setResDraws({ byJob, unknownFields, error: error ? error.message : '' })
+    const { data: cos } = await supabase.from('prime_change_orders').select('job_id, amount, status').in('job_id', ids).eq('status', 'approved')
+    const coByJob = {}
+    for (const c of cos || []) coByJob[c.job_id] = (coByJob[c.job_id] || 0) + Number(c.amount || 0)
+    setResPrimeCOs(coByJob)
   }
 
   async function compressForCover(file) {
@@ -950,7 +1032,8 @@ export default function Dashboard() {
     setCoverPickerPhotoUrls({})
     setCoverMsg('')
     const { data } = await supabase.from('job_photos').select('*').eq('job_id', job.id).order('taken_at', { ascending: false }).limit(24)
-    const photos = data || []
+    // Rows without a storage_path (old residential uploads) can't be shown; skip them.
+    const photos = (data || []).filter(p => typeof p.storage_path === 'string' && p.storage_path)
     setCoverPickerPhotos(photos)
     if (photos.length) {
       const thumbs = photos.map(p => p.storage_path.replace(/\.jpg$/i, '_thumb.jpg'))
@@ -3376,6 +3459,7 @@ ${planLinks.map(p => p.url
     }] : []),
   ].filter(g => !g.items || g.items.length > 0)
   const navItems = navGroups.flatMap(g => g.items)
+  navKeysRef.current = navItems.map(i => i.tab)
 
   return (
     <div style={s.page}>
@@ -3664,6 +3748,8 @@ ${planLinks.map(p => p.url
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Active jobs</p>
                 <div style={s.ovValue('#2563eb')}>{activeJobs.length}</div>
+                {/* Split so a commercial/residential mismatch is visible at a glance */}
+                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{jobsLoadError ? <span style={{ color: '#dc2626' }}>Jobs failed to load</span> : `${activeJobs.filter(j => !isResidentialJob(j)).length} commercial · ${activeJobs.filter(isResidentialJob).length} residential`}</div>
               </div>
               <div className="nv-stat-card" style={s.ovCard}>
                 <p style={s.ovLabel}>Pending billing</p>
@@ -3723,7 +3809,7 @@ ${planLinks.map(p => p.url
                   </div>
                   <div style={s.sectionCard}>
                     {items.map((item, i) => (
-                      <div key={item.id} className="nv-table-row" style={{ ...s.rowBorder, padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: item.jobs ? 'pointer' : 'default', borderBottom: i < items.length - 1 ? '1px solid #f3f4f6' : 'none' }} onClick={() => item.jobs && router.push(`/jobdetail?id=${item.jobs.id}${navTab ? `&tab=${navTab}` : ''}`)}>
+                      <div key={item.id} className="nv-table-row" style={{ ...s.rowBorder, padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: item.jobs ? 'pointer' : 'default', borderBottom: i < items.length - 1 ? '1px solid #f3f4f6' : 'none' }} onClick={() => item.jobs && router.push(jobHrefById(item.jobs.id, jobs, navTab || null))}>
                         {renderItem(item)}
                       </div>
                     ))}
@@ -3842,7 +3928,7 @@ ${planLinks.map(p => p.url
             {/* ── LOOKAHEAD ── */}
             {activeTab === 'lookahead' && (() => {
               const thisMonday = mondayOf(localToday())
-              const open = (jobId, week) => router.push(`/jobdetail?id=${jobId}&tab=lookahead${week ? `&week=${week}` : ''}`)
+              const open = (jobId, week) => router.push(jobHrefById(jobId, jobs, 'lookahead', week ? { week } : null))
               const fmtWeek = w => new Date(w + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
               const byJob = Object.fromEntries((lookaheadThisWeek || []).map(l => [l.job_id, l]))
               const q = lookaheadSearch.trim().toLowerCase()
@@ -3968,7 +4054,7 @@ ${planLinks.map(p => p.url
                             <input className="dcq-check" type="checkbox" checked={dcSelected.has(c.id)} onChange={() => toggle(c.id)} disabled={dcBusy} aria-label="Select cost" style={{ width: '18px', height: '18px' }} />
                             <div className="dcq-wide">
                               <span className="dcq-lbl">Job</span>
-                              <a href={`/jobdetail?id=${c.job_id}&tab=costs`} style={{ color: '#111827', fontWeight: '600', textDecoration: 'none' }}>#{c.job_number ?? '—'} · {c.project_name || 'Unknown job'}</a>
+                              <a href={jobHrefById(c.job_id, jobs, 'costs')} style={{ color: '#111827', fontWeight: '600', textDecoration: 'none' }}>#{c.job_number ?? '—'} · {c.project_name || 'Unknown job'}</a>
                             </div>
                             <div className="dcq-wide"><span className="dcq-lbl">Vendor</span>{c.vendor || '—'}</div>
                             <div className="dcq-wide">
@@ -3982,7 +4068,7 @@ ${planLinks.map(p => p.url
                                 : lines.length === 0 ? (
                                   <span style={{ fontSize: '12px', color: '#b45309' }}>
                                     No budget lines on this job.{' '}
-                                    <a href={`/jobdetail?id=${c.job_id}&tab=budget`} style={{ color: '#e8590c', fontWeight: '600' }}>Open budget</a>
+                                    <a href={jobHrefById(c.job_id, jobs, 'budget')} style={{ color: '#e8590c', fontWeight: '600' }}>Open budget</a>
                                   </span>
                                 ) : (
                                   <>
@@ -4056,7 +4142,7 @@ ${planLinks.map(p => p.url
                       return `${Math.floor(d / 1440)}d ago`
                     })()
                     return (
-                      <div key={n.id} className="nv-table-row" onClick={() => { if (isUnread) markPmNotifRead(n.id); if (n.link?.startsWith('/')) router.push(n.link); else if (n.job_id) router.push(`/jobdetail?id=${n.job_id}`) }} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6', cursor: n.job_id ? 'pointer' : 'default', opacity: isUnread ? 1 : 0.55, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <div key={n.id} className="nv-table-row" onClick={() => { if (isUnread) markPmNotifRead(n.id); if (n.link?.startsWith('/')) router.push(n.link); else if (n.job_id) router.push(jobHrefById(n.job_id, jobs)) }} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6', cursor: n.job_id ? 'pointer' : 'default', opacity: isUnread ? 1 : 0.55, display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                         {isUnread && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: typeColor, marginTop: '5px', flexShrink: 0 }} />}
                         {!isUnread && <div style={{ width: '7px', height: '7px', flexShrink: 0 }} />}
                         <div style={{ flex: 1 }}>
@@ -5280,12 +5366,12 @@ ${planLinks.map(p => p.url
                         <div key={i} style={{ minHeight: '80px', background: day ? '#ffffff' : 'transparent', border: day ? `1px solid ${isToday ? '#e8590c' : '#e5e7eb'}` : 'none', borderRadius: '8px', padding: '6px', boxShadow: day && isToday ? '0 0 0 2px rgba(232,89,12,0.15)' : 'none' }}>
                           {day && <div style={{ fontSize: '12px', fontWeight: isToday ? '700' : '400', color: isToday ? '#e8590c' : '#374151', marginBottom: '4px' }}>{day}</div>}
                           {subJobs.map(j => (
-                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#2563eb', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                            <div key={j.id} onClick={() => router.push(jobHref(j))} style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#2563eb', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
                               #{j.job_number} Sub
                             </div>
                           ))}
                           {ownerJobs.map(j => (
-                            <div key={j.id} onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#16a34a', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
+                            <div key={j.id} onClick={() => router.push(jobHref(j))} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 5px', marginBottom: '3px', fontSize: '10px', color: '#16a34a', cursor: 'pointer', lineHeight: '1.3', fontWeight: '600' }}>
                               #{j.job_number} Owner
                             </div>
                           ))}
@@ -5322,8 +5408,8 @@ ${planLinks.map(p => p.url
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedJobs && !showStarredJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedJobs && !showStarredJobs ? '#fff7ed' : '#ffffff', color: !showCompletedJobs && !showStarredJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type !== 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => j.job_type !== 'residential' && inCompletedJobList(j)).length})</button>
+                    <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && !isResidentialJob(j))).length})</button>
+                    <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => !isResidentialJob(j) && inCompletedJobList(j)).length})</button>
                   </div>
                   {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
@@ -5428,7 +5514,7 @@ ${planLinks.map(p => p.url
                 )}
 
                 {!showCompletedJobs && !showStarredJobs && (() => {
-                  const activeCommercial = jobs.filter(j => j.job_type !== 'residential' && inActiveJobList(j))
+                  const activeCommercial = jobs.filter(j => !isResidentialJob(j) && inActiveJobList(j))
                   const gcTotal = activeCommercial.filter(j => j.nv_role !== 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const subTotal = activeCommercial.filter(j => j.nv_role === 'sub').reduce((a, j) => a + (parseFloat(j.adjusted_contract_value || j.contract_value) || 0), 0)
                   const activeContractTotal = gcTotal + subTotal
@@ -5462,12 +5548,12 @@ ${planLinks.map(p => p.url
 
                 {(() => {
                   const visibleJobs = jobs.filter(j => {
-                    if (j.job_type === 'residential') return false
+                    if (isResidentialJob(j)) return false
                     if (showStarredJobs) return starredJobIds.has(j.id)
                     if (!(showCompletedJobs ? inCompletedJobList(j) : inActiveJobList(j))) return false
                     if (jobSearch) {
-                      const q = jobSearch.toLowerCase()
-                      return (j.project_name || '').toLowerCase().includes(q) || String(j.job_number || '').includes(q) || (j.location || '').toLowerCase().includes(q)
+                      const q = jobSearch.toLowerCase().trim()
+                      return (j.project_name || '').toLowerCase().includes(q) || String(j.job_number || '').toLowerCase().includes(q) || (j.location || '').toLowerCase().includes(q)
                     }
                     return true
                   }).sort((a, b) => {
@@ -5475,6 +5561,7 @@ ${planLinks.map(p => p.url
                     if (jobSort === 'start') return (b.start_date || '').localeCompare(a.start_date || '')
                     return (a.project_name || '').localeCompare(b.project_name || '')
                   })
+                  if (jobsLoadError) return <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Could not load jobs: {jobsLoadError}. Refresh to try again.</div>
                   if (visibleJobs.length === 0) return <div style={s.emptyMsg}>{jobSearch ? `No jobs match "${jobSearch}".` : showStarredJobs ? 'No starred commercial jobs. Click ☆ on any job to star it.' : showCompletedJobs ? 'No completed jobs.' : 'No active commercial jobs.'}</div>
                   const teamByEmail = teamMembers.reduce((m, t) => { m[t.email] = t; return m }, {})
                   if (viewMode === 'grid') return (
@@ -5501,7 +5588,7 @@ ${planLinks.map(p => p.url
                               {coverUrls[j.id] && <button onClick={e => { e.stopPropagation(); openCoverPicker(j) }} style={{ position: 'absolute', bottom: '7px', right: '8px', background: 'rgba(0,0,0,0.38)', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '10px', color: 'rgba(255,255,255,0.88)', cursor: 'pointer', letterSpacing: '0.2px' }}>Change cover</button>}
                               {pendingCount > 0 && <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#e8590c', borderRadius: '99px', padding: '2px 8px', fontSize: '10px', fontWeight: '700', color: '#fff' }}>{pendingCount} pending</div>}
                             </div>
-                            <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ padding: '12px 14px', flex: 1, cursor: 'pointer' }}>
+                            <div onClick={() => router.push(jobHref(j))} style={{ padding: '12px 14px', flex: 1, cursor: 'pointer' }}>
                               <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px', fontVariantNumeric: 'tabular-nums' }}>#{j.job_number}</div>
                               <p style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{j.project_name}</p>
                               {j.location && <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.location}</p>}
@@ -5540,7 +5627,7 @@ ${planLinks.map(p => p.url
                           {coverUrls[j.id] ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: '9px', color: '#d1d5db', fontWeight: '700' }}>#{j.job_number}</span></div>}
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: isStarred ? '#d97706' : '#ccc', padding: '0 2px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
-                        <div onClick={() => router.push(`/jobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
+                        <div onClick={() => router.push(jobHref(j))} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                             <div style={{ minWidth: 0 }}>
                               <p style={s.company}>#{j.job_number} — {j.project_name}</p>
@@ -5571,7 +5658,12 @@ ${planLinks.map(p => p.url
             {activeTab === 'residential' && (
               <>
                 <div style={s.filterRow}>
-                  <input style={{ ...s.filterInput, flex: 1 }} value={resJobSearch} onChange={e => setResJobSearch(e.target.value)} placeholder="Search by name, owner, or address…" />
+                  <input style={{ ...s.filterInput, flex: 1 }} value={resJobSearch} onChange={e => setResJobSearch(e.target.value)} placeholder="Search by name, number, owner, or address…" />
+                  <select style={{ ...s.filterSelect, flexShrink: 0 }} value={resJobSort} onChange={e => setResJobSort(e.target.value)}>
+                    <option value="name">Sort: Name</option>
+                    <option value="contract">Sort: Contract ↓</option>
+                    <option value="start">Sort: Start Date ↓</option>
+                  </select>
                   <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}>
                     {[['grid', 'Grid'], ['list', 'List']].map(([m, label]) => (
                       <button key={m} onClick={() => { setViewMode(m); try { localStorage.setItem('nvc_proj_view', m) } catch {} }} style={{ padding: '7px 13px', background: viewMode === m ? '#111827' : '#fff', border: 'none', borderRight: m === 'grid' ? '1px solid #d1d5db' : 'none', cursor: 'pointer', fontSize: '12px', fontWeight: viewMode === m ? '700' : '400', color: viewMode === m ? '#fff' : '#6b7280', lineHeight: 1 }}>{label}</button>
@@ -5580,9 +5672,9 @@ ${planLinks.map(p => p.url
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#fff7ed' : '#ffffff', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active</button>
-                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#d97706' : '#d1d5db'}`, background: showStarredResJobs ? '#fefce8' : '#ffffff', color: showStarredResJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && j.job_type === 'residential')).length})</button>
-                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => j.job_type === 'residential' && inCompletedJobList(j)).length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${!showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#d1d5db'}`, background: !showCompletedResJobs && !showStarredResJobs ? '#fff7ed' : '#ffffff', color: !showCompletedResJobs && !showStarredResJobs ? '#e8590c' : '#555' }}>Active ({jobs.filter(j => isResidentialJob(j) && inActiveJobList(j)).length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#d97706' : '#d1d5db'}`, background: showStarredResJobs ? '#fefce8' : '#ffffff', color: showStarredResJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && isResidentialJob(j))).length})</button>
+                    <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => isResidentialJob(j) && inCompletedJobList(j)).length})</button>
                   </div>
                   {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
                     {showNewResJobForm ? 'Cancel' : '+ New residential job'}
@@ -5652,22 +5744,81 @@ ${planLinks.map(p => p.url
                 )}
 
                 {(() => {
+                  // Residential money per job: revised = base + approved homeowner COs; funded
+                  // = cash recorded on funded owner/lender draws (unknown when not recorded).
+                  const resStats = j => {
+                    const revised = Number(j.contract_value || 0) + Number(resPrimeCOs[j.id] || 0)
+                    const draws = resDraws.byJob[j.id] || []
+                    const f = ownerDrawFunding(resDraws.unknownFields ? draws.map(d => ({ ...d, amount_funded: undefined })) : draws)
+                    return { revised, funding: f, pct: pctFunded(f, revised), hasDraws: draws.length > 0 }
+                  }
+                  const teamByEmail = teamMembers.reduce((m, t) => { if (t.email) m[String(t.email).toLowerCase()] = t; return m }, {})
+                  const pmFirstOf = j => teamByEmail[String(j.pm_email || '').toLowerCase()]?.full_name?.split(' ')[0] || null
+                  const activeRes = jobs.filter(j => isResidentialJob(j) && inActiveJobList(j))
+                  const banner = !showCompletedResJobs && !showStarredResJobs && activeRes.length > 0 ? (() => {
+                    const totals = activeRes.reduce((acc, j) => {
+                      const st = resStats(j)
+                      acc.revised += st.revised
+                      acc.requested += st.funding.requested
+                      acc.funded += st.funding.fundedKnown
+                      acc.unknown += st.funding.unknownFunded
+                      return acc
+                    }, { revised: 0, requested: 0, funded: 0, unknown: 0 })
+                    const pct = totals.unknown === 0 && !resDraws.unknownFields && totals.revised > 0 ? (totals.funded / totals.revised) * 100 : null
+                    return (
+                      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 18px', marginBottom: '14px', display: 'flex', gap: '28px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: '700', color: '#166534', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Active Revised Contracts</div>
+                          <div style={{ fontSize: '20px', fontWeight: '900', color: '#15803d', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(totals.revised)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Draws Requested</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(totals.requested)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>Funded (recorded)</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{resDraws.unknownFields ? 'Unknown' : fmtMoney(totals.funded)}{!resDraws.unknownFields && totals.unknown > 0 ? ` + ${totals.unknown} unknown` : ''}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>% Funded</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{pct === null ? '—' : pct.toFixed(0) + '%'}</div>
+                        </div>
+                        <div style={{ marginLeft: 'auto' }}>
+                          <div style={{ fontSize: '9px', fontWeight: '700', color: '#6b7280', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '2px' }}>In Progress</div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#6b7280' }}>{activeRes.length}</div>
+                        </div>
+                      </div>
+                    )
+                  })() : null
                   const resJobs = jobs.filter(j => {
-                    if (j.job_type !== 'residential') return false
+                    if (!isResidentialJob(j)) return false
                     if (showStarredResJobs) return starredJobIds.has(j.id)
                     if (!(showCompletedResJobs ? inCompletedJobList(j) : inActiveJobList(j))) return false
                     if (resJobSearch) {
-                      const q = resJobSearch.toLowerCase()
-                      return (j.project_name || '').toLowerCase().includes(q) || (j.owner_name || '').toLowerCase().includes(q) || String(j.job_number || '').includes(q) || (j.location || '').toLowerCase().includes(q)
+                      const q = resJobSearch.toLowerCase().trim()
+                      return (j.project_name || '').toLowerCase().includes(q) || (j.owner_name || '').toLowerCase().includes(q) || String(j.job_number || '').toLowerCase().includes(q) || (j.location || '').toLowerCase().includes(q)
                     }
                     return true
-                  }).sort((a, b) => (a.project_name || '').localeCompare(b.project_name || ''))
-                  if (resJobs.length === 0) return <div style={s.emptyMsg}>{resJobSearch ? `No projects match "${resJobSearch}".` : showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div>
+                  }).sort((a, b) => {
+                    if (resJobSort === 'contract') return resStats(b).revised - resStats(a).revised
+                    if (resJobSort === 'start') return (b.start_date || '').localeCompare(a.start_date || '')
+                    return (a.project_name || '').localeCompare(b.project_name || '')
+                  })
+                  if (jobsLoadError) return <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Could not load jobs: {jobsLoadError}. Refresh to try again.</div>
+                  const fundedLine = st => !st.hasDraws ? 'No draws yet'
+                    : resDraws.unknownFields ? 'Funded: unknown (not recorded)'
+                    : st.pct === null ? (st.funding.unknownFunded ? `${fmtMoney(st.funding.fundedKnown)} funded + ${st.funding.unknownFunded} unknown` : 'Funded: —')
+                    : `${st.pct.toFixed(0)}% funded`
+                  if (resJobs.length === 0) return <>{banner}<div style={s.emptyMsg}>{resJobSearch ? `No projects match "${resJobSearch}".` : showStarredResJobs ? 'No starred residential projects. Click ☆ on any project to star it.' : showCompletedResJobs ? 'No completed residential projects.' : 'No active residential projects.'}</div></>
                   if (viewMode === 'grid') return (
+                    <>
+                    {banner}
                     <div className="nv-project-grid">
                       {resJobs.map(j => {
-                        const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                        const st = resStats(j)
                         const isStarred = starredJobIds.has(j.id)
+                        const pendingCount = pendingByJob[j.id] || 0
+                        const pmFirst = pmFirstOf(j)
                         return (
                           <div key={j.id} className="nv-project-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                             <div style={{ position: 'relative', paddingBottom: '58%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0 }}>
@@ -5680,8 +5831,9 @@ ${planLinks.map(p => p.url
                               }
                               <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.28)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '13px', color: isStarred ? '#fbbf24' : 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
                               {coverUrls[j.id] && <button onClick={e => { e.stopPropagation(); openCoverPicker(j) }} style={{ position: 'absolute', bottom: '7px', right: '8px', background: 'rgba(0,0,0,0.38)', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '10px', color: 'rgba(255,255,255,0.88)', cursor: 'pointer', letterSpacing: '0.2px' }}>Change cover</button>}
+                              {pendingCount > 0 && <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#e8590c', borderRadius: '99px', padding: '2px 8px', fontSize: '10px', fontWeight: '700', color: '#fff' }}>{pendingCount} pending</div>}
                             </div>
-                            <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ padding: '12px 14px', flex: 1, cursor: 'pointer' }}>
+                            <div onClick={() => router.push(jobHref(j))} style={{ padding: '12px 14px', flex: 1, cursor: 'pointer' }}>
                               <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px', fontVariantNumeric: 'tabular-nums' }}>#{j.job_number}</div>
                               <p style={{ margin: '0 0 3px', fontSize: '14px', fontWeight: '700', color: '#111827', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{j.project_name}</p>
                               {j.owner_name && <p style={{ margin: '0 0 2px', fontSize: '12px', color: '#374151', fontWeight: '500' }}>{j.owner_name}</p>}
@@ -5690,29 +5842,41 @@ ${planLinks.map(p => p.url
                                 <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                                 <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 5px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>RESIDENTIAL</span>
                               </div>
-                              {contract > 0 && <div style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>${contract.toLocaleString()} contract</div>}
+                              {pmFirst && <div style={{ marginTop: '5px', fontSize: '11px', color: '#6b7280' }}>PM: {pmFirst}</div>}
+                              {st.revised > 0 && <div style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(st.revised)} revised contract</div>}
+                              {st.revised > 0 && (
+                                <div style={{ marginTop: '6px' }}>
+                                  <div style={{ fontSize: '10px', color: st.pct === null && st.hasDraws ? '#92400e' : '#9ca3af', marginBottom: '3px' }}>{fundedLine(st)}</div>
+                                  {st.pct !== null && <div style={{ height: '3px', background: '#f0f0f0', borderRadius: '2px' }}><div style={{ height: '100%', width: Math.min(100, st.pct) + '%', background: st.pct > 100 ? '#dc2626' : '#16a34a', borderRadius: '2px' }} /></div>}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )
                       })}
                     </div>
+                    </>
                   )
-                  return resJobs.map(j => {
-                    const contract = j.contract_value ? parseFloat(j.contract_value) : 0
+                  return (<>{banner}{resJobs.map(j => {
+                    const st = resStats(j)
                     const isStarred = starredJobIds.has(j.id)
+                    const pendingCount = pendingByJob[j.id] || 0
+                    const pmFirst = pmFirstOf(j)
                     return (
                       <div key={j.id} style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{ width: '52px', height: '38px', borderRadius: '5px', overflow: 'hidden', background: '#f3f4f6', flexShrink: 0 }}>
                           {coverUrls[j.id] ? <img src={coverUrls[j.id]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: '9px', color: '#d1d5db', fontWeight: '700' }}>#{j.job_number}</span></div>}
                         </div>
                         <button onClick={e => { e.stopPropagation(); toggleStar(j.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: isStarred ? '#d97706' : '#ccc', padding: '0 2px', flexShrink: 0, lineHeight: 1 }} title={isStarred ? 'Unstar' : 'Star'}>{isStarred ? '★' : '☆'}</button>
-                        <div onClick={() => router.push(`/residentialjobdetail?id=${j.id}`)} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
+                        <div onClick={() => router.push(jobHref(j))} style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                             <div style={{ minWidth: 0 }}>
                               <p style={s.company}>#{j.job_number} — {j.project_name}</p>
-                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{contract > 0 ? ' · $' + contract.toLocaleString() + ' contract' : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}</p>
+                              <p style={s.meta}>{j.owner_name ? j.owner_name + ' · ' : ''}{j.location || ''}{st.revised > 0 ? ' · ' + fmtMoney(st.revised) : ''}{j.start_date ? ' · ' + fmtDate(j.start_date) : ''}{pmFirst ? ' · PM ' + pmFirst : ''}</p>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                              {pendingCount > 0 && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>{pendingCount} pending</span>}
+                              {st.revised > 0 && st.hasDraws && <span style={{ fontSize: '10px', color: st.pct === null ? '#92400e' : '#6b7280' }}>{fundedLine(st)}</span>}
                               <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>RESIDENTIAL</span>
                               <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                               <span style={{ color: '#9ca3af', fontSize: '16px' }}>›</span>
@@ -5721,7 +5885,7 @@ ${planLinks.map(p => p.url
                         </div>
                       </div>
                     )
-                  })
+                  })}</>)
                 })()}
               </>
             )}
@@ -5830,7 +5994,7 @@ ${planLinks.map(p => p.url
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
                             <button style={s.btnSm('orange')} onClick={() => { loadScopeItems(pkg.id); setTimeout(() => generateITBDocument(pkg), 300) }}>📄 ITB Document</button>
                             {pkg.job_id
-                              ? <button style={s.btnSm('green')} onClick={() => router.push(`/jobdetail?id=${pkg.job_id}`)}>🏗 View Job →</button>
+                              ? <button style={s.btnSm('green')} onClick={() => router.push(jobHrefById(pkg.job_id, jobs))}>🏗 View Job →</button>
                               : pkg.status === 'awarded' && (
                                 <button style={s.btnSm('green')} onClick={() => {
                                   const det = bidDetails[pkg.id] || {}
@@ -6888,7 +7052,7 @@ ${planLinks.map(p => p.url
                             {activeJobs.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>No active jobs</div>}
                             {activeJobs.map(job => (
                               <div key={job.id} style={cardStyle}
-                                onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
+                                onClick={() => router.push(jobHref(job))}>
                                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '2px' }}>{job.project_name}</div>
                                 {job.job_number && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>#{job.job_number}</div>}
                                 {job.contract_value > 0 && <div style={cardAmtStyle}>{fmtK(Number(job.contract_value))}</div>}
@@ -6915,7 +7079,7 @@ ${planLinks.map(p => p.url
                             {completedJobs.length === 0 && <div style={{ textAlign: 'center', color: '#d1d5db', fontSize: '12px', paddingTop: '1.5rem' }}>No completed jobs</div>}
                             {completedJobs.map(job => (
                               <div key={job.id} style={cardStyle}
-                                onClick={() => router.push(`/jobdetail?id=${job.id}`)}>
+                                onClick={() => router.push(jobHref(job))}>
                                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '2px' }}>{job.project_name}</div>
                                 {job.job_number && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>#{job.job_number}</div>}
                                 {job.contract_value > 0 && <div style={cardAmtStyle}>{fmtK(Number(job.contract_value))}</div>}
@@ -7712,7 +7876,7 @@ ${planLinks.map(p => p.url
                                       <div style={{ gridColumn: '1/-1' }}><p style={{ fontSize: '12px', color: '#6b7280' }}>No budget set — open job to add budget items for profit tracking.</p></div>
                                     )}
                                   </div>
-                                  <button style={s.btnSm('orange')} onClick={() => router.push(`/jobdetail?id=${item.id}`)}>Open Job</button>
+                                  <button style={s.btnSm('orange')} onClick={() => router.push(jobHrefById(item.id, jobs))}>Open Job</button>
                                 </>
                               )
                             })()}

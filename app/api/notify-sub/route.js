@@ -1,9 +1,10 @@
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 // POST { recipients: [{ email, name }], company_name, subject, message }
 // (legacy: { to_email, to_name, ... }). One personalised email per recipient.
@@ -27,7 +28,7 @@ export async function POST(request) {
 }
 
 async function sendOne({ to_email, to_name, company_name, subject, message }) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+  const siteUrl = getSiteUrl()
   const firstName = to_name?.split(' ')[0] || 'there'
   const logo = logoSrc()
 

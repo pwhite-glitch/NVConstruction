@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { saveSignedContract } from '../../../../lib/generated-contract'
 import { escapeHtml } from '../../../../lib/email'
 import { canSign, signatureMatchesName } from '../../../../lib/signing'
+import { getSiteUrl } from '../../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,7 +11,7 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 export async function GET(request, { params }) {
   const { token } = params
@@ -87,7 +88,7 @@ export async function POST(request, { params }) {
     }
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
+  const siteUrl = getSiteUrl()
   const logo = logoSrc()
   // User-entered text going into email HTML is escaped
   const title = escapeHtml(existing.document_title || 'Subcontract Agreement')

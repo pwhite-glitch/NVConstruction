@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
+import { openFile } from '../../lib/open-file'
+import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged } from '../../lib/lookahead-weather'
@@ -543,21 +545,28 @@ export default function Field() {
     await loadPhotoGallery()
   }
 
+  // Canonical /api/job-docs flow (signed upload + insert-document); the server
+  // checks the job and stamps uploaded_by. No direct storage/table writes.
   async function uploadJobDoc(file) {
     setUploadingDoc(true)
-    const path = `${selectedJobId}/${docCategory}/${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('job-documents').upload(path, file)
-    if (error) { alert('Upload error: ' + error.message); setUploadingDoc(false); return }
-    await supabase.from('job_documents').insert({ job_id: selectedJobId, file_name: file.name, storage_path: path, category: docCategory, uploaded_by: user.id })
-    await loadJobDocs()
-    setUploadingDoc(false)
+    try {
+      const out = await uploadJobDocument({ fetchFn: authFetch, putFn: fetch, jobId: selectedJobId, category: docCategory, file })
+      if (out.error) alert(out.error)
+      if (out.uploaded) await loadJobDocs()
+    } finally {
+      setUploadingDoc(false)
+    }
   }
 
+  // Called straight from the tap: openFile reserves the window before any await.
   async function openJobDoc(storagePath) {
-    const win = window.open('', '_blank')
-    const { data } = await supabase.storage.from('job-documents').createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) { win.location.href = data.signedUrl }
-    else { win.close(); alert('Could not open document. Please try again.') }
+    let errMsg = ''
+    const url = await openFile(async () => {
+      const r = await signedJobDocUrl({ fetchFn: authFetch, path: storagePath })
+      if (r.error) errMsg = r.error
+      return r.url || null
+    })
+    if (!url) alert('Could not open document' + (errMsg ? ': ' + errMsg : '. Please try again.'))
   }
 
   function toJpegFile(file) {

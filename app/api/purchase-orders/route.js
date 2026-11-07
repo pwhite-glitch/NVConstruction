@@ -2,12 +2,37 @@ import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { isMissingPaymentTypeColumn, PAYMENT_TYPE_NOT_SAVED_WARNING } from '../../../lib/payment-route'
 import { todayCentral } from '../../../lib/central-date'
-import { denyJob, denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
+import { denyUnlessOnJob, seesAllJobs } from '../../../lib/roles'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
+
+// Every job-scoped PO operation uses denyUnlessOnJob: Owner/admin pass,
+// PM/APM/super only on their own jobs (an unassigned super is refused).
+
+// Load a PO by id and guard its real job. Returns { po } or { denied }.
+async function loadPOForCaller(auth, id) {
+  const { data: po, error } = await adminSupabase.from('purchase_orders').select('id, job_id, attachment_url').eq('id', id).maybeSingle()
+  if (error) return { denied: Response.json({ error: error.message }, { status: 500 }) }
+  if (!po) return { denied: Response.json({ error: 'Purchase order not found.' }, { status: 404 }) }
+  const denied = await denyUnlessOnJob(adminSupabase, auth, po.job_id)
+  if (denied) return { denied }
+  return { po }
+}
+
+// budget_item_id / draw_request_id must belong to the PO's job. Returns a Response or null.
+async function denyForeignRefs(jobId, { budget_item_id, draw_request_id }) {
+  const checks = [['budget_items', budget_item_id, 'Budget line'], ['draw_requests', draw_request_id, 'Draw']]
+  for (const [table, refId, label] of checks) {
+    if (!refId) continue
+    const { data, error } = await adminSupabase.from(table).select('id, job_id').eq('id', refId).maybeSingle()
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!data || data.job_id !== jobId) return Response.json({ error: `${label} is not on this purchase order's job.` }, { status: 400 })
+  }
+  return null
+}
 
 async function uploadPOAttachment(file, jobId) {
   const ext = file.name.split('.').pop()
@@ -27,13 +52,12 @@ export async function GET(request) {
 
   const sign = searchParams.get('sign')
   if (sign) {
-    if (isJobLimited(auth.role)) {
-      const { data: po, error: poErr } = await adminSupabase.from('purchase_orders').select('job_id').eq('attachment_url', sign).limit(1).maybeSingle()
-      if (poErr) return Response.json({ error: poErr.message }, { status: 500 })
-      if (!po) return Response.json({ error: 'Not found.' }, { status: 404 })
-      const denied = await denyJob(adminSupabase, auth, po.job_id)
-      if (denied) return denied
-    }
+    // Only sign a path that is a real PO's attachment, and only for callers on that PO's job.
+    const { data: po, error: poErr } = await adminSupabase.from('purchase_orders').select('id, job_id').eq('attachment_url', sign).limit(1).maybeSingle()
+    if (poErr) return Response.json({ error: poErr.message }, { status: 500 })
+    if (!po) return Response.json({ error: 'Attachment not found.' }, { status: 404 })
+    const denied = await denyUnlessOnJob(adminSupabase, auth, po.job_id)
+    if (denied) return denied
     const { data, error } = await adminSupabase.storage.from('purchase-order-docs').createSignedUrl(sign, 3600)
     if (error || !data?.signedUrl) return Response.json({ error: error?.message || 'Could not generate URL' }, { status: 500 })
     return Response.json({ signedUrl: data.signedUrl })
@@ -41,24 +65,20 @@ export async function GET(request) {
 
   const job_id = searchParams.get('job_id')
 
-  // No job_id: list POs across all jobs (admin Purchase Orders tab)
+  // No job_id: list POs across all jobs (admin Purchase Orders tab). Owner/admin only.
   if (!job_id) {
-    let listQuery = adminSupabase
+    if (!seesAllJobs(auth.role)) {
+      return Response.json({ error: 'Only an Owner or Admin can list purchase orders across all jobs. Open a job to see its POs.' }, { status: 403 })
+    }
+    const { data: pos, error } = await adminSupabase
       .from('purchase_orders')
       .select('*, jobs(job_number, project_name)')
       .order('created_at', { ascending: false })
-    if (isJobLimited(auth.role)) {
-      const { ids, error: idsErr } = await accessibleJobIds(adminSupabase, auth)
-      if (idsErr) return Response.json({ error: idsErr.message }, { status: 500 })
-      if (ids.size === 0) return Response.json({ purchase_orders: [] })
-      listQuery = listQuery.in('job_id', [...ids])
-    }
-    const { data: pos, error } = await listQuery
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ purchase_orders: pos || [] })
   }
 
-  const denied = await denyJob(adminSupabase, auth, job_id)
+  const denied = await denyUnlessOnJob(adminSupabase, auth, job_id)
   if (denied) return denied
 
   const { data: pos, error } = await adminSupabase
@@ -97,14 +117,19 @@ export async function POST(request) {
     const { job_id, vendor_name, description, budget_item_id, notes, payment_type, status = 'draft', items = [], created_by } = body
 
     if (!job_id || !vendor_name) return Response.json({ error: 'job_id and vendor_name required' }, { status: 400 })
-    const denied = await denyJob(adminSupabase, auth, job_id)
+    const denied = await denyUnlessOnJob(adminSupabase, auth, job_id)
     if (denied) return denied
+    const { data: jobRow, error: jobErr } = await adminSupabase.from('jobs').select('id, job_number').eq('id', job_id).maybeSingle()
+    if (jobErr) return Response.json({ error: jobErr.message }, { status: 500 })
+    if (!jobRow) return Response.json({ error: 'Job not found.' }, { status: 404 })
+    const refDenied = await denyForeignRefs(job_id, { budget_item_id })
+    if (refDenied) return refDenied
     if (file && file.size > 0) {
       attachment_url = await uploadPOAttachment(file, job_id)
     }
 
-    const { data: jobRow } = await adminSupabase.from('jobs').select('job_number').eq('id', job_id).single()
-    const { count } = await adminSupabase.from('purchase_orders').select('id', { count: 'exact', head: true }).eq('job_id', job_id)
+    const { count, error: cntErr } = await adminSupabase.from('purchase_orders').select('id', { count: 'exact', head: true }).eq('job_id', job_id)
+    if (cntErr) return Response.json({ error: cntErr.message }, { status: 500 })
     const seq = String((count || 0) + 1).padStart(3, '0')
     const po_number = `PO-${jobRow?.job_number || 'XX'}-${seq}`
 
@@ -135,7 +160,12 @@ export async function POST(request) {
         amount: (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0),
         sort_order: idx,
       }))
-      await adminSupabase.from('purchase_order_items').insert(lineItems)
+      const { error: itemsErr } = await adminSupabase.from('purchase_order_items').insert(lineItems)
+      if (itemsErr) {
+        // Don't leave a PO with an amount but no lines.
+        const { error: undoErr } = await adminSupabase.from('purchase_orders').delete().eq('id', po.id)
+        return Response.json({ error: 'PO line items not saved: ' + itemsErr.message + (undoErr ? ` (PO ${po.po_number} was created without lines: ${undoErr.message})` : ' — nothing was saved.') }, { status: 500 })
+      }
     }
 
     return Response.json(warning ? { purchase_order: po, warning } : { purchase_order: po })
@@ -163,10 +193,19 @@ export async function PUT(request) {
 
     const { id, items, ...fields } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-    const denied = await denyJobOf(adminSupabase, auth, 'purchase_orders', id)
+    const { po, denied } = await loadPOForCaller(auth, id)
     if (denied) return denied
+    // The saved PO's job is authoritative. A PO can't be moved to another job here.
+    if (fields.job_id !== undefined && fields.job_id !== po.job_id) {
+      return Response.json({ error: 'A purchase order cannot be moved to another job.' }, { status: 400 })
+    }
+    const refDenied = await denyForeignRefs(po.job_id, {
+      budget_item_id: fields.budget_item_id || null,
+      draw_request_id: fields.draw_request_id || null,
+    })
+    if (refDenied) return refDenied
     if (file && file.size > 0) {
-      newAttachmentUrl = await uploadPOAttachment(file, body.job_id)
+      newAttachmentUrl = await uploadPOAttachment(file, po.job_id)
     }
 
     const updates = {}
@@ -185,9 +224,10 @@ export async function PUT(request) {
 
     if (items !== undefined) {
       updates.amount = items.reduce((a, i) => a + (parseFloat(i.qty) || 1) * (parseFloat(i.unit_price) || 0), 0)
-      await adminSupabase.from('purchase_order_items').delete().eq('po_id', id)
+      const { error: delItemsErr } = await adminSupabase.from('purchase_order_items').delete().eq('po_id', id)
+      if (delItemsErr) return Response.json({ error: 'PO line items not saved: ' + delItemsErr.message }, { status: 500 })
       if (items.length > 0) {
-        await adminSupabase.from('purchase_order_items').insert(
+        const { error: insItemsErr } = await adminSupabase.from('purchase_order_items').insert(
           items.map((i, idx) => ({
             po_id: id,
             description: i.description,
@@ -198,19 +238,22 @@ export async function PUT(request) {
             sort_order: idx,
           }))
         )
+        if (insItemsErr) return Response.json({ error: 'PO line items not saved: ' + insItemsErr.message }, { status: 500 })
       }
     }
 
     let warning = null
     if (Object.keys(updates).length > 0) {
-      const { error: upErr } = await adminSupabase.from('purchase_orders').update(updates).eq('id', id)
+      let { error: upErr } = await adminSupabase.from('purchase_orders').update(updates).eq('id', id).eq('job_id', po.job_id)
       if ('payment_type' in updates && isMissingPaymentTypeColumn(upErr)) {
         const { payment_type: _pt, ...updatesWithout } = updates
+        upErr = null
         if (Object.keys(updatesWithout).length > 0) {
-          await adminSupabase.from('purchase_orders').update(updatesWithout).eq('id', id)
+          ({ error: upErr } = await adminSupabase.from('purchase_orders').update(updatesWithout).eq('id', id).eq('job_id', po.job_id))
         }
-        warning = PAYMENT_TYPE_NOT_SAVED_WARNING
+        if (!upErr) warning = PAYMENT_TYPE_NOT_SAVED_WARNING
       }
+      if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
     }
 
     return Response.json(warning ? { ok: true, warning } : { ok: true })
@@ -225,9 +268,10 @@ export async function DELETE(request) {
   try {
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-    const denied = await denyJobOf(adminSupabase, auth, 'purchase_orders', id)
+    const { po, denied } = await loadPOForCaller(auth, id)
     if (denied) return denied
-    await adminSupabase.from('purchase_orders').delete().eq('id', id)
+    const { error } = await adminSupabase.from('purchase_orders').delete().eq('id', id).eq('job_id', po.job_id)
+    if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

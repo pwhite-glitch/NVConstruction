@@ -7,7 +7,9 @@ import { ActivityDateFields, FormHint } from '../components/lookahead/LookaheadS
 // Add/Edit Activity form for the job page Lookahead tab. The form state lives here,
 // not in the job page, so typing re-renders only this modal.
 // onSave(form) resolves to { error } on failure (the form stays open with the input kept).
-export default function LookaheadActivityModal({ s, initialForm, editing, contracts, companyEquipment, onSave, onDelete, onDuplicate, onClose }) {
+// companyEquipment: ACTIVE rows only (the picker). retiredEquipment: retired rows,
+// shown only when this activity already has them, labelled Retired, uncheck-only.
+export default function LookaheadActivityModal({ s, initialForm, editing, contracts, companyEquipment, retiredEquipment = [], onSave, onDelete, onDuplicate, onClose }) {
   const [activityForm, setActivityForm] = useState(initialForm)
   const [newCoName, setNewCoName] = useState('')
   const [newCoManpower, setNewCoManpower] = useState('')
@@ -139,6 +141,15 @@ export default function LookaheadActivityModal({ s, initialForm, editing, contra
                 ))}
               </div>
             )}
+            {retiredEquipment.filter(eq => (activityForm.company_equipment_ids || []).includes(eq.id)).map(eq => (
+              <label key={eq.id} style={{ ...checkRow, color: '#6b7280', marginTop: '6px' }}>
+                <input type="checkbox" checked
+                  onChange={() => setActivityForm(f => ({ ...f, company_equipment_ids: (f.company_equipment_ids || []).filter(i => i !== eq.id) }))}
+                />
+                <span>{eq.name} (Retired)</span>
+                <span style={{ fontSize: '11px' }}>— uncheck to remove; retired equipment can't be added again</span>
+              </label>
+            ))}
           </div>
           <div>
             <label style={s.label}>Materials Status</label>

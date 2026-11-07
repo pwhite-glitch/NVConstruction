@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
-import { denyJob } from '../../../lib/roles'
+import { denyUnlessOnJob } from '../../../lib/roles'
 import { jobIdFromPath } from '../../../lib/storage-path'
 import { JOB_DOC_CATEGORIES } from '../../../lib/job-docs'
 
@@ -23,8 +23,14 @@ async function denyPath(auth, path, { upload = false } = {}) {
     if (a.error || b.error) return Response.json({ error: (a.error || b.error).message }, { status: 500 })
     jobId = a.data?.[0]?.job_id || b.data?.[0]?.job_id || null
   }
-  // No job found: denyJob answers 404 for PM/APM and lets other office roles through.
-  return denyJob(adminSupabase, auth, jobId)
+  return denyOnJob(auth, jobId)
+}
+
+// Every role (supers included) must be on the job; principal/admin see all jobs.
+// No job resolved → 404 for everyone (fail closed).
+async function denyOnJob(auth, jobId) {
+  if (!jobId) return Response.json({ error: 'Job not found.' }, { status: 404 })
+  return denyUnlessOnJob(adminSupabase, auth, jobId)
 }
 
 export async function GET(request) {
@@ -45,7 +51,7 @@ export async function GET(request) {
     }
 
     if (!job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
-    const denied = await denyJob(adminSupabase, auth, job_id)
+    const denied = await denyOnJob(auth, job_id)
     if (denied) return denied
     const { data, error } = await adminSupabase
       .from('job_docs')
@@ -100,7 +106,7 @@ export async function POST(request) {
       const { job_id, url, name, doc_type } = body
       if (!job_id || !url || !name) return Response.json({ error: 'job_id, url, name required' }, { status: 400 })
       if (jobIdFromPath(url) !== String(job_id).toLowerCase()) return Response.json({ error: 'File path does not match the job.' }, { status: 400 })
-      const denied = await denyJob(adminSupabase, auth, job_id)
+      const denied = await denyOnJob(auth, job_id)
       if (denied) return denied
       const { error } = await adminSupabase.from('job_docs').insert({ job_id, url, name, doc_type: doc_type || 'general' })
       if (error) return Response.json({ error: error.message }, { status: 500 })
@@ -114,7 +120,7 @@ export async function POST(request) {
       if (jobIdFromPath(storage_path) !== String(job_id).toLowerCase()) return Response.json({ error: 'File path does not match the job.' }, { status: 400 })
       const cat = category || 'other'
       if (!JOB_DOC_CATEGORIES.some(c => c.value === cat)) return Response.json({ error: 'Unknown document category.' }, { status: 400 })
-      const denied = await denyJob(adminSupabase, auth, job_id)
+      const denied = await denyOnJob(auth, job_id)
       if (denied) return denied
       const { data, error } = await adminSupabase.from('job_documents')
         .insert({ job_id, storage_path, file_name: String(file_name).slice(0, 255), category: cat, uploaded_by: auth.userId })
@@ -147,7 +153,8 @@ export async function DELETE(request) {
   const { data: doc, error } = await adminSupabase.from('job_documents').select('id, job_id, storage_path').eq('id', id).maybeSingle()
   if (error) return Response.json({ error: error.message }, { status: 500 })
   if (!doc) return Response.json({ error: 'Document not found.' }, { status: 404 })
-  const denied = await denyJob(adminSupabase, auth, doc.job_id)
+  // Supers are refused above; everyone else must be on the document's real job.
+  const denied = await denyOnJob(auth, doc.job_id)
   if (denied) return denied
   const { error: delErr } = await adminSupabase.from('job_documents').delete().eq('id', id)
   if (delErr) return Response.json({ error: delErr.message }, { status: 500 })

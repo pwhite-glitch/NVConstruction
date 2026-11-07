@@ -7,6 +7,7 @@ import { escapeHtml, emailWrap } from '../../../../lib/email'
 import { writeWithFallback, lookaheadStage, LOOKAHEAD_OFFICE_ROLES } from '../../../../lib/lookahead-fields'
 import { lookaheadDays, activitiesInDays, rangeLabel } from '../../../../lib/lookahead-dates'
 import { lookaheadSubRecipients } from '../../../../lib/lookahead-recipients'
+import { getSiteUrl } from '../../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -65,7 +66,7 @@ export async function POST(request) {
 
     const job = la.jobs || {}
     const weekStr = new Date(la.week_start_date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+    const siteUrl = getSiteUrl()
     const resend = new Resend(process.env.RESEND_API_KEY)
     const sentAt = new Date().toISOString()
     const results = []

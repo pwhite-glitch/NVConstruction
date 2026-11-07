@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
-import { denyJob, denyJobOf, denyJobs } from '../../../lib/roles'
+import { denyUnlessOnJob } from '../../../lib/roles'
+import { validateBudgetFields } from '../../../lib/budget-fields'
 import { findBudgetLineReferences, buildReferencedConflict } from '../../../lib/budget-line-refs'
 
 const adminSupabase = createClient(
@@ -15,8 +16,20 @@ export async function POST(request) {
   try {
     const body = await request.json()
     const rows = Array.isArray(body) ? body : [body]
-    const denied = await denyJobs(adminSupabase, auth, rows.map(r => r?.job_id))
-    if (denied) return denied
+    // Every row needs a job, and the caller must be on every job (an
+    // unassigned super is refused too, not just PM/APM).
+    if (!rows.length) return Response.json({ error: 'No budget lines to insert' }, { status: 400 })
+    const jobIds = new Set()
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i]
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return Response.json({ error: `Row ${i + 1}: invalid budget line` }, { status: 400 })
+      if (!r.job_id) return Response.json({ error: `Row ${i + 1}: job_id is required` }, { status: 400 })
+      jobIds.add(r.job_id)
+    }
+    for (const jobId of jobIds) {
+      const denied = await denyUnlessOnJob(adminSupabase, auth, jobId)
+      if (denied) return denied
+    }
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i] || {}
       for (const f of ['budget_amount', 'owner_amount']) {
@@ -38,17 +51,26 @@ export async function POST(request) {
   }
 }
 
-// PUT: update a single row by id, or increment fields ({ id, increment: { field: delta } })
+// PUT: update one budget line: { id, fields }. Only the fields the Budget,
+// Forecast and change-order screens edit are accepted. job_id can never be
+// changed here (moving costs between jobs is not an edit), and there is no
+// increment mode: callers send the new absolute amounts.
 export async function PUT(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const { id, fields } = await request.json()
-    if (!id || !fields) return Response.json({ error: 'id and fields required' }, { status: 400 })
-    const denied = await denyJobOf(adminSupabase, auth, 'budget_items', id)
-      || (fields.job_id ? await denyJob(adminSupabase, auth, fields.job_id) : null)
+    const body = await request.json()
+    const { id, fields } = body || {}
+    if (!id || fields === undefined) return Response.json({ error: 'id and fields required' }, { status: 400 })
+    const { updates, error: vErr } = validateBudgetFields(fields)
+    if (vErr) return Response.json({ error: vErr }, { status: 400 })
+    // Guard the line's real job, not anything in the body.
+    const { data: line, error: gErr } = await adminSupabase.from('budget_items').select('id, job_id').eq('id', id).maybeSingle()
+    if (gErr) return Response.json({ error: gErr.message }, { status: 500 })
+    if (!line) return Response.json({ error: 'Budget line not found.' }, { status: 404 })
+    const denied = await denyUnlessOnJob(adminSupabase, auth, line.job_id)
     if (denied) return denied
-    const { error } = await adminSupabase.from('budget_items').update(fields).eq('id', id)
+    const { error } = await adminSupabase.from('budget_items').update(updates).eq('id', id).eq('job_id', line.job_id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })
   } catch (e) {
@@ -67,7 +89,7 @@ export async function DELETE(request) {
   try {
     const body = await request.json()
     if (body.job_id) {
-      const denied = await denyJob(adminSupabase, auth, body.job_id)
+      const denied = await denyUnlessOnJob(adminSupabase, auth, body.job_id)
       if (denied) return denied
       const { data: lines, error: lErr } = await fetchAllLines(() =>
         adminSupabase.from('budget_items').select('id, job_id, cost_code, description').eq('job_id', body.job_id).order('id', { ascending: true }))
@@ -99,12 +121,12 @@ export async function DELETE(request) {
       return Response.json({ ok: true, deleted: lines.length })
     }
     if (!body.id) return Response.json({ error: 'id or job_id required' }, { status: 400 })
-    const denied = await denyJobOf(adminSupabase, auth, 'budget_items', body.id)
-    if (denied) return denied
     const { data: line, error: gErr } = await adminSupabase.from('budget_items')
       .select('id, job_id, cost_code, description').eq('id', body.id).maybeSingle()
     if (gErr) return Response.json({ error: gErr.message }, { status: 500 })
     if (!line) return Response.json({ error: 'Budget line not found.' }, { status: 404 })
+    const denied = await denyUnlessOnJob(adminSupabase, auth, line.job_id)
+    if (denied) return denied
 
     const { refs, error: rErr } = await findBudgetLineReferences(adminSupabase, line.job_id, [line.id])
     if (rErr) return Response.json({ error: rErr }, { status: 500 })

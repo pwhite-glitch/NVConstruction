@@ -21,6 +21,19 @@ function embed(table, row, cols) {
   return out
 }
 
+function likeRegex(pattern) {
+  let out = ''
+  const s = String(pattern)
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    if (ch === '\\' && i + 1 < s.length) { out += s[++i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); continue }
+    if (ch === '%') out += '[\\s\\S]*'
+    else if (ch === '_') out += '[\\s\\S]'
+    else out += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+  return new RegExp(`^${out}$`, 'i')
+}
+
 let idSeq = 1000
 
 function query(table) {
@@ -32,6 +45,7 @@ function query(table) {
   let head = false
   let wantRows = false
   let lim = null
+  let rng = null
   let single = false
   let maybe = false
 
@@ -75,6 +89,7 @@ function query(table) {
     }
     let out = match()
     const count = out.length
+    if (rng) out = out.slice(rng[0], rng[1] + 1)
     if (lim != null) out = out.slice(0, lim)
     if (head) return { data: null, count, error: null }
     return { data: out.map(r => embed(table, r, cols)), count: countMode ? count : undefined, error: null }
@@ -105,10 +120,12 @@ function query(table) {
     lt: (c, v) => { filters.push(r => get(r, c) < v); return q },
     gte: (c, v) => { filters.push(r => get(r, c) >= v); return q },
     lte: (c, v) => { filters.push(r => get(r, c) <= v); return q },
-    ilike: (c, v) => { filters.push(r => String(get(r, c) ?? '').toLowerCase() === String(v).replace(/\\(.)/g, '$1').toLowerCase()); return q },
+    // Real LIKE semantics (case-insensitive): % and _ are wildcards unless escaped with \.
+    ilike: (c, v) => { const re = likeRegex(v); filters.push(r => get(r, c) != null && re.test(String(get(r, c)))); return q },
     or: () => q,
     order: () => q,
     limit: n => { lim = n; return q },
+    range: (a, b) => { rng = [a, b]; return q },
     single: () => { single = true; return Promise.resolve(finish()) },
     maybeSingle: () => { maybe = true; return Promise.resolve(finish()) },
     then: (res, rej) => Promise.resolve(finish()).then(res, rej),

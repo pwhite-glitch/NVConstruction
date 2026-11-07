@@ -4,6 +4,7 @@ import { notify } from '../../../lib/notify'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { subCanSeeJob } from '../../../lib/sub-access'
+import { siteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -55,7 +56,7 @@ export async function POST(request) {
     const { data: profile } = await adminSupabase.from('profiles').select('email').eq('id', assigned_sub_id).single()
     const { data: jobRow } = await adminSupabase.from('jobs').select('job_number, project_name').eq('id', job_id).single()
     if (profile?.email) {
-      const portalUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://nv-construction-doym.vercel.app') + '/submit'
+      const portalUrl = siteUrl('/submit')
       await resend.emails.send({
         from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
         to: profile.email,

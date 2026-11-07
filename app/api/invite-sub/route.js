@@ -3,8 +3,9 @@ import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
 import { findAuthUserByEmail } from '../../../lib/auth-users'
 import { loadExistingProfile, existingInviteTargetError, blankCompanyFill } from '../../../lib/invite-guards'
+import { getSiteUrl } from '../../../lib/site-url'
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -31,7 +32,7 @@ export async function POST(request) {
 
     if (!dir?.email) return Response.json({ error: 'No email on file for this subcontractor' }, { status: 400 })
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+    const siteUrl = getSiteUrl()
     const logo = logoSrc()
     const firstName = dir.contact_name?.split(' ')[0] || 'there'
 

@@ -7,7 +7,9 @@ import { openFile, openStorageFile } from '../../lib/open-file'
 import { isPartner } from '../../lib/partners'
 import { jobHrefById } from '../../lib/job-links'
 import BotAccessPanel from './BotAccessPanel'
+import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -372,27 +374,32 @@ export default function AdminPortal() {
     await loadCosts()
   }
 
+  // Records ONE check against the billing. The amount is added to paid-to-date on the
+  // server; paid_at (settled) is only sent — and only stamped — when it covers the rest.
   async function markPaid(subId) {
-    setSavingPay(true)
     setPayMsg('')
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch('/api/billing-entry', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-      body: JSON.stringify({
-        id: subId,
-        paid_at: payForm.paid_at ? new Date(payForm.paid_at + 'T12:00:00').toISOString() : new Date().toISOString(),
-        payment_amount: payForm.payment_amount ? parseFloat(payForm.payment_amount) : null,
-        payment_method: payForm.payment_method,
-        check_number: payForm.check_number || null,
-        payment_notes: payForm.payment_notes || null,
-      }),
-    })
-    const data = await res.json()
-    setSavingPay(false)
-    if (!data?.ok) { setPayMsg('Error saving payment: ' + (data?.error || 'Unknown error')); return }
-    setPayingId(null)
-    await loadBilling()
+    const row = billing.find(b => b.id === subId)
+    if (!row) { setPayMsg('Error saving payment: billing not found — refresh and try again.'); return }
+    const req = buildPaymentRequest(row, payForm)
+    if (req.error) { setPayMsg('Error saving payment: ' + req.error); return }
+    if (req.warning && !window.confirm(req.warning + '\n\nRecord this payment?')) return
+    setSavingPay(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/billing-entry', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify(req.body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.ok) { setPayMsg('Error saving payment: ' + (data?.error || `HTTP ${res.status}`)); return }
+      setPayingId(null)
+      await loadBilling()
+    } catch (e) {
+      setPayMsg('Error saving payment: ' + (e?.message || 'network error'))
+    } finally {
+      setSavingPay(false)
+    }
   }
 
   async function saveBillEdit(subId) {
@@ -403,8 +410,14 @@ export default function AdminPortal() {
     if (editBillForm.retainage_held !== '') body.retainage_held = parseFloat(editBillForm.retainage_held)
     if (editBillForm.work_description !== '') body.work_description = editBillForm.work_description
     const { data: { session } } = await supabase.auth.getSession()
-    await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify(body) })
+    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify(body) }).catch(e => ({ ok: false, json: async () => ({ error: e?.message || 'network error' }) }))
     setSavingBillEdit(false)
+    if (!res.ok) {
+      // e.g. a net (billed − retainage) below what's already been paid is refused.
+      const data = await res.json().catch(() => ({}))
+      setPayMsg('Error saving billing: ' + (data?.error || `HTTP ${res.status}`))
+      return
+    }
     setEditingBillId(null)
     await loadBilling()
   }
@@ -534,18 +547,27 @@ export default function AdminPortal() {
 
   async function saveDirEdit(id) {
     setSavingDirEdit(true)
-    const res = await fetch('/api/sub-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory_id: id, ...editDirForm }),
-    })
-    const data = await res.json()
-    setSavingDirEdit(false)
-    if (data?.ok) {
-      setEditingDirId(null)
-      await reloadDirectory()
-    } else {
-      setDirMsg('Error saving: ' + (data?.error || 'Unknown'))
+    try {
+      // Same reviewed-rename confirm as the dashboard Directory.
+      const original = directory.find(d => d.id === id)
+      const prep = await prepareDirectorySave({ fetchFn: authFetch, confirmFn: msg => window.confirm(msg), directoryId: id, originalName: original?.company_name, newName: editDirForm.company_name })
+      if (prep.error) { setDirMsg('Error saving: ' + prep.error); return }
+      if (!prep.proceed) return
+      const res = await authFetch('/api/sub-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory_id: id, ...editDirForm, ...prep.extra }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.ok) {
+        setEditingDirId(null)
+        if (data.renamed) setDirMsg(`✓ Renamed to "${data.renamed.to}"${data.renamed.company_renamed ? ' (company record too)' : ''}. Existing contracts keep their recorded name.`)
+        await reloadDirectory()
+      } else {
+        setDirMsg('Error saving: ' + (data?.error || 'Unknown'))
+      }
+    } finally {
+      setSavingDirEdit(false)
     }
   }
 
@@ -639,7 +661,9 @@ export default function AdminPortal() {
 
   function printLienWaiver(sub) {
     const job = jobs.find(j => j.id === sub.job_id) || sub.jobs || {}
-    const amt = parseFloat(sub.payment_amount || sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+    // Amount paid to date (legacy settled rows with no amount = net); before any payment, the net due.
+    const pay = billingPaymentSummary(sub)
+    const amt = (pay.paid > 0 ? pay.paid : pay.net).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
     const period = sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head><title>Lien Waiver — ${sub.company_name}</title>
@@ -869,7 +893,8 @@ export default function AdminPortal() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
                 {[
                   { label: 'Submitted this month', value: `$${monthBilling.reduce((a, b) => a + Number(b.amount_billed || 0), 0).toLocaleString()}`, count: monthBilling.length, accent: '#2563eb' },
-                  { label: 'Paid this month', value: `$${monthPaid.reduce((a, b) => a + Number(b.payment_amount || b.amount_billed || 0), 0).toLocaleString()}`, count: monthPaid.length, accent: '#16a34a' },
+                  // Settled (paid in full) this month, by actual paid amount; legacy null amount = net.
+                  { label: 'Paid in full this month', value: `$${monthPaid.reduce((a, b) => a + billingPaidAmount(b), 0).toLocaleString()}`, count: monthPaid.length, accent: '#16a34a' },
                   { label: 'Unpaid approved', value: `${billing.filter(b => !b.paid_at).length}`, count: null, accent: billing.filter(b => !b.paid_at).length > 0 ? '#e8590c' : '#555' },
                 ].map(stat => (
                   <div key={stat.label} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1rem 1.25rem' }}>
@@ -1086,6 +1111,7 @@ export default function AdminPortal() {
                 const grossAmt = parseFloat(sub.amount_billed || 0)
                 const retainageAmt = parseFloat(sub.retainage_held || 0)
                 const netAmt = grossAmt - retainageAmt
+                const pay = billingPaymentSummary(sub) // net / paid-to-date / remaining, in cents-safe dollars
                 const isOwnerPays = sub.jobs?.payment_type === 'owner_pays_direct'
                 return (
                   <div key={sub.id} style={{ border: `1px solid ${sub.ready_to_pay ? '#bbf7d0' : sub.nv_cuts_check ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>
@@ -1103,6 +1129,7 @@ export default function AdminPortal() {
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '18px', fontWeight: '800', color: sub.ready_to_pay ? '#16a34a' : '#111827', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div>
                           {retainageAmt > 0 && <div style={{ fontSize: '11px', color: '#6b7280' }}>gross {fmtAmt(grossAmt)} · −{fmtAmt(retainageAmt)} ret.</div>}
+                          {pay.partial && <div style={{ fontSize: '11px', color: '#b45309', fontWeight: '700' }}>Partially paid {fmtAmt(pay.paid)} · {fmtAmt(pay.remaining)} remaining</div>}
                         </div>
                         <span style={{ color: '#6b7280', fontSize: '18px' }}>{isExpanded ? '∧' : '∨'}</span>
                       </div>
@@ -1115,6 +1142,8 @@ export default function AdminPortal() {
                           <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Gross Invoice</div><div style={{ fontSize: '13px', color: '#374151' }}>{fmtAmt(grossAmt)}</div></div>
                           <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Retainage Held</div><div style={{ fontSize: '13px', color: '#e8590c' }}>−{fmtAmt(retainageAmt)}</div></div>
                           <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Net to Pay</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#111827', fontFamily: 'monospace' }}>{fmtAmt(netAmt)}</div></div>
+                          {pay.partial && <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Paid to date</div><div style={{ fontSize: '13px', color: '#16a34a', fontFamily: 'monospace' }}>{fmtAmt(pay.paid)}</div></div>}
+                          {pay.partial && <div><div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '1px' }}>Remaining</div><div style={{ fontSize: '15px', fontWeight: '700', color: '#b45309', fontFamily: 'monospace' }}>{fmtAmt(pay.remaining)}</div></div>}
                         </div>
                         {sub.work_description && <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1rem', lineHeight: '1.6' }}>{sub.work_description}</div>}
                         {editingBillId === sub.id ? (
@@ -1133,16 +1162,21 @@ export default function AdminPortal() {
                           </div>
                         ) : payingId === sub.id ? (
                           <div style={{ ...s.formBox, marginTop: 0 }}>
-                            <p style={{ margin: '0 0 12px', fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
+                            <p style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: '700', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Record payment</p>
+                            <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#4b5563' }}>Net due {fmtAmt(pay.net)} · paid to date {fmtAmt(pay.paid)} · <strong>remaining {fmtAmt(pay.remaining)}</strong>. Enter the amount of <em>this</em> check; it is added to paid to date. The billing is marked paid only when the remaining balance is covered.</p>
                             <div style={{ ...s.grid3, marginBottom: '10px' }} className="rx-grid-3">
                               <div><label style={s.label}>Payment date</label><input type="date" style={{ ...s.input, colorScheme: 'dark' }} value={payForm.paid_at} onChange={e => setPayForm(f => ({ ...f, paid_at: e.target.value }))} /></div>
-                              <div><label style={s.label}>Amount paid</label><input type="number" style={s.input} placeholder={netAmt} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} /></div>
+                              <div><label style={s.label}>Amount of this payment ($)</label><input type="number" step="0.01" min="0.01" style={s.input} placeholder={pay.remaining.toFixed(2)} value={payForm.payment_amount} onChange={e => setPayForm(f => ({ ...f, payment_amount: e.target.value }))} /></div>
                               <div><label style={s.label}>Payment method</label><select style={s.input} value={payForm.payment_method} onChange={e => setPayForm(f => ({ ...f, payment_method: e.target.value }))}>{PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
                             </div>
                             <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
                               <div><label style={s.label}>Check / reference #</label><input style={s.input} placeholder="Optional" value={payForm.check_number} onChange={e => setPayForm(f => ({ ...f, check_number: e.target.value }))} /></div>
                               <div><label style={s.label}>Notes</label><input style={s.input} placeholder="Optional" value={payForm.payment_notes} onChange={e => setPayForm(f => ({ ...f, payment_notes: e.target.value }))} /></div>
                             </div>
+                            {(() => {
+                              const w = paymentMismatchWarning(sub, payForm.payment_amount)
+                              return w ? <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', marginBottom: '10px' }}>⚠ {w}</div> : null
+                            })()}
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <button style={{ ...s.btn, opacity: savingPay ? 0.6 : 1 }} disabled={savingPay} onClick={() => markPaid(sub.id)}>{savingPay ? 'Saving...' : 'Save payment'}</button>
                               <button style={s.btnGray} onClick={() => { setPayingId(null); setPayMsg('') }}>Cancel</button>
@@ -1150,7 +1184,7 @@ export default function AdminPortal() {
                           </div>
                         ) : (
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: todayCentral(), payment_amount: netAmt.toString(), payment_method: 'Check', check_number: '', payment_notes: '' }) }}>Record payment</button>
+                            <button style={s.btnSm('green')} onClick={() => { setPayingId(sub.id); setPayMsg(''); setPayForm({ paid_at: todayCentral(), payment_amount: pay.remaining > 0 ? pay.remaining.toFixed(2) : '', payment_method: 'Check', check_number: '', payment_notes: '' }) }}>{pay.partial ? 'Record another payment' : 'Record payment'}</button>
                             {!sub.paid_at && <button style={s.btnSm('gray')} onClick={() => { setEditingBillId(sub.id); setEditBillForm({ invoice_number: sub.invoice_number || '', amount_billed: '', retainage_held: '', work_description: '' }) }}>Edit</button>}
                             {sub.doc_url && <button style={s.btnSm('blue')} onClick={() => openStorageFile(supabase, 'billing-docs', sub.doc_url, 3600)}>View Invoice</button>}
                           </div>
@@ -1179,7 +1213,7 @@ export default function AdminPortal() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                       <span style={{ fontSize: '11px', fontWeight: '800', color: '#16a34a', letterSpacing: '2px', textTransform: 'uppercase' }}>✓ Ready to Pay — {readyBills.length}</span>
                       <div style={{ flex: 1, height: '1px', background: '#bbf7d0' }} />
-                      <span style={{ fontSize: '11px', color: '#3a6a3a', fontFamily: 'monospace' }}>{fmtAmt(readyBills.reduce((s, b) => s + parseFloat(b.amount_billed || 0) - parseFloat(b.retainage_held || 0), 0))} net</span>
+                      <span style={{ fontSize: '11px', color: '#3a6a3a', fontFamily: 'monospace' }}>{fmtAmt(readyBills.reduce((s, b) => s + billingPaymentSummary(b).remaining, 0))} remaining</span>
                     </div>
                   )}
 
@@ -1206,8 +1240,15 @@ export default function AdminPortal() {
 
             {/* ── PAYMENTS (paid history) ── */}
             {activeTab === 'payments' && (() => {
-              const paidList = billing.filter(b => !!b.paid_at && (!filterBillJob || b.job_id === filterBillJob))
-              const totalPaid = paidList.reduce((sum, b) => sum + parseFloat(b.payment_amount || b.amount_billed || 0), 0)
+              // Reporting: settled billings (paid_at = paid in full) are listed by settlement date with
+              // their actual paid amount (legacy settled rows with no amount count as net). Partial
+              // payments on still-unpaid billings are listed separately so recorded money isn't lost
+              // from totals; they have no settlement date because paid_at stays empty until settled.
+              const inJob = b => !filterBillJob || b.job_id === filterBillJob
+              const paidList = billing.filter(b => !!b.paid_at && inJob(b))
+              const partialList = billing.filter(b => !b.paid_at && inJob(b) && billingPaymentSummary(b).partial)
+              const totalPaid = paidList.reduce((sum, b) => sum + billingPaidAmount(b), 0)
+              const totalPartial = partialList.reduce((sum, b) => sum + billingPaidAmount(b), 0)
               return (
                 <>
                   <div style={s.filterRow}>
@@ -1218,7 +1259,7 @@ export default function AdminPortal() {
                     <span style={{ fontSize: '12px', color: '#6b7280', alignSelf: 'center' }}>{paidList.length} payment{paidList.length !== 1 ? 's' : ''}</span>
                   </div>
 
-                  {paidList.length === 0 ? <div style={s.emptyMsg}>No payments recorded yet.</div> : (
+                  {paidList.length === 0 ? <div style={s.emptyMsg}>{partialList.length ? 'No billings paid in full yet.' : 'No payments recorded yet.'}</div> : (
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
@@ -1237,7 +1278,8 @@ export default function AdminPortal() {
                           {paidList.map(sub => {
                             const grossAmt = parseFloat(sub.amount_billed || 0)
                             const retainageAmt = parseFloat(sub.retainage_held || 0)
-                            const paidAmt = parseFloat(sub.payment_amount || grossAmt - retainageAmt)
+                            const paySum = billingPaymentSummary(sub)
+                            const paidAmt = paySum.paid
                             return (
                               <tr key={sub.id}>
                                 <td style={s.td}><span style={{ fontWeight: '600', color: '#111827' }}>{sub.company_name}</span></td>
@@ -1245,7 +1287,7 @@ export default function AdminPortal() {
                                 <td style={s.td}>{sub.billing_period ? new Date(sub.billing_period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
                                 <td style={{ ...s.td, textAlign: 'right', color: '#6b7280' }}>${grossAmt.toLocaleString()}</td>
                                 <td style={{ ...s.td, textAlign: 'right', color: '#e8590c' }}>{retainageAmt > 0 ? `-$${retainageAmt.toLocaleString()}` : '—'}</td>
-                                <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#16a34a' }}>${paidAmt.toLocaleString()}</td>
+                                <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#16a34a' }}>${paidAmt.toLocaleString()}{paySum.mismatch && <div title="Marked paid with an amount different from net (billed − retainage). Recorded before partial payments were tracked — review." style={{ fontSize: '10px', color: '#b45309', fontWeight: '600' }}>≠ net ${paySum.net.toLocaleString()} — review</div>}</td>
                                 <td style={s.td}>{new Date(sub.paid_at).toLocaleDateString()}</td>
                                 <td style={s.td}>
                                   {sub.payment_method || '—'}
@@ -1274,12 +1316,53 @@ export default function AdminPortal() {
                             )
                           })}
                           <tr>
-                            <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total paid</td>
+                            <td colSpan={5} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total paid in full</td>
                             <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#16a34a', fontSize: '16px' }}>${totalPaid.toLocaleString()}</td>
                             <td colSpan={2} style={s.td} />
                           </tr>
                         </tbody>
                       </table>
+                    </div>
+                  )}
+
+                  {partialList.length > 0 && (
+                    <div style={{ marginTop: '1.5rem' }}>
+                      <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: '800', color: '#b45309', letterSpacing: '1.5px', textTransform: 'uppercase' }}>Partial payments — billing still unpaid ({partialList.length})</p>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr>
+                              <th style={s.th}>Sub</th>
+                              <th style={s.th}>Job</th>
+                              <th style={{ ...s.th, textAlign: 'right' }}>Net due</th>
+                              <th style={{ ...s.th, textAlign: 'right' }}>Paid to date</th>
+                              <th style={{ ...s.th, textAlign: 'right' }}>Remaining</th>
+                              <th style={s.th}>Payment notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {partialList.map(sub => {
+                              const ps = billingPaymentSummary(sub)
+                              return (
+                                <tr key={sub.id}>
+                                  <td style={s.td}><span style={{ fontWeight: '600', color: '#111827' }}>{sub.company_name}</span></td>
+                                  <td style={s.td}>#{sub.jobs?.job_number}</td>
+                                  <td style={{ ...s.td, textAlign: 'right' }}>${ps.net.toLocaleString()}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#16a34a' }}>${ps.paid.toLocaleString()}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', fontWeight: '700', color: '#b45309' }}>${ps.remaining.toLocaleString()}</td>
+                                  <td style={{ ...s.td, fontSize: '11px', color: '#6b7280', whiteSpace: 'pre-wrap' }}>{sub.payment_notes || '—'}</td>
+                                </tr>
+                              )
+                            })}
+                            <tr>
+                              <td colSpan={3} style={{ ...s.td, fontWeight: '700', color: '#6b7280', fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Total partial payments</td>
+                              <td style={{ ...s.td, textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>${totalPartial.toLocaleString()}</td>
+                              <td colSpan={2} style={s.td} />
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#4b5563' }}>All money recorded: ${(totalPaid + totalPartial).toLocaleString()} (paid in full ${totalPaid.toLocaleString()} + partial ${totalPartial.toLocaleString()}).</p>
                     </div>
                   )}
                 </>

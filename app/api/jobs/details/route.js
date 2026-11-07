@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../../lib/server-auth'
 import { denyJob, isPrincipal, normEmail } from '../../../../lib/roles'
-import { residentialDetailsUpdate } from '../../../../lib/job-details'
+import { jobDetailsUpdate } from '../../../../lib/job-details'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,7 +11,8 @@ const adminSupabase = createClient(
 const WRITER_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
 const PM_PICK_ROLES = new Set(['principal', 'pm', 'apm'])
 
-// POST { id, fields } — residential job Details. Only the allow-listed fields in
+// POST { id, fields } — job Details (residential and commercial pages; the
+// field set follows the stored job_type). Only the allow-listed fields in
 // lib/job-details.js are written, after checks. Archive is never written here
 // except the Owner's deliberate "status → Active" unarchive. PM changes do not
 // touch pm_job_assignments.
@@ -23,7 +24,7 @@ export async function POST(request) {
   let body
   try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
   const { id, fields } = body || {}
-  if (!id || !fields || typeof fields !== 'object') return Response.json({ error: 'id and fields required' }, { status: 400 })
+  if (!id || !fields || typeof fields !== 'object' || Array.isArray(fields)) return Response.json({ error: 'id and fields required' }, { status: 400 })
   const denied = await denyJob(adminSupabase, auth, id)
   if (denied) return denied
 
@@ -31,7 +32,7 @@ export async function POST(request) {
   if (jobErr) return Response.json({ error: jobErr.message }, { status: 500 })
   if (!job) return Response.json({ error: 'Job not found.' }, { status: 404 })
 
-  const r = residentialDetailsUpdate(fields, job, { isOwner: isPrincipal(auth.role) })
+  const r = jobDetailsUpdate(fields, job, { isOwner: isPrincipal(auth.role) })
   if (r.error) return Response.json({ error: r.error }, { status: 400 })
   const update = r.fields
 

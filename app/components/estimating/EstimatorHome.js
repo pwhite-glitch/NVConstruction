@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo } from 'react'
+import { calcTotal } from '../../../lib/calc-total'
 
 const STAGE_MAP = {
   lead:        { label: 'Lead',        color: '#374151', bg: '#f3f4f6', border: '#e5e7eb' },
@@ -26,17 +27,7 @@ const SORT_OPTS = [
   { key: 'name',       label: 'Project name' },
 ]
 
-function calcTotal(est) {
-  const globalPct = Number(est.markup_pct || 0)
-  const lines = est.estimate_line_items || []
-  const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-  const billed = lines.reduce((a, l) => {
-    const pct = l.markup_pct != null ? Number(l.markup_pct) : globalPct
-    const flat = l.markup_flat != null ? Number(l.markup_flat) : 0
-    return a + Number(l.amount || 0) * (1 + pct / 100) + flat
-  }, 0)
-  return billed + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
-}
+// Estimate total comes from the shared helper (actual tax_rate, overrides).
 
 function fmtDate(s) {
   if (!s) return ''

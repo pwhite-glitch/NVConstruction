@@ -4,6 +4,7 @@ import { escapeHtml } from '../../../lib/email'
 import { notify } from '../../../lib/notify'
 import { ilikeExact } from '../../../lib/roles'
 import { canManageOrderPortal, findPortalDoc, isValidEmail, QUESTION_MAX_CHARS, QUESTION_MIN_GAP_MS } from '../../../lib/customer-portal'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -224,7 +225,7 @@ export async function POST(request) {
       // Send invitation email via Resend
       const order = scopeOrder
 
-      const portalUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.nvim.co'}/portal/${access_token}`
+      const portalUrl = `${getSiteUrl()}/portal/${access_token}`
       let emailStatus = 'failed'
       let emailError = null
 
@@ -360,7 +361,7 @@ async function notifyQuestion(access, who, questionText) {
       subject: `Customer question — ${label}`,
       html: `<p><strong>${escapeHtml(who)}</strong> asked a question on <strong>${escapeHtml(label)}</strong>:</p>`
         + `<blockquote style="white-space:pre-wrap">${escapeHtml(questionText)}</blockquote>`
-        + `<p><a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://app.nvim.co'}/sales/${order.id}">Open the order</a></p>`,
+        + `<p><a href="${getSiteUrl()}/sales/${order.id}">Open the order</a></p>`,
     })
     if (error) console.error('[customer-portal] question email:', error.message || error)
   } catch (e) {

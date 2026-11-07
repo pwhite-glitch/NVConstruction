@@ -1,66 +1,58 @@
 import { createClient } from '@supabase/supabase-js'
-import { requirePM } from '../../../lib/server-auth'
+import { requireRole } from '../../../lib/server-auth'
+import { sameCompany } from '../../../lib/company-name'
+import { linkReview, linkSelected, createCompanyForDirectory } from '../../../lib/company-identity'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-// Finds or creates a companies entry for the given company_name,
-// then links all profiles and subcontracts that match by name.
-export async function POST(request) {
-  const auth = await requirePM(request)
+// Fix Company Links (Directory → Portal Access), Owner (principal) / PM only.
+// GET ?directory_id=  read-only review list: unlinked sub users with an approved
+//   Directory application for this company (by login email), plus who was left
+//   out and why. Creates and links nothing.
+// POST { company_id, directory_id, profile_ids }  links only the selected people,
+//   each re-checked now and written only while still unlinked.
+// POST { action: 'create-company', directory_id }  creates the company record for
+//   an approved Directory entry when no company with that name exists.
+// Subcontracts are never relinked here (no name-based contract cascade).
+const ROLES = ['principal', 'pm']
+const fail = (status, error) => Response.json({ error }, { status })
+
+export async function GET(request) {
+  const auth = await requireRole(request, ROLES)
   if (auth.error) return auth.error
+  const directoryId = new URL(request.url).searchParams.get('directory_id')
+  if (!directoryId) return fail(400, 'directory_id required')
   try {
-    const { company_name } = await request.json()
-    if (!company_name?.trim()) return Response.json({ error: 'company_name required' }, { status: 400 })
-
-    const name = company_name.trim()
-
-    // Find or create the companies entry
-    let companyId = null
-    const { data: existing } = await adminSupabase
-      .from('companies')
-      .select('id')
-      .ilike('name', name)
-      .maybeSingle()
-
-    if (existing) {
-      companyId = existing.id
-    } else {
-      const { data: created, error: createErr } = await adminSupabase
-        .from('companies')
-        .insert({ name })
-        .select('id')
-        .single()
-      if (createErr) return Response.json({ error: createErr.message }, { status: 500 })
-      companyId = created.id
-    }
-
-    // Link all profiles with matching company_name (regardless of current company_id)
-    const { data: updatedProfiles, error: profErr } = await adminSupabase
-      .from('profiles')
-      .update({ company_id: companyId })
-      .ilike('company_name', name)
-      .select('id')
-    if (profErr) return Response.json({ error: profErr.message }, { status: 500 })
-
-    // Link all subcontracts with matching vendor_name that don't have a company_id yet
-    const { data: updatedContracts, error: contractErr } = await adminSupabase
-      .from('subcontracts')
-      .update({ company_id: companyId })
-      .ilike('vendor_name', name)
-      .is('company_id', null)
-      .select('id')
-    if (contractErr) return Response.json({ error: contractErr.message }, { status: 500 })
-
-    return Response.json({
-      ok: true,
-      company_id: companyId,
-      profiles_linked: updatedProfiles?.length ?? 0,
-      contracts_linked: updatedContracts?.length ?? 0,
-    })
+    const r = await linkReview(adminSupabase, directoryId)
+    if (r.error) return fail(r.status, r.error)
+    return Response.json(r.review)
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 })
+    return fail(500, e.message)
+  }
+}
+
+export async function POST(request) {
+  const auth = await requireRole(request, ROLES)
+  if (auth.error) return auth.error
+  let body
+  try { body = await request.json() } catch { return fail(400, 'Invalid JSON') }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'Invalid body')
+  try {
+    if (body.action === 'create-company') {
+      if (!body.directory_id) return fail(400, 'directory_id required')
+      const r = await createCompanyForDirectory(adminSupabase, body.directory_id, sameCompany)
+      if (r.error) return fail(r.status, r.error)
+      return Response.json({ ok: true, company: r.company })
+    }
+    if (body.action) return fail(400, 'Unknown action')
+    if ('company_name' in body && !body.company_id) return fail(400, 'Review the people list and submit company_id with the selected profile_ids.')
+    const r = await linkSelected(adminSupabase, body)
+    if (r.error) return fail(r.status, r.error)
+    return Response.json(r.result, { status: r.result.ok ? 200 : 207 })
+  } catch (e) {
+    return fail(500, e.message)
   }
 }

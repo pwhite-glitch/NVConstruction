@@ -2,8 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
 import { denyJob } from '../../../lib/roles'
+import { getSiteUrl } from '../../../lib/site-url'
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -35,7 +36,7 @@ export async function POST(request) {
   }
   if (!recipientEmail) return Response.json({ error: 'No email on file for this sub' }, { status: 400 })
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+  const siteUrl = getSiteUrl()
   const logo = logoSrc()
   const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   const period = sub.billing_period

@@ -135,6 +135,7 @@ export default function OwnerPortal() {
   const [expandedRfi, setExpandedRfi] = useState(null)
   const [commentDrafts, setCommentDrafts] = useState({})
   const [submittingComment, setSubmittingComment] = useState(null)
+  const [commentErrors, setCommentErrors] = useState({})
 
   useEffect(() => { init() }, [])
 
@@ -243,22 +244,30 @@ export default function OwnerPortal() {
   async function submitComment(rfiId) {
     const text = (commentDrafts[rfiId] || '').trim()
     if (!text) return
+    if (isDevPreview) return // preview is read-only
     setSubmittingComment(rfiId)
+    setCommentErrors(e => ({ ...e, [rfiId]: null }))
     try {
-      await fetch('/api/rfi-comments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rfi_id: rfiId,
-          job_id: selectedJobId,
-          author_name: isDevPreview ? `${currentUserName} (Preview)` : currentUserName,
-          author_role: 'owner',
-          comment: text,
-        }),
-      })
+      // Author, role and job are set by the server from the session and the RFI.
+      let res, data = {}
+      try {
+        res = await fetch('/api/rfi-comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rfi_id: rfiId, comment: text }),
+        })
+        data = await res.json().catch(() => ({}))
+      } catch (err) {
+        setCommentErrors(e => ({ ...e, [rfiId]: 'Could not reach the server. Your comment was not sent — check your connection and try again.' }))
+        return
+      }
+      if (!res.ok || !data?.comment) {
+        setCommentErrors(e => ({ ...e, [rfiId]: `Your comment was not sent: ${data?.error || `error ${res.status}`}. Your text is kept below — try again.` }))
+        return
+      }
       setCommentDrafts(d => ({ ...d, [rfiId]: '' }))
-      const { data } = await supabase.from('rfi_comments').select('*').eq('rfi_id', rfiId).order('created_at', { ascending: true })
-      setRfiComments(prev => ({ ...prev, [rfiId]: data || [] }))
+      const { data: fresh, error: reloadErr } = await supabase.from('rfi_comments').select('*').eq('rfi_id', rfiId).order('created_at', { ascending: true })
+      setRfiComments(prev => ({ ...prev, [rfiId]: reloadErr ? [...(prev[rfiId] || []), data.comment] : (fresh || [data.comment]) }))
     } finally {
       setSubmittingComment(null)
     }
@@ -548,15 +557,15 @@ export default function OwnerPortal() {
                               <div style={s.rfiHeader} onClick={() => setExpandedRfi(isOpen ? null : rfi.id)}>
                                 <span style={statusBadge(rfi.status || 'open')}>{rfi.status || 'open'}</span>
                                 <span style={{ fontSize: '13px', fontWeight: '600', flex: 1, color: '#111827' }}>
-                                  RFI #{rfi.rfi_number || rfi.number} — {rfi.question || rfi.title || 'Untitled'}
+                                  RFI #{rfi.number ?? rfi.rfi_number ?? '—'} — {rfi.title || 'Untitled'}
                                 </span>
                                 {comments.length > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{comments.length} comment{comments.length !== 1 ? 's' : ''}</span>}
                                 <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
                               </div>
                               {isOpen && (
                                 <div style={s.rfiBody}>
-                                  {rfi.question && <div style={{ marginBottom: '10px' }}><div style={s.detailLabel}>Question</div><div style={{ fontSize: '13px', color: '#374151', marginTop: '4px', lineHeight: 1.5 }}>{rfi.question}</div></div>}
-                                  {rfi.answer && <div style={{ marginBottom: '12px', background: '#ffffff', borderRadius: '6px', padding: '10px 12px', borderLeft: '3px solid #4ade80' }}><div style={{ ...s.detailLabel, color: '#16a34a', marginBottom: '4px' }}>Response</div><div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.5 }}>{rfi.answer}</div></div>}
+                                  {rfi.description && <div style={{ marginBottom: '10px' }}><div style={s.detailLabel}>Question</div><div style={{ fontSize: '13px', color: '#374151', marginTop: '4px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{rfi.description}</div></div>}
+                                  {rfi.response && <div style={{ marginBottom: '12px', background: '#ffffff', borderRadius: '6px', padding: '10px 12px', borderLeft: '3px solid #4ade80' }}><div style={{ ...s.detailLabel, color: '#16a34a', marginBottom: '4px' }}>Response{rfi.responded_at ? ` · ${fmtDate(rfi.responded_at)}` : ''}</div><div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{rfi.response}</div></div>}
                                   {rfi.submitted_by && <div style={{ ...s.detailLabel, marginBottom: '12px' }}>Submitted by {rfi.submitted_by} · {fmtDate(rfi.created_at)}</div>}
 
                                   {comments.length > 0 && (
@@ -582,9 +591,11 @@ export default function OwnerPortal() {
                                       onChange={e => setCommentDrafts(d => ({ ...d, [rfi.id]: e.target.value }))}
                                       placeholder="Type your comment or question for the PM..."
                                     />
+                                    {commentErrors[rfi.id] && <div role="alert" style={{ marginTop: '6px', fontSize: '12px', color: '#dc2626' }}>{commentErrors[rfi.id]}</div>}
+                                    {isDevPreview && <div style={{ marginTop: '6px', fontSize: '12px', color: '#6b7280' }}>Preview is read-only — comments can't be sent.</div>}
                                     <button
-                                      style={{ ...s.btn, marginTop: '8px', ...(submittingComment === rfi.id || !draft.trim() ? s.btnDisabled : {}) }}
-                                      disabled={submittingComment === rfi.id || !draft.trim()}
+                                      style={{ ...s.btn, marginTop: '8px', ...(isDevPreview || submittingComment === rfi.id || !draft.trim() ? s.btnDisabled : {}) }}
+                                      disabled={isDevPreview || submittingComment === rfi.id || !draft.trim()}
                                       onClick={() => submitComment(rfi.id)}
                                     >
                                       {submittingComment === rfi.id ? 'Sending...' : 'Send Comment'}

@@ -3,8 +3,9 @@ import { Resend } from 'resend'
 import { requirePM } from '../../../lib/server-auth'
 import { findAuthUserByEmail } from '../../../lib/auth-users'
 import { isPrincipal, ownerChangeError } from '../../../lib/roles'
+import { getSiteUrl } from '../../../lib/site-url'
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -37,7 +38,7 @@ export async function POST(request) {
     return Response.json({ error: `Role must be one of: ${Object.keys(ROLE_LABELS).join(', ')}` }, { status: 400 })
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+  const siteUrl = getSiteUrl()
   const logo = logoSrc()
 
   let userId = null
@@ -182,7 +183,7 @@ export async function PATCH(request) {
   const { error } = await adminSupabase.auth.admin.updateUserById(user_id, { email })
   if (error) return Response.json({ error: error.message }, { status: 400 })
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+  const siteUrl = getSiteUrl()
   const logo = logoSrc()
   const roleLabel = ROLE_LABELS[role] || role
   const firstName = full_name ? full_name.split(' ')[0] : 'there'

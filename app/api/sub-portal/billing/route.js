@@ -6,6 +6,7 @@ import { contractsWithBaseSov } from '../../../../lib/sov-lines'
 import { emailWrap, escapeHtml } from '../../../../lib/email'
 import { withoutNew032 } from '../../../../lib/billing-fields'
 import { checkSovBilling } from '../../../../lib/billing-sov-check'
+import { siteUrl } from '../../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,7 +29,7 @@ async function emailPmBillingSubmitted(job, submission) {
       ${submission.pct_complete ? `<p style="color:#888;font-size:13px">${submission.pct_complete}% complete on scope</p>` : ''}
       <p style="color:#888;font-size:13px;line-height:1.6">${escapeHtml(submission.work_description)}</p>
       <p style="color:#888;font-size:13px">📎 Invoice PDF attached</p>
-      <p style="margin-top:1.5rem"><a href="https://portal.nvim.co/dashboard" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
+      <p style="margin-top:1.5rem"><a href="${siteUrl('/dashboard')}" style="background:#e8590c;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px">Review in Portal →</a></p>
     `),
   }).catch(() => {})
 }

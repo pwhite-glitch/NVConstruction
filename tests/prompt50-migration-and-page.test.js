@@ -16,8 +16,8 @@ const RES = ['res_inspections', 'res_lien_waivers', 'res_owner_draws', 'res_punc
 describe('migration 046 (written, not applied)', () => {
   test('next number after 045, says NOT APPLIED, 042 untouched', () => {
     const nums = fs.readdirSync(dir).map(f => parseInt(f, 10)).filter(Number.isFinite)
-    // 047 (prompt 51 cash outlook, also written-not-applied) may follow it.
-    expect([46, 47]).toContain(Math.max(...nums))
+    // Later migrations (047 cash outlook, 048 sales tax, 049 prime CO review) may follow it.
+    expect(Math.max(...nums)).toBeGreaterThanOrEqual(46)
     expect(nums.filter(n => n === 46)).toHaveLength(1)
     expect(sql).toMatch(/NOT APPLIED/)
     expect(code).not.toMatch(/042_/)

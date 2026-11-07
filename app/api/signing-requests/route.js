@@ -6,6 +6,7 @@ import { isUuid, saveGeneratedContract } from '../../../lib/generated-contract'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { escapeHtml } from '../../../lib/email'
 import { isSubcontractSigned } from '../../../lib/signing'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -13,7 +14,7 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 export async function POST(request) {
   const auth = await requirePM(request)
@@ -60,7 +61,7 @@ export async function POST(request) {
     }
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
+  const siteUrl = getSiteUrl()
   const signingLink = `${siteUrl}/sign?token=${row.token}`
   const logo = logoSrc()
   const firstName = escapeHtml(signer_name?.split(' ')[0] || 'there')

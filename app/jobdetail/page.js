@@ -4,19 +4,18 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
-import { statusSaveClearsArchived } from '../../lib/job-lifecycle'
 import { isSubcontractSigned } from '../../lib/signing'
 import { safePageTab, wrongPageHref } from '../../lib/job-links'
 import { contractCommittedForItem } from '../../lib/residential-money'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
-import { sovByBudgetItem, sovBudgetDeltas } from '../../lib/prime-co-budget'
+import { isPreviewActive, PRIME_CO_APPLIED_NO_DELETE } from '../../lib/prime-co-review'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { ratingScoresError } from '../../lib/sub-ratings'
 import { isCoLine } from '../../lib/sov-lines'
-import { coNumberLabel, coNumberMissingMessage, coDeleteBlock, coDbErrorMessage } from '../../lib/co-number'
+import { coNumberLabel, coNumberMissingMessage, coDeleteBlock } from '../../lib/co-number'
 import { dcBilledLockReason } from '../../lib/dc-guards'
 import { sovLockReason } from '../../lib/sov-guards'
 import { shiftScreenLine } from '../../lib/aia-draw'
@@ -35,10 +34,14 @@ import { hasOpenConstraint, responsibleLabel, lookaheadStage } from '../../lib/l
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, shiftActivity, dayOfRange } from '../../lib/lookahead-dates'
 import { rainFlagged } from '../../lib/lookahead-weather'
 import { openLookaheadPrint } from '../../lib/lookahead-print'
+import { equipmentLabel } from '../../lib/equipment-usage'
 import * as lookaheadApi from '../../lib/lookahead-client'
 import EditPOForm from './EditPOForm'
 import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
 import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { getSiteUrl } from '../../lib/site-url'
+import RfiCommentThread from '../components/RfiCommentThread'
+import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
 import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 
 const s = {
@@ -235,6 +238,10 @@ function JobDetailInner() {
   const [editingPrimeCOId, setEditingPrimeCOId] = useState(null)
   const [editPrimeCOForm, setEditPrimeCOForm] = useState(emptyPrimeCO)
   const [savingPrimeCO, setSavingPrimeCO] = useState(false)
+  const [primeCOReviewBusy, setPrimeCOReviewBusy] = useState(null) // co id while a review request runs
+  const [inPreview, setInPreview] = useState(false) // role preview: review controls disabled (API refuses too)
+  useEffect(() => { setInPreview(isPreviewActive()) }, [])
+  const primeCOReviewLocked = inPreview || !!primeCOReviewBusy
   const [sendingOwnerCO, setSendingOwnerCO] = useState(null)
   const [sentOwnerCOIds, setSentOwnerCOIds] = useState(new Set())
   const [expandedSubCOId, setExpandedSubCOId] = useState(null)
@@ -605,7 +612,8 @@ function JobDetailInner() {
   const [showSendToSubs, setShowSendToSubs] = useState(false)
   const [dragOverDay, setDragOverDay] = useState(null)
   const lookaheadForecast = useLookaheadForecast(activeTab === 'lookahead' ? id : null)
-  const [companyEquipment, setCompanyEquipment] = useState([])
+  const [companyEquipment, setCompanyEquipment] = useState([]) // active + retired (active === false)
+  const activeCompanyEquipment = companyEquipment.filter(e => e.active !== false)
   const [showEquipmentMgr, setShowEquipmentMgr] = useState(false)
   const [newEqName, setNewEqName] = useState('')
   const [newEqCategory, setNewEqCategory] = useState('')
@@ -2689,7 +2697,8 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   async function updatePOStatus(poId, status) {
     setUpdatingPOId(poId)
-    await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId, status }) })
+    const res = await authFetch('/api/purchase-orders', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId, status }) })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('PO update failed: ' + (j.error || res.statusText)); setTimeout(() => setErrMsg(''), 6000) }
     await loadPurchaseOrders()
     await loadBudgetItems()
     setUpdatingPOId(null)
@@ -2742,7 +2751,8 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   async function deletePO(poId) {
     if (!window.confirm('Delete this purchase order?')) return
-    await authFetch('/api/purchase-orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId }) })
+    const res = await authFetch('/api/purchase-orders', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: poId }) })
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('PO delete failed: ' + (j.error || res.statusText)); setTimeout(() => setErrMsg(''), 6000) }
     await loadPurchaseOrders()
     await loadBudgetItems()
   }
@@ -3229,45 +3239,38 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setJobDocs(data || [])
   }
 
+  // Canonical document flow (same as residential/field): signed upload via
+  // /api/job-docs upload-url, then the record via insert-document (server stamps
+  // uploaded_by and checks the path/category/job). No direct table writes.
   async function uploadJobDoc(file) {
     setUploadingDoc(true)
-    const path = `${id}/${docCategory}/${Date.now()}-${safeFileName(file.name)}`
-    const res = await authFetch('/api/job-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload-url', path }),
-    })
-    const { signedUrl, error: urlErr } = await res.json()
-    if (urlErr || !signedUrl) { alert('Upload error: ' + (urlErr || 'Could not get upload URL')); setUploadingDoc(false); return }
-    const up = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!up.ok) {
-      let msg = 'Upload failed'
-      try { const b = await up.json(); if (b.message) msg = b.message } catch {}
-      alert('Upload error: ' + msg)
+    try {
+      const out = await uploadJobDocument({ fetchFn: authFetch, putFn: fetch, jobId: id, category: docCategory, file })
+      if (out.error) alert(out.error)
+      if (out.uploaded) await loadJobDocs()
+    } finally {
       setUploadingDoc(false)
-      return
     }
-    const { error: docInsErr } = await supabase.from('job_documents').insert({ job_id: id, file_name: file.name, storage_path: path, category: docCategory, uploaded_by: (await supabase.auth.getUser()).data.user?.id })
-    if (docInsErr) alert('File uploaded but the document record could not be saved: ' + docInsErr.message)
-    await loadJobDocs()
-    setUploadingDoc(false)
   }
 
+  // Called straight from the click so iOS keeps the new tab as a user gesture.
   async function openJobDoc(storagePath) {
-    const res = await authFetch('/api/job-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'signed-url', path: storagePath }),
+    let errMsg = ''
+    const url = await openFile(async () => {
+      const r = await signedJobDocUrl({ fetchFn: authFetch, path: storagePath })
+      if (r.error) errMsg = r.error
+      return r.url || null
     })
-    const { url, error } = await res.json().catch(() => ({}))
-    if (url) window.open(url, '_blank')
-    else alert('Could not open document: ' + (error || `HTTP ${res.status}`))
+    if (!url) alert('Could not open document' + (errMsg ? ': ' + errMsg : '.'))
   }
 
-  async function deleteJobDoc(docId, storagePath) {
+  // DELETE /api/job-docs?id= — the row id is the only authority; the server
+  // resolves the job, refuses supers and removes the file.
+  async function deleteJobDoc(docId) {
     if (!window.confirm('Delete this document?')) return
-    await supabase.storage.from('job-documents').remove([storagePath])
-    await supabase.from('job_documents').delete().eq('id', docId)
+    const out = await deleteJobDocument({ fetchFn: authFetch, id: docId })
+    if (out.error) { alert('Could not delete document: ' + out.error); return }
+    if (out.warning) alert(out.warning)
     await loadJobDocs()
   }
 
@@ -3936,7 +3939,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const contractDocLines = (f.contract_documents || '').split('\n').filter(Boolean).join('<br>')
     const scopeNoteLines = (f.scope_notes || '').split('\n').filter(Boolean).join('<br>')
     const subNoShort = f.subcontract_number.split('-').pop() || f.subcontract_number
-    const logoUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/logo.png'
+    // Stored contract HTML is later opened by the sub: use the canonical portal, not this tab's origin.
+    const logoUrl = getSiteUrl() + '/logo.png'
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Subcontract — ${f.sub_name}</title>
 <style>
 @page{size:8.5in 11in;margin:.85in 1in}
@@ -4281,7 +4285,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         const { data: subProfile } = await supabase.from('profiles').select('email').eq('id', subcontract.sub_id).single()
         if (subProfile?.email) {
           const amt = parseFloat(finalAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-          const portalUrl = (typeof window !== 'undefined' ? window.location.origin : 'https://nv-construction-doym.vercel.app') + '/submit'
+          const portalUrl = getSiteUrl() + '/submit'
           sendEmail(subProfile.email, `Change order requires your approval — ${job?.project_name}`,
             emailWrap(`
               <h2 style="color:#f1f1f1;margin:0 0 8px;font-size:18px">Change order for your review</h2>
@@ -4407,11 +4411,10 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
         budget_item_id: l.budget_item_id,
         amount: Number(l.amount),
       }))
-    const { error: sovErr } = await supabase.from('prime_change_orders').update({ sov: finalSOV.length > 0 ? finalSOV : null }).eq('id', coId).eq('status', 'pending')
-    if (sovErr) { alert('Could not save the budget line assignments: ' + sovErr.message); return }
-    setPrimeCOAssignPanel(null)
-    const co = primeCOs.find(c => c.id === coId)
-    await reviewPrimeCO(coId, 'approved', co?.amount, finalSOV)
+    // The line assignments are saved by the same server transaction that approves
+    // and applies the CO (nothing is written if any part fails).
+    const ok = await reviewPrimeCO(coId, 'approved', null, finalSOV)
+    if (ok) setPrimeCOAssignPanel(null)
   }
 
   // ── Prime Contract Change Orders ────────────────────────────
@@ -4446,50 +4449,37 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setAddingPrimeCO(false)
   }
 
-  // Add `deltas` ({ budget_item_id: amount }) to budget_amount and owner_amount
-  // through /api/budget-items. Returns a list of error strings (empty = all saved).
-  // Never touches jobs.contract_value.
-  async function adjustBudgetLines(deltas) {
-    const errors = []
-    for (const [budgetItemId, delta] of Object.entries(deltas)) {
-      const label = (() => { const bi = budgetItems.find(b => b.id === budgetItemId); return bi ? `${bi.cost_code ? bi.cost_code + ' ' : ''}${bi.description}` : budgetItemId })()
-      const { data: item, error: readErr } = await supabase.from('budget_items').select('budget_amount, owner_amount').eq('id', budgetItemId).maybeSingle()
-      if (readErr || !item) { errors.push(`${label}: ${readErr?.message || 'budget line not found'} (needed ${delta >= 0 ? '+' : ''}${delta})`); continue }
-      const fields = {
-        budget_amount: Number(item.budget_amount || 0) + Number(delta),
-        owner_amount: Number(item.owner_amount ?? item.budget_amount ?? 0) + Number(delta),
-      }
-      try {
-        const res = await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: budgetItemId, fields }) })
-        const out = await res.json().catch(() => ({}))
-        if (!res.ok || out.error) errors.push(`${label}: ${out.error || 'HTTP ' + res.status} (needed ${delta >= 0 ? '+' : ''}${delta})`)
-      } catch (e) {
-        errors.push(`${label}: ${e.message} (needed ${delta >= 0 ? '+' : ''}${delta})`)
-      }
+  // Approve / reject / apply go through POST /api/prime-change-orders/review: the
+  // status, any SOV line assignments and every budget-line change are saved in one
+  // database transaction (migration 049), so a failure changes nothing and a retry
+  // can't apply twice. Blocked in role preview (middleware + disabled buttons).
+  async function postPrimeCOReview(payload) {
+    if (isPreviewActive()) return { ok: false, error: 'This action is disabled in role preview mode.' }
+    if (primeCOReviewBusy) return { ok: false, error: null }
+    setPrimeCOReviewBusy(payload.co_id)
+    try {
+      const res = await authFetch('/api/prime-change-orders/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok || !out.ok) return { ok: false, error: out.error || `HTTP ${res.status}`, status: res.status }
+      return { ok: true, data: out }
+    } catch (e) {
+      return { ok: false, error: e.message || 'Network error' }
+    } finally {
+      setPrimeCOReviewBusy(null)
     }
-    return errors
   }
 
+  // Returns true when the review was saved.
   async function reviewPrimeCO(coId, status, coAmount, sovOverride = null) {
-    // Claim: only a still-pending CO can be approved/rejected, so a double click can't apply twice.
-    const { data: claimed, error } = await supabase.from('prime_change_orders')
-      .update({ status }).eq('id', coId).eq('status', 'pending')
-      .select('id, sov, budget_applied')
-    if (error) { alert('Error updating prime CO: ' + error.message); return }
-    if (!claimed?.length) { alert('This change order was already reviewed. Refreshing.'); await loadPrimeCOs(); return }
-    if (status === 'approved' && !claimed[0].budget_applied) {
-      const sov = sovOverride || claimed[0].sov || []
-      const deltas = sovByBudgetItem(sov)
-      if (Object.keys(deltas).length > 0) {
-        const errors = await adjustBudgetLines(deltas)
-        // Mark budget as applied so the "Apply to Budget" button is hidden — prevents double-counting
-        const { error: flagErr } = await supabase.from('prime_change_orders').update({ budget_applied: true }).eq('id', coId)
-        if (flagErr) errors.push('Could not mark the CO as applied to budget: ' + flagErr.message)
-        if (errors.length) alert('CO approved, but some budget lines were not updated:\n\n' + errors.join('\n'))
-      }
-      await loadBudgetItems()
+    const payload = { co_id: coId, action: status === 'approved' ? 'approve' : 'reject' }
+    if (status === 'approved' && sovOverride) payload.sov = sovOverride
+    const r = await postPrimeCOReview(payload)
+    if (!r.ok && r.error === null) return false
+    if (!r.ok) {
+      alert((status === 'approved' ? 'Approve failed' : 'Reject failed') + ' — nothing was changed: ' + r.error + (status === 'approved' ? '\n\nThe change order is still pending; you can try again.' : ''))
     }
-    await loadPrimeCOs()
+    await Promise.all([loadBudgetItems(), loadPrimeCOs()])
+    return r.ok
   }
 
   async function applyPrimeCOToBudget(co) {
@@ -4500,62 +4490,52 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       return `  ${bi ? (bi.cost_code ? bi.cost_code + ' · ' : '') + bi.description : 'Unknown'}: +$${Number(r.amount).toLocaleString()}`
     }).join('\n')
     if (!window.confirm(`Apply CO "${co.description}" to budget items?\n\n${lines}`)) return
-    // Claim first so two clicks / tabs can't both apply
-    const { data: claimed, error: claimErr } = await supabase.from('prime_change_orders')
-      .update({ budget_applied: true }).eq('id', co.id).eq('status', 'approved')
-      .or('budget_applied.is.null,budget_applied.eq.false')
-      .select('id, sov')
-    if (claimErr) { alert('Could not apply: ' + claimErr.message); return }
-    if (!claimed?.length) { alert('This CO was already applied to the budget. Refreshing.'); await loadPrimeCOs(); return }
-    const errors = await adjustBudgetLines(sovByBudgetItem(claimed[0].sov))
-    if (errors.length) alert('Some budget lines were not updated:\n\n' + errors.join('\n'))
-    await loadBudgetItems()
-    await loadPrimeCOs()
+    const r = await postPrimeCOReview({ co_id: co.id, action: 'apply' })
+    if (!r.ok && r.error !== null) alert('Apply to Budget failed — no budget line was changed: ' + r.error + '\n\nThe CO is still approved and not applied; you can try again.')
+    await Promise.all([loadBudgetItems(), loadPrimeCOs()])
   }
 
+  // Delete goes through the same preview-blocked API. Only an unnumbered CO that is
+  // not applied to the budget can be deleted (no budget line moves); numbered or
+  // applied COs are refused there and nothing changes.
   async function deletePrimeCO(coId) {
-    if (!window.confirm('Delete this contract modification?')) return
-    const { data: co, error: readErr } = await supabase.from('prime_change_orders').select('*').eq('id', coId).maybeSingle()
-    if (readErr || !co) { alert('Could not load the change order: ' + (readErr?.message || 'not found')); await loadPrimeCOs(); return }
-    // Numbered COs are permanent (their number is never reused): reject instead.
-    const blocked = coDeleteBlock(co)
+    const co = primeCOs.find(c => c.id === coId)
+    const blocked = co && coDeleteBlock(co)
     if (blocked) { alert(blocked); return }
-    const { error: delErr } = await supabase.from('prime_change_orders').delete().eq('id', coId)
-    if (delErr) { alert('Delete failed: ' + coDbErrorMessage(delErr.message)); await loadPrimeCOs(); return }
-    // Only take amounts back out of the budget if they were put in
-    if (co.status === 'approved' && co.budget_applied) {
-      const deltas = sovBudgetDeltas(co.sov, [])
-      const errors = await adjustBudgetLines(deltas)
-      if (errors.length) alert('CO deleted, but some budget lines were not reduced:\n\n' + errors.join('\n'))
-      await loadBudgetItems()
-    }
+    if (co?.budget_applied) { alert(PRIME_CO_APPLIED_NO_DELETE); return }
+    if (!window.confirm('Delete this contract modification?')) return
+    const r = await postPrimeCOReview({ co_id: coId, action: 'delete' })
+    if (!r.ok && r.error !== null) alert('Delete failed — nothing was changed: ' + r.error)
     await loadPrimeCOs()
   }
 
+  // Edit: description / amount / notes / SOV are saved by POST
+  // /api/prime-change-orders/review (action 'revise'). For an approved CO already
+  // applied to the budget, the server nets old → new SOV on the budget lines and saves
+  // the CO in one transaction (migration 049) — all or nothing, and a retry can't
+  // apply twice. Nothing is written from the browser.
   async function savePrimeCO() {
-    setSavingPrimeCO(true)
     const sovTotal = editPrimeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
     const newAmount = parseFloat(editPrimeCOForm.sov.length > 0 ? sovTotal : editPrimeCOForm.amount) || 0
-    const validSOV = editPrimeCOForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
-    // Read what is stored now (not the list on screen) to know what was applied to budget
-    const { data: before, error: readErr } = await supabase.from('prime_change_orders').select('status, sov, budget_applied').eq('id', editingPrimeCOId).maybeSingle()
-    if (readErr || !before) { setSavingPrimeCO(false); alert('Save failed: ' + (readErr?.message || 'change order not found')); return }
-    const { error } = await supabase.from('prime_change_orders').update({
+    const validSOV = editPrimeCOForm.sov
+      .filter(r => r.description || r.budget_item_id || r.amount)
+      .map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || null, amount: parseFloat(r.amount) || 0 }))
+    setSavingPrimeCO(true)
+    const r = await postPrimeCOReview({
+      co_id: editingPrimeCOId,
+      action: 'revise',
       description: editPrimeCOForm.description,
       amount: newAmount,
       notes: editPrimeCOForm.notes || null,
       sov: validSOV.length > 0 ? validSOV : null,
-    }).eq('id', editingPrimeCOId)
-    if (error) { setSavingPrimeCO(false); setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 5000); return }
-    // Approved and already applied: reverse the old SOV amounts and apply the new ones
-    if (before.status === 'approved' && before.budget_applied) {
-      const errors = await adjustBudgetLines(sovBudgetDeltas(before.sov, validSOV))
-      if (errors.length) alert('CO saved, but some budget lines were not re-synced:\n\n' + errors.join('\n'))
-      await loadBudgetItems()
-    }
+    })
     setSavingPrimeCO(false)
+    if (!r.ok) {
+      if (r.error !== null) alert('Save failed — nothing was changed: ' + r.error + '\n\nThe change order and its budget lines are as they were; you can try again.')
+      return
+    }
     setEditingPrimeCOId(null)
-    await loadPrimeCOs()
+    await Promise.all([r.data?.resynced ? loadBudgetItems() : null, loadPrimeCOs()])
   }
 
   async function pushSubCOToPrime(co, subName) {
@@ -5518,27 +5498,31 @@ ${(budgets || []).length > 0 ? `
   // ── Job ─────────────────────────────────────────────────────
   async function saveJob(e) {
     e.preventDefault()
+    if (saving) return
     setSaving(true)
-    // Columns that may not exist yet in the DB if a migration hasn't been run.
-    const JOB_OPT_COLS = new Set(['nv_role', 'billing_type', 'pm_email', 'rollup_general_conditions',
-      'sub_billing_start', 'sub_billing_frequency', 'sub_billing_due', 'sub_billing_anchor',
-      'owner_billing_start', 'owner_billing_frequency', 'owner_billing_due', 'owner_billing_anchor'])
-    let jobFields = {
+    // Saved through POST /api/jobs/details: allow-listed, validated commercial
+    // fields (lib/job-details.js), job access checked on the server. `archived`
+    // is never sent — only the server's Owner "status → Active" rule clears it.
+    const intOrBlank = v => (v !== '' && v !== undefined && v !== null ? parseInt(v) : null)
+    // The sub schedule picker shows Bi-weekly when unset and computes the due
+    // weekday that way, so send Bi-weekly in that case (otherwise Monthly as before).
+    const subFreq = form.sub_billing_frequency || (form.sub_billing_start && intOrBlank(form.sub_billing_due) !== null ? 'biweekly' : 'monthly')
+    const fields = {
       job_number: form.job_number, project_name: form.project_name, location: form.location,
       contract_value: form.contract_value ? parseFloat(form.contract_value) : null,
       markup_pct: form.markup_pct ? parseFloat(form.markup_pct) : null,
       payment_type: form.payment_type || 'nv_pays',
       billing_frequency: form.billing_frequency || 'monthly',
-      billing_due_day: form.billing_due_day !== undefined && form.billing_due_day !== '' ? parseInt(form.billing_due_day) : null,
+      billing_due_day: intOrBlank(form.billing_due_day),
       billing_anchor_date: form.billing_frequency === 'biweekly' && form.billing_due_day !== '' && form.billing_due_day !== undefined && !form.billing_anchor_date ? (() => { const dow = new Date(todayCentral() + 'T12:00:00Z').getUTCDay(); const diff = (parseInt(form.billing_due_day) - dow + 7) % 7 || 7; return addDaysCentral(diff) })() : (form.billing_anchor_date || null),
       start_date: form.start_date || null, status: form.status,
       sub_billing_start: form.sub_billing_start || null,
-      sub_billing_frequency: form.sub_billing_frequency || 'monthly',
-      sub_billing_due: form.sub_billing_due !== '' && form.sub_billing_due !== undefined ? parseInt(form.sub_billing_due) : null,
+      sub_billing_frequency: subFreq,
+      sub_billing_due: intOrBlank(form.sub_billing_due),
       sub_billing_anchor: form.sub_billing_anchor || null,
       owner_billing_start: form.owner_billing_start || null,
       owner_billing_frequency: form.owner_billing_frequency || 'monthly',
-      owner_billing_due: form.owner_billing_due !== '' && form.owner_billing_due !== undefined ? parseInt(form.owner_billing_due) : null,
+      owner_billing_due: intOrBlank(form.owner_billing_due),
       owner_billing_anchor: form.owner_billing_anchor || null,
       owner_company: form.owner_company, owner_name: form.owner_name, owner_email: form.owner_email, owner_phone: form.owner_phone,
       architect_name: form.architect_name, architect_company: form.architect_company, architect_email: form.architect_email,
@@ -5549,31 +5533,35 @@ ${(budgets || []).length > 0 ? `
       rollup_general_conditions: !!form.rollup_general_conditions,
       nv_role: form.nv_role || 'gc',
     }
-    // Changing Status to Active un-archives the job (no "Archived" + "Active" dual state).
-    if (statusSaveClearsArchived(job, form.status)) jobFields.archived = false
-    let { error } = await supabase.from('jobs').update(jobFields).eq('id', id)
-    if (error && error.message && error.message.includes('schema cache')) {
-      jobFields = Object.fromEntries(Object.entries(jobFields).filter(([k]) => !JOB_OPT_COLS.has(k)))
-      const retry = await supabase.from('jobs').update(jobFields).eq('id', id)
-      error = retry.error
-    }
-    if (error) { setErrMsg('Save failed: ' + error.message); setTimeout(() => setErrMsg(''), 8000); setSaving(false); return }
-    else {
-      // Log high-value field changes
+    // A non-Owner can't move an archived job's status (the select is disabled
+    // too); send the saved status so other edits still save.
+    if (job.archived && !isPrincipal(userRole)) fields.status = job.status
+    try {
+      let data = {}
+      const res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
+      data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.job) throw new Error(data.error || `HTTP ${res.status}`)
+      const saved = data.job
+      // Log high-value field changes (from the saved row, once).
       const logCalls = []
-      if (form.status !== job.status) {
-        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'status', old_value: job.status, new_value: form.status, note: `Job status changed: ${job.status} → ${form.status}` }) }))
+      if (saved.status !== job.status) {
+        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'status', old_value: job.status, new_value: saved.status, note: `Job status changed: ${job.status} → ${saved.status}` }) }))
       }
-      if (form.contract_value && parseFloat(form.contract_value) !== parseFloat(job.contract_value || 0)) {
+      if (saved.contract_value != null && Number(saved.contract_value) !== Number(job.contract_value || 0)) {
         const fmtAmt = v => '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'contract_value', old_value: fmtAmt(job.contract_value || 0), new_value: fmtAmt(form.contract_value), note: `Contract value updated: ${fmtAmt(job.contract_value || 0)} → ${fmtAmt(form.contract_value)}` }) }))
+        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'contract_value', old_value: fmtAmt(job.contract_value || 0), new_value: fmtAmt(saved.contract_value), note: `Contract value updated: ${fmtAmt(job.contract_value || 0)} → ${fmtAmt(saved.contract_value)}` }) }))
       }
       if (logCalls.length) Promise.all(logCalls).catch(() => {})
-      const unarchived = jobFields.archived === false
-      if (unarchived) setForm(f => ({ ...f, archived: false }))
-      setJob(j => ({ ...j, ...form, ...(unarchived ? { archived: false } : {}) })); setMsg(unarchived ? 'Job saved and unarchived (status set to Active).' : 'Job saved successfully.'); setTimeout(() => setMsg(''), 3000)
+      const unarchived = !!data.unarchived
+      setJob(j => ({ ...j, ...saved }))
+      setForm(f => ({ ...f, ...saved }))
+      setMsg(unarchived ? 'Job saved and unarchived (status set to Active).' : 'Job saved successfully.'); setTimeout(() => setMsg(''), 3000)
+    } catch (err) {
+      // Form input is kept so the user can fix it and save again.
+      setErrMsg('Save failed: ' + err.message); setTimeout(() => setErrMsg(''), 8000)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   // Owner-only Archive / Unarchive via /api/jobs/archive (writes only `archived`).
@@ -5733,8 +5721,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   }
 
   async function loadCompanyEquipment() {
-    const res = await fetch('/api/company-equipment')
-    const { data } = await res.json()
+    // Active + retired: retired rows only resolve names on existing activities;
+    // pickers and the fleet list show active equipment only.
+    const res = await fetch('/api/company-equipment?include_retired=1')
+    const { data } = await res.json().catch(() => ({}))
     setCompanyEquipment(data || [])
   }
 
@@ -5754,13 +5744,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     setAddingEquipment(false)
   }
 
+  // Retire (Owner/PM only). The server refuses while open lookahead
+  // activities still use it; the row stays so old activities keep the name.
   async function deleteEquipment(eqId) {
-    await fetch('/api/company-equipment', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: eqId }),
-    })
-    setCompanyEquipment(prev => prev.filter(e => e.id !== eqId))
+    const eq = companyEquipment.find(e => e.id === eqId)
+    if (!window.confirm(`Retire ${eq?.name || 'this equipment'}? It will no longer be offered for new lookahead activities. Past activities keep its name (marked Retired).`)) return
+    let res, out = {}
+    try {
+      res = await fetch('/api/company-equipment', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: eqId }),
+      })
+      out = await res.json().catch(() => ({}))
+    } catch (e) {
+      alert('Equipment not retired: ' + (e.message || 'network error'))
+      return
+    }
+    if (!res.ok || out.error) { alert('Equipment not retired: ' + (out.error || `server returned ${res.status}`)); return }
+    setCompanyEquipment(prev => prev.map(e => e.id === eqId ? { ...e, active: false } : e))
   }
 
   async function loadLookaheadData(weekOverride) {
@@ -6410,12 +6412,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   </div>
                   <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={form.start_date || ''} onChange={e => update('start_date', e.target.value)} /></div>
                   <div><label style={s.label}>Status</label>
-                    <select style={s.input} value={form.status || 'active'} onChange={e => update('status', e.target.value)}>
+                    <select style={s.input} value={form.status || 'active'} onChange={e => update('status', e.target.value)} disabled={!!job.archived && !isPrincipal(userRole)}>
                       <option value="active">Active</option>
                       <option value="on_hold">On hold</option>
                       <option value="complete">Complete</option>
                     </select>
-                    {job.archived && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>Archived. Changing Status to Active (or an Owner's Unarchive) brings it back to the Active list.</p>}
+                    {job.archived && <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>{isPrincipal(userRole) ? "Archived. Changing Status to Active (or an Owner's Unarchive) brings it back to the Active list." : 'Archived. Only an Owner can change the status of an archived job.'}</p>}
                   </div>
                   <div><label style={s.label}>Who pays subs</label>
                     <select style={s.input} value={form.payment_type || 'nv_pays'} onChange={e => update('payment_type', e.target.value)}>
@@ -8679,8 +8681,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       </div>
 
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button style={{ ...s.btn, opacity: (savingPrimeCO || !editPrimeCOForm.description || !amountEntered) ? 0.6 : 1 }}
-                          disabled={savingPrimeCO || !editPrimeCOForm.description || !amountEntered}
+                        <button style={{ ...s.btn, opacity: (savingPrimeCO || primeCOReviewLocked || !editPrimeCOForm.description || !amountEntered) ? 0.6 : 1 }}
+                          disabled={savingPrimeCO || primeCOReviewLocked || !editPrimeCOForm.description || !amountEntered}
+                          title={inPreview ? 'Disabled in role preview' : undefined}
                           onClick={savePrimeCO}>
                           {savingPrimeCO ? 'Saving...' : 'Save changes'}
                         </button>
@@ -8709,12 +8712,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <span style={s.coBadge(co.status)}>{co.status}</span>
                       {co.status === 'pending' && primeCOAssignPanel?.coId !== co.id && (
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button style={s.btnSmallGreen} onClick={() => openPrimeCOAssignPanel(co)}>Approve</button>
-                          <button style={s.btnSmallRed} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
+                          <button style={{ ...s.btnSmallGreen, opacity: primeCOReviewLocked ? 0.5 : 1 }} disabled={primeCOReviewLocked} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => openPrimeCOAssignPanel(co)}>Approve</button>
+                          <button style={{ ...s.btnSmallRed, opacity: primeCOReviewLocked ? 0.5 : 1 }} disabled={primeCOReviewLocked} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => reviewPrimeCO(co.id, 'rejected', co.amount)}>Reject</button>
                         </div>
                       )}
                       {co.status === 'approved' && hasSov && !co.budget_applied && (
-                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb' }} onClick={() => applyPrimeCOToBudget(co)}>Apply to Budget</button>
+                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', opacity: primeCOReviewLocked ? 0.5 : 1 }} disabled={primeCOReviewLocked} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => applyPrimeCOToBudget(co)}>{primeCOReviewBusy === co.id ? 'Applying…' : 'Apply to Budget'}</button>
                       )}
                       {co.status === 'approved' && hasSov && co.budget_applied && (
                         <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: '600' }}>✓ Budget Applied</span>
@@ -8733,7 +8736,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         disabled={!job?.owner_email || sendingOwnerCO === co.id}
                         onClick={() => sendPrimeCOToOwner(co)}
                       >{sendingOwnerCO === co.id ? 'Sending...' : sentOwnerCOIds.has(co.id) ? '✓ Sent to Owner' : '✉ Send to Owner'}</button>
-                      <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px', ...(coDeleteBlock(co) ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }} title={coDeleteBlock(co) || 'Delete this unnumbered (legacy) change order'} disabled={!!coDeleteBlock(co)} onClick={() => deletePrimeCO(co.id)}>Delete</button>
+                      <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px', ...((coDeleteBlock(co) || co.budget_applied || primeCOReviewLocked) ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }} title={coDeleteBlock(co) || (co.budget_applied ? PRIME_CO_APPLIED_NO_DELETE : inPreview ? 'Disabled in role preview' : 'Delete this unnumbered (legacy) change order')} disabled={!!coDeleteBlock(co) || !!co.budget_applied || primeCOReviewLocked} onClick={() => deletePrimeCO(co.id)}>Delete</button>
                     </div>
                   </div>
                   {isExpanded && hasSov && (
@@ -8841,17 +8844,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <button
                             onClick={approvePrimeCOWithSOV}
                             style={{ padding: '9px 20px', background: isBalanced ? '#dcfce7' : '#f3f4f6', border: `1px solid ${isBalanced ? '#1a5a1a' : '#d1d5db'}`, borderRadius: '7px', color: isBalanced ? '#16a34a' : '#555', fontSize: '13px', fontWeight: '700', cursor: isBalanced ? 'pointer' : 'not-allowed' }}
-                            disabled={!isBalanced}>
-                            Assign &amp; Approve
+                            disabled={!isBalanced || primeCOReviewLocked}>
+                            {primeCOReviewBusy === co.id ? 'Approving…' : 'Assign & Approve'}
                           </button>
                           <button
-                            onClick={() => { setPrimeCOAssignPanel(null); reviewPrimeCO(co.id, 'approved', co.amount) }}
-                            style={{ padding: '9px 20px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '7px', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            onClick={async () => { if (await reviewPrimeCO(co.id, 'approved', co.amount)) setPrimeCOAssignPanel(null) }}
+                            disabled={primeCOReviewLocked}
+                            style={{ padding: '9px 20px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '7px', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer', opacity: primeCOReviewLocked ? 0.5 : 1 }}>
                             Approve Without Assigning
                           </button>
                           <button
-                            onClick={() => { setPrimeCOAssignPanel(null); reviewPrimeCO(co.id, 'rejected', co.amount) }}
-                            style={{ padding: '9px 20px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '7px', color: '#dc2626', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                            onClick={async () => { if (await reviewPrimeCO(co.id, 'rejected', co.amount)) setPrimeCOAssignPanel(null) }}
+                            disabled={primeCOReviewLocked}
+                            style={{ padding: '9px 20px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '7px', color: '#dc2626', fontSize: '13px', fontWeight: '600', cursor: 'pointer', opacity: primeCOReviewLocked ? 0.5 : 1 }}>
                             Reject
                           </button>
                         </div>
@@ -10284,6 +10289,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                         </div>
                       )}
+                      <RfiCommentThread rfiId={rfi.id} readOnly={inPreview} />
                     </div>
                   )}
                 </div>
@@ -12249,7 +12255,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={s.btnSmall} onClick={() => openJobDoc(d.storage_path)}>Open</button>
-                      <button style={s.btnSmallRed} onClick={() => deleteJobDoc(d.id, d.storage_path)}>Delete</button>
+                      {userRole !== 'super' && <button style={s.btnSmallRed} onClick={() => deleteJobDoc(d.id)}>Delete</button>}
                     </div>
                   </div>
                 ))}
@@ -12966,7 +12972,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {act.inspection_required && <span style={{ fontSize: '10px', color: act.inspection_scheduled ? '#16a34a' : '#d97706' }}>🔍</span>}
                             {hasOpenConstraint(act) && <span style={{ fontSize: '10px', color: '#ef4444' }} title={act.constraints}>⚠</span>}
                             {act.committed && <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 700 }}>✓</span>}
-                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#d97706' }} title={(act.company_equipment_ids || []).map(eid => companyEquipment.find(e => e.id === eid)?.name || '').filter(Boolean).join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
+                            {(act.company_equipment_ids || []).length > 0 && <span style={{ fontSize: '10px', color: '#d97706' }} title={(act.company_equipment_ids || []).map(eid => equipmentLabel(companyEquipment, eid) || 'Unknown equipment').join(', ')}>🏗{(act.company_equipment_ids || []).length}</span>}
                           </div>
                         </div>
                       )})}
@@ -13074,17 +13080,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <input style={{ ...s.input, flex: 1, minWidth: '120px' }} placeholder="Category (e.g. Earthwork)" value={newEqCategory} onChange={e => setNewEqCategory(e.target.value)} onKeyDown={e => e.key === 'Enter' && addEquipment()} />
                     <button style={s.btn} onClick={addEquipment} disabled={addingEquipment || !newEqName.trim()}>{addingEquipment ? 'Adding…' : '+ Add'}</button>
                   </div>
-                  {companyEquipment.length === 0 ? (
+                  {activeCompanyEquipment.length === 0 ? (
                     <div style={{ fontSize: '13px', color: '#6b7280', textAlign: 'center', padding: '16px 0' }}>No equipment added yet.</div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {companyEquipment.map(eq => (
+                      {activeCompanyEquipment.map(eq => (
                         <div key={eq.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
                           <div>
                             <span style={{ fontSize: '13px', color: '#111827', fontWeight: 600 }}>{eq.name}</span>
                             {eq.category && <span style={{ fontSize: '11px', color: '#6b7280', marginLeft: '8px' }}>{eq.category}</span>}
                           </div>
-                          <button onClick={() => deleteEquipment(eq.id)} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>
+                          {atLeastPM(userRole) && <button onClick={() => deleteEquipment(eq.id)} title="Retire this equipment" style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '0 4px' }}>×</button>}
                         </div>
                       ))}
                     </div>
@@ -13115,7 +13121,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   initialForm={activityForm}
                   editing={editingActivity}
                   contracts={contracts}
-                  companyEquipment={companyEquipment}
+                  companyEquipment={activeCompanyEquipment}
+                  retiredEquipment={companyEquipment.filter(e => e.active === false)}
                   onSave={saveActivity}
                   onDelete={deleteActivity}
                   onDuplicate={duplicateLookaheadActivity}

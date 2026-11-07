@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
-import { denyJobOf } from '../../../lib/roles'
+import { denyJobOf, accessibleJobIds } from '../../../lib/roles'
+import { resolveUniqueCompany, renameImpact, sameExactName } from '../../../lib/company-identity'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -67,20 +68,28 @@ export async function POST(request) {
     }).select().single()
     if (error) return Response.json({ error: error.message }, { status: 500 })
 
+    // Shared company record: exact (escaped) name match only. Two companies with
+    // the same name → none is picked (office links later via Fix Company Links).
     let company_id = null
+    let company_note = null
     if (fields.company_name) {
-      const { data: existingCo } = await adminSupabase.from('companies').select('id').ilike('name', fields.company_name.trim()).maybeSingle()
-      if (existingCo) {
-        company_id = existingCo.id
+      const co = await resolveUniqueCompany(adminSupabase, fields.company_name)
+      if (co.error) {
+        company_note = 'Directory entry saved; company lookup failed: ' + co.error.message
+      } else if (co.company) {
+        company_id = co.company.id
+      } else if (co.reason === 'ambiguous') {
+        company_note = `More than one company is named "${fields.company_name.trim()}"; none was linked.`
       } else {
-        const { data: newCo } = await adminSupabase.from('companies')
+        const { data: newCo, error: coErr } = await adminSupabase.from('companies')
           .insert({ name: fields.company_name.trim(), email: fields.email || null, phone: fields.phone || null })
           .select('id').single()
+        if (coErr) company_note = 'Directory entry saved; company record not created: ' + coErr.message
         company_id = newCo?.id || null
       }
     }
 
-    return Response.json({ ok: true, id: data.id, company_id })
+    return Response.json({ ok: true, id: data.id, company_id, company_note })
   }
 
   if (action === 'upload-url') {
@@ -108,6 +117,27 @@ export async function POST(request) {
     return Response.json({ url: data.signedUrl })
   }
 
+  // Read-only: what a Directory company-name change would / would not change.
+  if (action === 'rename-preview') {
+    if (!office) return forbidden()
+    if (!directory_id) return Response.json({ error: 'directory_id required' }, { status: 400 })
+    const r = await renameImpact(adminSupabase, directory_id, body.company_name)
+    if (r.error) return Response.json({ error: r.error }, { status: r.status })
+    // Job ids only for jobs the caller can see; the rest are counted.
+    const acc = await accessibleJobIds(adminSupabase, auth)
+    if (acc.error) return Response.json({ error: acc.error.message }, { status: 500 })
+    const all = r.preview.contract_job_ids
+    const visible = acc.ids ? all.filter(id => acc.ids.has(id)) : all
+    let jobs = []
+    if (visible.length) {
+      const { data: jr, error: jErr } = await adminSupabase.from('jobs').select('id, job_number, project_name').in('id', visible)
+      if (jErr) return Response.json({ error: jErr.message }, { status: 500 })
+      jobs = jr || []
+    }
+    const { contract_job_ids, ...preview } = r.preview
+    return Response.json({ preview: { ...preview, jobs, other_jobs: all.length - visible.length } })
+  }
+
   if (action === 'delete') {
     const pmAuth = await requirePM(request)
     if (pmAuth.error) return pmAuth.error
@@ -131,25 +161,68 @@ export async function POST(request) {
     }
   }
 
-  let oldName = null
-  if ('company_name' in updates && updates.company_name) {
-    const { data: existing } = await adminSupabase.from('sub_directory').select('company_name').eq('id', directory_id).single()
-    oldName = existing?.company_name || null
-  }
-
-  const { error } = await adminSupabase.from('sub_directory').update(updates).eq('id', directory_id)
-  if (error) return Response.json({ error: error.message }, { status: 500 })
-
-  if (oldName && updates.company_name && oldName !== updates.company_name) {
-    await adminSupabase.from('subcontracts').update({ vendor_name: updates.company_name }).eq('vendor_name', oldName)
-    await adminSupabase.from('companies').update({ name: updates.company_name }).ilike('name', oldName)
-    const { data: primeCOs } = await adminSupabase.from('prime_change_orders').select('id, description').like('description', `${oldName} — %`)
-    if (primeCOs?.length > 0) {
-      await Promise.all(primeCOs.map(co =>
-        adminSupabase.from('prime_change_orders').update({ description: co.description.replace(oldName, updates.company_name) }).eq('id', co.id)
-      ))
+  // Company-name change: only as a confirmed rename (Directory shows the
+  // rename-preview first). Changes this Directory row and, when exactly one
+  // company has the old name and the reviewed company_id matches, that company
+  // record by id. Existing subcontracts, prime CO descriptions and profiles are
+  // NOT rewritten (they keep the name they were recorded under).
+  let rename = null
+  if ('company_name' in updates) {
+    const next = String(updates.company_name || '').trim()
+    const { data: existing, error: exErr } = await adminSupabase.from('sub_directory').select('company_name').eq('id', directory_id).maybeSingle()
+    if (exErr) return Response.json({ error: exErr.message }, { status: 500 })
+    if (!existing) return Response.json({ error: 'Directory entry not found.' }, { status: 404 })
+    const oldName = existing.company_name || ''
+    if (!next) {
+      if (oldName.trim()) return Response.json({ error: 'Company name cannot be blank.' }, { status: 400 })
+      delete updates.company_name
+    } else if (next === oldName.trim()) {
+      delete updates.company_name
+    } else {
+      if (body.confirm_rename !== true) {
+        return Response.json({ error: 'Company name change needs the rename confirmation. Review the rename and try again.', rename_required: true }, { status: 409 })
+      }
+      if (typeof body.expected_old_name !== 'string' || body.expected_old_name !== oldName) {
+        return Response.json({ error: 'This entry was renamed since you opened it. Reload and review again.', stale: true }, { status: 409 })
+      }
+      updates.company_name = next
+      const r = await renameImpact(adminSupabase, directory_id, next)
+      if (r.error) return Response.json({ error: r.error }, { status: r.status })
+      const reviewed = body.company_id || null
+      if (reviewed !== r.preview.company_id) {
+        return Response.json({ error: 'The company record affected by this rename changed since you reviewed it. Review again.', stale: true }, { status: 409 })
+      }
+      rename = { oldName, next, companyId: r.preview.company_id }
     }
   }
 
-  return Response.json({ ok: true })
+  let oldCompanyName = null
+  if (rename?.companyId) {
+    const { data: co, error: coErr } = await adminSupabase.from('companies').select('id, name').eq('id', rename.companyId).maybeSingle()
+    if (coErr) return Response.json({ error: coErr.message }, { status: 500 })
+    if (!co || !sameExactName(co.name, rename.oldName)) return Response.json({ error: 'The company record changed since you reviewed it. Review again.', stale: true }, { status: 409 })
+    oldCompanyName = co.name
+    const { data: upd, error: upErr } = await adminSupabase.from('companies')
+      .update({ name: rename.next }).eq('id', co.id).eq('name', oldCompanyName).select('id')
+    if (upErr) return Response.json({ error: 'Company record not renamed: ' + upErr.message }, { status: 500 })
+    if (!upd?.length) return Response.json({ error: 'The company record changed since you reviewed it. Nothing was saved.', stale: true }, { status: 409 })
+  }
+
+  let q = adminSupabase.from('sub_directory').update(updates).eq('id', directory_id)
+  if (rename) q = q.eq('company_name', rename.oldName)
+  const { data: saved, error } = await q.select('id')
+  if (error || !saved?.length) {
+    const msg = error ? error.message : 'This entry changed since you opened it. Reload and try again.'
+    if (oldCompanyName) {
+      // Put the company name back (guarded) so nothing is half-renamed.
+      const { data: back, error: backErr } = await adminSupabase.from('companies')
+        .update({ name: oldCompanyName }).eq('id', rename.companyId).eq('name', rename.next).select('id')
+      if (backErr || !back?.length) {
+        return Response.json({ error: `${msg} The company record was already renamed to "${rename.next}" and could not be changed back; rename it back to "${oldCompanyName}" in Directory.`, partial: true }, { status: 500 })
+      }
+    }
+    return Response.json({ error: msg }, { status: error ? 500 : 409 })
+  }
+
+  return Response.json({ ok: true, renamed: rename ? { from: rename.oldName, to: rename.next, company_renamed: !!oldCompanyName } : null })
 }

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { sameUpdatedAt } from '../../../lib/estimate-save'
+import { validateTaxRate, isMissingTaxRateColumn, DEFAULT_TAX_RATE, TAX_RATE_MIGRATION_MSG } from '../../../lib/calc-total'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,6 +10,25 @@ const adminSupabase = createClient(
 
 // Editing in the Estimator is Owner (principal) only. PM/APM can still view estimates.
 const EDIT_ROLES = new Set(['principal'])
+
+// Validates fields.tax_rate (percentage points) when supplied. Returns
+// { fields } with the normalized number, or { res } with a 400.
+function checkTaxRate(fields) {
+  if (!fields || !Object.prototype.hasOwnProperty.call(fields, 'tax_rate')) return { fields }
+  const r = validateTaxRate(fields.tax_rate)
+  if (r.error) return { res: Response.json({ error: r.error, code: 'invalid_tax_rate' }, { status: 400 }) }
+  return { fields: { ...fields, tax_rate: r.value } }
+}
+
+// Before migration 048 the column does not exist: drop a DEFAULT rate and
+// retry (nothing lost), but refuse a non-default rate with a clear message.
+// Returns the fields to retry with, or null if the caller must fail.
+function withoutDefaultTaxRate(fields) {
+  if (!fields || !Object.prototype.hasOwnProperty.call(fields, 'tax_rate')) return null
+  if (Number(fields.tax_rate) !== DEFAULT_TAX_RATE) return null
+  const { tax_rate: _t, ...rest } = fields
+  return rest
+}
 
 export async function POST(request) {
   const auth = await requireAuth(request)
@@ -23,7 +43,9 @@ export async function POST(request) {
 
     // ── Create ──────────────────────────────────────────────────────────────
     if (body.action === 'create') {
-      const { fields } = body
+      const tr = checkTaxRate(body.fields)
+      if (tr.res) return tr.res
+      const fields = tr.fields || {}
 
       // Generate next estimate number server-side to prevent duplicates
       const year = new Date().getFullYear()
@@ -43,11 +65,17 @@ export async function POST(request) {
       }
       const estimate_number = `${prefix}${String(nextNum).padStart(3, '0')}`
 
-      const { data, error } = await adminSupabase
+      const insertEst = f => adminSupabase
         .from('estimates')
-        .insert({ ...fields, estimate_number, created_by: auth.userId, status: fields.status || 'lead' })
+        .insert({ ...f, estimate_number, created_by: auth.userId, status: f.status || 'lead' })
         .select('id, estimate_number')
         .single()
+      let { data, error } = await insertEst(fields)
+      if (error && isMissingTaxRateColumn(error)) {
+        const retry = withoutDefaultTaxRate(fields)
+        if (!retry) return Response.json({ error: TAX_RATE_MIGRATION_MSG, code: 'migration_missing' }, { status: 422 })
+        ;({ data, error } = await insertEst(retry))
+      }
 
       if (error) return Response.json({ error: error.message }, { status: 500 })
       return Response.json({ ok: true, id: data.id, estimate_number: data.estimate_number })
@@ -55,7 +83,10 @@ export async function POST(request) {
 
     // ── Update ───────────────────────────────────────────────────────────────
     if (body.action === 'update') {
-      const { id, fields, line_items } = body
+      const { id, line_items } = body
+      const tr = checkTaxRate(body.fields)
+      if (tr.res) return tr.res
+      const fields = tr.fields
 
       const { data: est } = await adminSupabase
         .from('estimates').select('created_by, allowed_users, updated_at').eq('id', id).maybeSingle()
@@ -86,6 +117,12 @@ export async function POST(request) {
       }
 
       let { data: updatedRows, error: updateErr } = await casUpdate(cleanFields)
+
+      if (updateErr && isMissingTaxRateColumn(updateErr)) {
+        const retry = withoutDefaultTaxRate(cleanFields)
+        if (!retry) return Response.json({ error: TAX_RATE_MIGRATION_MSG, code: 'migration_missing' }, { status: 422 })
+        ;({ data: updatedRows, error: updateErr } = await casUpdate(retry))
+      }
 
       if (updateErr?.message?.includes('markup_flat')) {
         const { markup_flat, ...fieldsWithout } = cleanFields

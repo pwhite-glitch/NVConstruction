@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isSub } from '../../../lib/server-auth'
 import { buildSubcontractHtml } from '../../../lib/buildSubcontractHtml'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -74,7 +75,7 @@ export async function POST(request) {
       scope_notes: '* Change Orders: You must receive written authorization from the Project Manager before you begin the work.\n* Daily broom swept clean-up of all trash & debris\n* Comply with all OSHA regulations.',
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
+    const baseUrl = getSiteUrl()
     const document_html = buildSubcontractHtml(f, baseUrl)
     const document_title = `Subcontract — ${sc.vendor_name || 'Sub'} · #${jobNum}`
 

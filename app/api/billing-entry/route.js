@@ -6,7 +6,9 @@ import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
 import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock, billingDrawLockError } from '../../../lib/billing-fields'
 import { drawTargetError } from '../../../lib/draw-guards'
+import { planBillingPayment, netBelowPaidError } from '../../../lib/billing-payment'
 import { escapeHtml, emailWrap } from '../../../lib/email'
+import { siteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -165,13 +167,15 @@ export async function PATCH(request) {
 
     const { data: current, error: curErr } = await adminSupabase
       .from('billing_submissions')
-      .select('status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period')
+      .select('status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period, paid_at, payment_amount')
       .eq('id', id)
       .maybeSingle()
 
     if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
     if (!current) return Response.json({ error: 'Not found' }, { status: 404 })
     const emailSub = rawFields.email_sub === true
+    const paymentRequested = ['record_payment_amount', 'payment_amount', 'paid_at'].some(k => k in rawFields)
+    let paymentPlan = null
 
     let fields
     if (isPM(auth.role)) {
@@ -206,6 +210,27 @@ export async function PATCH(request) {
         return Response.json({ error: 'Only an approved billing can be marked ready to pay.' }, { status: 422 })
       }
       if (current.status === 'approved' && nextStatus !== 'approved') fields.ready_to_pay = false
+
+      // Payments: payment_amount is CUMULATIVE paid-to-date; paid_at is the settlement
+      // marker, stamped only when paid-to-date reaches net (billed − retainage), computed
+      // from the stored row, never from a body "net". A short check stays unpaid.
+      if (paymentRequested) {
+        if (fields.status && fields.status !== current.status) return Response.json({ error: 'Record a payment separately from a status change.' }, { status: 422 })
+        if ('amount_billed' in fields || 'retainage_held' in fields || 'retainage_pct' in fields) {
+          return Response.json({ error: 'Record a payment separately from editing the billed amount or retainage.' }, { status: 422 })
+        }
+        const payInput = {}
+        for (const k of ['record_payment_amount', 'payment_amount', 'paid_at']) if (k in rawFields) payInput[k] = rawFields[k]
+        const plan = planBillingPayment(current, payInput)
+        if (plan.error) return Response.json({ error: plan.error }, { status: plan.status })
+        delete fields.paid_at
+        delete fields.payment_amount
+        Object.assign(fields, plan.patch)
+        paymentPlan = plan
+      } else {
+        const below = netBelowPaidError(current, fields)
+        if (below) return Response.json({ error: below }, { status: 422 })
+      }
 
       // On a draw (open or closed): status, amount, retainage and period are locked on EVERY
       // PATCH — even when draw_request_id is unchanged or not sent, and even when the same
@@ -245,7 +270,24 @@ export async function PATCH(request) {
     // ...and only while the draw link is still the one we checked (a billing put on a draw
     // meanwhile can't have its money changed around the lock).
     const linkGuard = q => (current.draw_request_id ? q.eq('draw_request_id', current.draw_request_id) : q.is('draw_request_id', null))
-    const statusGuard = q => linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)
+    // A payment only lands on the paid-to-date we read and only while still unsettled, so a
+    // double submit / second tab can't add the same check twice or overwrite another payment.
+    const same = (q, col, v) => (v === null || v === undefined ? q.is(col, null) : q.eq(col, v))
+    // ...and only against the billed / retainage / status values the plan computed net
+    // from, so a concurrent retainage or billed-amount edit can't make it settle on stale
+    // inputs (the row must still be exactly what planBillingPayment saw).
+    const payGuard = q => {
+      if (!paymentPlan?.patch || !('payment_amount' in paymentPlan.patch)) return q
+      let g = same(q.is('paid_at', null), 'payment_amount', current.payment_amount)
+      for (const col of ['amount_billed', 'retainage_held', 'retainage_pct', 'status']) g = same(g, col, current[col])
+      return g
+    }
+    // A non-payment edit that can change net only lands on the paid-to-date / settlement we
+    // read (and checked net against), so it can't overwrite a concurrent payment or lower
+    // net underneath it.
+    const changesNet = !paymentPlan && ['amount_billed', 'retainage_held', 'retainage_pct'].some(k => k in update)
+    const paidGuard = q => (changesNet ? same(same(q, 'paid_at', current.paid_at), 'payment_amount', current.payment_amount) : q)
+    const statusGuard = q => paidGuard(payGuard(linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)))
     let { data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(update).eq('id', id)).select('id')
     if (error?.message?.includes('schema cache')) {
       ({ data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id)).select('id'))
@@ -295,7 +337,7 @@ export async function PATCH(request) {
           const net = gross - ret
           const fmt = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
           const adminEmail = process.env.PM_EMAIL || 'management@nvim.co'
-          const adminUrl = process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/dashboard` : 'https://app.nvim.co/dashboard'
+          const adminUrl = siteUrl('/dashboard')
           await resend.emails.send({
             from: process.env.EMAIL_FROM || 'NV Construction <onboarding@resend.dev>',
             to: adminEmail,
@@ -321,7 +363,7 @@ export async function PATCH(request) {
       emailError = await emailBillingDecision(current, fields.status, fields.rejection_reason)
     }
 
-    return Response.json({ ok: true, emailError })
+    return Response.json({ ok: true, emailError, ...(paymentPlan?.summary ? { payment: paymentPlan.summary } : {}) })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

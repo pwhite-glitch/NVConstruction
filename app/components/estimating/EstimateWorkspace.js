@@ -7,7 +7,10 @@ import {
   estimateSavePayload, shouldOfferDraft, initialSaveState, saveStateReducer, shouldAutoSave, STALE_MESSAGE,
 } from '../../../lib/estimate-save'
 import { JOB_LINK_ROLES } from '../../../lib/estimate-to-job'
+import { estimateBreakdown, validateTaxRate, taxLabel, DEFAULT_TAX_RATE, MAX_TAX_RATE } from '../../../lib/calc-total'
 import LinkToJobPanel from './LinkToJobPanel'
+import JobNumberHint from '../JobNumberHint'
+import { useJobNumbers, confirmJobNumberFree } from '../../../lib/use-job-numbers'
 
 const STAGE_OPTS = [
   { key: 'lead',        label: 'Lead' },
@@ -96,6 +99,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const [uploading,   setUploading]   = useState(false)
   const [showConvert, setShowConvert] = useState(false)
   const [cvtForm,     setCvtForm]     = useState({ job_number: '', start_date: '' })
+  const jobNums = useJobNumbers()
   const [converting,  setConverting]  = useState(false)
   const [cvtErr,      setCvtErr]      = useState('')
   const [showLink,    setShowLink]    = useState(false)
@@ -182,6 +186,8 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setSaveMsg('')
     try {
       const { fields, line_items: lineItems } = estimateSavePayload(form, lines, estimate.id, statusOverride)
+      const taxCheck = validateTaxRate(fields.tax_rate)
+      if (taxCheck.error) { setSaveMsg('Error — ' + (auto ? 'not auto-saved: ' : '') + taxCheck.error); return }
       // Guard: if we have no lines now but the DB had some, confirm before wiping.
       // Auto-save never wipes; the user has to confirm with a manual save.
       const dbItemCount = dbLineCount.current
@@ -299,6 +305,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   async function convertToJob() {
     if (!cvtForm.job_number.trim()) return
     if (dirty) { setCvtErr('Save your changes first. Convert uses the saved estimate.'); return }
+    if (!(await confirmJobNumberFree(cvtForm.job_number))) return
     setConverting(true)
     setCvtErr('')
     try {
@@ -322,18 +329,16 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     }
   }
 
-  // Live totals
-  const globalPct = Number(form.markup_pct || 0)
-  const raw       = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-  const billed    = lines.reduce((a, l) => {
-    const pct  = l.markup_pct  != null && l.markup_pct  !== '' ? Number(l.markup_pct)  : globalPct
-    const flat = l.markup_flat != null && l.markup_flat !== '' ? Number(l.markup_flat) : 0
-    return a + Number(l.amount || 0) * (1 + pct / 100) + flat
-  }, 0)
-  const gFlat     = Number(form.markup_flat || 0)
-  const taxAmt    = form.taxable ? raw * 0.0825 : 0
-  const grandTotal = billed + gFlat + taxAmt
-  const markupAmt  = billed - raw + gFlat
+  // Live totals — shared math (lib/calc-total.js), same as list/PDF/convert.
+  // An invalid in-progress tax entry previews at the default rate; save
+  // rejects it.
+  const taxInvalid = form.tax_rate !== null && form.tax_rate !== undefined && !!validateTaxRate(form.tax_rate).error
+  const bd         = estimateBreakdown(taxInvalid ? { ...form, tax_rate: null } : form, lines)
+  const globalPct  = Number(form.markup_pct || 0)
+  const raw        = bd.raw
+  const taxAmt     = bd.tax
+  const grandTotal = bd.total
+  const markupAmt  = bd.markup
   const sqftRate   = form.square_footage > 0 ? grandTotal / Number(form.square_footage) : null
 
   const stageCfg = STAGE_MAP[form.status] || { label: form.status, color: '#374151', bg: '#f3f4f6', border: '#e5e7eb' }
@@ -569,8 +574,15 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '12px', color: '#374151' }}>
                     <input type="checkbox" checked={!!form.taxable} onChange={e => editForm({ taxable: e.target.checked })} />
-                    Sales tax (8.25%)
+                    Sales tax on raw cost (not marked up)
                   </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <label style={{ ...s.lbl, marginBottom: 0, whiteSpace: 'nowrap' }}>Tax rate %</label>
+                    <input type="number" step="0.001" min="0" max={MAX_TAX_RATE} inputMode="decimal" style={{ ...s.inp, width: '85px', ...(taxInvalid ? { borderColor: '#dc2626' } : {}) }} value={form.tax_rate ?? DEFAULT_TAX_RATE} onChange={e => editForm({ tax_rate: e.target.value })} placeholder={String(DEFAULT_TAX_RATE)} aria-invalid={taxInvalid} />
+                    {taxInvalid
+                      ? <span style={{ fontSize: '11px', color: '#dc2626' }}>{validateTaxRate(form.tax_rate).error}</span>
+                      : <span style={{ fontSize: '11px', color: '#9ca3af' }}>e.g. 9.125 Conway, 9 Russellville</span>}
+                  </div>
                 </div>
               )}
             </div>
@@ -605,7 +617,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
               )}
               {taxAmt > 0 && (
                 <div style={s.tRow(false)}>
-                  <span>Sales tax (8.25%)</span>
+                  <span>{taxLabel(bd)}</span>
                   <span>{fmt$(taxAmt)}</span>
                 </div>
               )}
@@ -698,7 +710,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
               ) : !showConvert
                 ? (
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button style={s.btnSm('green')} onClick={() => { setCvtErr(''); setShowConvert(true) }}>Convert to job →</button>
+                    <button style={s.btnSm('green')} onClick={() => { setCvtErr(''); setShowConvert(true); jobNums.seed('convert', 'commercial', setCvtForm) }}>Convert to job →</button>
                     <button style={s.btnSm()} onClick={() => setShowLink(true)}>Link to existing job →</button>
                   </div>
                 )
@@ -707,6 +719,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                     <div>
                       <label style={s.lbl}>Job number</label>
                       <input style={{ ...s.inp, width: '130px' }} value={cvtForm.job_number} onChange={e => setCvtForm(f => ({ ...f, job_number: e.target.value }))} placeholder="2026-042" />
+                      <JobNumberHint jn={jobNums} value={cvtForm.job_number} />
                     </div>
                     <div>
                       <label style={s.lbl}>Start date</label>

@@ -11,6 +11,7 @@ import { generateEstimatePDF } from '../../lib/generate-estimate-pdf'
 import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount, budgetLineLabel, suggestBudgetLine, splitForApproval } from '../../lib/direct-cost-queue'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { sameCompany, companyKey } from '../../lib/company-name'
+import { prepareDirectorySave } from '../../lib/company-identity'
 import { rollupRatingsByCompany, averageStars, ratingScoresError } from '../../lib/sub-ratings'
 import { EstimatingHeader, BidWorkspaceNav, ScopeReview, QuickEstimateIntro } from '../components/estimating/EstimatingWorkspace'
 import EstimatorHome from '../components/estimating/EstimatorHome'
@@ -18,12 +19,18 @@ import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { isConverted } from '../../lib/estimate-pipeline'
+import { calcTotal as estimateCalcTotal, estimateBreakdown, validateTaxRate, normalizeTaxRateInput, taxLabel, isMissingTaxRateColumn, DEFAULT_TAX_RATE, MAX_TAX_RATE, TAX_RATE_MIGRATION_MSG } from '../../lib/calc-total'
+import { estimateTotal, mapEstimateLinesToBudget } from '../../lib/estimate-to-job'
 import { inActiveJobList, inCompletedJobList, isActiveStatusJob } from '../../lib/job-lifecycle'
 import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJobIds, homePathForRole } from '../../lib/roles'
 import { resolveDashboardTab, tabFromSearch, dashboardUrlForTab } from '../../lib/dashboard-tabs'
 import { jobHref, jobHrefById, isResidentialJob } from '../../lib/job-links'
 import { ownerDrawFunding, pctFunded } from '../../lib/owner-draws'
 import CashOutlookCard from '../components/CashOutlookCard'
+import JobNumberHint from '../components/JobNumberHint'
+import { useJobNumbers, confirmJobNumberFree } from '../../lib/use-job-numbers'
+import { jobNumberSaveError } from '../../lib/job-numbers'
+import { getSiteUrl } from '../../lib/site-url'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -244,6 +251,8 @@ const IconBell      = () => <svg width="15" height="15" fill="none" stroke="curr
 
 export default function Dashboard() {
   const router = useRouter()
+  // Shared job-number suggestion + duplicate warning for the four new-job forms here.
+  const jobNums = useJobNumbers()
   const [profile, setProfile] = useState(null)
   const [userPerms, setUserPerms] = useState(null)
   const [rolePerms, setRolePerms] = useState(null)
@@ -387,6 +396,7 @@ export default function Dashboard() {
   const [subTeamInviteResult, setSubTeamInviteResult] = useState({})
   const [repairingCompanyFor, setRepairingCompanyFor] = useState(null)
   const [repairMsg, setRepairMsg] = useState({})
+  const [linkReview, setLinkReview] = useState({}) // dirId → { company, candidates, excluded, selected }
   const [syncEmail, setSyncEmail] = useState({})
   const [syncLoading, setSyncLoading] = useState(null)
   const [syncMsg, setSyncMsg] = useState({})
@@ -456,7 +466,7 @@ export default function Dashboard() {
   const [expandedEstimate, setExpandedEstimate] = useState(null)
   const [openEstimate, setOpenEstimate] = useState(null)
   const [showNewEstimate, setShowNewEstimate] = useState(false)
-  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
+  const [estimateForm, setEstimateForm] = useState({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, tax_rate: String(DEFAULT_TAX_RATE), square_footage: '', project_type: '' })
   const [estimateLines, setEstimateLines] = useState([{ description: '', amount: '', scope: '' }])
   const [savingEstimate, setSavingEstimate] = useState(false)
   const [editingEstimate, setEditingEstimate] = useState(null)
@@ -1324,7 +1334,7 @@ export default function Dashboard() {
             <p style="color:#aaa;font-size:13px;line-height:1.7;margin:0;white-space:pre-wrap">${pkg.insurance_req}</p>
           </div>` : ''}
           <p style="color:#888;font-size:13px;margin:20px 0 8px;line-height:1.6">Log in to the NV Construction sub portal to view plans and submit your bid. All questions and clarifications must be submitted through the portal.</p>
-          <a href="${process.env.NEXT_PUBLIC_SITE_URL}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:1px">Submit Bid in Portal →</a>
+          <a href="${getSiteUrl()}/submit" style="display:inline-block;padding:12px 28px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px;font-weight:700;font-size:14px;letter-spacing:1px">Submit Bid in Portal →</a>
           <p style="color:#444;font-size:11px;margin-top:20px;line-height:1.7">This invitation is confidential and intended solely for invited bidders. NV Construction reserves the right to reject any or all bids.</p>
         `)
       )
@@ -1339,7 +1349,7 @@ export default function Dashboard() {
     const email = (quickInviteEmail[bidId] || '').trim().toLowerCase()
     if (!email || !email.includes('@')) return
     setQuickInviteSending(bidId)
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+    const siteUrl = getSiteUrl()
     await supabase.from('bid_invitations').upsert({ bid_package_id: bidId, sub_email: email }, { onConflict: 'bid_package_id,sub_email' })
     sendEmail(email, `You're invited to bid — ${pkg.title}`,
       emailWrap(`
@@ -1468,25 +1478,35 @@ export default function Dashboard() {
   async function saveSubEdit(id) {
     setSavingSubEdit(true)
     setSubEditMsg(null)
-    const res = await authFetch('/api/sub-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory_id: id, ...editSubForm }),
-    })
-    const data = await res.json()
-    if (data.error) {
-      setSubEditMsg({ ok: false, text: 'Error: ' + data.error })
-    } else {
-      setSubEditMsg({ ok: true, text: 'Saved.' })
-      setEditingSubId(null)
-      await loadAll()
-      setTimeout(() => setSubEditMsg(null), 3000)
+    try {
+      // A company-name change is a reviewed rename (confirm lists what changes);
+      // a contact edit never rewrites contracts or change orders.
+      const original = directory.find(d => d.id === id)
+      const prep = await prepareDirectorySave({ fetchFn: authFetch, confirmFn: msg => window.confirm(msg), directoryId: id, originalName: original?.company_name, newName: editSubForm.company_name })
+      if (prep.error) { setSubEditMsg({ ok: false, text: 'Error: ' + prep.error }); return }
+      if (!prep.proceed) return
+      const res = await authFetch('/api/sub-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory_id: id, ...editSubForm, ...prep.extra }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        setSubEditMsg({ ok: false, text: 'Error: ' + (data.error || 'Save failed') })
+      } else {
+        setSubEditMsg({ ok: true, text: data.renamed ? `Saved. Renamed to "${data.renamed.to}"${data.renamed.company_renamed ? ' (company record too)' : ''}; existing contracts keep their recorded name.` : 'Saved.' })
+        setEditingSubId(null)
+        await loadAll()
+        setTimeout(() => setSubEditMsg(null), 3000)
+      }
+    } finally {
+      setSavingSubEdit(false)
     }
-    setSavingSubEdit(false)
   }
 
   async function addJob(e) {
     e.preventDefault()
+    if (!(await confirmJobNumberFree(newJob.job_number))) return
     const { data, error } = await supabase.from('jobs').insert({
       job_number: newJob.job_number,
       project_name: newJob.project_name,
@@ -1505,7 +1525,7 @@ export default function Dashboard() {
       nv_role: newJob.nv_role || 'gc',
       job_type: 'commercial',
     }).select('id').single()
-    if (error) { setJobMsg('Error: ' + error.message); return }
+    if (error) { setJobMsg('Error: ' + jobNumberSaveError(error, newJob.job_number)); return }
     if (isJobLimited(profile?.role)) {
       const { data: { session } } = await supabase.auth.getSession()
       await supabase.from('pm_job_assignments').insert({ job_id: data.id, user_id: session.user.id, assigned_by: session.user.id })
@@ -1515,6 +1535,7 @@ export default function Dashboard() {
 
   async function addResidentialJob(e) {
     e.preventDefault()
+    if (!(await confirmJobNumberFree(newResJob.job_number))) return
     const { data, error } = await supabase.from('jobs').insert({
       job_number: newResJob.job_number,
       project_name: newResJob.project_name,
@@ -1534,7 +1555,7 @@ export default function Dashboard() {
       sub_billing_due: newResJob.sub_billing_due ? parseInt(newResJob.sub_billing_due) : null,
       sub_billing_anchor: newResJob.sub_billing_anchor || null,
     }).select('id').single()
-    if (error) { setResJobMsg('Error: ' + error.message); return }
+    if (error) { setResJobMsg('Error: ' + jobNumberSaveError(error, newResJob.job_number)); return }
     if (isJobLimited(profile?.role)) {
       const { data: { session } } = await supabase.auth.getSession()
       await supabase.from('pm_job_assignments').insert({ job_id: data.id, user_id: session.user.id, assigned_by: session.user.id })
@@ -1581,18 +1602,65 @@ export default function Dashboard() {
     if (membersRes?.members) setSubProfiles(membersRes.members)
   }
 
-  async function repairCompanyLinks(dirId, companyName) {
+  // Fix Company Links: read-only review list first (Owner/PM), then link only
+  // the people ticked here. Never links by name alone and never relinks contracts.
+  async function openLinkReview(dirId) {
     setRepairingCompanyFor(dirId)
     setRepairMsg(prev => ({ ...prev, [dirId]: null }))
     try {
-      const res = await fetch('/api/repair-company-links', {
+      const res = await authFetch(`/api/repair-company-links?directory_id=${encodeURIComponent(dirId)}`)
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Could not load the review list')
+      setLinkReview(prev => ({ ...prev, [dirId]: { ...json, selected: [] } }))
+    } catch (err) {
+      setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: err.message } }))
+    } finally {
+      setRepairingCompanyFor(null)
+    }
+  }
+
+  function toggleLinkPick(dirId, profileId) {
+    setLinkReview(prev => {
+      const r = prev[dirId]
+      if (!r) return prev
+      const selected = r.selected.includes(profileId) ? r.selected.filter(x => x !== profileId) : [...r.selected, profileId]
+      return { ...prev, [dirId]: { ...r, selected } }
+    })
+  }
+
+  async function createCompanyForLinks(dirId) {
+    setRepairingCompanyFor(dirId)
+    try {
+      const res = await authFetch('/api/repair-company-links', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create-company', directory_id: dirId }) })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Could not create the company record')
+    } catch (err) {
+      setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: err.message } }))
+      setRepairingCompanyFor(null)
+      return
+    }
+    await refreshDirectoryData()
+    await openLinkReview(dirId)
+  }
+
+  async function linkSelectedPeople(dirId) {
+    const r = linkReview[dirId]
+    if (!r?.company?.id || !r.selected.length) return
+    setRepairingCompanyFor(dirId)
+    setRepairMsg(prev => ({ ...prev, [dirId]: null }))
+    try {
+      const res = await authFetch('/api/repair-company-links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_name: companyName }),
+        body: JSON.stringify({ company_id: r.company.id, directory_id: dirId, profile_ids: r.selected }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Repair failed')
-      setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'ok', text: `Linked ${json.profiles_linked} user${json.profiles_linked !== 1 ? 's' : ''} and ${json.contracts_linked} contract${json.contracts_linked !== 1 ? 's' : ''} to ${companyName}.` } }))
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Linking failed')
+      const parts = [`Linked ${json.linked.length} ${json.linked.length === 1 ? 'person' : 'people'} to ${r.company.name}.`]
+      for (const x of json.skipped || []) parts.push(`Skipped ${x.name || x.id}: ${x.reason}`)
+      for (const x of json.failed || []) parts.push(`Failed ${x.name || x.id}: ${x.reason}`)
+      setRepairMsg(prev => ({ ...prev, [dirId]: { type: json.ok && !(json.skipped || []).length ? 'ok' : 'err', text: parts.join(' ') } }))
+      setLinkReview(prev => { const n = { ...prev }; delete n[dirId]; return n })
       await refreshDirectoryData()
     } catch (err) {
       setRepairMsg(prev => ({ ...prev, [dirId]: { type: 'err', text: err.message } }))
@@ -2080,6 +2148,8 @@ export default function Dashboard() {
 
   async function saveEstimate() {
     if (!estimateForm.project_name) return
+    const newTax = validateTaxRate(normalizeTaxRateInput(estimateForm.tax_rate))
+    if (newTax.error) { alert(newTax.error); return }
     setSavingEstimate(true)
     const { data: { session } } = await supabase.auth.getSession()
     const year = new Date().getFullYear()
@@ -2089,7 +2159,8 @@ export default function Dashboard() {
       return n > max ? n : max
     }, 0)
     const nextNum = String(maxNum + 1).padStart(3, '0')
-    const { data: est, error } = await supabase.from('estimates').insert({
+    const insertEstimate = (extra) => supabase.from('estimates').insert({
+      ...extra,
       created_by: session.user.id,
       estimate_number: `EST-${year}-${nextNum}`,
       project_name: estimateForm.project_name,
@@ -2106,13 +2177,21 @@ export default function Dashboard() {
       project_type: estimateForm.project_type || null,
       status: 'lead',
     }).select().single()
+    let { data: est, error } = await insertEstimate({ tax_rate: newTax.value })
+    // Before migration 048 there is no tax_rate column: the default rate can
+    // be omitted safely (math treats missing as 8.25); a custom rate cannot.
+    if (error && isMissingTaxRateColumn(error)) {
+      if (newTax.value !== DEFAULT_TAX_RATE) { alert(TAX_RATE_MIGRATION_MSG); setSavingEstimate(false); return }
+      ;({ data: est, error } = await insertEstimate({}))
+    }
+    if (error) alert('Could not save estimate: ' + error.message)
     if (!error && est) {
       const validLines = estimateLines.filter(l => l.description)
       if (validLines.length > 0) {
         await supabase.from('estimate_line_items').insert(validLines.map((l, i) => ({ estimate_id: est.id, description: l.description, amount: parseFloat(l.amount) || 0, scope: l.scope || null, sort_order: i, markup_pct: l.markup_pct !== '' && l.markup_pct !== undefined ? parseFloat(l.markup_pct) : null, markup_flat: parseFloat(l.markup_flat) || null })))
       }
       setShowNewEstimate(false)
-      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, square_footage: '', project_type: '' })
+      setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, tax_rate: String(DEFAULT_TAX_RATE), square_footage: '', project_type: '' })
       setEstimateLines([{ description: '', amount: '', scope: '' }])
       await loadEstimates()
       // Navigate to the dedicated estimate workspace
@@ -2122,6 +2201,8 @@ export default function Dashboard() {
   }
 
   async function saveEstimateEdit() {
+    const editTax = validateTaxRate(normalizeTaxRateInput(editEstimateForm.tax_rate))
+    if (editTax.error) { alert(editTax.error); return }
     setSavingEstimateEdit(true)
     const validLines = editEstimateLines.filter(l => l.description)
     const { data: { session: eSess } } = await supabase.auth.getSession()
@@ -2143,6 +2224,7 @@ export default function Dashboard() {
           markup_pct: parseFloat(editEstimateForm.markup_pct) || 0,
           markup_flat: parseFloat(editEstimateForm.markup_flat) || 0,
           taxable: editEstimateForm.taxable || false,
+          tax_rate: normalizeTaxRateInput(editEstimateForm.tax_rate),
           square_footage: parseFloat(editEstimateForm.square_footage) || null,
           project_type: editEstimateForm.project_type || null,
           status: editEstimateForm.status,
@@ -2191,18 +2273,7 @@ export default function Dashboard() {
   }
 
   function generatePipelineReport(enabledStages) {
-    const calcTotal = (est) => {
-      const lines = est.estimate_line_items || []
-      const globalPct = Number(est.markup_pct || 0)
-      const globalFlat = Number(est.markup_flat || 0)
-      const billed = lines.reduce((a, l) => {
-        const pct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPct
-        const flat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0
-        return a + Number(l.amount || 0) * (1 + pct / 100) + flat
-      }, 0)
-      const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-      return billed + globalFlat + (est.taxable ? raw * 0.0825 : 0)
-    }
+    const calcTotal = estimateCalcTotal // shared estimate math (lib/calc-total.js)
     const STAGE_META = {
       lead:        { label: 'Lead',         color: '#6b7280' },
       estimating:  { label: 'Estimating',   color: '#3b82f6' },
@@ -2452,6 +2523,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
 
   async function createJobFromBid(pkg) {
     if (!createJobFromBidForm.job_number.trim()) { setCreateJobFromBidError('Job number is required.'); return }
+    if (!(await confirmJobNumberFree(createJobFromBidForm.job_number))) return
     setCreatingJobFromBid(true)
     setCreateJobFromBidError('')
     try {
@@ -2473,7 +2545,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
         sub_billing_frequency: 'monthly',
         owner_billing_frequency: 'monthly',
       }).select('id').single()
-      if (jobErr) { setCreateJobFromBidError('DB error: ' + jobErr.message); setCreatingJobFromBid(false); return }
+      if (jobErr) { setCreateJobFromBidError('DB error: ' + jobNumberSaveError(jobErr, createJobFromBidForm.job_number)); setCreatingJobFromBid(false); return }
 
       const { data: { session: jobSess } } = await supabase.auth.getSession()
       await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jobSess?.access_token}` }, body: JSON.stringify({ id: pkg.id, job_id: job.id }) })
@@ -2772,7 +2844,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
     items.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
     const dueStr = pkg.due_date ? new Date(pkg.due_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : null
     const genDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+    const siteUrl = getSiteUrl()
 
     const w = window.open('', '_blank')
     w.document.write(`<!DOCTYPE html><html><head>
@@ -3301,12 +3373,15 @@ ${planLinks.map(p => p.url
 
   async function convertToJob(estimate) {
     if (!convertJobForm.job_number.trim()) { alert('Job number is required.'); return }
+    if (!(await confirmJobNumberFree(convertJobForm.job_number))) return
     setConvertingJob(true)
     const lines = estimate.estimate_line_items || []
-    const markupMult = 1 + (Number(estimate.markup_pct || 0) / 100)
-    const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-    const taxAmt2 = estimate.taxable ? rawTotal * 0.0825 : 0
-    const total = Math.round(rawTotal * markupMult * 100) / 100 + Number(estimate.markup_flat || 0) + taxAmt2
+    // Shared estimate math (per-line % / flat overrides, global flat, actual
+    // tax_rate on raw cost, tax not marked up) — same as the Estimator and
+    // /api/estimates/to-job. Budget lines include one sales-tax line so the
+    // budget reconciles with the contract total.
+    const total = estimateTotal(estimate, lines)
+    const budgetLines = mapEstimateLinesToBudget(estimate, lines)
     const { data: job, error: jobError } = await supabase.from('jobs').insert({
       job_number: convertJobForm.job_number.trim(),
       project_name: estimate.project_name,
@@ -3315,17 +3390,19 @@ ${planLinks.map(p => p.url
       start_date: convertJobForm.start_date || null,
       status: 'active',
     }).select('id').single()
-    if (jobError) { alert('Error creating job: ' + jobError.message); setConvertingJob(false); return }
-    if (lines.length > 0) {
-      await supabase.from('budget_items').insert(
-        lines.map(l => ({
+    if (jobError) { alert('Error creating job: ' + jobNumberSaveError(jobError, convertJobForm.job_number)); setConvertingJob(false); return }
+    if (budgetLines.length > 0) {
+      const { error: budgetErr } = await supabase.from('budget_items').insert(
+        budgetLines.map(l => ({
           job_id: job.id,
           description: l.description,
-          budget_amount: Number(l.amount) || 0,
-          owner_amount: Math.round(Number(l.amount) * markupMult * 100) / 100,
+          budget_amount: l.budget_amount,
+          owner_amount: l.owner_amount,
+          sort_order: l.sort_order,
           category: 'General',
         }))
       )
+      if (budgetErr) alert('Job created, but its budget lines could not be saved: ' + budgetErr.message + '\nAdd them on the job Budget tab.')
     }
     await supabase.from('estimates').update({ status: 'won' }).eq('id', estimate.id)
     setConvertingJob(false)
@@ -4319,8 +4396,8 @@ ${planLinks.map(p => p.url
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
                   <div style={s.applyLink}>
                     <span style={s.applyLinkText}>Share with subs to apply:</span>
-                    <span style={{ ...s.applyLinkUrl, marginLeft: '12px' }} onClick={() => navigator.clipboard.writeText(window.location.origin + '/apply')} title="Click to copy">
-                      {typeof window !== 'undefined' ? window.location.origin : ''}/apply ⧉
+                    <span style={{ ...s.applyLinkUrl, marginLeft: '12px' }} onClick={() => navigator.clipboard.writeText(getSiteUrl() + '/apply')} title="Click to copy">
+                      {getSiteUrl()}/apply ⧉
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -4600,12 +4677,12 @@ ${planLinks.map(p => p.url
                                   </p>
                                 </div>
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                  {hasUnlinkedMembers && (
+                                  {hasUnlinkedMembers && atLeastPM(profile?.role) && (
                                     <button
                                       style={{ padding: '7px 14px', background: '#fff7ed', border: '1px solid #5a2200', borderRadius: '7px', color: '#ea580c', fontSize: '12px', fontWeight: '600', cursor: repairingCompanyFor === sub.id ? 'not-allowed' : 'pointer', opacity: repairingCompanyFor === sub.id ? 0.6 : 1 }}
-                                      onClick={() => repairCompanyLinks(sub.id, sub.company_name)}
+                                      onClick={() => (linkReview[sub.id] ? setLinkReview(prev => { const n = { ...prev }; delete n[sub.id]; return n }) : openLinkReview(sub.id))}
                                       disabled={repairingCompanyFor === sub.id}>
-                                      {repairingCompanyFor === sub.id ? 'Fixing…' : '⚠ Fix Company Links'}
+                                      {repairingCompanyFor === sub.id ? 'Loading…' : linkReview[sub.id] ? '✕ Close review' : '⚠ Fix Company Links'}
                                     </button>
                                   )}
                                   <button
@@ -4624,6 +4701,40 @@ ${planLinks.map(p => p.url
                                   {repairMsg[sub.id].text}
                                 </div>
                               )}
+                              {linkReview[sub.id] && (() => {
+                                const rv = linkReview[sub.id]
+                                return (
+                                  <div style={{ padding: '12px 16px', fontSize: '12px', background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+                                    <p style={{ margin: '0 0 8px', fontWeight: 600, color: '#111' }}>Review people to link to {rv.company ? `"${rv.company.name}"` : `"${rv.company_name}"`}</p>
+                                    {!rv.company && (
+                                      <div style={{ color: '#b45309' }}>
+                                        {rv.company_reason === 'ambiguous'
+                                          ? 'More than one company record has this exact name. Merge them first; nothing can be linked until then.'
+                                          : <>No company record is named exactly this. <button style={{ ...s.btnSm('orange'), marginLeft: 6 }} disabled={repairingCompanyFor === sub.id} onClick={() => createCompanyForLinks(sub.id)}>Create company record</button></>}
+                                      </div>
+                                    )}
+                                    {rv.company && rv.candidates.length === 0 && <p style={{ margin: '0 0 6px', color: '#6b7280' }}>Nobody qualifies to link (see below).</p>}
+                                    {rv.company && rv.candidates.map(c => (
+                                      <label key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '4px 0', color: '#111' }}>
+                                        <input type="checkbox" checked={rv.selected.includes(c.id)} onChange={() => toggleLinkPick(sub.id, c.id)} />
+                                        <span>{c.full_name || '(no name)'} · {c.email || 'no email'} · {roleLabel(c.role)}</span>
+                                      </label>
+                                    ))}
+                                    {rv.excluded.length > 0 && (
+                                      <div style={{ marginTop: 8, color: '#6b7280' }}>
+                                        <p style={{ margin: '0 0 4px', fontWeight: 600 }}>Not linkable:</p>
+                                        {rv.excluded.map(x => <div key={x.id}>{x.full_name || '(no name)'} · {x.email || 'no email'} — {x.reason}</div>)}
+                                      </div>
+                                    )}
+                                    {rv.company && rv.candidates.length > 0 && (
+                                      <button style={{ ...s.btnSm('green'), marginTop: 10, opacity: rv.selected.length ? 1 : 0.5 }} disabled={!rv.selected.length || repairingCompanyFor === sub.id} onClick={() => linkSelectedPeople(sub.id)}>
+                                        {repairingCompanyFor === sub.id ? 'Linking…' : `Link ${rv.selected.length} selected`}
+                                      </button>
+                                    )}
+                                    <p style={{ margin: '8px 0 0', color: '#9ca3af' }}>Only unlinked sub accounts with an approved Directory application (matched by login email) can be linked. Subcontracts are not changed here.</p>
+                                  </div>
+                                )
+                              })()}
 
                               {/* Sync missing user by email */}
                               {(() => {
@@ -5414,7 +5525,7 @@ ${planLinks.map(p => p.url
                     <button onClick={() => { setShowCompletedJobs(false); setShowStarredJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredJobs ? '#d97706' : '#d1d5db'}`, background: showStarredJobs ? '#fefce8' : '#ffffff', color: showStarredJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && !isResidentialJob(j))).length})</button>
                     <button onClick={() => { setShowCompletedJobs(true); setShowStarredJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedJobs ? '#dcfce7' : '#ffffff', color: showCompletedJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => !isResidentialJob(j) && inCompletedJobList(j)).length})</button>
                   </div>
-                  {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewJobForm(v => !v); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg('') }}>
+                  {!showCompletedJobs && <button style={s.btnSm('orange')} onClick={() => { const opening = !showNewJobForm; setShowNewJobForm(opening); setNewJob({ job_number: '', project_name: '', start_date: '', nv_role: 'gc', billing_type: 'aia', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '', owner_billing_start: '', owner_billing_frequency: 'monthly', owner_billing_due: '', owner_billing_anchor: '' }); setJobMsg(''); if (opening) jobNums.seed('newJob', 'commercial', setNewJob) }}>
                     {showNewJobForm ? 'Cancel' : '+ New job'}
                   </button>}
                 </div>
@@ -5434,7 +5545,7 @@ ${planLinks.map(p => p.url
                         </div>
                       </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
-                        <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /></div>
+                        <div><label style={s.label}>Job number</label><input style={s.input} value={newJob.job_number} onChange={e => setNewJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="7469" autoFocus /><JobNumberHint jn={jobNums} value={newJob.job_number} /></div>
                         <div><label style={s.label}>Project name</label><input style={s.input} value={newJob.project_name} onChange={e => setNewJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Braum's Lubbock" /></div>
                       </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
@@ -5679,7 +5790,7 @@ ${planLinks.map(p => p.url
                     <button onClick={() => { setShowCompletedResJobs(false); setShowStarredResJobs(true) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showStarredResJobs ? '#d97706' : '#d1d5db'}`, background: showStarredResJobs ? '#fefce8' : '#ffffff', color: showStarredResJobs ? '#d97706' : '#555' }}>★ Starred ({[...starredJobIds].filter(sid => jobs.some(j => j.id === sid && isResidentialJob(j))).length})</button>
                     <button onClick={() => { setShowCompletedResJobs(true); setShowStarredResJobs(false) }} style={{ padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', border: `1px solid ${showCompletedResJobs ? '#16a34a' : '#d1d5db'}`, background: showCompletedResJobs ? '#dcfce7' : '#ffffff', color: showCompletedResJobs ? '#16a34a' : '#555' }}>Completed / Archived ({jobs.filter(j => isResidentialJob(j) && inCompletedJobList(j)).length})</button>
                   </div>
-                  {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { setShowNewResJobForm(v => !v); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg('') }}>
+                  {!showCompletedResJobs && <button style={s.btnSm('orange')} onClick={() => { const opening = !showNewResJobForm; setShowNewResJobForm(opening); setNewResJob({ job_number: '', project_name: '', location: '', start_date: '', owner_name: '', owner_phone: '', owner_email: '', contract_value: '', pm_email: '', sub_billing_start: '', sub_billing_frequency: 'monthly', sub_billing_due: '', sub_billing_anchor: '' }); setResJobMsg(''); if (opening) jobNums.seed('newResJob', 'residential', setNewResJob) }}>
                     {showNewResJobForm ? 'Cancel' : '+ New residential job'}
                   </button>}
                 </div>
@@ -5689,7 +5800,7 @@ ${planLinks.map(p => p.url
                     <p style={s.formTitle}>New residential project</p>
                     <form onSubmit={addResidentialJob}>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
-                        <div><label style={s.label}>Job number *</label><input style={s.input} value={newResJob.job_number} onChange={e => setNewResJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="R-101" autoFocus /></div>
+                        <div><label style={s.label}>Job number *</label><input style={s.input} value={newResJob.job_number} onChange={e => setNewResJob(j => ({ ...j, job_number: e.target.value }))} required placeholder="R-101" autoFocus /><JobNumberHint jn={jobNums} value={newResJob.job_number} /></div>
                         <div><label style={s.label}>Project name *</label><input style={s.input} value={newResJob.project_name} onChange={e => setNewResJob(j => ({ ...j, project_name: e.target.value }))} required placeholder="Smith Kitchen Remodel" /></div>
                       </div>
                       <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
@@ -6004,6 +6115,7 @@ ${planLinks.map(p => p.url
                                   const awardedSub = (det.submissions || []).find(s => s.status === 'awarded')
                                   setShowCreateJobFor(showCreateJobFor === pkg.id ? null : pkg.id)
                                   setCreateJobFromBidForm({ job_number: '', start_date: '', contract_value: awardedSub ? String(awardedSub.amount) : '' })
+                                  if (showCreateJobFor !== pkg.id) jobNums.seed('createJobFromBid', 'commercial', setCreateJobFromBidForm)
                                   if (showCreateJobFor !== pkg.id) { loadScopeItems(pkg.id); loadLevelingEntries(pkg.id) }
                                 }}>🏗 Create Job</button>
                               )
@@ -6045,6 +6157,7 @@ ${planLinks.map(p => p.url
                                       <div>
                                         <label style={s.label}>Job number *</label>
                                         <input style={s.input} placeholder="e.g. 1043" value={createJobFromBidForm.job_number} onChange={e => setCreateJobFromBidForm(f => ({ ...f, job_number: e.target.value }))} />
+                                        <JobNumberHint jn={jobNums} value={createJobFromBidForm.job_number} />
                                       </div>
                                       <div>
                                         <label style={s.label}>Start date</label>
@@ -6890,17 +7003,7 @@ ${planLinks.map(p => p.url
 
             {/* ── ESTIMATOR PIPELINE OVERVIEW ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'overview' && (() => {
-              const calcTotal = (est) => {
-                const globalPct = Number(est.markup_pct || 0)
-                const lines = est.estimate_line_items || []
-                const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-                const billed = lines.reduce((a, l) => {
-                  const pct  = l.markup_pct  != null ? Number(l.markup_pct)  : globalPct
-                  const flat = l.markup_flat != null ? Number(l.markup_flat) : 0
-                  return a + Number(l.amount || 0) * (1 + pct / 100) + flat
-                }, 0)
-                return billed + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
-              }
+              const calcTotal = estimateCalcTotal // shared estimate math (lib/calc-total.js)
               const getStage = (est) => {
                 const s = (est.status || 'lead').toLowerCase()
                 if (s === 'won' || s === 'accepted') return 'won'
@@ -7104,7 +7207,7 @@ ${planLinks.map(p => p.url
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length} active estimate{estimates.filter(e => !['won','lost','accepted','declined'].includes(e.status)).length !== 1 ? 's' : ''} — won/lost are in Archive</p>
-                  {isPrincipal(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', taxable: false, square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
+                  {isPrincipal(profile?.role) && <button style={s.btn} onClick={() => { setShowNewEstimate(v => !v); setExpandedEstimate(null); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, tax_rate: String(DEFAULT_TAX_RATE), square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>{showNewEstimate ? 'Cancel' : '+ New estimate'}</button>}
                 </div>
 
                 {showNewEstimate && (
@@ -7165,17 +7268,13 @@ ${planLinks.map(p => p.url
                           </div>
                         ))}
                         {(() => {
-                          const globalPct = parseFloat(estimateForm.markup_pct) || 0
-                          const globalFlat = parseFloat(estimateForm.markup_flat) || 0
-                          const rawTotal = estimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
-                          const lineMarkupTotal = estimateLines.reduce((a, l) => {
-                            const pct = l.markup_pct !== '' ? parseFloat(l.markup_pct) || 0 : globalPct
-                            const flat = parseFloat(l.markup_flat) || 0
-                            return a + (parseFloat(l.amount) || 0) * pct / 100 + flat
-                          }, 0)
-                          const taxAmt = estimateForm.taxable ? rawTotal * 0.0825 : 0
-                          const markupAmt = lineMarkupTotal + globalFlat
-                          const grandTotal = rawTotal + markupAmt + taxAmt
+                          // Shared estimate math (lib/calc-total.js); an invalid
+                          // in-progress tax entry previews at the default rate.
+                          const newBd = estimateBreakdown(validateTaxRate(normalizeTaxRateInput(estimateForm.tax_rate)).error ? { ...estimateForm, tax_rate: null } : estimateForm, estimateLines)
+                          const rawTotal = newBd.raw
+                          const taxAmt = newBd.tax
+                          const markupAmt = newBd.markup
+                          const grandTotal = newBd.total
                           const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                           const hasExtra = estimateForm.taxable || markupAmt > 0
                           return (
@@ -7187,7 +7286,7 @@ ${planLinks.map(p => p.url
                               </div>
                               {taxAmt > 0 && (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
-                                  <div style={{ fontSize: '12px', color: '#4b5563', textAlign: 'right' }}>Sales tax (8.25%):</div>
+                                  <div style={{ fontSize: '12px', color: '#4b5563', textAlign: 'right' }}>{taxLabel(newBd)}:</div>
                                   <div style={{ textAlign: 'right', color: '#4b5563', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(taxAmt)}</div>
                                   <div></div>
                                 </div>
@@ -7229,12 +7328,21 @@ ${planLinks.map(p => p.url
                       </div>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: estimateForm.taxable ? '#111827' : '#555' }}>
                         <input type="checkbox" checked={!!estimateForm.taxable} onChange={e => setEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
-                        Taxable (8.25% sales tax — applied before markup)
+                        Taxable — sales tax on raw cost (not marked up)
                       </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '12px', color: '#374151' }}>Tax rate</span>
+                        <input type="number" min="0" max={MAX_TAX_RATE} step="0.001" inputMode="decimal" style={{ ...s.input, width: '90px', padding: '6px 10px', textAlign: 'center', ...(validateTaxRate(normalizeTaxRateInput(estimateForm.tax_rate)).error ? { borderColor: '#dc2626' } : {}) }}
+                          value={estimateForm.tax_rate ?? DEFAULT_TAX_RATE}
+                          onChange={e => setEstimateForm(f => ({ ...f, tax_rate: e.target.value }))}
+                          placeholder={String(DEFAULT_TAX_RATE)} />
+                        <span style={{ fontSize: '13px', color: '#6b7280' }}>%</span>
+                        {validateTaxRate(normalizeTaxRateInput(estimateForm.tax_rate)).error && <span style={{ fontSize: '11px', color: '#dc2626' }}>{validateTaxRate(normalizeTaxRateInput(estimateForm.tax_rate)).error}</span>}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...s.btn, opacity: savingEstimate || !estimateForm.project_name ? 0.6 : 1 }} disabled={savingEstimate || !estimateForm.project_name} onClick={saveEstimate}>{savingEstimate ? 'Saving...' : 'Save estimate'}</button>
-                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>Cancel</button>
+                      <button style={s.btnGray} onClick={() => { setShowNewEstimate(false); setEstimateForm({ project_name: '', address: '', owner_name: '', owner_company: '', owner_email: '', owner_phone: '', notes: '', markup_pct: '', markup_flat: '', taxable: false, tax_rate: String(DEFAULT_TAX_RATE), square_footage: '', project_type: '' }); setEstimateLines([{ description: '', amount: '', scope: '' }]) }}>Cancel</button>
                     </div>
                   </div>
                 )}
@@ -7248,15 +7356,10 @@ ${planLinks.map(p => p.url
                   const isExp = expandedEstimate === est.id
                   const lines = est.estimate_line_items || []
                   const globalPct = Number(est.markup_pct || 0)
-                  const estMarkupFlat = Number(est.markup_flat || 0)
-                  const billedTotal = lines.reduce((a, l) => {
-                    const pct = l.markup_pct !== null && l.markup_pct !== undefined ? Number(l.markup_pct) : globalPct
-                    const flat = l.markup_flat !== null && l.markup_flat !== undefined ? Number(l.markup_flat) : 0
-                    return a + Number(l.amount || 0) * (1 + pct / 100) + flat
-                  }, 0)
-                  const rawTotal = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-                  const estTaxAmt = est.taxable ? rawTotal * 0.0825 : 0
-                  const total = Math.round((billedTotal + estMarkupFlat + estTaxAmt) * 100) / 100
+                  const estBd = estimateBreakdown(est, lines) // shared estimate math
+                  const rawTotal = estBd.raw
+                  const estTaxAmt = estBd.tax
+                  const total = Math.round(estBd.total * 100) / 100
                   const psf = est.square_footage > 0 ? Math.round(total / est.square_footage) : null
                   const stageLabels = { lead: { label: 'Lead', color: '#9ca3af', bg: '#111', border: '#d1d5db' }, estimating: { label: 'Estimating', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' }, bid_out: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, negotiating: { label: 'Negotiating', color: '#a16207', bg: '#1a1400', border: '#3a2a00' }, sent: { label: 'Bid Out', color: '#e8590c', bg: '#1a0e00', border: '#3a1e00' }, draft: { label: 'Estimating', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' } }
                   const stageCfg = stageLabels[est.status] || { label: est.status, color: '#6b7280', bg: '#f0f0f0', border: '#d1d5db' }
@@ -7349,17 +7452,11 @@ ${planLinks.map(p => p.url
                                     </div>
                                   ))}
                                   {(() => {
-                                    const editGlobalPct = parseFloat(editEstimateForm.markup_pct) || 0
-                                    const editGlobalFlat = parseFloat(editEstimateForm.markup_flat) || 0
-                                    const editRaw = editEstimateLines.reduce((a, l) => a + (parseFloat(l.amount) || 0), 0)
-                                    const editLineMarkup = editEstimateLines.reduce((a, l) => {
-                                      const pct = l.markup_pct !== '' ? parseFloat(l.markup_pct) || 0 : editGlobalPct
-                                      const flat = parseFloat(l.markup_flat) || 0
-                                      return a + (parseFloat(l.amount) || 0) * pct / 100 + flat
-                                    }, 0)
-                                    const editTaxAmt = editEstimateForm.taxable ? editRaw * 0.0825 : 0
-                                    const editMarkupAmt = editLineMarkup + editGlobalFlat
-                                    const editGrand = editRaw + editMarkupAmt + editTaxAmt
+                                    const editBd = estimateBreakdown(validateTaxRate(normalizeTaxRateInput(editEstimateForm.tax_rate)).error ? { ...editEstimateForm, tax_rate: null } : editEstimateForm, editEstimateLines)
+                                    const editRaw = editBd.raw
+                                    const editTaxAmt = editBd.tax
+                                    const editMarkupAmt = editBd.markup
+                                    const editGrand = editBd.total
                                     const fmt2 = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                     const editHasExtra = editEstimateForm.taxable || editMarkupAmt > 0
                                     return (
@@ -7371,7 +7468,7 @@ ${planLinks.map(p => p.url
                                         </div>
                                         {editTaxAmt > 0 && (
                                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 40px', marginBottom: '4px' }}>
-                                            <div style={{ fontSize: '12px', color: '#4b5563', textAlign: 'right' }}>Sales tax (8.25%):</div>
+                                            <div style={{ fontSize: '12px', color: '#4b5563', textAlign: 'right' }}>{taxLabel(editBd)}:</div>
                                             <div style={{ textAlign: 'right', color: '#4b5563', fontSize: '13px', fontFamily: 'monospace' }}>+{fmt2(editTaxAmt)}</div>
                                             <div></div>
                                           </div>
@@ -7413,8 +7510,17 @@ ${planLinks.map(p => p.url
                                 </div>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: editEstimateForm.taxable ? '#111827' : '#555' }}>
                                   <input type="checkbox" checked={!!editEstimateForm.taxable} onChange={e => setEditEstimateForm(f => ({ ...f, taxable: e.target.checked }))} style={{ width: '14px', height: '14px', cursor: 'pointer' }} />
-                                  Taxable (8.25% sales tax — applied before markup)
+                                  Taxable — sales tax on raw cost (not marked up)
                                 </label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '12px', color: '#374151' }}>Tax rate</span>
+                                  <input type="number" min="0" max={MAX_TAX_RATE} step="0.001" inputMode="decimal" style={{ ...s.input, width: '90px', padding: '6px 10px', textAlign: 'center' }}
+                                    value={editEstimateForm.tax_rate ?? DEFAULT_TAX_RATE}
+                                    onChange={e => setEditEstimateForm(f => ({ ...f, tax_rate: e.target.value }))}
+                                    placeholder={String(DEFAULT_TAX_RATE)} />
+                                  <span style={{ fontSize: '13px', color: '#6b7280' }}>%</span>
+                                  {validateTaxRate(normalizeTaxRateInput(editEstimateForm.tax_rate)).error && <span style={{ fontSize: '11px', color: '#dc2626' }}>{validateTaxRate(normalizeTaxRateInput(editEstimateForm.tax_rate)).error}</span>}
+                                </div>
                               </div>
                               <div style={{ display: 'flex', gap: '8px' }}>
                                 <button style={{ ...s.btnSm('orange'), opacity: savingEstimateEdit ? 0.6 : 1 }} disabled={savingEstimateEdit} onClick={saveEstimateEdit}>{savingEstimateEdit ? 'Saving...' : 'Save changes'}</button>
@@ -7457,8 +7563,8 @@ ${planLinks.map(p => p.url
                                     )}
                                     {est.taxable && (
                                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#f9fafb', borderTop: '1px solid #e5e7eb', fontSize: '12px' }}>
-                                        <span style={{ color: '#4b5563' }}>Sales tax (8.25%)</span>
-                                        <span style={{ color: '#4b5563', fontFamily: 'monospace' }}>+${(rawTotal * 0.0825).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                        <span style={{ color: '#4b5563' }}>{taxLabel(estBd)}</span>
+                                        <span style={{ color: '#4b5563', fontFamily: 'monospace' }}>+${estTaxAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                                       </div>
                                     )}
                                     {globalPct > 0 && (
@@ -7518,11 +7624,11 @@ ${planLinks.map(p => p.url
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)
                                     setEditEstimateBase(est.updated_at ?? null)
-                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), markup_flat: String(est.markup_flat || ''), taxable: !!est.taxable, square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
+                                    setEditEstimateForm({ project_name: est.project_name || '', address: est.address || '', owner_name: est.owner_name || '', owner_company: est.owner_company || '', owner_email: est.owner_email || '', owner_phone: est.owner_phone || '', notes: est.notes || '', status: est.status || 'lead', markup_pct: String(est.markup_pct || ''), markup_flat: String(est.markup_flat || ''), taxable: !!est.taxable, tax_rate: est.tax_rate == null ? String(DEFAULT_TAX_RATE) : String(est.tax_rate), square_footage: String(est.square_footage || ''), project_type: est.project_type || '' })
                                     setEditEstimateLines(lines.map(l => ({ description: l.description, amount: String(l.amount), scope: l.scope || '', markup_pct: l.markup_pct !== null && l.markup_pct !== undefined ? String(l.markup_pct) : '', markup_flat: l.markup_flat !== null && l.markup_flat !== undefined ? String(l.markup_flat) : '' })))
                                   }}>Edit</button>
                                   {est.status !== 'won' && (
-                                    <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }) }}>Convert to Job</button>
+                                    <button style={s.btnSm('green')} onClick={() => { setConvertingEst(est.id); setConvertJobForm({ job_number: '', start_date: '' }); jobNums.seed('convertJob', 'commercial', setConvertJobForm) }}>Convert to Job</button>
                                   )}
                                   <button style={s.btnSm('red')} onClick={() => deleteEstimate(est.id)}>Delete</button>
                                 </>}
@@ -7534,6 +7640,7 @@ ${planLinks.map(p => p.url
                                     <div>
                                       <label style={s.label}>Job number *</label>
                                       <input style={s.input} value={convertJobForm.job_number} onChange={e => setConvertJobForm(f => ({ ...f, job_number: e.target.value }))} placeholder="7469" />
+                                      <JobNumberHint jn={jobNums} value={convertJobForm.job_number} />
                                     </div>
                                     <div>
                                       <label style={s.label}>Start date</label>
@@ -7563,17 +7670,7 @@ ${planLinks.map(p => p.url
 
             {/* ── ESTIMATOR ARCHIVE ── */}
             {activeTab === 'estimator' && estimatorInnerTab === 'archive' && (() => {
-              const calcTotal = (est) => {
-                const globalPct = Number(est.markup_pct || 0)
-                const lines = est.estimate_line_items || []
-                const raw = lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-                const billed = lines.reduce((a, l) => {
-                  const pct  = l.markup_pct  != null ? Number(l.markup_pct)  : globalPct
-                  const flat = l.markup_flat != null ? Number(l.markup_flat) : 0
-                  return a + Number(l.amount || 0) * (1 + pct / 100) + flat
-                }, 0)
-                return billed + Number(est.markup_flat || 0) + (est.taxable ? raw * 0.0825 : 0)
-              }
+              const calcTotal = estimateCalcTotal // shared estimate math (lib/calc-total.js)
               const archived = estimates.filter(e => ['won','lost','accepted','declined'].includes(e.status))
               const won = archived.filter(e => ['won','accepted'].includes(e.status))
               const lost = archived.filter(e => ['lost','declined'].includes(e.status))

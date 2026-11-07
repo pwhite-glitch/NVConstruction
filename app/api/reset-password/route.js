@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,7 +12,7 @@ export async function POST(request) {
   const { email } = await request.json()
   if (!email) return Response.json({ error: 'Email is required.' }, { status: 400 })
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+  const siteUrl = getSiteUrl()
 
   const { data, error } = await adminSupabase.auth.admin.generateLink({
     type: 'recovery',

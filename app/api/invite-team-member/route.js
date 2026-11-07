@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { findAuthUserByEmail } from '../../../lib/auth-users'
 import { loadExistingProfile, existingInviteTargetError } from '../../../lib/invite-guards'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -36,7 +37,7 @@ export async function POST(request) {
     }
 
     const email = rawEmail.toLowerCase().trim()
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+    const siteUrl = getSiteUrl()
 
     const { data: company } = await adminSupabase.from('companies').select('name').eq('id', company_id).single()
     const companyName = company?.name || inviterProfile?.company_name || ''

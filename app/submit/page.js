@@ -6,8 +6,10 @@ import { notifyBidSubmitted } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
 import { workingDaysOf, rangeLabel } from '../../lib/lookahead-dates'
 import { openStorageFile } from '../../lib/open-file'
+import { openSignedContract, openBidPlan, startSigning, printSubcontract } from '../../lib/portal-openers'
 import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
 import { todayCentral, addDaysCentral } from '../../lib/central-date'
+import { billingPaymentSummary, billingPaidAmount } from '../../lib/billing-payment'
 
 const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
@@ -435,15 +437,9 @@ export default function Submit() {
     }
   }
 
-  async function viewSignedContract(filePath) {
-    const res = await authFetch('/api/sub-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'signed-url', file_path: filePath, download: true }),
-    })
-    const { url, error } = await res.json()
-    if (error || !url) return alert('Could not retrieve document.')
-    window.open(url, '_blank')
+  // Tap-safe: the window is reserved in this click turn, the signed URL is fetched after.
+  function viewSignedContract(filePath) {
+    return openSignedContract(authFetch, filePath).then(r => { if (!r.ok) alert(r.error) })
   }
 
   async function saveDocs() {
@@ -478,16 +474,9 @@ export default function Submit() {
     await supabase.from('bid_invitations').update({ status: 'viewed' }).eq('bid_package_id', bidPackageId).ilike('sub_email', user.email).eq('status', 'invited')
   }
 
-  async function openPlan(storagePath) {
-    const res = await fetch('/api/bid-plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'signed-url', path: storagePath }),
-    })
-    if (!res.ok) { alert('Could not load the plan. Please try again.'); return }
-    const { url } = await res.json()
-    if (!url) { alert('Plan not available.'); return }
-    window.open(url, '_blank')
+  // Tap-safe: window reserved in the click turn, signed URL fetched inside the getter.
+  function openPlan(storagePath) {
+    return openBidPlan(fetch, storagePath).then(r => { if (!r.ok) alert(r.error) })
   }
 
   async function openBidDoc(storagePath) {
@@ -551,49 +540,31 @@ export default function Submit() {
     loadMyCOs(id)
   }
 
-  async function printContract(subcontractId) {
-    setPrintingContractFor(subcontractId)
-    try {
-      const res = await authFetch('/api/sub-initiate-sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subcontract_id: subcontractId, sub_user_id: user.id }),
-      })
-      const { token, error: signErr } = await res.json()
-      if (signErr) { alert('Error: ' + signErr); return }
-      if (!token) { alert('Signing session not found. Please try again.'); return }
-      const srRes = await fetch(`/api/signing-requests?sub_id=${user.id}`)
-      if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
-      const htmlRes = await fetch(`/api/signing-requests/${token}?html=1`)
-      const { data: reqData } = await htmlRes.json()
-      if (!reqData?.document_html) return
-      const win = window.open('', '_blank')
-      if (!win) { alert('Please allow popups for this site to view your contract.'); return }
-      win.document.write(reqData.document_html)
-      win.document.close()
-      win.focus()
-      setTimeout(() => win.print(), 600)
-    } finally {
-      setPrintingContractFor(null)
-    }
+  async function refreshSigningRequests() {
+    const srRes = await fetch(`/api/signing-requests?sub_id=${user.id}`)
+    if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
   }
 
-  async function initiateSign(subcontractId) {
+  // Tap-safe: printSubcontract → openHtml reserves the window synchronously in this
+  // click turn (before any await); the signing request and contract HTML are fetched
+  // inside the getter and the HTML carries its own print trigger.
+  function printContract(subcontractId) {
+    setPrintingContractFor(subcontractId)
+    return printSubcontract(authFetch, fetch, subcontractId, user.id, refreshSigningRequests)
+      .then(r => { if (!r.ok) alert(r.error) })
+      .finally(() => setPrintingContractFor(null))
+  }
+
+  // Tap-safe: startSigning → openFile reserves the window synchronously; the token is
+  // fetched inside the getter and the window only ever goes to /sign?token=<real token>.
+  function initiateSign(subcontractId) {
     setInitiatingSignFor(subcontractId)
-    try {
-      const res = await authFetch('/api/sub-initiate-sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subcontract_id: subcontractId, sub_user_id: user.id }),
+    return startSigning(authFetch, subcontractId, user.id)
+      .then(async r => {
+        if (!r.ok) alert(r.error)
+        if (r.token) { try { await refreshSigningRequests() } catch {} }
       })
-      const { token, error: signErr } = await res.json()
-      if (signErr) { alert('Error: ' + signErr); return }
-      window.open(`/sign?token=${token}`, '_blank')
-      const srRes = await fetch(`/api/signing-requests?sub_id=${user.id}`)
-      if (srRes.ok) { const { data: srData } = await srRes.json(); setMySigningRequests(srData || []) }
-    } finally {
-      setInitiatingSignFor(null)
-    }
+      .finally(() => setInitiatingSignFor(null))
   }
 
   async function respondCO(co, response) {
@@ -1938,10 +1909,22 @@ export default function Submit() {
                       <button onClick={() => startResubmit(s2)} style={{ padding: '7px 16px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>Fix &amp; Resubmit →</button>
                     </div>
                   )}
+                  {!s2.paid_at && billingPaymentSummary(s2).partial && (() => {
+                    // Short check: paid_at stays empty until the full net is paid — never label it PAID.
+                    const ps = billingPaymentSummary(s2)
+                    const m = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    return (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#b45309', letterSpacing: '0.5px' }}>Partial payment received</span>
+                        <span style={{ fontSize: '13px', color: '#92400e', fontWeight: '700' }}>{m(ps.paid)} of {m(ps.net)} net</span>
+                        <span style={{ fontSize: '12px', color: '#92400e' }}>{m(ps.remaining)} remaining</span>
+                      </div>
+                    )
+                  })()}
                   {s2.paid_at && (
                     <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '10px 14px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a', letterSpacing: '0.5px' }}>✓ Payment received</span>
-                      {s2.payment_amount && <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '700' }}>${Number(s2.payment_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>}
+                      <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '700' }}>${billingPaidAmount(s2).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       <span style={{ fontSize: '12px', color: '#16a34a', opacity: 0.7 }}>{new Date(s2.paid_at).toLocaleDateString()}</span>
                       {s2.payment_method && <span style={{ fontSize: '11px', color: '#1a5a1a', background: '#0d2e0d', borderRadius: '4px', padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s2.payment_method}{s2.check_number ? ` #${s2.check_number}` : ''}</span>}
                       {s2.payment_notes && <span style={{ fontSize: '12px', color: '#16a34a', opacity: 0.6 }}>{s2.payment_notes}</span>}

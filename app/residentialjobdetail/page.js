@@ -7,7 +7,9 @@ import { todayCentral } from '../../lib/central-date'
 import { openFile, openHtml, openStorageFile } from '../../lib/open-file'
 import { dcBilledLockReason } from '../../lib/dc-guards'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
-import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, applyDelta, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
+import { isPreviewActive } from '../../lib/prime-co-review'
+import RfiCommentThread from '../components/RfiCommentThread'
+import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
 import { ownerDrawFunding, pctFunded, priorDrawnByLine, buildDrawSchedule, drawFundedAmount, isDrawEditable, round2 } from '../../lib/owner-draws'
 import ExpectedPayDateEditor from '../components/ExpectedPayDateEditor'
 import { buildDrawPackageHtml, buildOwnerDrawHtml, buildChangeOrderHtml, buildBillingWaiverHtml, buildCompletionReportHtml } from '../../lib/residential-print'
@@ -20,6 +22,7 @@ import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { isSubcontractSigned } from '../../lib/signing'
 import { sameCompany } from '../../lib/company-name'
 import { isBeforeTodayCentral } from '../../lib/central-date'
+import { billingPaymentSummary } from '../../lib/billing-payment'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -196,6 +199,9 @@ function ResidentialJobDetailInner() {
   const [coMsg, setCOMsg] = useState('')
   const [coLinePick, setCoLinePick] = useState({}) // { [coId]: budget_item_id } picked before approve
   const [reviewingCOId, setReviewingCOId] = useState(null)
+  const [inPreview, setInPreview] = useState(false) // role preview: CO review disabled (API refuses too)
+  useEffect(() => { setInPreview(isPreviewActive()) }, [])
+  const [openRfiThread, setOpenRfiThread] = useState(null)
 
   // Billing
   const [billingSubmissions, setBillingSubmissions] = useState([])
@@ -724,95 +730,44 @@ function ResidentialJobDetailInner() {
     setAddingCO(false)
   }
 
-  // Add `sign` × each delta to its budget line's budget_amount and owner_amount
-  // through /api/budget-items (same as commercial reviewPrimeCO). Rolls back the
-  // lines already changed if one fails. Returns an error string or null.
-  async function applyCODeltas(deltas, sign) {
-    const done = []
-    for (const d of deltas) {
-      const { data: item, error: readErr } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('id', d.budget_item_id).maybeSingle()
-      let err = readErr?.message || (!item ? 'Budget line not found' : null)
-      if (!err) {
-        const res = await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: d.budget_item_id, fields: applyDelta(item, sign * d.amount) }) })
-        const j = await res.json().catch(() => ({}))
-        if (!res.ok || j.error) err = j.error || `server returned ${res.status}`
-      }
-      if (err) {
-        for (const prev of done) {
-          const { data: p } = await supabase.from('budget_items').select('id, budget_amount, owner_amount').eq('id', prev.budget_item_id).maybeSingle()
-          if (p) await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: prev.budget_item_id, fields: applyDelta(p, -sign * prev.amount) }) })
-        }
-        return err
-      }
-      done.push(d)
+  // Approve / reject go through POST /api/prime-change-orders/review: status,
+  // budget_item_id / sov and the budget-line amounts change in ONE database
+  // transaction (migration 049), so a failed line, a lost connection or a second
+  // click can never leave a half-applied CO. Blocked in role preview.
+  // Never touches jobs.contract_value (that stays the base contract).
+  async function reviewPrimeCO(co, payload, failLabel) {
+    if (isPreviewActive()) { flash(false, 'This action is disabled in role preview mode.'); return }
+    if (reviewingCOId) return
+    setReviewingCOId(co.id)
+    try {
+      const r = await api('/api/prime-change-orders/review', jsonOpts('POST', { co_id: co.id, ...payload }))
+      if (!r.ok) alert(`${failLabel} — nothing was changed: ${r.error}`)
+    } finally {
+      await Promise.all([loadChangeOrders(), loadBudget()])
+      setReviewingCOId(null)
     }
-    return null
   }
 
-  // Approve: applies the CO to its budget line(s) and sets budget_applied. Never
-  // touches jobs.contract_value (that stays the base contract).
+  // Approve: applies the CO to its budget line(s) and sets budget_applied, together.
   async function approveCO(co) {
     if (co.status !== 'pending') { alert('Only pending change orders can be approved.'); return }
     const pickedLine = co.budget_item_id || coLinePick[co.id] || ''
     const target = { ...co, budget_item_id: pickedLine || null }
-    const deltas = co.budget_applied ? [] : coBudgetDeltas(target)
-    if (!co.budget_applied && deltas.length === 0) { alert('Pick a budget line for this change order before approving.'); return }
-    setReviewingCOId(co.id)
-    try {
-      // Claim the CO first so a second click / second user can't apply it twice
-      const { data: claimed, error: claimErr } = await supabase.from('prime_change_orders')
-        .update({ status: 'approved' }).eq('id', co.id).eq('status', 'pending').select('id, budget_applied')
-      if (claimErr) { alert('Approve failed: ' + claimErr.message); return }
-      if (!claimed || claimed.length === 0) { alert('This change order was already handled. Refreshing.'); return }
-      if (claimed[0].budget_applied) return // already on the budget; don't apply again
-
-      const applyErr = await applyCODeltas(deltas, 1)
-      if (applyErr) {
-        await supabase.from('prime_change_orders').update({ status: 'pending' }).eq('id', co.id)
-        alert('Approve failed — budget not updated: ' + applyErr)
-        return
-      }
-      const coUpdate = { budget_applied: true }
-      if (!co.budget_item_id && pickedLine) coUpdate.budget_item_id = pickedLine
-      if (!(Array.isArray(co.sov) && co.sov.some(r => r?.budget_item_id))) {
-        coUpdate.sov = deltas.map(d => ({ budget_item_id: d.budget_item_id, amount: d.amount, description: co.description }))
-      }
-      const { error: markErr } = await supabase.from('prime_change_orders').update(coUpdate).eq('id', co.id)
-      if (markErr) alert('Budget updated, but the change order could not be marked as applied: ' + markErr.message + '\nDo not approve it again; ask an admin to set budget_applied.')
-    } finally {
-      await Promise.all([loadChangeOrders(), loadBudget()])
-      setReviewingCOId(null)
-    }
+    if (coBudgetDeltas(target).length === 0) { alert('Pick a budget line for this change order before approving.'); return }
+    await reviewPrimeCO(co, { action: 'approve', ...(!co.budget_item_id && pickedLine ? { budget_item_id: pickedLine } : {}) }, 'Approve failed')
   }
 
   // Reject: a pending CO just becomes rejected. An approved CO that was applied to
-  // the budget has the same deltas reversed and budget_applied cleared.
+  // the budget has the same deltas reversed and budget_applied cleared, together.
   async function rejectCO(co) {
     if (!['pending', 'approved'].includes(co.status)) return
     const reverse = co.status === 'approved' && co.budget_applied
-    const deltas = reverse ? coBudgetDeltas(co) : []
-    if (reverse && deltas.length === 0) { alert('Cannot reverse: this change order has no budget line recorded.'); return }
+    if (reverse && coBudgetDeltas(co).length === 0) { alert('Cannot reverse: this change order has no budget line recorded.'); return }
     const msg = reverse
       ? `Reject this approved change order and take $${fmt(co.amount)} back off its budget line(s)?`
       : 'Reject this change order?'
     if (!window.confirm(msg)) return
-    setReviewingCOId(co.id)
-    try {
-      const { data: claimed, error: claimErr } = await supabase.from('prime_change_orders')
-        .update({ status: 'rejected', budget_applied: false }).eq('id', co.id).eq('status', co.status).select('id, budget_applied')
-      if (claimErr) { alert('Reject failed: ' + claimErr.message); return }
-      if (!claimed || claimed.length === 0) { alert('This change order was already handled. Refreshing.'); return }
-      if (reverse) {
-        const err = await applyCODeltas(deltas, -1)
-        if (err) {
-          await supabase.from('prime_change_orders').update({ status: co.status, budget_applied: true }).eq('id', co.id)
-          alert('Reject failed — budget not reversed: ' + err)
-        }
-      }
-    } finally {
-      await Promise.all([loadChangeOrders(), loadBudget()])
-      setReviewingCOId(null)
-    }
+    await reviewPrimeCO(co, { action: 'reject' }, reverse ? 'Reject failed — budget not reversed' : 'Reject failed')
   }
 
   // Sub change orders: same review as the commercial page (status from pending only;
@@ -2658,7 +2613,7 @@ function ResidentialJobDetailInner() {
                 changeOrders.map(co => {
                   const lines = coBudgetDeltas(co).map(d => budgetItems.find(b => b.id === d.budget_item_id)).filter(Boolean)
                   const needsLine = co.status === 'pending' && lines.length === 0
-                  const busy = reviewingCOId === co.id
+                  const busy = reviewingCOId === co.id || inPreview
                   return (
                   <div key={co.id} style={{ padding: '14px 0', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
@@ -2687,13 +2642,13 @@ function ResidentialJobDetailInner() {
                             {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
                           </select>
                         )}
-                        <button style={s.btnGreen} disabled={busy || (needsLine && !coLinePick[co.id])} onClick={() => approveCO(co)}>{busy ? '…' : 'Approve'}</button>
+                        <button style={s.btnGreen} disabled={busy || (needsLine && !coLinePick[co.id])} onClick={() => approveCO(co)}>{reviewingCOId === co.id ? '…' : 'Approve'}</button>
                         <button style={s.btnRed} disabled={busy} onClick={() => rejectCO(co)}>Reject</button>
                       </div>
                     )}
                     {co.status === 'approved' && co.budget_applied && atLeastPM(profile?.role) && (
                       <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={busy} onClick={() => rejectCO(co)}>{busy ? '…' : 'Reject & reverse budget'}</button>
+                        <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={busy} onClick={() => rejectCO(co)}>{reviewingCOId === co.id ? '…' : 'Reject & reverse budget'}</button>
                       </div>
                     )}
                   </div>
@@ -2798,6 +2753,7 @@ function ResidentialJobDetailInner() {
                                 : b.status === 'approved' ? <span style={s.badge('gray')}>NO WAIVER YET</span> : null}
                               {b.lien_waiver_received && <span style={s.badge('green')}>WAIVER RECEIVED</span>}
                               {b.paid_at && <span style={s.badge('blue')}>PAID {new Date(b.paid_at).toLocaleDateString()}</span>}
+                              {!b.paid_at && billingPaymentSummary(b).partial && <span style={s.badge('amber')}>PARTIAL ${billingPaymentSummary(b).paid.toLocaleString()} · ${billingPaymentSummary(b).remaining.toLocaleString()} left</span>}
                             </div>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -3608,6 +3564,10 @@ function ResidentialJobDetailInner() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}><strong>{r.title}</strong><span style={s.badge(r.status === 'open' ? 'orange' : 'gray')}>{r.status}</span></div>
                       {r.description && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.description}</div>}
                       {r.response && <div style={{ color: '#15803d', whiteSpace: 'pre-wrap' }}>Response: {r.response}</div>}
+                      <button type="button" onClick={() => setOpenRfiThread(openRfiThread === r.id ? null : r.id)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '12px', padding: '4px 0 0' }}>
+                        {openRfiThread === r.id ? 'Hide owner comments ▲' : 'Owner comments ▼'}
+                      </button>
+                      {openRfiThread === r.id && <RfiCommentThread rfiId={r.id} readOnly={inPreview} />}
                     </div>
                   ))}
                 </div>

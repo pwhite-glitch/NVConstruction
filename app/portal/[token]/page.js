@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
+import { openCustomerDoc } from '../../../lib/portal-openers'
 
 const STAGE_LABELS = {
   lead: 'In Review',
@@ -405,26 +406,15 @@ export default function CustomerPortalPage() {
     load()
   }, [token])
 
-  const handleDownload = useCallback(async (doc) => {
+  // Tap-safe: openCustomerDoc → openFile reserves the window synchronously in this
+  // click turn; the signed URL is fetched inside the getter (window closed on failure,
+  // current-tab fallback if the popup is blocked).
+  const handleDownload = useCallback((doc) => {
     if (downloadingDoc === doc.id) return
     setDownloadingDoc(doc.id)
-    try {
-      const res = await fetch(
-        `/api/customer-portal?token=${encodeURIComponent(token)}&doc_id=${encodeURIComponent(doc.id)}`
-      )
-      if (!res.ok) {
-        alert('Unable to download this file. Please contact your project team.')
-        return
-      }
-      const json = await res.json()
-      if (json.url) {
-        window.open(json.url, '_blank', 'noopener,noreferrer')
-      }
-    } catch {
-      alert('Download failed. Please try again.')
-    } finally {
-      setDownloadingDoc(null)
-    }
+    return openCustomerDoc(fetch, token, doc.id)
+      .then(r => { if (!r.ok) alert(r.error) })
+      .finally(() => setDownloadingDoc(null))
   }, [token, downloadingDoc])
 
   const handleSendQuestion = useCallback(async (e) => {

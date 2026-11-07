@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { verifyCronSecret } from '../../../lib/server-auth'
 import { todayCentral } from '../../../lib/central-date'
 import { mondayOf } from '../../../lib/lookahead-dates'
+import { getSiteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -52,7 +53,7 @@ export async function GET(request) {
       if (logs?.length > 0) continue
 
       const vehicleName = [v.year, v.make, v.model].filter(Boolean).join(' ') || v.name || 'your vehicle'
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nvim.co'
+      const baseUrl = getSiteUrl()
       const portalPath = profile?.role === 'apm' ? '/dashboard' : '/field'
       const portalLabel = profile?.role === 'apm' ? 'My Vehicle tab in the dashboard' : 'Vehicles → Weekly Miles in the field portal'
 

@@ -232,6 +232,7 @@ export default function LinkToJobPanel({ estimateId, getBase, dirty, postToJob, 
             <p style={st.note}>
               {p.new_lines.length} line(s): {fmt$(p.new_lines.reduce((a, l) => a + l.budget_amount, 0))} cost (budget),{' '}
               {fmt$(p.new_lines.reduce((a, l) => a + l.owner_amount, 0))} price (owner amount). Estimate total {fmt$(p.estimate_total)}.
+              {p.new_lines.some(l => /^Sales tax \(/.test(l.description)) && ' Includes one sales-tax line (tax on raw cost, at cost, not marked up).'}
             </p>
           </div>
 

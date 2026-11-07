@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { verifyCronSecret } from '../../../lib/server-auth'
+import { getSiteUrl } from '../../../lib/site-url'
 
-const logoSrc = () => `${process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'}/logo.png`
+const logoSrc = () => `${getSiteUrl()}/logo.png`
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,7 +16,7 @@ export async function GET(request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://nv-construction-doym.vercel.app'
+  const siteUrl = getSiteUrl()
   const logo = logoSrc()
 
   const reminderDate = new Date()

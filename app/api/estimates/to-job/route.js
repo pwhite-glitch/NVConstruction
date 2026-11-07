@@ -38,6 +38,10 @@ function rpcErrorResponse(error) {
   if (error?.code === 'PGRST202' || /could not find the function/i.test(msg)) {
     return json({ error: 'Database migration 039_estimate_to_job.sql has not been applied yet.', code: 'migration_missing' }, 500)
   }
+  // A unique index on jobs.job_number (if the live DB has one) rejects reuse.
+  if (error?.code === '23505' && /job_number/i.test(`${msg} ${error?.details || ''}`)) {
+    return json({ error: 'That job number already exists. Choose a different number.', code: 'duplicate_job_number' }, 409)
+  }
   return json({ error: msg }, 500)
 }
 

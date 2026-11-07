@@ -4,6 +4,9 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import { atLeastPM } from '../../../lib/roles'
 import { jobHref } from '../../../lib/job-links'
+import JobNumberHint from '../../components/JobNumberHint'
+import { useJobNumbers, confirmJobNumberFree } from '../../../lib/use-job-numbers'
+import { jobNumberSaveError } from '../../../lib/job-numbers'
 
 // ── Section definitions ───────────────────────────────────────────────────────
 
@@ -1436,6 +1439,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
   const [showConvert, setShowConvert] = useState(false)
   const [jobType, setJobType] = useState('commercial')
   const [cvtForm, setCvtForm] = useState({ job_number: '', start_date: '', contract_value: '', pm_email: profile?.email || '' })
+  const jobNums = useJobNumbers()
   const [converting, setConverting] = useState(false)
   const [cvtErr, setCvtErr] = useState('')
   const [linkedJob, setLinkedJob] = useState(null)
@@ -1472,6 +1476,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
       setCvtErr('A job linked to this bid package already exists.')
       return
     }
+    if (!(await confirmJobNumberFree(cvtForm.job_number))) return
 
     setConverting(true); setCvtErr('')
     try {
@@ -1497,7 +1502,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
       }
 
       const { data: job, error: jobErr } = await supabase.from('jobs').insert(jobFields).select('id').single()
-      if (jobErr) throw jobErr
+      if (jobErr) throw new Error(jobNumberSaveError(jobErr, cvtForm.job_number))
 
       // Copy scope items as budget items
       if (scopeItems.length > 0) {
@@ -1579,7 +1584,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
           )}
 
           {!showConvert ? (
-            <button style={s.btnPri} onClick={() => setShowConvert(true)}>Convert to Job →</button>
+            <button style={s.btnPri} onClick={() => { setShowConvert(true); jobNums.seed('convert', jobType, setCvtForm) }}>Convert to Job →</button>
           ) : (
             <>
               <div style={{ marginBottom: '1rem' }}>
@@ -1587,7 +1592,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
                 <div style={{ display: 'flex', gap: '12px' }}>
                   {[['commercial','Commercial'],['residential','Residential']].map(([val, lbl]) => (
                     <label key={val} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: jobType === val ? '600' : '400' }}>
-                      <input type="radio" name="jobType" value={val} checked={jobType === val} onChange={() => setJobType(val)} />
+                      <input type="radio" name="jobType" value={val} checked={jobType === val} onChange={() => { setJobType(val); jobNums.seed('convert', val, setCvtForm) }} />
                       {lbl}
                     </label>
                   ))}
@@ -1604,6 +1609,7 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
                   <div key={f.key}>
                     <label style={s.sectionLabel}>{f.label}</label>
                     <input value={cvtForm[f.key]} onChange={e => setCvtForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder || ''} type={f.type || 'text'} style={s.input} />
+                    {f.key === 'job_number' && <JobNumberHint jn={jobNums} value={cvtForm.job_number} />}
                   </div>
                 ))}
               </div>

@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 import { getSubContracts } from '../../../lib/sub-access'
-import { cleanActivity, validateActivity, writeWithFallback, droppedWarning, missingColumn } from '../../../lib/lookahead-fields'
+import { cleanActivity, validateActivity, writeWithFallback, droppedWarning, missingColumn, activityLockError } from '../../../lib/lookahead-fields'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,6 +16,21 @@ async function denyActivity(auth, id) {
   if (error) return Response.json({ error: error.message }, { status: 500 })
   if (!data) return Response.json({ error: 'Not found.' }, { status: 404 })
   return denyJobOf(adminSupabase, auth, 'lookaheads', data.lookahead_id)
+}
+
+// The parent lookahead's stage decides whether activities can change (activityLockError).
+// Returns a Response to send back, or null. Fails closed on lookup errors.
+async function stageLock(auth, lookaheadId, fields = null) {
+  const { data: la, error } = await adminSupabase.from('lookaheads').select('id, status').eq('id', lookaheadId).maybeSingle()
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  const bad = activityLockError(la, auth.role, fields)
+  return bad ? Response.json({ error: bad.error }, { status: bad.status }) : null
+}
+async function parentOf(id) {
+  const { data, error } = await adminSupabase.from('lookahead_activities').select('id, lookahead_id').eq('id', id).maybeSingle()
+  if (error) return { error: Response.json({ error: error.message }, { status: 500 }) }
+  if (!data) return { error: Response.json({ error: 'Not found.' }, { status: 404 }) }
+  return { lookaheadId: data.lookahead_id }
 }
 
 // GET ?from&to — activities on the caller's subcontracts (sub portal Upcoming Work).
@@ -75,6 +90,8 @@ export async function POST(request) {
     if (!body.lookahead_id) return Response.json({ error: 'lookahead_id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'lookaheads', body.lookahead_id)
     if (denied) return denied
+    const locked = await stageLock(auth, body.lookahead_id)
+    if (locked) return locked
     const problem = validateActivity(body)
     if (problem) return Response.json({ error: problem }, { status: 400 })
     const { data, error, dropped } = await writeWithFallback(
@@ -97,6 +114,10 @@ export async function PUT(request) {
     if (denied) return denied
     const fields = cleanActivity(raw)
     delete fields.lookahead_id
+    const { lookaheadId, error: pErr } = await parentOf(id)
+    if (pErr) return pErr
+    const locked = await stageLock(auth, lookaheadId, fields)
+    if (locked) return locked
     // An end date sent without a start is checked against the stored start
     if (fields.end_date && !('planned_date' in fields)) {
       const { data: cur } = await adminSupabase.from('lookahead_activities').select('planned_date').eq('id', id).maybeSingle()
@@ -121,6 +142,10 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyActivity(auth, id)
     if (denied) return denied
+    const { lookaheadId, error: pErr } = await parentOf(id)
+    if (pErr) return pErr
+    const locked = await stageLock(auth, lookaheadId)
+    if (locked) return locked
     const { error } = await adminSupabase.from('lookahead_activities').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { DC_APPROVER_ROLES, buildApprovalQueue, budgetLinesByJob } from '../../../lib/direct-cost-queue'
-import { jobAccessError, budgetLineError, accessibleJobIds } from '../../../lib/dc-guards'
+import { jobAccessError, budgetLineError, accessibleJobIds, dcBilledLinkError } from '../../../lib/dc-guards'
 import { isJobLimited, denyJob, denyJobs, denyJobOf } from '../../../lib/roles'
 
 const adminSupabase = createClient(
@@ -178,15 +178,33 @@ async function moveBlockedBy(cost) {
   return null
 }
 
-// PUT: update a direct cost by id
-// Used for budget line assignment, job moves, and draw application linkage.
-// Status transitions (approve/reject/resubmit) should go through /api/dc-review.
+// Fields PUT may change. Everything else is refused (400) so raw fields can't skip the
+// review guards: status / amount go through /api/dc-review, draw tagging through
+// /api/draw-requests (add_dc_ids / remove_dc_ids), pay-app draws through /api/aia-draw.
+const DC_PUT_FIELDS = new Set(['job_id', 'budget_item_id'])
+const DC_PUT_ROUTED = {
+  draw_request_id: 'Add or remove draw requests from the Draws tab (/api/draw-requests).',
+  drawn_application_id: 'Draw or undo on the owner pay app (/api/aia-draw).',
+  drawn_at: 'Draw or undo on the owner pay app (/api/aia-draw).',
+  status: 'Approve / reject / reopen through the review actions (/api/dc-review).',
+  amount: 'Edit the amount through Review / Edit (/api/dc-review).',
+}
+
+// PUT { id, budget_item_id? , job_id? }
+// Used for budget line assignment and job moves only.
 export async function PUT(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const { id, ...fields } = await request.json()
+    const { id, ...raw } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+    for (const k of Object.keys(raw)) {
+      if (DC_PUT_FIELDS.has(k)) continue
+      return Response.json({ error: `"${k}" can't be changed here. ${DC_PUT_ROUTED[k] || ''}`.trim() }, { status: 400 })
+    }
+    const fields = {}
+    for (const k of DC_PUT_FIELDS) if (k in raw) fields[k] = raw[k]
+    if (!Object.keys(fields).length) return Response.json({ error: 'Nothing to update' }, { status: 400 })
 
     const { data: cost, error: fetchErr } = await adminSupabase.from('direct_costs')
       .select('id, job_id, budget_item_id, draw_request_id, drawn_application_id, billing_route').eq('id', id).maybeSingle()
@@ -199,7 +217,8 @@ export async function PUT(request) {
     // Job moves (job detail "Move to job") need access to the target job too, and must not
     // carry the old job's budget line along.
     const targetJob = fields.job_id ?? cost.job_id
-    if (targetJob !== cost.job_id) {
+    const moving = targetJob !== cost.job_id
+    if (moving) {
       const deniedTarget = await jobAccessError(adminSupabase, auth, targetJob)
       if (deniedTarget) return Response.json({ error: deniedTarget.error }, { status: deniedTarget.status })
       if (fields.budget_item_id === undefined && cost.budget_item_id) {
@@ -207,8 +226,12 @@ export async function PUT(request) {
       }
       const moveBlock = await moveBlockedBy(cost)
       if (moveBlock) return Response.json({ error: moveBlock.error }, { status: moveBlock.status })
-      // On an open draw of the old job: the move takes it off that draw.
+      // On an open draw of the old job: the move takes it off that draw (unchanged behaviour).
       if (cost.draw_request_id) fields.draw_request_id = null
+    } else if ('budget_item_id' in fields && (fields.budget_item_id || null) !== (cost.budget_item_id || null)) {
+      // Changing the budget line of a billed cost would move its dollars between G703 lines.
+      const billed = await dcBilledLinkError(adminSupabase, cost)
+      if (billed) return Response.json({ error: billed.error }, { status: billed.status })
     }
     if (fields.budget_item_id === '') fields.budget_item_id = null
     if (fields.budget_item_id) {
@@ -216,8 +239,12 @@ export async function PUT(request) {
       if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
     }
 
-    const { error } = await adminSupabase.from('direct_costs').update(fields).eq('id', id)
+    // Only lands if the job and draw / pay-app links are still what we checked.
+    let q = adminSupabase.from('direct_costs').update(fields).eq('id', id).eq('job_id', cost.job_id).is('drawn_application_id', null)
+    q = cost.draw_request_id ? q.eq('draw_request_id', cost.draw_request_id) : q.is('draw_request_id', null)
+    const { data: rows, error } = await q.select('id')
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows?.length) return Response.json({ error: 'This cost changed (job, draw or pay app link) since you loaded it. Nothing was saved. Refresh and try again.' }, { status: 409 })
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
@@ -234,8 +261,17 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'direct_costs', id)
     if (denied) return denied
-    const { error } = await adminSupabase.from('direct_costs').delete().eq('id', id)
+    const { data: cost, error: fetchErr } = await adminSupabase.from('direct_costs')
+      .select('id, job_id, draw_request_id, drawn_application_id').eq('id', id).maybeSingle()
+    if (fetchErr) return Response.json({ error: fetchErr.message }, { status: 500 })
+    if (!cost) return Response.json({ error: 'Cost not found' }, { status: 404 })
+    // A billed cost can't disappear out of a draw / pay app / invoice total.
+    const billed = await dcBilledLinkError(adminSupabase, cost)
+    if (billed) return Response.json({ error: billed.error }, { status: billed.status })
+    const { data: rows, error } = await adminSupabase.from('direct_costs').delete().eq('id', id)
+      .is('draw_request_id', null).is('drawn_application_id', null).select('id')
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows?.length) return Response.json({ error: 'This cost was put on a draw or pay app since you loaded it. Nothing was deleted. Refresh and try again.' }, { status: 409 })
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

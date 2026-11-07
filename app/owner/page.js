@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { isBeforeTodayCentral } from '../../lib/central-date'
+import { coNumberLabel } from '../../lib/co-number'
 
 const s = {
   root: { display: 'flex', minHeight: '100vh', background: '#f4f6f8', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -182,7 +183,12 @@ export default function OwnerPortal() {
 
     const [cosRes, rfisRes, aiaRes, drawRes, milestonesRes] = await Promise.all([
       // Owner (prime) change orders, not the sub change_orders table
-      supabase.from('prime_change_orders').select('id, description, amount, status, created_at').eq('job_id', jobId).order('created_at', { ascending: true }),
+      // co_number is PROPOSED (migration 045). Until it is applied that select fails, so fall
+      // back to the old columns: COs still show, labelled "Legacy CO <id>" (never by position).
+      supabase.from('prime_change_orders').select('id, co_number, description, amount, status, created_at').eq('job_id', jobId).order('created_at', { ascending: true })
+        .then(r => (r.error && /co_number/.test(r.error.message || '')
+          ? supabase.from('prime_change_orders').select('id, description, amount, status, created_at').eq('job_id', jobId).order('created_at', { ascending: true })
+          : r)),
       supabase.from('rfis').select('*').eq('job_id', jobId).order('created_at', { ascending: false }),
       supabase.from('aia_applications').select('*').eq('job_id', jobId).order('app_number', { ascending: true }),
       // Never drafts. Needs the owner SELECT policy from migration 042; until then this returns nothing.
@@ -190,9 +196,9 @@ export default function OwnerPortal() {
       supabase.from('milestones').select('*').eq('job_id', jobId).order('due_date', { ascending: true }),
     ])
 
-    // Numbered in the order they were written (same as the PCO # on the job page),
-    // then only approved and pending are shown to the owner.
-    setChangeOrders((cosRes.data || []).map((co, i) => ({ ...co, co_number: i + 1 })).filter(co => co.status === 'approved' || co.status === 'pending' || !co.status))
+    // The stored CO number (same label as the job page prints / emails); only approved and
+    // pending are shown to the owner. Filtering never renumbers anything.
+    setChangeOrders((cosRes.data || []).filter(co => co.status === 'approved' || co.status === 'pending' || !co.status))
     const rfiList = rfisRes.data || []
     setRfis(rfiList)
     setAiaApps(aiaRes.data || [])
@@ -504,7 +510,7 @@ export default function OwnerPortal() {
                             <tbody>
                               {changeOrders.map(co => (
                                 <tr key={co.id}>
-                                  <td style={s.td}>{co.co_number || co.number || '—'}</td>
+                                  <td style={s.td}>{coNumberLabel(co, 'prime')}</td>
                                   <td style={s.td}>{co.description || co.title || '—'}</td>
                                   <td style={{ ...s.td, fontVariantNumeric: 'tabular-nums', color: Number(co.amount) >= 0 ? '#4ade80' : '#f87171' }}>
                                     {Number(co.amount) >= 0 ? '+' : ''}{fmt(co.amount)}

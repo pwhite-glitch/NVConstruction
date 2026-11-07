@@ -58,6 +58,7 @@ export async function POST(request) {
     if (!toCreate.length) return Response.json({ lines: [] })
 
     const newLines = []
+    const errors = []
     for (const co of toCreate) {
       const maxSort = existingLines
         .filter(l => l.subcontract_id === co.subcontract_id)
@@ -68,10 +69,13 @@ export async function POST(request) {
       if (!error && newLine) {
         newLines.push(newLine)
         existingLines.push(newLine)
+      } else if (error) {
+        errors.push(`${co.description}: ${error.message}`)
       }
     }
 
-    return Response.json({ lines: newLines })
+    // errors: CO lines that could not be added (the caller shows them; nothing is hidden)
+    return Response.json({ lines: newLines, ...(errors.length ? { errors } : {}) })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

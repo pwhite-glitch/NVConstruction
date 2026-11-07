@@ -5,6 +5,8 @@ import { createClient } from '@supabase/supabase-js'
 import { atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { todayCentral } from '../../lib/central-date'
 import { openFile } from '../../lib/open-file'
+import { dcBilledLockReason } from '../../lib/dc-guards'
+import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
 import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, applyDelta } from '../../lib/residential-money'
 
 const supabase = createClient(
@@ -461,7 +463,7 @@ function ResidentialJobDetailInner() {
     if (!Number.isFinite(amount)) { setCOMsg('Error: amount must be a number'); setAddingCO(false); return }
     const { data: { session: coSession } } = await supabase.auth.getSession()
     const lineId = newCO.budget_item_id || null
-    const { error } = await supabase.from('prime_change_orders').insert({
+    const { data: insertedCO, error } = await supabase.from('prime_change_orders').insert({
       job_id: id,
       description: newCO.description,
       amount,
@@ -470,9 +472,11 @@ function ResidentialJobDetailInner() {
       budget_item_id: lineId,
       sov: lineId ? [{ budget_item_id: lineId, amount, description: newCO.description }] : null,
       created_by: coSession?.user?.id || null,
-    })
+    }).select('*').single() // co_number is assigned by the database (migration 045)
     if (error) { setCOMsg('Error: ' + error.message) }
     else {
+      const missing = coNumberMissingMessage(insertedCO)
+      if (missing) setCOMsg(missing)
       await loadChangeOrders()
       setNewCO({ description: '', amount: '', notes: '', budget_item_id: '' })
       setShowAddCO(false)
@@ -713,23 +717,35 @@ function ResidentialJobDetailInner() {
     await loadBillingSubmissions()
   }
 
+  // Draw tagging goes through /api/draw-requests, which checks the draw is open, on this job,
+  // and the cost is approved and not on another draw.
+  async function patchDrawItems(drawId, items) {
+    try {
+      const res = await fetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: drawId, ...items }) })
+      const j = await res.json().catch(() => ({}))
+      return (!res.ok || j.error) ? (j.error || `server returned ${res.status}`) : null
+    } catch (e) {
+      return e.message || 'network error'
+    }
+  }
+
   async function saveDrawCosts(drawId) {
     setSavingDrawCosts(true)
     try {
-      await Promise.all(drawAddCostIds.map(costId =>
-        fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: drawId }) })
-      ))
+      const err = await patchDrawItems(drawId, { add_dc_ids: drawAddCostIds })
+      if (err) alert('Costs were not added to the draw: ' + err)
+      else setDrawAddCostIds([])
       await Promise.all([loadDrawRequests(), loadDirectCosts()])
-      setDrawAddCostIds([])
-    } catch {
-      alert('Failed to save costs to draw. Please try again.')
     } finally {
       setSavingDrawCosts(false)
     }
   }
 
   async function removeCostFromDraw(costId) {
-    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, draw_request_id: null }) })
+    const cost = directCosts.find(c => c.id === costId)
+    if (!cost?.draw_request_id) return
+    const err = await patchDrawItems(cost.draw_request_id, { remove_dc_ids: [costId] })
+    if (err) alert('Could not take the cost off the draw: ' + err)
     await Promise.all([loadDrawRequests(), loadDirectCosts()])
   }
 
@@ -1839,7 +1855,8 @@ function ResidentialJobDetailInner() {
                             {c.receipt_url && (
                               <button style={s.btnSmGray} onClick={() => openDCReceipt(c.receipt_url)}>Receipt</button>
                             )}
-                            <button style={s.btnSmGray} onClick={() => { setEditingCostId(editingCostId === c.id ? null : c.id); setEditCostForm({ cost_date: c.cost_date || '', description: c.description || '', category: c.category || 'Materials', amount: c.amount || '', notes: c.notes || '', budget_item_id: c.budget_item_id || '' }) }}>Edit</button>
+                            {dcBilledLockReason(c) && <span title={dcBilledLockReason(c)} style={{ fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>🔒 Billed</span>}
+                            <button style={{ ...s.btnSmGray, ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={!!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => { setEditingCostId(editingCostId === c.id ? null : c.id); setEditCostForm({ cost_date: c.cost_date || '', description: c.description || '', category: c.category || 'Materials', amount: c.amount || '', notes: c.notes || '', budget_item_id: c.budget_item_id || '' }) }}>Edit</button>
                             {!c.budget_item_id && (
                               <select style={{ ...s.select, width: '160px', fontSize: '12px', padding: '4px 8px' }} defaultValue="" onChange={e => assignDCBudgetItem(c.id, e.target.value)}>
                                 <option value="">Assign budget line</option>
@@ -1858,15 +1875,15 @@ function ResidentialJobDetailInner() {
                               </div>
                             )}
                             {c.status === 'approved' && atLeastPM(profile?.role) && (
-                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={updatingCostId === c.id} onClick={() => unapproveCost(c.id)}>Unapprove</button>
+                              <button style={{ ...s.btnSmGray, color: '#dc2626', ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={updatingCostId === c.id || !!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => unapproveCost(c.id)}>Unapprove</button>
                             )}
                             {c.status === 'rejected' && ['principal', 'pm', 'apm', 'admin'].includes(profile?.role) && (
-                              <button style={{ ...s.btnSmGray, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d' }} disabled={updatingCostId === c.id} onClick={() => unrejectCost(c.id)}>
+                              <button style={{ ...s.btnSmGray, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={updatingCostId === c.id || !!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => unrejectCost(c.id)}>
                                 {updatingCostId === c.id ? '...' : 'Undo reject'}
                               </button>
                             )}
                             {atLeastPM(profile?.role) && (
-                              <button style={{ ...s.btnSmGray, color: '#dc2626' }} disabled={updatingCostId === c.id} onClick={() => { if (confirm('Delete this cost?')) deleteCost(c.id) }}>Delete</button>
+                              <button style={{ ...s.btnSmGray, color: '#dc2626', ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={updatingCostId === c.id || !!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => { if (confirm('Delete this cost?')) deleteCost(c.id) }}>Delete</button>
                             )}
                           </div>
                         </div>
@@ -2048,7 +2065,7 @@ function ResidentialJobDetailInner() {
                   <div key={co.id} style={{ padding: '14px 0', borderBottom: '1px solid #e5e7eb' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
-                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>{co.description}</div>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}><span style={{ fontSize: '11px', color: '#6b7280', fontFamily: 'monospace', marginRight: '8px' }}>{coNumberLabel(co, 'prime')}</span>{co.description}</div>
                         {co.notes && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px' }}>{co.notes}</div>}
                         <div style={{ fontSize: '12px', color: '#9ca3af' }}>
                           {co.created_at ? new Date(co.created_at).toLocaleDateString() : ''}

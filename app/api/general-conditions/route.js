@@ -2,11 +2,22 @@ import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { todayCentral } from '../../../lib/central-date'
 import { denyJob, denyJobOf } from '../../../lib/roles'
+import { drawTargetError, gcEditLockError, gcDeleteLockError } from '../../../lib/draw-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
+
+// The budget line must exist and be on this job. Null when OK, else a Response.
+async function badBudgetLine(budgetItemId, jobId) {
+  if (!budgetItemId) return null
+  const { data, error } = await adminSupabase.from('budget_items').select('id, job_id').eq('id', budgetItemId).maybeSingle()
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (!data) return Response.json({ error: 'That budget line no longer exists. Refresh and pick another.' }, { status: 422 })
+  if (data.job_id !== jobId) return Response.json({ error: 'That budget line belongs to a different job.' }, { status: 422 })
+  return null
+}
 
 // GC attachments live in the 'receipts' bucket (same as direct-cost receipts).
 const GC_DOC_BUCKET = 'receipts'
@@ -86,12 +97,22 @@ export async function POST(request) {
       body = await request.json()
     }
 
-    const { job_id, description, amount, category, entry_date, budget_item_id, notes, created_by, draw_request_id } = body
+    const { job_id, description, amount, category, entry_date, budget_item_id, notes, draw_request_id } = body
     if (!job_id || !description || !amount) {
       return Response.json({ error: 'job_id, description, and amount are required' }, { status: 400 })
     }
+    if (!Number.isFinite(parseFloat(amount))) return Response.json({ error: 'Amount must be a number.' }, { status: 400 })
     const denied = await denyJob(adminSupabase, auth, job_id)
     if (denied) return denied
+    // Draw: must exist, be on this job and be open. Budget line: on this job.
+    if (draw_request_id) {
+      const { data: draw, error: drawErr } = await adminSupabase.from('draw_requests').select('id, job_id, draw_number, status').eq('id', draw_request_id).maybeSingle()
+      if (drawErr) return Response.json({ error: drawErr.message }, { status: 500 })
+      const bad = drawTargetError(draw, job_id)
+      if (bad) return Response.json({ error: bad.error }, { status: bad.status })
+    }
+    const badLine = await badBudgetLine(budget_item_id, job_id)
+    if (badLine) return badLine
     if (file && file.size > 0) {
       doc_url = await uploadGCDoc(file, job_id)
     }
@@ -106,7 +127,7 @@ export async function POST(request) {
         entry_date: entry_date || todayCentral(),
         budget_item_id: budget_item_id || null,
         notes: notes || null,
-        created_by: created_by || null,
+        created_by: auth.userId || null, // session, never the request body
         draw_request_id: draw_request_id || null,
         drawn_at: draw_request_id ? new Date().toISOString() : null,
         doc_url,
@@ -143,13 +164,30 @@ export async function PUT(request) {
     // Load the entry's own job_id; never trust a job_id from the request for access or the storage path.
     const { data: existing, error: loadErr } = await adminSupabase
       .from('general_conditions')
-      .select('id, job_id')
+      .select('id, job_id, draw_request_id, amount, description, budget_item_id, entry_date')
       .eq('id', id)
       .maybeSingle()
     if (loadErr) return Response.json({ error: loadErr.message }, { status: 500 })
     if (!existing) return Response.json({ error: 'Not found.' }, { status: 404 })
     const denied = await denyJob(adminSupabase, auth, existing.job_id)
     if (denied) return denied
+
+    // Tagging / untagging only through /api/draw-requests (add_gc_ids / remove_gc_ids), which
+    // checks the draw is open. A forged draw_request_id: null / drawn_at: null is refused here.
+    const drawChange = (fields.draw_request_id !== undefined && (fields.draw_request_id || null) !== (existing.draw_request_id || null))
+      || (fields.drawn_at !== undefined && (fields.drawn_at || null) === null && existing.draw_request_id)
+    if (drawChange) {
+      return Response.json({ error: 'Add to or take off a draw from the Draws tab, not by editing the entry.' }, { status: 409 })
+    }
+    const locked = gcEditLockError(existing, fields)
+    if (locked) return Response.json({ error: locked.error }, { status: locked.status })
+    if (fields.amount !== undefined && !Number.isFinite(parseFloat(fields.amount))) {
+      return Response.json({ error: 'Amount must be a number.' }, { status: 400 })
+    }
+    if (fields.budget_item_id) {
+      const badLine = await badBudgetLine(fields.budget_item_id, existing.job_id)
+      if (badLine) return badLine
+    }
     if (file && file.size > 0) {
       doc_url = await uploadGCDoc(file, existing.job_id)
     }
@@ -161,12 +199,16 @@ export async function PUT(request) {
     if (fields.entry_date !== undefined) updates.entry_date = fields.entry_date
     if (fields.budget_item_id !== undefined) updates.budget_item_id = fields.budget_item_id || null
     if (fields.notes !== undefined) updates.notes = fields.notes || null
-    if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
-    if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
     if (doc_url !== undefined) updates.doc_url = doc_url
+    if (!Object.keys(updates).length) return Response.json({ ok: true })
 
-    const { error } = await adminSupabase.from('general_conditions').update(updates).eq('id', id)
+    // Only lands if the draw tag is still what we checked (a tag added meanwhile can't be
+    // edited around).
+    let q = adminSupabase.from('general_conditions').update(updates).eq('id', id)
+    q = existing.draw_request_id ? q.eq('draw_request_id', existing.draw_request_id) : q.is('draw_request_id', null)
+    const { data: rows, error } = await q.select('id')
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows?.length) return Response.json({ error: 'This entry was put on or taken off a draw since you opened it. Nothing was saved. Refresh and try again.' }, { status: 409 })
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
@@ -181,8 +223,14 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'general_conditions', id)
     if (denied) return denied
-    const { error } = await adminSupabase.from('general_conditions').delete().eq('id', id)
+    const { data: entry, error: loadErr } = await adminSupabase.from('general_conditions').select('id, job_id, draw_request_id').eq('id', id).maybeSingle()
+    if (loadErr) return Response.json({ error: loadErr.message }, { status: 500 })
+    if (!entry) return Response.json({ error: 'Not found.' }, { status: 404 })
+    const locked = gcDeleteLockError(entry)
+    if (locked) return Response.json({ error: locked.error }, { status: locked.status })
+    const { data: rows, error } = await adminSupabase.from('general_conditions').delete().eq('id', id).is('draw_request_id', null).select('id')
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows?.length) return Response.json({ error: 'This entry was put on a draw since you loaded it. Nothing was deleted.' }, { status: 409 })
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

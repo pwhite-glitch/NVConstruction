@@ -23,7 +23,7 @@ function mockQuery(table) {
       const hit = rows()
       mockUpdates.push({ table, ids: hit.map(r => r.id), payload })
       hit.forEach(r => Object.assign(r, payload))
-      return { data: null, error: null }
+      return { data: hit.map(r => ({ id: r.id })), error: null }
     }
     return { data: rows(), error: null }
   }
@@ -32,6 +32,7 @@ function mockQuery(table) {
     order: () => q,
     limit: () => q,
     eq: (c, v) => { filters.push(r => r[c] === v); return q },
+    is: (c, v) => { filters.push(r => (r[c] ?? null) === v); return q },
     ilike: (c, v) => { filters.push(r => String(r[c] ?? '').toLowerCase() === String(v).toLowerCase()); return q },
     update: p => { op = 'update'; payload = p; return q },
     maybeSingle: () => Promise.resolve(run()).then(r => ({ ...r, data: r.data?.[0] ?? null })),

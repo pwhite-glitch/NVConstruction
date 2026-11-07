@@ -4,7 +4,8 @@ import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
-import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock } from '../../../lib/billing-fields'
+import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock, billingDrawLockError } from '../../../lib/billing-fields'
+import { drawTargetError } from '../../../lib/draw-guards'
 import { escapeHtml, emailWrap } from '../../../lib/email'
 
 const adminSupabase = createClient(
@@ -96,6 +97,15 @@ export async function POST(request) {
       const denied = await denyJob(adminSupabase, auth, raw.job_id)
       if (denied) return denied
       row = pickFields(raw, PM_INSERT_FIELDS)
+      // Same rule as sub-portal billing: a draw picked at create must be open and on this job.
+      if (row.draw_request_id) {
+        const { data: draw, error: drawErr } = await adminSupabase.from('draw_requests').select('id, job_id, draw_number, status').eq('id', row.draw_request_id).maybeSingle()
+        if (drawErr) return Response.json({ error: drawErr.message }, { status: 500 })
+        const bad = drawTargetError(draw, raw.job_id)
+        if (bad) return Response.json({ error: bad.error }, { status: bad.status })
+      } else {
+        row.draw_request_id = null
+      }
     } else if (isSub(auth.role)) {
       row = pickFields(raw, SUB_INSERT_FIELDS)
       row.sub_id = auth.userId  // always derive from session
@@ -155,7 +165,7 @@ export async function PATCH(request) {
 
     const { data: current, error: curErr } = await adminSupabase
       .from('billing_submissions')
-      .select('status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id')
+      .select('status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period')
       .eq('id', id)
       .maybeSingle()
 
@@ -197,6 +207,16 @@ export async function PATCH(request) {
       }
       if (current.status === 'approved' && nextStatus !== 'approved') fields.ready_to_pay = false
 
+      // On a draw (open or closed): status, amount, retainage and period are locked on EVERY
+      // PATCH — even when draw_request_id is unchanged or not sent, and even when the same
+      // request also tries to unlink it. Payment recording is not a financial change.
+      if (current.draw_request_id) {
+        const { data: curDraw, error: curDrawErr } = await adminSupabase.from('draw_requests').select('id, job_id, status, draw_number').eq('id', current.draw_request_id).maybeSingle()
+        if (curDrawErr) return Response.json({ error: 'Could not check the draw request: ' + curDrawErr.message }, { status: 500 })
+        const locked = billingDrawLockError(current, curDraw, fields)
+        if (locked) return Response.json({ error: locked.error }, { status: locked.status })
+      }
+
       // Draw link: must be a draw on this job, and a closed draw can't gain or lose items.
       if ('draw_request_id' in fields && (fields.draw_request_id || null) !== (current.draw_request_id || null)) {
         const ids = [fields.draw_request_id, current.draw_request_id].filter(Boolean)
@@ -222,7 +242,10 @@ export async function PATCH(request) {
     const update = doc_url !== undefined ? { ...fields, doc_url } : fields
     if (!Object.keys(update).length) return Response.json({ error: 'Nothing to update' }, { status: 400 })
     // Status changes only apply to the status we read (no double approve / reject).
-    const statusGuard = q => (fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)
+    // ...and only while the draw link is still the one we checked (a billing put on a draw
+    // meanwhile can't have its money changed around the lock).
+    const linkGuard = q => (current.draw_request_id ? q.eq('draw_request_id', current.draw_request_id) : q.is('draw_request_id', null))
+    const statusGuard = q => linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)
     let { data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(update).eq('id', id)).select('id')
     if (error?.message?.includes('schema cache')) {
       ({ data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id)).select('id'))

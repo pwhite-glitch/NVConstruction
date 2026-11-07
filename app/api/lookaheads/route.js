@@ -4,7 +4,7 @@ import { requirePM } from '../../../lib/server-auth'
 import { denyJob, denyJobOf, isJobLimited, accessibleJobIds } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
 import { escapeHtml } from '../../../lib/email'
-import { writeWithFallback, droppedWarning } from '../../../lib/lookahead-fields'
+import { writeWithFallback, droppedWarning, missingColumn, lookaheadTransitionError, activityLockError, LOOKAHEAD_OFFICE_ROLES, RETURN_COLS } from '../../../lib/lookahead-fields'
 import { addDays, mondayOf, planCopyForward } from '../../../lib/lookahead-dates'
 import { jobPmUserIds } from '../../../lib/lookahead-recipients'
 
@@ -13,7 +13,10 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const OFFICE_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
+const OFFICE_ROLES = LOOKAHEAD_OFFICE_ROLES
+const RETURN_MIGRATION = 'Send back needs database migration 045 (return note columns), which is not applied yet. Nothing was changed.'
+const fieldLink = la => `/field?job=${la.job_id}&tab=lookahead&week=${la.week_start_date}`
+const weekLabel = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
 // Lookaheads always start on a Monday; snap any other 'YYYY-MM-DD' to its week's
 // Monday. Anything else is returned as-is.
@@ -66,14 +69,15 @@ export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
-    const { action, job_id, week_start_date: rawWeek, submitted_by, notes } = await request.json()
+    // submitted_by from the body is ignored: a new lookahead is a draft with no submitter yet.
+    const { action, job_id, week_start_date: rawWeek, notes } = await request.json()
     const week_start_date = weekStartOf(rawWeek)
     if (!job_id || !week_start_date) return Response.json({ error: 'job_id and week_start_date required' }, { status: 400 })
     const denied = await denyJob(adminSupabase, auth, job_id)
     if (denied) return denied
     const create = () => adminSupabase
       .from('lookaheads')
-      .insert({ job_id, week_start_date, submitted_by: submitted_by || null, notes: notes || null, status: 'draft' })
+      .insert({ job_id, week_start_date, notes: notes || null, status: 'draft' })
       .select('*, lookahead_activities(*)')
       .single()
 
@@ -99,6 +103,8 @@ export async function POST(request) {
     }
     let warning
     if (rows.length) {
+      const locked = activityLockError(current, auth.role, null)
+      if (locked) return Response.json({ error: locked.error }, { status: locked.status })
       const insertRows = rows.map(r => ({ ...r, lookahead_id: current.id }))
       const { error: insErr, dropped } = await writeWithFallback(
         r => adminSupabase.from('lookahead_activities').insert(r).select('id'), insertRows)
@@ -112,39 +118,73 @@ export async function POST(request) {
   }
 }
 
-// PUT { id, status?, notes? }. submitted: super taps Submit to PM (email + in-portal
-// notification to the job's PMs). approved: PM marks it reviewed (office roles only).
+// PUT { id, status?, notes? } and PUT { id, action: 'return', note }.
+//   status 'submitted' — submit (from draft only; a returned lookahead is a draft). Each
+//     submission gets its own submitted_at, used in the notification dedup key.
+//   status 'approved'  — office review roles only, from submitted only.
+//   action 'return'    — "Send back": office only, from submitted / approved, note required.
+//     Goes back to draft with the note (PROPOSED columns, migration 045), approval and send
+//     flags cleared, and a bell notice to the original submitter.
+//   status 'draft'     — only a no-op on a draft; reviewed lookahead must use Send back.
 export async function PUT(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { id, status, notes } = body
+    const { id, status, notes, action, note } = body
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const denied = await denyJobOf(adminSupabase, auth, 'lookaheads', id)
     if (denied) return denied
-    const updates = {}
-    if (notes !== undefined) updates.notes = notes
-    const now = new Date().toISOString()
-    if (status === 'submitted') {
-      Object.assign(updates, { status: 'submitted', submitted_at: now, submitted_by: auth.userId, submitted_by_name: await userName(auth.userId) })
-    } else if (status === 'approved') {
-      if (!OFFICE_ROLES.has(auth.role)) return Response.json({ error: 'Only the PM can approve a lookahead.' }, { status: 403 })
-      Object.assign(updates, { status: 'approved', approved_at: now, approved_by: auth.userId, approved_by_name: await userName(auth.userId) })
-    } else if (status === 'draft') {
-      updates.status = 'draft'
-    }
-    const { data, error, dropped } = await writeWithFallback(row => adminSupabase
-      .from('lookaheads')
-      .update(row)
-      .eq('id', id)
-      .select('*, jobs(id, job_number, project_name, pm_email), lookahead_activities(*)')
-      .single(), updates)
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    const warning = dropped.length ? 'Saved, but who did this step was not recorded (migration 035 not applied yet).' : undefined
+    const { data: current, error: curErr } = await adminSupabase.from('lookaheads').select('*').eq('id', id).maybeSingle()
+    if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
+    if (!current) return Response.json({ error: 'Lookahead not found.' }, { status: 404 })
 
-    if (status === 'submitted' && data?.jobs) {
-      const weekStr = new Date(data.week_start_date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+    const act = action === 'return' ? 'return'
+      : status === 'submitted' ? 'submit'
+      : status === 'approved' ? 'approve'
+      : status === 'draft' ? 'draft'
+      : status !== undefined || action !== undefined ? 'unknown' : null
+    if (act) {
+      const bad = lookaheadTransitionError(current, act, auth.role, { note })
+      if (bad) return Response.json({ error: bad.error }, { status: bad.status })
+    }
+    const updates = {}
+    if (notes !== undefined) {
+      if (!OFFICE_ROLES.has(auth.role) && (current.status || 'draft') !== 'draft') {
+        return Response.json({ error: 'Notes are locked after the lookahead is submitted.' }, { status: 409 })
+      }
+      updates.notes = notes
+    }
+    const now = new Date().toISOString()
+    const clearReview = { approved_at: null, approved_by: null, approved_by_name: null, sent_to_subs_at: null, sent_to_subs_by: null, sent_to_subs_by_name: null, sent_to_subs_recipients: null }
+    if (act === 'submit') {
+      Object.assign(updates, { status: 'submitted', submitted_at: now, submitted_by: auth.userId, submitted_by_name: await userName(auth.userId) }, clearReview)
+    } else if (act === 'approve') {
+      // The submitter (submitted_by / submitted_by_name) is never replaced by the reviewer.
+      Object.assign(updates, { status: 'approved', approved_at: now, approved_by: auth.userId, approved_by_name: await userName(auth.userId) })
+    } else if (act === 'return') {
+      Object.assign(updates, clearReview, { status: 'draft', returned_at: now, returned_by: auth.userId, returned_by_name: await userName(auth.userId), return_note: String(note).trim() })
+    }
+    if (!Object.keys(updates).length) return Response.json({ data: current })
+
+    // Only from the stage we checked (two people clicking at once can't both win).
+    const { data, error, dropped } = await writeWithFallback(row => {
+      let q = adminSupabase.from('lookaheads').update(row).eq('id', id)
+      q = current.status ? q.eq('status', current.status) : q.is('status', null)
+      return q.select('*, jobs(id, job_number, project_name, pm_email), lookahead_activities(*)').single()
+    }, updates)
+    if (error) {
+      if (act === 'return' && RETURN_COLS.includes(missingColumn(error.message))) {
+        return Response.json({ error: RETURN_MIGRATION, migration_required: '045' }, { status: 503 })
+      }
+      if (error.code === 'PGRST116') return Response.json({ error: 'This lookahead was changed by someone else. Refresh and try again.' }, { status: 409 })
+      return Response.json({ error: error.message }, { status: 500 })
+    }
+    const lost = dropped.filter(c => !(c in clearReview && updates[c] === null))
+    const warning = lost.length ? `Saved, but ${lost.join(', ')} was not recorded (migration ${lost.includes('approved_at') ? '045' : '035'} not applied yet).` : undefined
+
+    if (act === 'submit' && data?.jobs) {
+      const weekStr = weekLabel(data.week_start_date)
       const link = `/jobdetail?id=${data.job_id}&tab=lookahead&week=${data.week_start_date}`
       const pmIds = await jobPmUserIds(data.jobs, auth.userId)
       await Promise.all(pmIds.map(recipient_id => notify({
@@ -156,9 +196,27 @@ export async function PUT(request) {
         job_id: data.job_id,
         entity_type: 'lookahead',
         entity_id: data.id,
-        dedup_key: `lookahead:submitted:${data.id}`,
+        // One key per submission, so a resubmit notifies again even if the last one is unread
+        dedup_key: `lookahead:submitted:${data.id}:${now}`,
       })))
       if (data.jobs.pm_email) await sendSubmittedEmail(data, weekStr)
+    }
+    if ((act === 'approve' || act === 'return') && current.submitted_by && current.submitted_by !== auth.userId) {
+      const weekStr = weekLabel(current.week_start_date)
+      const proj = data?.jobs?.project_name || 'your job'
+      await notify({
+        recipient_id: current.submitted_by,
+        type: act === 'approve' ? 'lookahead_approved' : 'lookahead_returned',
+        title: act === 'approve' ? `Lookahead approved: ${proj}` : `Lookahead sent back: ${proj}`,
+        body: act === 'approve'
+          ? `${updates.approved_by_name || 'The PM'} approved the lookahead for the week of ${weekStr}.`
+          : `${updates.returned_by_name || 'The PM'} sent back the lookahead for the week of ${weekStr}: ${updates.return_note}`,
+        link: fieldLink(current),
+        job_id: current.job_id,
+        entity_type: 'lookahead',
+        entity_id: current.id,
+        dedup_key: `lookahead:${act === 'approve' ? 'approved' : 'returned'}:${current.id}:${now}`,
+      })
     }
     return Response.json({ data, warning })
   } catch (e) {

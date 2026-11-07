@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { Resend } from 'resend'
 import { DC_APPROVER_ROLES as APPROVER_ROLES } from '../../../lib/direct-cost-queue'
-import { jobAccessError, budgetLineError } from '../../../lib/dc-guards'
+import { jobAccessError, budgetLineError, dcBilledLinkError } from '../../../lib/dc-guards'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -40,6 +40,37 @@ async function dcApproveIfPending(updates, cost) {
   }
   if (error) return { error }
   return { rows: data || [] }
+}
+
+// Status / money change that only lands if the row is still exactly what we checked:
+// same status, same job, and still on no draw request and no pay app. Returns
+// { error } or { rows } (rows empty = it changed under us; nothing was written).
+async function dcUpdateIfUnchanged(updates, cost) {
+  const run = u => adminSupabase.from('direct_costs').update(u)
+    .eq('id', cost.id).eq('status', cost.status).eq('job_id', cost.job_id)
+    .is('draw_request_id', null).is('drawn_application_id', null)
+    .select('id')
+  let { data, error } = await run(updates)
+  if (error && error.message && error.message.includes('schema cache')) {
+    const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => !NEW_022_COLS.has(k)))
+    if (Object.keys(safe).length === 0) return { error }
+    ;({ data, error } = await run(safe))
+  }
+  if (error) return { error }
+  return { rows: data || [] }
+}
+
+const STALE = 'This cost changed (status or draw / pay app link) since you loaded it. Nothing was saved. Refresh and try again.'
+
+// Every office action: approver role, on the cost's job, and the cost is not billed.
+// Returns a Response to send back, or null.
+async function officeGuard(auth, cost) {
+  if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  const denied = await jobAccessError(adminSupabase, auth, cost.job_id)
+  if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+  const billed = await dcBilledLinkError(adminSupabase, cost)
+  if (billed) return Response.json({ error: billed.error }, { status: billed.status })
+  return null
 }
 
 const ALREADY_HANDLED = status =>
@@ -92,10 +123,11 @@ export async function POST(request) {
   if (cost.submitted_by) {
     const { data: p } = await adminSupabase
       .from('profiles')
-      .select('id, full_name, email')
+      .select('id, full_name, invite_email')
       .eq('id', cost.submitted_by)
       .maybeSingle()
-    submitterProfile = p
+    // profiles has invite_email (no email column)
+    submitterProfile = p ? { ...p, email: p.invite_email || null } : null
   }
 
   const { data: jobRow } = await adminSupabase
@@ -111,8 +143,8 @@ export async function POST(request) {
   if (action === 'approve') {
     if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
     if (cost.status !== 'pending') return Response.json({ error: ALREADY_HANDLED(cost.status) }, { status: 409 })
-    const denied = await jobAccessError(adminSupabase, auth, cost.job_id)
-    if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+    const blocked = await officeGuard(auth, cost)
+    if (blocked) return blocked
 
     // Optional budget_item_id picked in the approval queue; otherwise the one already on the cost.
     const lineId = fields.budget_item_id || cost.budget_item_id
@@ -132,16 +164,19 @@ export async function POST(request) {
 
   // ── UNAPPROVE ────────────────────────────────────────────────────────────────
   if (action === 'unapprove') {
-    if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    const blocked = await officeGuard(auth, cost)
+    if (blocked) return blocked
     if (cost.status !== 'approved') return Response.json({ error: 'Only approved costs can be unapproved' }, { status: 422 })
-    const error = await dcUpdate({ status: 'pending', reviewed_by: null, reviewed_at: null }, id)
+    const { rows, error } = await dcUpdateIfUnchanged({ status: 'pending', reviewed_by: null, reviewed_at: null }, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows.length) return Response.json({ error: STALE }, { status: 409 })
     return Response.json({ ok: true })
   }
 
   // ── REJECT ───────────────────────────────────────────────────────────────────
   if (action === 'reject') {
-    if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    const blocked = await officeGuard(auth, cost)
+    if (blocked) return blocked
     if (!['pending', 'approved'].includes(cost.status)) {
       return Response.json({ error: 'Only pending or approved costs can be rejected' }, { status: 422 })
     }
@@ -151,7 +186,8 @@ export async function POST(request) {
 
     const newCycle = (cost.review_cycle || 0) + 1
 
-    const upErr = await dcUpdate({
+    // The row is kept (status rejected + reason); nothing is deleted.
+    const { rows: rejRows, error: upErr } = await dcUpdateIfUnchanged({
       status: 'rejected',
       rejection_reason,
       rejected_at: now,
@@ -159,9 +195,10 @@ export async function POST(request) {
       review_cycle: newCycle,
       reviewed_by: auth.userId,
       reviewed_at: now,
-    }, id)
+    }, cost)
 
     if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
+    if (!rejRows.length) return Response.json({ error: STALE }, { status: 409 })
 
     const submitterEmail = submitterProfile?.email
     const submitterName = submitterProfile?.full_name || 'Superintendent'
@@ -225,18 +262,19 @@ export async function POST(request) {
 
   // ── REOPEN (undo reject → pending) ──────────────────────────────────────────
   if (action === 'reopen') {
-    if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    const blocked = await officeGuard(auth, cost)
+    if (blocked) return blocked
     if (cost.status !== 'rejected') return Response.json({ error: 'Only rejected costs can be reopened' }, { status: 422 })
-    const error = await dcUpdate({ status: 'pending', rejection_reason: null, rejected_at: null, rejected_by: null }, id)
+    const { rows, error } = await dcUpdateIfUnchanged({ status: 'pending', rejection_reason: null, rejected_at: null, rejected_by: null }, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows.length) return Response.json({ error: STALE }, { status: 409 })
     return Response.json({ ok: true })
   }
 
   // ── EDIT ─────────────────────────────────────────────────────────────────────
   if (action === 'edit') {
-    if (!APPROVER_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-    const denied = await jobAccessError(adminSupabase, auth, cost.job_id)
-    if (denied) return Response.json({ error: denied.error }, { status: denied.status })
+    const blocked = await officeGuard(auth, cost)
+    if (blocked) return blocked
     if (fields.budget_item_id) {
       const badLine = await budgetLineError(adminSupabase, fields.budget_item_id, cost.job_id)
       if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
@@ -257,8 +295,9 @@ export async function POST(request) {
       updates.amount = parsed
     }
 
-    const error = await dcUpdate(updates, id)
+    const { rows, error } = await dcUpdateIfUnchanged(updates, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows.length) return Response.json({ error: STALE }, { status: 409 })
     return Response.json({ ok: true })
   }
 
@@ -270,6 +309,8 @@ export async function POST(request) {
     if (cost.status !== 'rejected') {
       return Response.json({ error: 'Only rejected costs can be resubmitted' }, { status: 422 })
     }
+    const billed = await dcBilledLinkError(adminSupabase, cost)
+    if (billed) return Response.json({ error: billed.error }, { status: billed.status })
 
     const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes']
     const updates = {
@@ -303,8 +344,9 @@ export async function POST(request) {
       updates.receipt_url = path
     }
 
-    const error = await dcUpdate(updates, id)
+    const { rows, error } = await dcUpdateIfUnchanged(updates, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (!rows.length) return Response.json({ error: STALE }, { status: 409 })
     return Response.json({ ok: true })
   }
 

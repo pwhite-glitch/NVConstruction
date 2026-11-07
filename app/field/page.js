@@ -2763,10 +2763,11 @@ export default function Field() {
                               {copyBtn}
                               <button
                                 onClick={submitLookaheadFromField}
-                                disabled={submittingLA || lookaheadActivities.length === 0}
-                                style={{ padding: '7px 16px', background: submittingLA || lookaheadActivities.length === 0 ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '8px', color: submittingLA || lookaheadActivities.length === 0 ? '#555' : '#fff', fontSize: '13px', fontWeight: '700', cursor: submittingLA || lookaheadActivities.length === 0 ? 'default' : 'pointer' }}
+                                disabled={submittingLA || lookaheadActivities.length === 0 || (lookahead.status && lookahead.status !== 'draft')}
+                                title={lookahead.status === 'submitted' ? 'Waiting for PM review. Activities are locked until the PM approves it or sends it back.' : lookahead.status === 'approved' ? 'Reviewed by the PM. Ask the PM to send it back to change it.' : undefined}
+                                style={{ padding: '7px 16px', background: submittingLA || lookaheadActivities.length === 0 || (lookahead.status && lookahead.status !== 'draft') ? '#2a2a2a' : '#e8590c', border: 'none', borderRadius: '8px', color: submittingLA || lookaheadActivities.length === 0 || (lookahead.status && lookahead.status !== 'draft') ? '#555' : '#fff', fontSize: '13px', fontWeight: '700', cursor: submittingLA || lookaheadActivities.length === 0 || (lookahead.status && lookahead.status !== 'draft') ? 'default' : 'pointer' }}
                               >
-                                {submittingLA ? 'Submitting...' : lookahead.status === 'draft' || !lookahead.status ? 'Submit to PM' : 'Re-submit to PM'}
+                                {submittingLA ? 'Submitting...' : lookahead.status === 'submitted' ? 'Submitted — waiting for PM' : lookahead.status === 'approved' ? 'Reviewed by PM' : lookahead.returned_at ? 'Re-submit to PM' : 'Submit to PM'}
                               </button>
                             </div>
                           </div>

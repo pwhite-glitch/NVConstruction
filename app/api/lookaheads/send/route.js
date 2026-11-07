@@ -4,7 +4,7 @@ import { requirePM } from '../../../../lib/server-auth'
 import { denyJobOf } from '../../../../lib/roles'
 import { notify } from '../../../../lib/notify'
 import { escapeHtml, emailWrap } from '../../../../lib/email'
-import { writeWithFallback, lookaheadStage } from '../../../../lib/lookahead-fields'
+import { writeWithFallback, lookaheadStage, LOOKAHEAD_OFFICE_ROLES } from '../../../../lib/lookahead-fields'
 import { lookaheadDays, activitiesInDays, rangeLabel } from '../../../../lib/lookahead-dates'
 import { lookaheadSubRecipients } from '../../../../lib/lookahead-recipients'
 
@@ -13,7 +13,7 @@ const adminSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const OFFICE_ROLES = new Set(['principal', 'pm', 'apm', 'admin'])
+const OFFICE_ROLES = LOOKAHEAD_OFFICE_ROLES
 
 // The PM's manual "Send to subs". Nothing here runs on its own: GET only shows who
 // would receive it; POST sends, and is only called after the PM confirms that list.
@@ -95,7 +95,9 @@ export async function POST(request) {
             emailed = !mailErr
           } catch {}
         }
+        let noticed = false
         if (p.portal && p.id) {
+          noticed = true
           await notify({
             recipient_id: p.id,
             type: 'lookahead_sent',
@@ -108,19 +110,46 @@ export async function POST(request) {
             dedup_key: `lookahead:sent:${la.id}:${sentAt}`,
           })
         }
-        people.push({ name: p.name, email: p.email, emailed, portal: !!(p.portal && p.id) })
+        people.push({ name: p.name, email: p.email, emailed, portal: noticed, email_failed: !!p.email && !emailed })
       }
       results.push({ vendor_name: sub.vendor_name, activity_count: acts.length, people })
     }
+
+    // Read the delivery results: nothing reached anyone → not a send, nothing recorded.
+    const everyone = results.flatMap(r => r.people)
+    const delivered = everyone.filter(p => p.emailed || p.portal).length
+    const failedEmails = everyone.filter(p => p.email_failed)
+    if (!delivered) {
+      return Response.json({ error: 'Nothing was delivered: every email failed and no sub has a portal login. The lookahead was not marked as sent.', results }, { status: 502 })
+    }
+    const partial = failedEmails.length
+      ? `${failedEmails.length} email${failedEmails.length === 1 ? '' : 's'} failed (${failedEmails.map(p => p.email).join(', ')}). The others were delivered.`
+      : null
 
     const { data: prof } = await adminSupabase.from('profiles').select('full_name').eq('id', auth.userId).maybeSingle()
     const { data, error: upErr, dropped } = await writeWithFallback(row => adminSupabase
       .from('lookaheads').update(row).eq('id', la.id).select('*').single(), {
       sent_to_subs_at: sentAt, sent_to_subs_by: auth.userId, sent_to_subs_by_name: prof?.full_name || null, sent_to_subs_recipients: results,
     })
-    const warning = dropped.length ? 'Sent, but the send was not recorded on the lookahead (migration 035 not applied yet).'
-      : upErr ? `Sent, but the send was not recorded: ${upErr.message}` : undefined
-    return Response.json({ data, results, warning })
+    const recordWarning = dropped.length ? 'Sent, but the send was not recorded on the lookahead (migration 035 not applied yet).'
+      : upErr ? `Sent, but the send was not recorded: ${upErr.message}` : null
+    const warning = [partial, recordWarning].filter(Boolean).join(' ') || undefined
+
+    // Tell the person who submitted it (not the sender) that it went out.
+    if (la.submitted_by && la.submitted_by !== auth.userId) {
+      await notify({
+        recipient_id: la.submitted_by,
+        type: 'lookahead_sent_confirm',
+        title: `Lookahead sent to subs: ${job.project_name || 'your job'}`,
+        body: `${prof?.full_name || 'The PM'} sent the lookahead for the week of ${weekStr} to ${results.length} sub${results.length === 1 ? '' : 's'}.${partial ? ' ' + partial : ''}`,
+        link: `/field?job=${la.job_id}&tab=lookahead&week=${la.week_start_date}`,
+        job_id: la.job_id,
+        entity_type: 'lookahead',
+        entity_id: la.id,
+        dedup_key: `lookahead:sent_confirm:${la.id}:${sentAt}`,
+      })
+    }
+    return Response.json({ data, results, warning, delivered, failed_emails: failedEmails.length })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

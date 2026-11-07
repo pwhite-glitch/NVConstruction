@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
-import { ACTIVITY_STATUSES, statusInfo, LOOKAHEAD_STAGES, lookaheadStage, stageHistory } from '../../../lib/lookahead-fields'
+import { ACTIVITY_STATUSES, statusInfo, LOOKAHEAD_STAGES, lookaheadStage, stageHistory, isReturned } from '../../../lib/lookahead-fields'
 import { forecastText, isRainRisk } from '../../../lib/lookahead-weather'
 import { loadForecast, loadSendPreview, sendToSubs } from '../../../lib/lookahead-client'
 
@@ -120,6 +120,14 @@ export function WorkflowBar({ lookahead }) {
       {history.length > 0 && (
         <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           {history.map(h => <span key={h.key}>{h.label}{h.who ? ` by ${h.who}` : ''} · {fmtWhen(h.when)}</span>)}
+        </div>
+      )}
+      {isReturned(lookahead) && lookahead.return_note && (
+        <div style={{ marginTop: '8px', padding: '9px 12px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '8px', fontSize: '13px', color: '#991b1b' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '3px' }}>
+            Sent back for changes{lookahead.returned_by_name ? ` by ${lookahead.returned_by_name}` : ''}
+          </div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{lookahead.return_note}</div>
         </div>
       )}
     </div>

@@ -12,7 +12,11 @@ import { sovByBudgetItem, sovBudgetDeltas } from '../../lib/prime-co-budget'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
 import { ratingScoresError } from '../../lib/sub-ratings'
-import { isCoLine, addCoSovLine } from '../../lib/sov-lines'
+import { isCoLine } from '../../lib/sov-lines'
+import { coNumberLabel, coNumberMissingMessage, coDeleteBlock, coDbErrorMessage } from '../../lib/co-number'
+import { dcBilledLockReason } from '../../lib/dc-guards'
+import { sovLockReason } from '../../lib/sov-guards'
+import { shiftScreenLine } from '../../lib/aia-draw'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
 import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
 import { allocateJobBillings, cumulativeOnContract, contractsForSubmissionSub } from '../../lib/contract-billing'
@@ -370,6 +374,7 @@ function JobDetailInner() {
   const [loadingActiveJobs, setLoadingActiveJobs] = useState(false)
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
+  const [drawingCostIds, setDrawingCostIds] = useState(new Set())
   const [dcForm, setDcForm] = useState({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
@@ -1270,6 +1275,25 @@ function JobDetailInner() {
     a.click()
   }
 
+  // GC draw tagging only through /api/draw-requests (it checks the draw is open and on this job).
+  async function gcDrawPatch(drawId, items) {
+    try {
+      const res = await authFetch('/api/draw-requests', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: drawId, ...items }) })
+      const out = await res.json().catch(() => ({}))
+      return (!res.ok || out.error) ? (out.error || `HTTP ${res.status}`) : null
+    } catch (e) {
+      return e.message || 'network error'
+    }
+  }
+
+  async function takeGCOffDraw(entry) {
+    if (!entry.draw_request_id) return
+    if (!window.confirm('Take this entry off its draw request? (Only possible while the draw is open.)')) return
+    const err = await gcDrawPatch(entry.draw_request_id, { remove_gc_ids: [entry.id] })
+    if (err) alert('Could not take it off the draw: ' + err)
+    await loadGeneralConditions()
+  }
+
   async function getDcToken() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -1280,12 +1304,19 @@ function JobDetailInner() {
   async function callDcReview(action, costId, extraFields = {}) {
     const token = await getDcToken()
     if (!token) { alert('Session expired — please reload the page.'); return { error: 'No session' } }
-    const res = await fetch('/api/dc-review', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ action, id: costId, ...extraFields }),
-    })
-    return res.json()
+    // A failed request (non-2xx, bad JSON, network) always comes back as { error }.
+    try {
+      const res = await fetch('/api/dc-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action, id: costId, ...extraFields }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok && !json.error) json.error = `server returned ${res.status}`
+      return json
+    } catch (e) {
+      return { error: e.message || 'network error' }
+    }
   }
 
   async function approveCost(costId) {
@@ -2183,34 +2214,82 @@ function JobDetailInner() {
     await loadAiaApplications()
   }
 
+  // Draw / Undo a direct cost on the pay app. The server (/api/aia-draw) changes the tag and
+  // the stored G703 line together and says exactly how much it applied; only then is the
+  // screen copy shifted by that same amount (unsaved hand edits on the line are kept).
+  async function aiaDrawCall(body) {
+    try {
+      const res = await authFetch('/api/aia-draw', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok || out.error) return { ...out, error: out.error || `HTTP ${res.status}`, status: res.status }
+      return out
+    } catch (e) {
+      return { error: e.message || 'network error' }
+    }
+  }
+
+  // Locked app: an Owner types the app number; the server checks it again.
+  async function aiaDrawWithOverride(body) {
+    let out = await aiaDrawCall(body)
+    if (out.needs_override && isPrincipal(userRole)) {
+      const typed = window.prompt(`${out.error}\n\nType the app number to confirm the Owner override.`)
+      if (typed == null) return { cancelled: true }
+      out = await aiaDrawCall({ ...body, override_app_number: typed })
+    }
+    return out
+  }
+
+  function shiftAiaLineOnScreen(budgetItemId, appliedDollars) {
+    const appliedCents = Math.round(Number(appliedDollars || 0) * 100)
+    if (!appliedCents) return
+    setAiaLines(lines => recalcPinnedLines(
+      lines.map(line => line.budget_item_id === budgetItemId ? shiftScreenLine(line, appliedCents) : line),
+      pinnedLineIds
+    ))
+  }
+
   async function drawDirectCost(costId, appId) {
     const cost = periodDirectCosts.find(c => c.id === costId)
     if (!cost?.budget_item_id) {
       alert('Assign a budget line to this cost in the Direct Costs tab before drawing.')
       return
     }
-    const now = new Date().toISOString()
-    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, drawn_application_id: appId, drawn_at: now }) })
-    setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: appId, drawn_at: now } : c))
-    const markupMultiplier = 1 + (parseFloat(activeAia?.markup_pct) || 0) / 100
-    const addAmt = Math.round(Number(cost.amount) * markupMultiplier * 100) / 100
-    setAiaLines(lines => {
-      const updated = lines.map(line => {
-        if (line.budget_item_id !== cost.budget_item_id) return line
-        const budgetAmt = Number(line.budget_amount || 0)
-        if (budgetAmt === 0) return line
-        const prevDollar = Number(line.dollar_this) || 0
-        const newDollar = Math.min(budgetAmt, prevDollar + addAmt)
-        const newPct = newDollar / budgetAmt * 100
-        return { ...line, dollar_this: newDollar, pct_this: String(newPct) }
-      })
-      return recalcPinnedLines(updated, pinnedLineIds)
-    })
+    if (drawingCostIds.has(costId)) return
+    setDrawingCostIds(prev => new Set([...prev, costId]))
+    try {
+      const out = await aiaDrawWithOverride({ action: 'draw', cost_id: costId, app_id: appId })
+      if (out.cancelled) return
+      if (out.error) { alert('Draw failed: ' + out.error); await refreshPeriodCost(costId); return }
+      setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: appId, drawn_at: new Date().toISOString(), drawn_aia_delta: out.applied } : c))
+      shiftAiaLineOnScreen(out.budget_item_id, out.applied)
+    } finally {
+      setDrawingCostIds(prev => { const n = new Set(prev); n.delete(costId); return n })
+    }
   }
 
   async function undrawDirectCost(costId) {
-    await fetch('/api/direct-costs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: costId, drawn_application_id: null, drawn_at: null }) })
-    setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: null, drawn_at: null } : c))
+    if (drawingCostIds.has(costId)) return
+    setDrawingCostIds(prev => new Set([...prev, costId]))
+    try {
+      let out = await aiaDrawWithOverride({ action: 'undo', cost_id: costId })
+      if (out.cancelled) return
+      if (out.error && out.legacy) {
+        if (!window.confirm(`${out.error}\n\nUntag only? The cost comes off the pay app and the G703 line is NOT changed — fix that line by hand.`)) return
+        out = await aiaDrawWithOverride({ action: 'legacy_untag', cost_id: costId })
+        if (out.cancelled) return
+      }
+      if (out.error) { alert('Undo failed: ' + out.error); await refreshPeriodCost(costId); return }
+      setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? { ...c, drawn_application_id: null, drawn_at: null, drawn_aia_delta: null } : c))
+      shiftAiaLineOnScreen(out.budget_item_id, out.applied)
+    } finally {
+      setDrawingCostIds(prev => { const n = new Set(prev); n.delete(costId); return n })
+    }
+  }
+
+  // After a refused draw / undo, show what is really stored for that cost.
+  async function refreshPeriodCost(costId) {
+    const { data } = await supabase.from('direct_costs').select('*').eq('id', costId).maybeSingle()
+    if (data) setPeriodDirectCosts(prev => prev.map(c => c.id === costId ? data : c))
   }
 
   function generateAIAFromApp(override = false) {
@@ -2817,7 +2896,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     const approvedCOsBeforeThis = (sc.change_orders || []).filter(c => c.id !== co.id && c.status === 'approved').reduce((a, c) => a + Number(c.amount || 0), 0)
     const revisedContractValue = baseValue + approvedCOsBeforeThis + Number(co.amount || 0)
     const dateStr = co.date ? new Date(co.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    const coNumber = (sc.change_orders || []).filter(c => c.status !== 'rejected').findIndex(c => c.id === co.id) + 1
+    // Stored number only (never list position). NV-as-sub COs live in nv_subcontracts.change_orders
+    // JSON, which has no DB-assigned number yet, so they print as a stable "Legacy CO <id>" label.
+    const coNumber = coNumberLabel(co, 'sub')
 
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
@@ -2862,7 +2943,7 @@ body { font-family: Arial, sans-serif; font-size: 11px; color: #111; padding: 32
   </div>
   <div>
     <div class="co-number-label">Change Order No.</div>
-    <div class="co-number">${String(coNumber).padStart(3, '0')}</div>
+    <div class="co-number">${coNumber}</div>
   </div>
 </div>
 
@@ -3009,43 +3090,59 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     const lineIds = lines.map(l => l.id)
     const { data: billedData } = await supabase.from('billing_sov_lines').select('sov_line_id, amount, billing_submissions(status)').in('sov_line_id', lineIds)
     const approvedBilled = {}
+    const billingRefs = {} // any status, any amount: locks the line
     ;(billedData || []).forEach(b => {
+      billingRefs[b.sov_line_id] = (billingRefs[b.sov_line_id] || 0) + 1
       if (b.billing_submissions?.status === 'approved') {
         approvedBilled[b.sov_line_id] = (approvedBilled[b.sov_line_id] || 0) + Number(b.amount || 0)
       }
     })
-    setContractSovLines(prev => ({ ...prev, [contractId]: lines.map(l => ({ ...l, billed_to_date: approvedBilled[l.id] || 0 })) }))
+    setContractSovLines(prev => ({ ...prev, [contractId]: lines.map(l => ({ ...l, billed_to_date: approvedBilled[l.id] || 0, billing_refs: billingRefs[l.id] || 0 })) }))
+  }
+
+  // Office SOV edits go through /api/subcontract-sov (job-checked; billed lines are frozen).
+  async function sovApi(method, body) {
+    try {
+      const res = await authFetch('/api/subcontract-sov', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const out = await res.json().catch(() => ({}))
+      return (!res.ok || out.error) ? { error: out.error || `HTTP ${res.status}` } : out
+    } catch (e) {
+      return { error: e.message || 'network error' }
+    }
   }
 
   async function addSovLine(contractId) {
     if (!sovLineForm.description || !sovLineForm.scheduled_value) return
     setAddingSovLine(true)
-    await supabase.from('subcontract_sov_lines').insert({
+    const out = await sovApi('POST', {
       subcontract_id: contractId,
       description: sovLineForm.description,
-      scheduled_value: parseFloat(sovLineForm.scheduled_value),
+      scheduled_value: sovLineForm.scheduled_value,
       budget_item_id: sovLineForm.budget_item_id || null,
-      sort_order: (contractSovLines[contractId]?.length || 0) + 1,
     })
+    setAddingSovLine(false)
+    if (out.error) { alert('SOV line not added: ' + out.error); return } // form stays open
     setSovLineForm({ description: '', scheduled_value: '', budget_item_id: '' })
     setShowAddSovLine(null)
     await loadContractSov(contractId)
-    setAddingSovLine(false)
   }
 
   async function updateSovLine(lineId, contractId) {
-    await supabase.from('subcontract_sov_lines').update({
+    const out = await sovApi('PATCH', {
+      id: lineId,
       description: editSovLineForm.description,
-      scheduled_value: parseFloat(editSovLineForm.scheduled_value),
+      scheduled_value: editSovLineForm.scheduled_value,
       budget_item_id: editSovLineForm.budget_item_id || null,
-    }).eq('id', lineId)
+    })
+    if (out.error) { alert('SOV line not saved: ' + out.error); return } // stays in edit mode
     setEditingSovLine(null)
     await loadContractSov(contractId)
   }
 
   async function deleteSovLine(lineId, contractId) {
     if (!window.confirm('Delete this SOV line?')) return
-    await supabase.from('subcontract_sov_lines').delete().eq('id', lineId)
+    const out = await sovApi('DELETE', { id: lineId })
+    if (out.error) alert('SOV line not deleted: ' + out.error)
     await loadContractSov(contractId)
   }
 
@@ -4150,7 +4247,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       const { error: upErr } = await supabase.storage.from('receipts').upload(path, coFile)
       if (!upErr) attachmentUrl = path
     }
-    const { error: insertErr } = await supabase.from('change_orders').insert({
+    // co_number is assigned by the database (migration 045); never sent from here.
+    const { data: insertedCO, error: insertErr } = await supabase.from('change_orders').insert({
       subcontract_id: coForm.subcontract_id,
       initiated_by: session.user.id,
       direction: coForm.direction,
@@ -4159,8 +4257,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       status: 'pending',
       sov: validSOV.length > 0 ? validSOV : null,
       attachment_url: attachmentUrl,
-    })
+    }).select('*').single()
     if (insertErr) { setErrMsg(insertErr.message); setTimeout(() => setErrMsg(''), 6000); setAddingCO(false); return }
+    { const missing = coNumberMissingMessage(insertedCO); if (missing) alert(missing) }
     // Notify sub if this is a PM-to-sub CO
     if (coForm.direction === 'pm_to_sub') {
       const { data: subcontract } = await supabase.from('subcontracts').select('vendor_name, sub_id').eq('id', coForm.subcontract_id).single()
@@ -4226,9 +4325,16 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       // approves a prime CO and pays us for it.
       // Every approved sub CO (pm_to_sub or sub_to_pm) gets a line on the contract SOV;
       // addCoSovLine skips it if the line already exists.
+      // Added server-side (/api/sov-co-backfill): browsers can't write SOV lines (migration 045).
       if (co) {
-        const { error: lineErr } = await addCoSovLine(supabase, co)
-        if (lineErr) alert('Change order approved, but its SOV line could not be added to the subcontract: ' + lineErr.message)
+        try {
+          const res = await authFetch('/api/sov-co-backfill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subcontract_ids: [co.subcontract_id] }) })
+          const out = await res.json().catch(() => ({}))
+          const why = !res.ok ? (out.error || `HTTP ${res.status}`) : (out.errors || []).join('; ')
+          if (why) alert('Change order approved, but its SOV line could not be added to the subcontract: ' + why)
+        } catch (e) {
+          alert('Change order approved, but its SOV line could not be added to the subcontract: ' + e.message)
+        }
       }
     }
     await loadAllCOs()
@@ -4307,7 +4413,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setAddingPrimeCO(true)
     const { data: { session } } = await supabase.auth.getSession()
     const validSOV = primeCOForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
-    const { error } = await supabase.from('prime_change_orders').insert({
+    // co_number is assigned by the database (migration 045); never sent from here.
+    const { data: inserted, error } = await supabase.from('prime_change_orders').insert({
       job_id: id,
       description: primeCOForm.description,
       amount: finalAmount,
@@ -4315,9 +4422,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       status: 'pending',
       created_by: session.user.id,
       sov: validSOV.length > 0 ? validSOV : null,
-    })
+    }).select('*').single()
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
-    else { setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO); await loadPrimeCOs() }
+    else {
+      setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO); await loadPrimeCOs()
+      const missing = coNumberMissingMessage(inserted)
+      if (missing) alert(missing)
+    }
     setAddingPrimeCO(false)
   }
 
@@ -4390,10 +4501,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   async function deletePrimeCO(coId) {
     if (!window.confirm('Delete this contract modification?')) return
-    const { data: co, error: readErr } = await supabase.from('prime_change_orders').select('id, status, sov, budget_applied').eq('id', coId).maybeSingle()
+    const { data: co, error: readErr } = await supabase.from('prime_change_orders').select('*').eq('id', coId).maybeSingle()
     if (readErr || !co) { alert('Could not load the change order: ' + (readErr?.message || 'not found')); await loadPrimeCOs(); return }
+    // Numbered COs are permanent (their number is never reused): reject instead.
+    const blocked = coDeleteBlock(co)
+    if (blocked) { alert(blocked); return }
     const { error: delErr } = await supabase.from('prime_change_orders').delete().eq('id', coId)
-    if (delErr) { alert('Delete failed: ' + delErr.message); return }
+    if (delErr) { alert('Delete failed: ' + coDbErrorMessage(delErr.message)); await loadPrimeCOs(); return }
     // Only take amounts back out of the budget if they were put in
     if (co.status === 'approved' && co.budget_applied) {
       const deltas = sovBudgetDeltas(co.sov, [])
@@ -4445,7 +4559,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const pushedSOV = co.sov?.length > 0
       ? co.sov.map(r => ({ ...r, amount: markupPct > 0 ? Math.round(Number(r.amount) * (1 + markupPct / 100) * 100) / 100 : Number(r.amount) }))
       : null
-    const { error } = await supabase.from('prime_change_orders').insert({
+    const { data: inserted, error } = await supabase.from('prime_change_orders').insert({
       job_id: id,
       description: `${subName} — ${co.description}`,
       amount: finalAmt,
@@ -4454,17 +4568,21 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       created_by: session.user.id,
       sov: pushedSOV,
       attachment_url: co.attachment_url || null,
-    })
+    }).select('*').single()
     if (error) { alert('Error: ' + error.message) }
-    else { setPushCOId(null); setPushMarkup(''); setPushAdditional(''); await loadPrimeCOs() }
+    else {
+      setPushCOId(null); setPushMarkup(''); setPushAdditional(''); await loadPrimeCOs()
+      const missing = coNumberMissingMessage(inserted)
+      if (missing) alert(missing)
+    }
     setPushingToPrime(false)
   }
 
-  async function sendPrimeCOToOwner(co, coNum) {
+  async function sendPrimeCOToOwner(co) {
     const ownerEmail = job?.owner_email
     if (!ownerEmail) { alert('No owner email on file. Add it in the Details tab first.'); return }
     setSendingOwnerCO(co.id)
-    const coNumber = `PCO-${String(coNum).padStart(3, '0')}`
+    const coNumber = coNumberLabel(co, 'prime')
     const amount = Number(co.amount)
     const amtStr = `${amount >= 0 ? '+' : ''}$${Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     const sovRows = co.sov?.length > 0
@@ -4501,13 +4619,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     setSendingOwnerCO(null)
   }
 
-  async function printPrimeCO(co, coNum, withAttachment = false) {
+  async function printPrimeCO(co, withAttachment = false) {
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
     const amount = Number(co.amount)
     const logoUrl = `${window.location.origin}/logo.png`
-    const coNumStr = `PCO-${String(coNum).padStart(3,'0')}`
+    const coNumStr = coNumberLabel(co, 'prime')
     const sovHtml = co.sov?.length > 0
       ? `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:6px">Schedule of Values</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e0e0e0"><th style="text-align:left;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Description</th><th style="text-align:right;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Amount</th></tr></thead><tbody>${co.sov.map(r=>`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:5px 0;font-size:11px;color:#111">${r.description||'—'}</td><td style="padding:5px 0;text-align:right;font-size:11px;font-weight:600;color:${Number(r.amount)>=0?'#1a6b2a':'#cc0000'}">${Number(r.amount)>=0?'+':'-'}$${Math.abs(Number(r.amount)).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody><tfoot><tr style="border-top:2px solid #111"><td style="padding:7px 0;font-size:11px;font-weight:700">Total</td><td style="padding:7px 0;text-align:right;font-size:13px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}">${amount>=0?'+':'-'}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr></tfoot></table></div>`
       : ''
@@ -4540,14 +4658,14 @@ ${attachmentHtml}
     w.document.close()
   }
 
-  async function printSubCO(co, subName, scope, coNum, withAttachment = false) {
+  async function printSubCO(co, subName, scope, withAttachment = false) {
     const w = window.open('', '_blank')
     if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
     const date = co.created_at ? new Date(co.created_at).toLocaleDateString() : new Date().toLocaleDateString()
     const amount = Number(co.amount)
     const isPmToSub = co.direction === 'pm_to_sub'
     const logoUrl = `${window.location.origin}/logo.png`
-    const coNumStr = `SCO-${String(coNum).padStart(3,'0')}`
+    const coNumStr = coNumberLabel(co, 'sub')
     const subSOV = (co.sov || []).filter(r => r.budget_item_id !== null && r.budget_item_id !== undefined)
     const sovHtml = subSOV.length > 0
       ? `<div style="margin-bottom:14px"><div class="lbl" style="margin-bottom:6px">Schedule of Values</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e0e0e0"><th style="text-align:left;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Description</th><th style="text-align:right;padding:5px 0;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;font-weight:700">Amount</th></tr></thead><tbody>${subSOV.map(r=>`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:5px 0;font-size:11px;color:#111">${r.description||'—'}</td><td style="padding:5px 0;text-align:right;font-size:11px;font-weight:600;color:${Number(r.amount)>=0?'#1a6b2a':'#cc0000'}">${Number(r.amount)>=0?'+':'-'}$${Math.abs(Number(r.amount)).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr>`).join('')}</tbody><tfoot><tr style="border-top:2px solid #111"><td style="padding:7px 0;font-size:11px;font-weight:700">Total</td><td style="padding:7px 0;text-align:right;font-size:13px;font-weight:800;color:${amount>=0?'#1a6b2a':'#cc0000'}">${amount>=0?'+':'-'}$${Math.abs(amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td></tr></tfoot></table></div>`
@@ -5019,7 +5137,7 @@ ${attachmentHtml}
 
   async function updateBillingEntry() {
     // Rejected keeps the billing (status rejected + reason); Delete is a separate action.
-    const rejecting = editBillingForm.status === 'rejected'
+    const rejecting = editBillingForm.status === 'rejected' && !editBillingForm.draw_request_id
     if (rejecting && editBillingForm.original_status !== 'rejected' && !String(editBillingForm.rejection_reason || '').trim()) {
       alert('Enter a rejection reason for the sub.')
       return
@@ -5046,6 +5164,11 @@ ${attachmentHtml}
       nv_reimbursement: editBillingForm.nv_reimbursement || false,
       ...(rejecting ? { rejection_reason: String(editBillingForm.rejection_reason || '').trim() || null } : {}),
       ...(rejecting && editBillingForm.original_status !== 'rejected' ? { email_sub: true } : {}),
+    }
+    // On a draw: status / amount / retainage / period are locked (server enforces it too), so
+    // don't send them — the rest of the form (contact, invoice #, notes, file) still saves.
+    if (editBillingForm.draw_request_id) {
+      for (const k of ['amount_billed', 'retainage_pct', 'retainage_held', 'status', 'reviewed_at', 'nv_reimbursement', 'billing_period', 'rejection_reason', 'email_sub']) delete patchData[k]
     }
     let res
     if (editBillingFile) {
@@ -5081,6 +5204,7 @@ ${attachmentHtml}
       rejection_reason: b.rejection_reason || '',
       doc_url: b.doc_url || null,
       nv_reimbursement: b.nv_reimbursement || false,
+      draw_request_id: b.draw_request_id || null,
     }
   }
 
@@ -5741,11 +5865,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   }
 
   async function deleteActivity(actId) {
-    await fetch('/api/lookahead-activities', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: actId }),
-    })
+    const { error } = await lookaheadApi.deleteActivity(actId)
+    if (error) { alert(`Could not delete: ${error}`); return }
     setLookaheadActivities(prev => prev.filter(a => a.id !== actId))
   }
 
@@ -5756,6 +5877,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
     if (data) setLookahead(prev => ({ ...prev, ...data }))
     setSubmittingLookahead(false)
     if (error || warning) alert(error || warning)
+  }
+
+  // "Send back": office review returns it to the super as a draft with a required note.
+  async function returnLookahead() {
+    if (!lookahead) return
+    const note = window.prompt('Send this lookahead back to the superintendent. What needs to change? (required)')
+    if (note == null) return
+    if (!note.trim()) { alert('A note is required to send it back.'); return }
+    setSubmittingLookahead(true)
+    try {
+      const res = await fetch('/api/lookaheads', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: lookahead.id, action: 'return', note: note.trim() }) })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) { alert('Not sent back: ' + (json.error || `Server error (${res.status})`)); return }
+      if (json.data) setLookahead(prev => ({ ...prev, ...json.data }))
+      if (json.warning) alert(json.warning)
+    } catch (e) {
+      alert('Not sent back: ' + (e.message || 'network error'))
+    } finally {
+      setSubmittingLookahead(false)
+    }
   }
 
   // Status chip, drag to another day: save just those fields, show the change at once
@@ -8304,8 +8445,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                             </td>
                                             <td style={{ padding: '4px', textAlign: 'right' }}>
                                               <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                                                <button style={s.btnSmall} onClick={() => { setEditingSovLine(line.id); setEditSovLineForm({ description: line.description, scheduled_value: String(line.scheduled_value), budget_item_id: line.budget_item_id || '' }) }}>Edit</button>
-                                                <button style={s.btnSmallRed} onClick={() => deleteSovLine(line.id, c.id)}>Del</button>
+                                                {line.billing_refs > 0 ? (
+                                                  <span title={sovLockReason(line.billing_refs)} style={{ fontSize: '11px', color: '#6b7280', fontWeight: 600, cursor: 'help' }}>🔒 Billed</span>
+                                                ) : (
+                                                  <>
+                                                    <button style={s.btnSmall} onClick={() => { setEditingSovLine(line.id); setEditSovLineForm({ description: line.description, scheduled_value: String(line.scheduled_value), budget_item_id: line.budget_item_id || '' }) }}>Edit</button>
+                                                    <button style={s.btnSmallRed} onClick={() => deleteSovLine(line.id, c.id)}>Del</button>
+                                                  </>
+                                                )}
                                               </div>
                                             </td>
                                           </>
@@ -8565,6 +8712,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', fontFamily: 'monospace' }}>{coNumberLabel(co, 'prime')}</span>
                         <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{co.description}</span>
                         {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedPrimeCOId(isExpanded ? null : co.id)}>{co.sov.length} SOV lines {isExpanded ? '▲' : '▼'}</span>}
                         <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(co.created_at).toLocaleDateString()}</span>
@@ -8595,15 +8743,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         setExpandedPrimeCOId(null)
                         setEditPrimeCOForm({ description: co.description || '', notes: co.notes || '', amount: String(co.amount || ''), sov: co.sov?.length > 0 ? co.sov.map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || '', amount: String(r.amount || '') })) : [] })
                       }}>Edit</button>
-                      <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1) }}>Print CO</button>
-                      {co.attachment_url && <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); printPrimeCO(co, idx + 1, true) }}>Print + Attachment</button>}
+                      <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => printPrimeCO(co)}>Print CO</button>
+                      {co.attachment_url && <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => printPrimeCO(co, true)}>Print + Attachment</button>}
                       <button
                         style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', ...(sentOwnerCOIds.has(co.id) ? { background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' } : {}), opacity: (!job?.owner_email || sendingOwnerCO === co.id) ? 0.5 : 1 }}
                         title={!job?.owner_email ? 'No owner email — add it in the Details tab' : 'Email this CO to the owner for approval'}
                         disabled={!job?.owner_email || sendingOwnerCO === co.id}
-                        onClick={() => { const idx = [...primeCOs].reverse().findIndex(c => c.id === co.id); sendPrimeCOToOwner(co, idx + 1) }}
+                        onClick={() => sendPrimeCOToOwner(co)}
                       >{sendingOwnerCO === co.id ? 'Sending...' : sentOwnerCOIds.has(co.id) ? '✓ Sent to Owner' : '✉ Send to Owner'}</button>
-                      <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px' }} onClick={() => deletePrimeCO(co.id)}>Delete</button>
+                      <button style={{ ...s.btnSmallRed, fontSize: '11px', padding: '2px 8px', ...(coDeleteBlock(co) ? { opacity: 0.4, cursor: 'not-allowed' } : {}) }} title={coDeleteBlock(co) || 'Delete this unnumbered (legacy) change order'} disabled={!!coDeleteBlock(co)} onClick={() => deletePrimeCO(co.id)}>Delete</button>
                     </div>
                   </div>
                   {isExpanded && hasSov && (
@@ -8829,6 +8977,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: isPushing ? '10px' : 0 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280', fontFamily: 'monospace' }}>{coNumberLabel(co, 'sub')}</span>
                           <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{subName}</span>
                           {scope && <span style={{ fontSize: '11px', color: '#6b7280' }}>{scope}</span>}
                           <span style={{ fontSize: '11px', color: '#6b7280' }}>{co.direction === 'pm_to_sub' ? 'PM → Sub' : 'Sub → PM'}</span>
@@ -8854,8 +9003,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             {isPushing ? '✕ Cancel' : '↑ Push to Mod'}
                           </button>
                         )}
-                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const num = allCOs.length - coIdx; printSubCO(co, subName, scope, num) }}>Print CO</button>
-                        {co.attachment_url && <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => { const num = allCOs.length - coIdx; printSubCO(co, subName, scope, num, true) }}>Print + Attachment</button>}
+                        <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => printSubCO(co, subName, scope)}>Print CO</button>
+                        {co.attachment_url && <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => printSubCO(co, subName, scope, true)}>Print + Attachment</button>}
                         <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => {
                           setEditingSubCOId(co.id)
                           setEditSubCOForm({
@@ -9603,15 +9752,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               {drawRequests.filter(d => d.status === 'open').map(d => (
                                 <option key={d.id} value={d.id}>{d.title}</option>
                               ))}
-                              {drawRequests.filter(d => d.status !== 'open').length > 0 && (
-                                <optgroup label="Closed draws">
-                                  {drawRequests.filter(d => d.status !== 'open').map(d => (
-                                    <option key={d.id} value={d.id}>{d.title} (closed)</option>
-                                  ))}
-                                </optgroup>
-                              )}
                             </select>
-                            <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Select which draw this billing is for</p>
+                            <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Select which open draw this billing is for (closed draws can't take new billings)</p>
                           </>
                         ) : (
                           <>
@@ -9826,11 +9968,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Amount billed ($)</label>
-                            <input type="number" step="0.01" style={{ ...s.input, ...(editBillingForm.status === 'approved' ? { color: '#6b7280', cursor: 'default' } : {}) }} value={editBillingForm.amount_billed} readOnly={editBillingForm.status === 'approved'} tabIndex={editBillingForm.status === 'approved' ? -1 : undefined} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
+                            <input type="number" step="0.01" style={{ ...s.input, ...(editBillingForm.status === 'approved' || editBillingForm.draw_request_id ? { color: '#6b7280', cursor: 'default' } : {}) }} value={editBillingForm.amount_billed} readOnly={editBillingForm.status === 'approved' || !!editBillingForm.draw_request_id} tabIndex={editBillingForm.status === 'approved' || editBillingForm.draw_request_id ? -1 : undefined} onChange={e => setEditBillingForm(f => ({ ...f, amount_billed: e.target.value }))} />
                           </div>
                           <div>
                             <label style={s.label}>Retainage %</label>
-                            <input type="number" min="0" max="100" step="0.5" style={s.input} value={editBillingForm.retainage_pct} onChange={e => setEditBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
+                            <input type="number" min="0" max="100" step="0.5" style={s.input} disabled={!!editBillingForm.draw_request_id} value={editBillingForm.retainage_pct} onChange={e => setEditBillingForm(f => ({ ...f, retainage_pct: e.target.value }))} onFocus={e => e.target.select()} />
                             {parseFloat(editBillingForm.retainage_pct) > 0 && parseFloat(editBillingForm.amount_billed) > 0 && (
                               <div style={{ fontSize: '11px', marginTop: '4px', color: '#a16207' }}>
                                 Held: ${Math.round(parseFloat(editBillingForm.amount_billed) * parseFloat(editBillingForm.retainage_pct) / 100 * 100) / 100}
@@ -9849,7 +9991,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                           <div>
                             <label style={s.label}>Billing period</label>
-                            <input type="month" style={s.input} value={editBillingForm.billing_period || ''} onChange={e => setEditBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
+                            <input type="month" style={s.input} disabled={!!editBillingForm.draw_request_id} value={editBillingForm.billing_period || ''} onChange={e => setEditBillingForm(f => ({ ...f, billing_period: e.target.value }))} />
                           </div>
                         </div>
                         <div style={{ ...s.grid2, marginBottom: '12px' }} className="rx-grid-2">
@@ -9875,7 +10017,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Status</label>
-                          <select style={s.input} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
+                          {editBillingForm.draw_request_id && (
+                            <p style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px 10px', margin: '0 0 6px' }}>
+                              🔒 On {drawRequests.find(d => d.id === editBillingForm.draw_request_id)?.title || 'a draw request'}: status, amount, retainage and period are locked. Take it off the draw first (only while the draw is open). Recording a payment still works.
+                            </p>
+                          )}
+                          <select style={s.input} disabled={!!editBillingForm.draw_request_id} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
                             <option value="pending">Pending</option>
                             <option value="approved">Approved</option>
                             <option value="rejected">Rejected</option>
@@ -9888,7 +10035,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )}
                         <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <input type="checkbox" id={`nvReimb-${b.id}`} checked={editBillingForm.nv_reimbursement} onChange={e => setEditBillingForm(f => ({ ...f, nv_reimbursement: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#7c3aed' }} />
+                          <input type="checkbox" id={`nvReimb-${b.id}`} disabled={!!editBillingForm.draw_request_id} checked={editBillingForm.nv_reimbursement} onChange={e => setEditBillingForm(f => ({ ...f, nv_reimbursement: e.target.checked }))} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#7c3aed' }} />
                           <label htmlFor={`nvReimb-${b.id}`} style={{ fontSize: '13px', color: '#374151', cursor: 'pointer' }}>NV Reimbursement (direct cost / credit card)</label>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -10649,9 +10796,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {c.receipt_url && (
                           <button style={s.btnSmall} onClick={() => openDcReceiptUrl(c.receipt_url)}>View receipt</button>
                         )}
+                        {dcBilledLockReason(c) && (
+                          <span title={dcBilledLockReason(c) + ' The API refuses status, amount and budget changes until then.'} style={{ fontSize: '11px', color: '#6b7280', fontWeight: 600 }}>🔒 Billed</span>
+                        )}
                         {canReview && !isRejecting && (
                           <button
-                            style={{ ...s.btnSmall, ...(isReviewing ? { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' } : {}) }}
+                            style={{ ...s.btnSmall, ...(isReviewing ? { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' } : {}), ...(dcBilledLockReason(c) && !isReviewing ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}
+                            disabled={!!dcBilledLockReason(c) && !isReviewing}
+                            title={dcBilledLockReason(c) || undefined}
                             onClick={() => isReviewing ? setReviewingCostId(null) : openReviewPanel(c)}>
                             {isReviewing ? 'Close' : 'Review/Edit'}
                           </button>
@@ -10680,12 +10832,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )}
                         {c.status === 'approved' && canReview && (
-                          <button style={s.btnSmallRed} disabled={updatingCostId === c.id} onClick={() => unapproveCost(c.id)}>
+                          <button style={{ ...s.btnSmallRed, ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={updatingCostId === c.id || !!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => unapproveCost(c.id)}>
                             {updatingCostId === c.id ? '...' : 'Undo approve'}
                           </button>
                         )}
                         {c.status === 'rejected' && canReview && (
-                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d' }} disabled={updatingCostId === c.id} onClick={() => unrejectCost(c.id)}>
+                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d', ...(dcBilledLockReason(c) ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={updatingCostId === c.id || !!dcBilledLockReason(c)} title={dcBilledLockReason(c) || undefined} onClick={() => unrejectCost(c.id)}>
                             {updatingCostId === c.id ? '...' : 'Undo reject'}
                           </button>
                         )}
@@ -11484,22 +11636,25 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       )}
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: drawnElsewhere ? '#666' : '#111827' }}>${Number(c.amount).toLocaleString()}</span>
+                                      <span style={{ fontFamily: 'monospace', fontSize: '13px', color: drawnElsewhere ? '#666' : c.is_credit ? '#dc2626' : '#111827' }}>{c.is_credit ? '−' : ''}${Math.abs(Number(c.amount)).toLocaleString()}{c.is_credit ? ' credit' : ''}</span>
                                       {drawnElsewhere ? (
                                         <span style={{ padding: '4px 10px', background: '#fff7ed', color: '#d97706', border: '1px solid #4a3000', borderRadius: '5px', fontSize: '11px', fontWeight: '700' }}>
                                           In App #{drawnApp?.app_number || '?'}
                                         </span>
                                       ) : drawnToThisApp ? (
                                         <button
-                                          style={{ padding: '4px 10px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                          style={{ padding: '4px 10px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: drawingCostIds.has(c.id) ? 'wait' : 'pointer', opacity: drawingCostIds.has(c.id) ? 0.5 : 1 }}
+                                          disabled={drawingCostIds.has(c.id)}
+                                          title={c.drawn_aia_delta != null ? `Takes exactly ${Number(c.drawn_aia_delta) >= 0 ? '+' : '−'}$${Math.abs(Number(c.drawn_aia_delta)).toLocaleString('en-US', { minimumFractionDigits: 2 })} back off the G703 line` : 'Drawn before exact tracking: Undo will offer “untag only”'}
                                           onClick={() => undrawDirectCost(c.id)}>
-                                          Undo draw
+                                          {drawingCostIds.has(c.id) ? 'Working…' : 'Undo draw'}
                                         </button>
                                       ) : (
                                         <button
-                                          style={{ padding: '4px 10px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                                          style={{ padding: '4px 10px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #2a1a5a', borderRadius: '5px', fontSize: '11px', fontWeight: '700', cursor: drawingCostIds.has(c.id) ? 'wait' : 'pointer', opacity: drawingCostIds.has(c.id) ? 0.5 : 1 }}
+                                          disabled={drawingCostIds.has(c.id)}
                                           onClick={() => drawDirectCost(c.id, activeAia.id)}>
-                                          Draw
+                                          {drawingCostIds.has(c.id) ? 'Working…' : 'Draw'}
                                         </button>
                                       )}
                                     </div>
@@ -12855,6 +13010,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {submittingLookahead ? 'Saving…' : '✓ Mark Reviewed / Approved'}
                       </button>
                     )}
+                    {(stage === 'submitted' || stage === 'approved' || stage === 'sent') && (
+                      <button style={{ ...s.btn, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }} onClick={returnLookahead} disabled={submittingLookahead} title="Return it to the superintendent as a draft, with a note they will see">
+                        ↩ Send back
+                      </button>
+                    )}
                     {(stage === 'approved' || stage === 'sent') && (
                       <button style={{ ...s.btn, background: stage === 'sent' ? '#f0f0f0' : '#16a34a', color: stage === 'sent' ? '#4b5563' : '#fff', border: stage === 'sent' ? '1px solid #d1d5db' : '1px solid #166534' }} onClick={() => setShowSendToSubs(true)}>
                         {stage === 'sent' ? '✉ Send to subs again' : '✉ Send to subs'}
@@ -13659,7 +13819,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <label style={s.label}>Draw Request</label>
                             <select style={s.input} value={gcForm.draw_request_id} onChange={e => setGcForm(f => ({ ...f, draw_request_id: e.target.value }))}>
                               <option value="">— none —</option>
-                              {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                              {drawRequests.filter(d => d.status === 'open').map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
                             </select>
                           </div>
                           <div>
@@ -13717,13 +13877,18 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <div key={e.id} style={{ borderBottom: '1px solid #f3f4f6', padding: '10px 0' }}>
                                 {isEditing ? (
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingBottom: '8px' }}>
+                                    {e.draw_request_id && (
+                                      <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '8px 10px' }}>
+                                        🔒 On {draw ? draw.title : 'a draw request'}{draw?.status === 'closed' ? ' (closed)' : ''}: amount, description, budget item and date are locked. Take it off the draw first to change them.
+                                      </div>
+                                    )}
                                     <div style={{ gridColumn: '1 / -1' }}>
                                       <label style={s.label}>Description</label>
-                                      <input style={s.input} value={gcEditForm.description} onChange={e2 => setGcEditForm(f => ({ ...f, description: e2.target.value }))} />
+                                      <input style={s.input} disabled={!!e.draw_request_id} value={gcEditForm.description} onChange={e2 => setGcEditForm(f => ({ ...f, description: e2.target.value }))} />
                                     </div>
                                     <div>
                                       <label style={s.label}>Amount</label>
-                                      <input type="number" step="0.01" style={s.input} value={gcEditForm.amount} onChange={e2 => setGcEditForm(f => ({ ...f, amount: e2.target.value }))} />
+                                      <input type="number" step="0.01" style={s.input} disabled={!!e.draw_request_id} value={gcEditForm.amount} onChange={e2 => setGcEditForm(f => ({ ...f, amount: e2.target.value }))} />
                                     </div>
                                     <div>
                                       <label style={s.label}>Category</label>
@@ -13733,14 +13898,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     </div>
                                     <div>
                                       <label style={s.label}>Draw Request</label>
-                                      <select style={s.input} value={gcEditForm.draw_request_id} onChange={e2 => setGcEditForm(f => ({ ...f, draw_request_id: e2.target.value }))}>
-                                        <option value="">— none —</option>
-                                        {drawRequests.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
-                                      </select>
+                                      {e.draw_request_id ? (
+                                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                          <span style={{ fontSize: '13px', color: '#16a34a' }}>{draw ? draw.title : 'On a draw'}</span>
+                                          {draw?.status === 'open' && <button type="button" style={s.btnSmallRed} onClick={() => takeGCOffDraw(e)}>Take off draw</button>}
+                                        </div>
+                                      ) : (
+                                        <select style={s.input} value={gcEditForm.draw_request_id} onChange={e2 => setGcEditForm(f => ({ ...f, draw_request_id: e2.target.value }))}>
+                                          <option value="">— none —</option>
+                                          {drawRequests.filter(d => d.status === 'open').map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                                        </select>
+                                      )}
                                     </div>
                                     <div>
                                       <label style={s.label}>Budget item</label>
-                                      <select style={s.input} value={gcEditForm.budget_item_id} onChange={e2 => setGcEditForm(f => ({ ...f, budget_item_id: e2.target.value }))}>
+                                      <select style={s.input} disabled={!!e.draw_request_id} value={gcEditForm.budget_item_id} onChange={e2 => setGcEditForm(f => ({ ...f, budget_item_id: e2.target.value }))}>
                                         <option value="">— none —</option>
                                         {budgetItems.map(b => <option key={b.id} value={b.id}>{b.description}</option>)}
                                       </select>
@@ -13754,16 +13926,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                                       <button style={s.btn} onClick={async () => {
                                         setSavingGC(true)
+                                        // The draw link is never sent in the edit; tagging goes through the draw route below.
+                                        const { draw_request_id: pickedDraw, ...editFields } = gcEditForm
+                                        if (e.draw_request_id) {
+                                          // Tagged: send only fields that may change (locked ones stay as stored).
+                                          for (const k of ['amount', 'description', 'budget_item_id', 'entry_date']) delete editFields[k]
+                                        }
                                         let res
                                         if (gcEditFile) {
                                           const fd = new FormData()
                                           fd.append('file', gcEditFile)
-                                          fd.append('data', JSON.stringify({ id: e.id, ...gcEditForm }))
+                                          fd.append('data', JSON.stringify({ id: e.id, ...editFields }))
                                           res = await fetch('/api/general-conditions', { method: 'PUT', body: fd })
                                         } else {
-                                          res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...gcEditForm }) })
+                                          res = await fetch('/api/general-conditions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id, ...editFields }) })
                                         }
                                         if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to save: ' + (e.error || res.status)); setSavingGC(false); return; }
+                                        if (!e.draw_request_id && pickedDraw) {
+                                          const err = await gcDrawPatch(pickedDraw, { add_gc_ids: [e.id] })
+                                          if (err) { alert('Saved, but it was not added to the draw: ' + err); await loadGeneralConditions(); setSavingGC(false); return }
+                                        }
                                         setEditingGCId(null)
                                         setGcEditForm({})
                                         setGcEditFile(null)
@@ -13795,7 +13977,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         setGcEditFile(null)
                                         setGcEditForm({ description: e.description, amount: String(e.amount), category: e.category || 'general', entry_date: e.entry_date || '', budget_item_id: e.budget_item_id || '', notes: e.notes || '', draw_request_id: e.draw_request_id || '' })
                                       }}>Edit</button>
-                                      <button style={s.btnSmallRed} onClick={async () => {
+                                      <button style={{ ...s.btnSmallRed, ...(e.draw_request_id ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }} disabled={!!e.draw_request_id} title={e.draw_request_id ? 'On a draw request — take it off the draw before deleting' : undefined} onClick={async () => {
                                         if (!window.confirm('Delete this entry?')) return
                                         const res = await fetch('/api/general-conditions', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: e.id }) })
                                         if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Failed to delete: ' + (e.error || res.status)); return; }

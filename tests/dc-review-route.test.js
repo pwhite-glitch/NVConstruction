@@ -33,6 +33,8 @@ function mockQuery(table) {
     eq: (c, v) => { filters.push(r => r[c] === v); return q },
     in: (c, vs) => { filters.push(r => vs.includes(r[c])); return q },
     neq: (c, v) => { filters.push(r => r[c] !== v); return q },
+    // .is(col, null): missing / null column; foreign-table filters ('a.b') are ignored like neq on empty sets
+    is: (c, v) => { if (!c.includes('.')) filters.push(r => (r[c] ?? null) === v); return q },
     ilike: (c, pat) => {
       const re = new RegExp('^' + pat.replace(/\\(.)|[%_]|[^\\%_]+/g, (m, esc) =>
         esc != null ? esc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : m === '%' ? '.*' : m === '_' ? '.' : m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) + '$', 'i')

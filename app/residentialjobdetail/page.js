@@ -9,6 +9,7 @@ import { dcBilledLockReason } from '../../lib/dc-guards'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
 import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, applyDelta, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
 import { ownerDrawFunding, pctFunded, priorDrawnByLine, buildDrawSchedule, drawFundedAmount, isDrawEditable, round2 } from '../../lib/owner-draws'
+import ExpectedPayDateEditor from '../components/ExpectedPayDateEditor'
 import { buildDrawPackageHtml, buildOwnerDrawHtml, buildChangeOrderHtml, buildBillingWaiverHtml, buildCompletionReportHtml } from '../../lib/residential-print'
 import { safePageTab, wrongPageHref } from '../../lib/job-links'
 import { safeFileName } from '../../lib/storage-path'
@@ -3450,6 +3451,13 @@ function ResidentialJobDetailInner() {
                         </div>
                       </div>
                       {linkedDR && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>Packaged Draw Request: {linkedDR.title} · ${fmt(linkedTotal)}</div>}
+                      {/* Owner-only planning date for the company cash outlook; does not change amounts, status or funding */}
+                      {isOwnerRole && d.status !== 'void' && (
+                        <div style={{ marginTop: '8px' }}>
+                          <ExpectedPayDateEditor entity="res_owner_draw" id={d.id} value={d.expected_payment_date || ''} label="Expected funding"
+                            onSaved={v => setOwnerDraws(prev => prev.map(x => x.id === d.id ? { ...x, expected_payment_date: v } : x))} />
+                        </div>
+                      )}
                       {mismatch && (
                         <div style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '6px 10px', marginTop: '6px' }}>
                           Amount requested (${fmt(d.amount_requested)}) differs from the packaged total (${fmt(linkedTotal)}) by ${fmt(Math.abs(Number(d.amount_requested || 0) - linkedTotal))}.

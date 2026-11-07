@@ -24,6 +24,7 @@ import { parseBudgetCsv, toInsertRows } from '../../lib/budget-csv'
 import { allocateJobBillings, cumulativeOnContract, contractsForSubmissionSub } from '../../lib/contract-billing'
 import { contractSumToDate as calcContractSumToDate, totalCompletedToDate, contractCap, contractCapMessage } from '../../lib/contract-cap'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
+import ExpectedPayDateEditor from '../components/ExpectedPayDateEditor'
 import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
 import NewPOForm from './NewPOForm'
@@ -9817,6 +9818,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         {b.work_description && (
                           <div style={{ fontSize: '12px', color: '#374151', marginTop: '4px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.work_description}</div>
                         )}
+                        {/* Owner-only planning date for the company cash outlook (approved, unpaid only) */}
+                        {isPrincipal(userRole) && b.status === 'approved' && !b.paid_at && (
+                          <div style={{ marginTop: '4px' }}>
+                            <ExpectedPayDateEditor entity="billing_submission" id={b.id} value={b.expected_payment_date || ''} label="Planned pay date"
+                              onSaved={v => setBillingSubmissions(prev => prev.map(x => x.id === b.id ? { ...x, expected_payment_date: v } : x))} />
+                          </div>
+                        )}
                         {drawRequests.length > 0 && (
                           <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '11px', color: '#6b7280' }}>Draw:</span>
@@ -12844,6 +12852,13 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {job.billing_type === 'draw_request' ? `Draw #${a.app_number}` : `App #${a.app_number}`}
                           {a.period_to && <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>{new Date(a.period_to + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
                         </div>
+                        {/* Owner-only planning date for the company cash outlook; does not unlock or change the app */}
+                        {isPrincipal(userRole) && !a.payment_received && a.status !== 'draft' && (
+                          <div style={{ marginTop: '4px' }}>
+                            <ExpectedPayDateEditor entity="aia_application" id={a.id} value={a.expected_payment_date || ''}
+                              onSaved={v => setAiaApplications(prev => prev.map(x => x.id === a.id ? { ...x, expected_payment_date: v } : x))} />
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {a.payment_received && a.amount_received && (

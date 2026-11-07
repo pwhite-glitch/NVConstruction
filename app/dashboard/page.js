@@ -23,6 +23,7 @@ import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJo
 import { resolveDashboardTab, tabFromSearch, dashboardUrlForTab } from '../../lib/dashboard-tabs'
 import { jobHref, jobHrefById, isResidentialJob } from '../../lib/job-links'
 import { ownerDrawFunding, pctFunded } from '../../lib/owner-draws'
+import CashOutlookCard from '../components/CashOutlookCard'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -3795,6 +3796,8 @@ ${planLinks.map(p => p.url
                 <div style={s.ovValue(pendingApps > 0 ? '#e8590c' : null)}>{pendingApps}</div>
               </div>
             </div>
+            {/* Owner-only company cash outlook: its own Owner-gated fetch, not part of loadAll */}
+            {isPrincipal(profile?.role) && <CashOutlookCard />}
             <p style={s.ovSectionTitle}>Billing Calendar</p>
           </>
         )}

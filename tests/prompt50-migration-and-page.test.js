@@ -131,8 +131,9 @@ describe('residential page wiring', () => {
     const resched = page.slice(page.indexOf('async function rescheduleInspection'), page.indexOf('async function reinspect'))
     expect(resched).toContain("result: 'pending', actual_date: null")
     const re = page.slice(page.indexOf('async function reinspect'), page.indexOf('async function punchFromInspection'))
-    expect(re).toContain("from('res_inspections').insert(")
-    expect(re).not.toMatch(/\.update\(/)
+    // prompt61: through /api/res-inspections (POST = new row), never an update of the failed one
+    expect(re).toContain("api('/api/res-inspections', jsonOpts('POST', {")
+    expect(re).not.toMatch(/\.update\(|'PATCH'/)
     expect(page).toContain('Permit: {job.permit_number ?')
   })
 })

@@ -18,6 +18,7 @@ import { ratingScoresError } from '../../lib/sub-ratings'
 import { isCoLine } from '../../lib/sov-lines'
 import { coNumberLabel, coNumberMissingMessage, coDeleteBlock } from '../../lib/co-number'
 import { dcBilledLockReason } from '../../lib/dc-guards'
+import { isFirstReviewOnOpenDraw } from '../../lib/billing-fields'
 import { sovLockReason } from '../../lib/sov-guards'
 import { shiftScreenLine } from '../../lib/aia-draw'
 import { rollupGeneralConditions } from '../../lib/gc-rollup'
@@ -5196,7 +5197,11 @@ ${attachmentHtml}
 
   async function updateBillingEntry() {
     // Rejected keeps the billing (status rejected + reason); Delete is a separate action.
-    const rejecting = editBillingForm.status === 'rejected' && !editBillingForm.draw_request_id
+    // On an OPEN draw the first review (pending → approved / rejected) is allowed; rejecting
+    // also takes it off the draw (server side).
+    const editDraw = editBillingForm.draw_request_id ? drawRequests.find(d => d.id === editBillingForm.draw_request_id) : null
+    const firstReviewOnDraw = !!editBillingForm.draw_request_id && isFirstReviewOnOpenDraw(editBillingForm.original_status, editBillingForm.status, editDraw)
+    const rejecting = editBillingForm.status === 'rejected' && (!editBillingForm.draw_request_id || firstReviewOnDraw)
     if (rejecting && editBillingForm.original_status !== 'rejected' && !String(editBillingForm.rejection_reason || '').trim()) {
       alert('Enter a rejection reason for the sub.')
       return
@@ -5224,10 +5229,12 @@ ${attachmentHtml}
       ...(rejecting ? { rejection_reason: String(editBillingForm.rejection_reason || '').trim() || null } : {}),
       ...(rejecting && editBillingForm.original_status !== 'rejected' ? { email_sub: true } : {}),
     }
-    // On a draw: status / amount / retainage / period are locked (server enforces it too), so
-    // don't send them — the rest of the form (contact, invoice #, notes, file) still saves.
+    // On a draw: amount / retainage / period are locked (server enforces it too), so don't
+    // send them — the rest of the form (contact, invoice #, notes, file) still saves. Status
+    // is locked too, except the first review on an open draw.
     if (editBillingForm.draw_request_id) {
-      for (const k of ['amount_billed', 'retainage_pct', 'retainage_held', 'status', 'reviewed_at', 'nv_reimbursement', 'billing_period', 'rejection_reason', 'email_sub']) delete patchData[k]
+      for (const k of ['amount_billed', 'retainage_pct', 'retainage_held', 'nv_reimbursement', 'billing_period']) delete patchData[k]
+      if (!firstReviewOnDraw) for (const k of ['status', 'reviewed_at', 'rejection_reason', 'email_sub']) delete patchData[k]
     }
     let res
     if (editBillingFile) {
@@ -5241,6 +5248,7 @@ ${attachmentHtml}
     const result = await res.json().catch(() => ({}))
     if (!res.ok || result.error) { alert('Save error: ' + (result.error || `HTTP ${res.status}`)); return }
     if (result.emailError) alert('Saved, but the email to the sub was not sent: ' + result.emailError)
+    if (result.waiverError) alert('Approved, but the lien waiver was not sent: ' + result.waiverError)
     setEditingBilling(null)
     setEditBillingFile(null)
     await loadBillingForJob()
@@ -5287,6 +5295,9 @@ ${attachmentHtml}
   }
 
   async function assignBillingToDraw(billingId, drawRequestId) {
+    // Only approved billings go on a draw (the server refuses others with 422 too).
+    const b = billingSubmissions.find(x => x.id === billingId)
+    if (drawRequestId && b && b.status !== 'approved') { alert('Only an approved billing can be put on a draw request. Approve it first.'); return }
     const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -9967,7 +9978,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             <select
                               value={b.draw_request_id || ''}
                               onChange={e => assignBillingToDraw(b.id, e.target.value)}
-                              style={{ fontSize: '11px', padding: '3px 8px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '6px', color: b.draw_request_id ? '#e8590c' : '#555', outline: 'none', cursor: 'pointer' }}
+                              disabled={!b.draw_request_id && b.status !== 'approved'}
+                              title={!b.draw_request_id && b.status !== 'approved' ? 'Only approved billings can go on a draw' : undefined}
+                              style={{ fontSize: '11px', padding: '3px 8px', background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '6px', color: b.draw_request_id ? '#e8590c' : '#555', outline: 'none', cursor: !b.draw_request_id && b.status !== 'approved' ? 'not-allowed' : 'pointer' }}
                             >
                               <option value="">— Unassigned —</option>
                               {drawRequests.map(d => (
@@ -10130,12 +10143,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         </div>
                         <div style={{ marginBottom: '1rem' }}>
                           <label style={s.label}>Status</label>
-                          {editBillingForm.draw_request_id && (
-                            <p style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px 10px', margin: '0 0 6px' }}>
-                              🔒 On {drawRequests.find(d => d.id === editBillingForm.draw_request_id)?.title || 'a draw request'}: status, amount, retainage and period are locked. Take it off the draw first (only while the draw is open). Recording a payment still works.
-                            </p>
-                          )}
-                          <select style={s.input} disabled={!!editBillingForm.draw_request_id} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
+                          {(() => {
+                            if (!editBillingForm.draw_request_id) return null
+                            const d = drawRequests.find(x => x.id === editBillingForm.draw_request_id)
+                            const canReview = editBillingForm.original_status === 'pending' && d?.status === 'open'
+                            return (
+                              <p style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px 10px', margin: '0 0 6px' }}>
+                                {canReview
+                                  ? <>🔒 On {d?.title || 'a draw request'}: amount, retainage and period are locked. You can approve it (it stays in the package) or reject it (it comes off the draw).</>
+                                  : <>🔒 On {d?.title || 'a draw request'}: status, amount, retainage and period are locked. Take it off the draw first (only while the draw is open). Recording a payment still works.</>}
+                              </p>
+                            )
+                          })()}
+                          <select style={s.input} disabled={!!editBillingForm.draw_request_id && !(editBillingForm.original_status === 'pending' && drawRequests.find(x => x.id === editBillingForm.draw_request_id)?.status === 'open')} value={editBillingForm.status} onChange={e => setEditBillingForm(f => ({ ...f, status: e.target.value }))}>
                             <option value="pending">Pending</option>
                             <option value="approved">Approved</option>
                             <option value="rejected">Rejected</option>

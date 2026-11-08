@@ -73,7 +73,7 @@ describe('item 12 — canonical site URL helper', () => {
     'app/api/invite-sub/route.js', 'app/api/invite-team/route.js', 'app/api/invite-team-member/route.js',
     'app/api/reset-password/route.js', 'app/api/lookaheads/send/route.js', 'app/api/doc-request/route.js',
     'app/api/notify-sub/route.js', 'app/api/billing-reminders/route.js', 'app/api/coi-reminder/route.js',
-    'app/api/lien-waiver/route.js', 'app/api/punch-list/route.js', 'app/api/messages/route.js',
+    'lib/lien-waiver.js', 'app/api/punch-list/route.js', 'app/api/messages/route.js',
     'app/api/billing-entry/route.js', 'app/api/customer-portal/route.js', 'app/api/sub-initiate-sign/route.js',
     'app/api/signing-requests/route.js', 'app/api/signing-requests/[token]/route.js', 'app/api/mileage-reminder/route.js',
     'app/api/sub-portal/billing/route.js',

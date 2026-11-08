@@ -9,8 +9,8 @@ import { dcBilledLockReason } from '../../lib/dc-guards'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
 import { isPreviewActive } from '../../lib/prime-co-review'
 import RfiCommentThread from '../components/RfiCommentThread'
-import { amountsDiffer, packagedDrawTotal, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
-import { ownerDrawFunding, pctFunded, priorDrawnByLine, buildDrawSchedule, drawFundedAmount, isDrawEditable, round2 } from '../../lib/owner-draws'
+import { amountsDiffer, packagedDrawTotal, drawAwaitingBillings, approvedCOTotal, revisedContract, bankAmount, coBudgetDeltas, budgetContractCheck, signedDcAmount, approvedDcTotal, contractCommittedForItem, committedTotalForLines, unlinkedContracts, contractRevisedValue } from '../../lib/residential-money'
+import { ownerDrawFunding, pctFunded, priorDrawnByLine, buildDrawSchedule, drawFundedAmount, isDrawEditable, round2, canUseOwnerDraws } from '../../lib/owner-draws'
 import ExpectedPayDateEditor from '../components/ExpectedPayDateEditor'
 import { buildDrawPackageHtml, buildOwnerDrawHtml, buildChangeOrderHtml, buildBillingWaiverHtml, buildCompletionReportHtml } from '../../lib/residential-print'
 import { safePageTab, wrongPageHref } from '../../lib/job-links'
@@ -23,6 +23,7 @@ import { isSubcontractSigned } from '../../lib/signing'
 import { sameCompany } from '../../lib/company-name'
 import { isBeforeTodayCentral } from '../../lib/central-date'
 import { billingPaymentSummary } from '../../lib/billing-payment'
+import { INSPECTION_TYPES } from '../../lib/res-inspections'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -194,7 +195,7 @@ function ResidentialJobDetailInner() {
   // Change orders
   const [changeOrders, setChangeOrders] = useState([])
   const [showAddCO, setShowAddCO] = useState(false)
-  const [newCO, setNewCO] = useState({ description: '', amount: '', notes: '', budget_item_id: '' })
+  const [newCO, setNewCO] = useState({ description: '', amount: '', nv_cost: '', notes: '', budget_item_id: '' })
   const [addingCO, setAddingCO] = useState(false)
   const [coMsg, setCOMsg] = useState('')
   const [coLinePick, setCoLinePick] = useState({}) // { [coId]: budget_item_id } picked before approve
@@ -273,6 +274,7 @@ function ResidentialJobDetailInner() {
 
   // Lien Waivers
   const [lienWaivers, setLienWaivers] = useState([])
+  const [sendingWaiverId, setSendingWaiverId] = useState(null)
   const [showAddWaiver, setShowAddWaiver] = useState(false)
   const [newWaiver, setNewWaiver] = useState({ company_name: '', subcontract_id: '', waiver_type: 'conditional', amount: '', payment_date: '', waiver_date: '', status: 'pending', notes: '' })
   const [addingWaiver, setAddingWaiver] = useState(false)
@@ -406,7 +408,7 @@ function ResidentialJobDetailInner() {
       loadDirectCosts(),
       loadInspections(),
       loadLienWaivers(),
-      loadOwnerDraws(),
+      loadOwnerDraws(effectiveRole),
       loadPunchList(),
     ])
     setLoading(false)
@@ -527,10 +529,12 @@ function ResidentialJobDetailInner() {
     setContacts(data || [])
   }
 
+  // Through /api/res-inspections (service role): migration 046's browser policy is
+  // office-only, and assigned supers use this tab too.
   async function loadInspections() {
-    const { data, error } = await supabase.from('res_inspections').select('*').eq('job_id', id).order('scheduled_date')
-    noteLoad('Inspections', error)
-    setInspections(data || [])
+    const r = await api(`/api/res-inspections?job_id=${encodeURIComponent(id)}`)
+    noteLoad('Inspections', r.ok ? null : r.error)
+    setInspections(r.ok ? (r.data.inspections || []) : [])
   }
 
   async function loadLienWaivers() {
@@ -539,7 +543,10 @@ function ResidentialJobDetailInner() {
     setLienWaivers(data || [])
   }
 
-  async function loadOwnerDraws() {
+  async function loadOwnerDraws(role = userRole) {
+    // Owner/lender draws are office money (Owner / admin / PM / APM). Supers don't load them,
+    // so they don't get a "didn't load" banner; the Owner Draw tab is hidden for them.
+    if (!canUseOwnerDraws(role)) { setOwnerDraws([]); return }
     const r = await api(`/api/res-owner-draws?job_id=${encodeURIComponent(id)}`)
     noteLoad('Owner draws', r.ok ? null : r.error)
     if (!r.ok) return
@@ -707,9 +714,14 @@ function ResidentialJobDetailInner() {
     setCOMsg('')
     const amount = parseFloat(newCO.amount)
     if (!Number.isFinite(amount)) { setCOMsg('Error: amount must be a number'); setAddingCO(false); return }
+    // Nv cost: blank = same as the sale price (amount). Only saved when entered.
+    const costText = String(newCO.nv_cost ?? '').trim()
+    const nvCost = costText === '' ? null : parseFloat(costText)
+    if (nvCost !== null && !Number.isFinite(nvCost)) { setCOMsg('Error: Nv cost must be a number (or leave it blank to use the sale price)'); setAddingCO(false); return }
+    if (nvCost !== null && nvCost * amount < 0) { setCOMsg('Error: Nv cost must have the same sign as the amount (a credit CO has a negative cost).'); setAddingCO(false); return }
     const { data: { session: coSession } } = await supabase.auth.getSession()
     const lineId = newCO.budget_item_id || null
-    const { data: insertedCO, error } = await supabase.from('prime_change_orders').insert({
+    const row = {
       job_id: id,
       description: newCO.description,
       amount,
@@ -718,13 +730,24 @@ function ResidentialJobDetailInner() {
       budget_item_id: lineId,
       sov: lineId ? [{ budget_item_id: lineId, amount, description: newCO.description }] : null,
       created_by: coSession?.user?.id || null,
-    }).select('*').single() // co_number is assigned by the database (migration 045)
+      ...(nvCost !== null ? { nv_cost: nvCost } : {}),
+    }
+    let { data: insertedCO, error } = await supabase.from('prime_change_orders').insert(row).select('*').single() // co_number is assigned by the database (migration 045)
+    // nv_cost comes with migration 058. Until it is applied, save the CO without it
+    // (Cost then moves by the sale price, as before) and say so.
+    let costDropped = false
+    if (error && nvCost !== null && /nv_cost/.test(error.message || '')) {
+      const { nv_cost: _drop, ...withoutCost } = row
+      ;({ data: insertedCO, error } = await supabase.from('prime_change_orders').insert(withoutCost).select('*').single())
+      costDropped = !error
+    }
     if (error) { setCOMsg('Error: ' + error.message) }
     else {
       const missing = coNumberMissingMessage(insertedCO)
       if (missing) setCOMsg(missing)
+      if (costDropped) flash(false, 'Change order saved, but the Nv cost was not: the database update for it (migration 058) is not applied yet. Approving it will add the sale price to Cost.')
       await loadChangeOrders()
-      setNewCO({ description: '', amount: '', notes: '', budget_item_id: '' })
+      setNewCO({ description: '', amount: '', nv_cost: '', notes: '', budget_item_id: '' })
       setShowAddCO(false)
     }
     setAddingCO(false)
@@ -764,7 +787,9 @@ function ResidentialJobDetailInner() {
     const reverse = co.status === 'approved' && co.budget_applied
     if (reverse && coBudgetDeltas(co).length === 0) { alert('Cannot reverse: this change order has no budget line recorded.'); return }
     const msg = reverse
-      ? `Reject this approved change order and take $${fmt(co.amount)} back off its budget line(s)?`
+      ? (co.nv_cost !== null && co.nv_cost !== undefined && co.nv_cost !== ''
+        ? `Reject this approved change order and take it back off its budget line (Bank −$${fmt(co.amount)}, Cost −$${fmt(co.nv_cost)})?`
+        : `Reject this approved change order and take $${fmt(co.amount)} back off its budget line(s)?`)
       : 'Reject this change order?'
     if (!window.confirm(msg)) return
     await reviewPrimeCO(co, { action: 'reject' }, reverse ? 'Reject failed — budget not reversed' : 'Reject failed')
@@ -933,8 +958,25 @@ function ResidentialJobDetailInner() {
     }
     const { data: { session: bSession } } = await supabase.auth.getSession()
     const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bSession?.access_token}` }, body: JSON.stringify({ id: billingId, status, ...(rejection_reason ? { rejection_reason: rejection_reason.trim() } : {}) }) })
-    const result = await res.json()
-    if (result.error) { alert('Error: ' + result.error); return }
+    const result = await res.json().catch(() => ({}))
+    if (!res.ok || result.error) { alert('Error: ' + (result.error || `HTTP ${res.status}`)); return }
+    // Approving emails the sub and sends the lien waiver server side (billing-entry).
+    if (result.emailError) alert(`Billing ${status}, but the email to the sub was not sent: ${result.emailError}`)
+    if (result.waiverError) alert('Billing approved, but the lien waiver was not sent: ' + result.waiverError)
+    else if (status === 'approved' && result.waiverSent) flash(true, 'Approved. Approval email and lien waiver sent to the sub.')
+    if (result.untagged) flash(true, 'Rejected and taken off the draw request.')
+    await Promise.all([loadBillingSubmissions(), ...(result.untagged ? [loadDrawRequests()] : [])])
+  }
+
+  // Send (or resend) the conditional lien waiver for an approved billing.
+  async function sendWaiver(b) {
+    if (sendingWaiverId) return
+    if (b.lien_waiver_sent_at && !window.confirm(`Resend the lien waiver to ${b.company_name || 'the sub'}? One was sent ${new Date(b.lien_waiver_sent_at).toLocaleDateString()}.`)) return
+    setSendingWaiverId(b.id)
+    const r = await api('/api/lien-waiver', jsonOpts('POST', { submission_id: b.id, resend: true }))
+    setSendingWaiverId(null)
+    if (!r.ok) { flash(false, 'Lien waiver not sent: ' + r.error); return }
+    flash(true, `Lien waiver emailed to ${b.company_name || 'the sub'}.`)
     await loadBillingSubmissions()
   }
 
@@ -1346,9 +1388,9 @@ function ResidentialJobDetailInner() {
     if (!newInspection.inspection_type) return
     setAddingInspection(true)
     setInspectionMsg('')
-    const { error } = await supabase.from('res_inspections').insert({ job_id: id, inspection_type: newInspection.inspection_type, scheduled_date: newInspection.scheduled_date || null, inspector_name: newInspection.inspector_name || null, result: 'pending', notes: newInspection.notes || null })
+    const r = await api('/api/res-inspections', jsonOpts('POST', { job_id: id, inspection_type: newInspection.inspection_type, scheduled_date: newInspection.scheduled_date || null, inspector_name: newInspection.inspector_name || null, result: 'pending', notes: newInspection.notes || null }))
     setAddingInspection(false)
-    if (error) { setInspectionMsg('Error: ' + error.message); return }
+    if (!r.ok) { setInspectionMsg('Error: ' + r.error); return }
     await loadInspections()
     setNewInspection({ inspection_type: 'Framing', scheduled_date: '', inspector_name: '', result: 'pending', notes: '' })
     setShowAddInspection(false)
@@ -1359,8 +1401,8 @@ function ResidentialJobDetailInner() {
   async function saveInspectionResult(ins, result, date) {
     setInspectionMsg('')
     const update = { result, actual_date: result === 'pending' ? null : (date || todayCentral()) }
-    const { error } = await supabase.from('res_inspections').update(update).eq('id', ins.id)
-    if (error) { setInspectionMsg('Error: ' + error.message); return false }
+    const r = await api('/api/res-inspections', jsonOpts('PATCH', { id: ins.id, ...update }))
+    if (!r.ok) { setInspectionMsg('Error: ' + r.error); return false }
     setInspEdit(null)
     await loadInspections()
     return true
@@ -1372,8 +1414,8 @@ function ResidentialJobDetailInner() {
     if (!newDate) { setInspectionMsg('Error: pick the new date.'); return }
     setInspectionMsg('')
     const note = `Rescheduled from ${ins.scheduled_date ? fmtDate(ins.scheduled_date) : 'unscheduled'} on ${fmtDate(todayCentral())}.`
-    const { error } = await supabase.from('res_inspections').update({ scheduled_date: newDate, result: 'pending', actual_date: null, notes: [ins.notes, note].filter(Boolean).join('\n') }).eq('id', ins.id)
-    if (error) { setInspectionMsg('Error: ' + error.message); return }
+    const r = await api('/api/res-inspections', jsonOpts('PATCH', { id: ins.id, scheduled_date: newDate, result: 'pending', actual_date: null, notes: [ins.notes, note].filter(Boolean).join('\n') }))
+    if (!r.ok) { setInspectionMsg('Error: ' + r.error); return }
     setInspEdit(null)
     await loadInspections()
   }
@@ -1382,8 +1424,8 @@ function ResidentialJobDetailInner() {
   async function reinspect(ins, newDate) {
     setInspectionMsg('')
     const ref = `Re-inspection of ${ins.inspection_type} that failed${ins.actual_date ? ' on ' + fmtDate(ins.actual_date) : ''} (ref ${String(ins.id).slice(0, 8)}).`
-    const { error } = await supabase.from('res_inspections').insert({ job_id: id, inspection_type: ins.inspection_type, scheduled_date: newDate || null, inspector_name: ins.inspector_name || null, result: 'pending', notes: ref })
-    if (error) { setInspectionMsg('Error: ' + error.message); return }
+    const r = await api('/api/res-inspections', jsonOpts('POST', { job_id: id, inspection_type: ins.inspection_type, scheduled_date: newDate || null, inspector_name: ins.inspector_name || null, result: 'pending', notes: ref }))
+    if (!r.ok) { setInspectionMsg('Error: ' + r.error); return }
     setInspEdit(null)
     await loadInspections()
   }
@@ -1400,8 +1442,8 @@ function ResidentialJobDetailInner() {
 
   async function deleteInspection(inspectionId) {
     if (!confirm('Delete this inspection?')) return
-    const { error } = await supabase.from('res_inspections').delete().eq('id', inspectionId)
-    if (error) setInspectionMsg('Error: ' + error.message)
+    const r = await api('/api/res-inspections', jsonOpts('DELETE', { id: inspectionId }))
+    if (!r.ok) setInspectionMsg('Error: ' + r.error)
     await loadInspections()
   }
 
@@ -1690,9 +1732,13 @@ function ResidentialJobDetailInner() {
   const bankTotal = budgetItems.reduce((a, b) => a + Number(bankAmount(b) || 0), 0)
   // Only warn when there is a budget and a contract to compare
   const canCompareBudget = !hideBudget && budgetItems.length > 0 && job.contract_value != null
-  // Compare Cost and Bank totals to jobs.contract_value
-  const costVsContract = canCompareBudget && amountsDiffer(budgetTotal, baseContract)
-  const bankVsContract = canCompareBudget && amountsDiffer(bankTotal, baseContract)
+  // Bank vs the REVISED contract (base + approved sale prices); Cost vs base + approved
+  // Nv cost (nv_cost ?? amount). Cost under the revised contract because a CO's Nv cost is
+  // below its price is expected and not flagged.
+  const budgetCheck = budgetContractCheck({ job, changeOrders, costTotal: budgetTotal, bankTotal })
+  const costVsContract = canCompareBudget && budgetCheck.costMismatch
+  const bankVsContract = canCompareBudget && budgetCheck.bankMismatch
+  const hasApprovedCOs = changeOrders.some(c => c.status === 'approved')
   const BUDGET_COLS = '3fr 1fr 1fr 1fr 1fr 1fr 1fr 80px'
   // Committed = subcontracts split by budget_allocations + approved sub COs (same
   // code as commercial), summed over the lines so the card matches the rows.
@@ -1704,6 +1750,11 @@ function ResidentialJobDetailInner() {
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
   const funding = ownerDrawFunding(ownerDraws)
   const fundedPct = pctFunded(funding, revisedContractTotal)
+  // Owner/lender draws are office money (supers get 403 and never load them): every owner-draw
+  // summary line, attention item and action is gated on the same check as the tab, so a super
+  // isn't shown "$0 / no draws yet" or a button that can't open anything.
+  const showOwnerDraws = canUseOwnerDraws(userRole)
+  const unknownFundedShown = showOwnerDraws ? funding.unknownFunded : 0
   const lastDraw = [...ownerDraws].filter(d => d.status !== 'void').sort((a, b) => Number(b.draw_number || 0) - Number(a.draw_number || 0))[0] || null
   const pendingCosts = directCosts.filter(c => c.status === 'pending')
   const pendingPrimeCOs = changeOrders.filter(c => c.status === 'pending')
@@ -1718,6 +1769,8 @@ function ResidentialJobDetailInner() {
     billingLines,
   })
   const canPM = atLeastPM(userRole)
+  // Office staff (Owner / admin / PM / APM). Supers use this page for field tabs only.
+  const isOffice = ['principal', 'admin', 'pm', 'apm'].includes(userRole)
   const isOwnerRole = isPrincipal(userRole)
   const statusNorm = job.status === 'on-hold' ? 'on_hold' : job.status
   const NAV_GROUPS = [
@@ -1740,7 +1793,7 @@ function ResidentialJobDetailInner() {
         { key: 'subs', label: 'Subs' },
         { key: 'changeorders', label: 'Change Orders', badge: (pendingPrimeCOs.length + pendingSubCOs.length) || null, alert: (pendingPrimeCOs.length + pendingSubCOs.length) > 0 },
         { key: 'billing', label: 'Sub Billing', badge: pendingBillings.length || null, alert: pendingBillings.length > 0 },
-        { key: 'ownerdraw', label: 'Owner Draw' },
+        ...(canUseOwnerDraws(userRole) ? [{ key: 'ownerdraw', label: 'Owner Draw' }] : []),
         { key: 'lienWaivers', label: 'Lien Waivers' },
       ],
     },
@@ -1812,9 +1865,11 @@ function ResidentialJobDetailInner() {
           <div style={s.statCard}><div style={s.statLabel}>Contract (base)</div><div style={s.statValue()}>${fmt(baseContract)}</div></div>
           <div style={s.statCard} title="Base contract + approved homeowner change orders"><div style={s.statLabel}>Revised</div><div style={s.statValue()}>${fmt(revisedContractTotal)}</div><div style={{ fontSize: '11px', color: '#6b7280' }}>{changeOrders.filter(c => c.status === 'approved').length} approved CO{changeOrders.filter(c => c.status === 'approved').length !== 1 ? 's' : ''}</div></div>
           {!hideBudget && <div style={s.statCard} title="Sum of Bank amounts on the budget lines"><div style={s.statLabel}>Bank</div><div style={s.statValue()}>${fmt(bankTotal)}</div></div>}
+          {showOwnerDraws && <>
           <div style={s.statCard} title="Owner/lender draws submitted, approved or funded (void and draft excluded)"><div style={s.statLabel}>Requested</div><div style={s.statValue()}>${fmt(funding.requested)}</div></div>
           <div style={s.statCard} title="Cash actually recorded as received on funded draws"><div style={s.statLabel}>Funded</div><div style={s.statValue('#15803d')}>${fmt(funding.fundedKnown)}</div>{funding.unknownFunded > 0 && <div style={{ fontSize: '11px', color: '#92400e' }}>+ {funding.unknownFunded} funded, amount unknown</div>}</div>
           <div style={s.statCard} title="Funded cash ÷ revised contract"><div style={s.statLabel}>% Funded</div><div style={s.statValue()}>{fundedPct === null ? '—' : fundedPct.toFixed(1) + '%'}</div><div style={{ fontSize: '11px', color: '#6b7280' }}>{fundedPct === null ? (funding.unknownFunded > 0 ? 'unknown (legacy draw)' : 'no revised contract') : 'of revised contract'}</div></div>
+          </>}
         </div>
 
         {/* SIDEBAR + CONTENT */}
@@ -1866,8 +1921,10 @@ function ResidentialJobDetailInner() {
                   ['Sub committed (incl. approved sub COs)', '$' + fmt(committedTotal)],
                   ['Approved direct costs (net of credits)', '$' + fmt(dcTotal)],
                   ['Approved sub billing', '$' + fmt(approvedBillingTotal)],
-                  ['Owner draws requested', '$' + fmt(funding.requested)],
-                  ['Owner draws funded (recorded)', '$' + fmt(funding.fundedKnown) + (funding.unknownFunded ? ` + ${funding.unknownFunded} unknown` : '')],
+                  ...(showOwnerDraws ? [
+                    ['Owner draws requested', '$' + fmt(funding.requested)],
+                    ['Owner draws funded (recorded)', '$' + fmt(funding.fundedKnown) + (funding.unknownFunded ? ` + ${funding.unknownFunded} unknown` : '')],
+                  ] : []),
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                     <span style={{ color: '#6b7280' }}>{k}</span><span style={{ fontFamily: 'monospace', color: '#111827', whiteSpace: 'nowrap' }}>{v}</span>
@@ -1883,13 +1940,13 @@ function ResidentialJobDetailInner() {
                   { n: pendingSubCOs.length, label: 'sub change order(s) pending', tab: 'changeorders' },
                   { n: pendingBillings.length, label: 'sub billing(s) pending', tab: 'billing' },
                   { n: punchList.filter(p => p.status === 'sub_complete').length, label: 'punch item(s) marked done by the sub', tab: 'punchlist' },
-                  { n: funding.unknownFunded, label: 'funded draw(s) with no recorded amount', tab: 'ownerdraw' },
+                  ...(showOwnerDraws ? [{ n: funding.unknownFunded, label: 'funded draw(s) with no recorded amount', tab: 'ownerdraw' }] : []),
                 ].filter(x => x.n > 0).map(x => (
                   <button key={x.label} onClick={() => setActiveTab(x.tab)} style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 0', background: 'none', border: 'none', borderBottom: '1px solid #f3f4f6', cursor: 'pointer', textAlign: 'left', fontSize: '13px', color: '#111827' }}>
                     <span><strong style={{ color: '#c2410c' }}>{x.n}</strong> {x.label}</span><span style={{ color: '#9ca3af' }}>›</span>
                   </button>
                 ))}
-                {pendingCosts.length + pendingPrimeCOs.length + pendingSubCOs.length + pendingBillings.length + funding.unknownFunded + punchList.filter(p => p.status === 'sub_complete').length === 0 && <div style={{ fontSize: '13px', color: '#15803d' }}>Nothing waiting.</div>}
+                {pendingCosts.length + pendingPrimeCOs.length + pendingSubCOs.length + pendingBillings.length + unknownFundedShown + punchList.filter(p => p.status === 'sub_complete').length === 0 && <div style={{ fontSize: '13px', color: '#15803d' }}>Nothing waiting.</div>}
               </div>
               <div style={s.card}>
                 <p style={s.cardTitle}>Upcoming Inspections</p>
@@ -1901,14 +1958,14 @@ function ResidentialJobDetailInner() {
                 {job.permit_number && <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>Permit {job.permit_number}{job.permit_date ? ' · ' + fmtDate(job.permit_date) : ''}</div>}
               </div>
               <div style={s.card}>
-                <p style={s.cardTitle}>Punch & Last Draw</p>
+                <p style={s.cardTitle}>{showOwnerDraws ? 'Punch & Last Draw' : 'Punch List'}</p>
                 <div style={{ fontSize: '13px', marginBottom: '10px' }}><strong>{openPunch.length}</strong> open punch item{openPunch.length !== 1 ? 's' : ''}{punchList.length ? ` of ${punchList.length}` : ''}</div>
-                {lastDraw ? (
+                {showOwnerDraws && (lastDraw ? (
                   <div style={{ fontSize: '13px' }}>
                     Draw #{lastDraw.draw_number} — {lastDraw.title} · ${fmt(lastDraw.amount_requested)} · <span style={s.badge(lastDraw.status === 'funded' ? 'green' : lastDraw.status === 'draft' ? 'gray' : 'orange')}>{lastDraw.status}</span>
                     {lastDraw.status === 'funded' && <div style={{ fontSize: '12px', color: drawFundedAmount(lastDraw) === null ? '#92400e' : '#6b7280', marginTop: '4px' }}>{drawFundedAmount(lastDraw) === null ? 'Funded amount not recorded (legacy)' : `Received $${fmt(lastDraw.amount_funded)}`}</div>}
                   </div>
-                ) : <div style={{ fontSize: '13px', color: '#9ca3af' }}>No owner/lender draws yet.</div>}
+                ) : <div style={{ fontSize: '13px', color: '#9ca3af' }}>No owner/lender draws yet.</div>)}
               </div>
               <div style={s.card}>
                 <p style={s.cardTitle}>Key Contacts</p>
@@ -1922,7 +1979,7 @@ function ResidentialJobDetailInner() {
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button style={s.btnSmGray} onClick={() => { setActiveTab('costs'); setShowDcForm(true) }}>+ Log cost</button>
                   <button style={s.btnSmGray} onClick={() => { setActiveTab('changeorders'); setShowAddCO(true) }}>+ Change order</button>
-                  <button style={s.btnSmGray} onClick={() => { setActiveTab('ownerdraw'); startDrawEdit(null) }}>+ Owner draw</button>
+                  {showOwnerDraws && <button style={s.btnSmGray} onClick={() => { setActiveTab('ownerdraw'); startDrawEdit(null) }}>+ Owner draw</button>}
                   <button style={s.btnSmGray} onClick={() => { setActiveTab('inspections'); setShowAddInspection(true) }}>+ Inspection</button>
                   <button style={s.btnSmGray} onClick={() => { setActiveTab('punchlist'); setShowAddPunch(true) }}>+ Punch item</button>
                 </div>
@@ -2052,10 +2109,12 @@ function ResidentialJobDetailInner() {
 
             {(costVsContract || bankVsContract) && (
               <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
-                <strong>Budget doesn't match the contract.</strong> Contract value is ${fmt(baseContract)}.
-                {costVsContract && <> Cost total is ${fmt(budgetTotal)} ({budgetTotal - baseContract > 0 ? '+' : '−'}${fmt(Math.abs(budgetTotal - baseContract))}).</>}
-                {bankVsContract && <> Bank total is ${fmt(bankTotal)} ({bankTotal - baseContract > 0 ? '+' : '−'}${fmt(Math.abs(bankTotal - baseContract))}).</>}
-                {' '}Set Bank amounts on the lines so the bank SOV adds up to the contract, or correct the contract value on Details.
+                <strong>Budget doesn't match the {hasApprovedCOs ? 'revised ' : ''}contract.</strong>
+                {' '}{hasApprovedCOs ? <>Revised contract is ${fmt(budgetCheck.revised)} (base ${fmt(baseContract)} + approved COs ${fmt(approvedCOs)}).</> : <>Contract value is ${fmt(baseContract)}.</>}
+                {bankVsContract && <> Bank total is ${fmt(bankTotal)} ({bankTotal - budgetCheck.revised > 0 ? '+' : '−'}${fmt(Math.abs(bankTotal - budgetCheck.revised))}).</>}
+                {costVsContract && <> Cost total is ${fmt(budgetTotal)}; expected cost is ${fmt(budgetCheck.expectedCost)} (base + approved COs at Nv cost) ({budgetTotal - budgetCheck.expectedCost > 0 ? '+' : '−'}${fmt(Math.abs(budgetTotal - budgetCheck.expectedCost))}).</>}
+                {' '}Set Bank amounts on the lines so the bank SOV adds up to the {hasApprovedCOs ? 'revised ' : ''}contract, or correct the contract value on Details.
+                {hasApprovedCOs && <> Note: change orders approved before Nv cost was tracked added their sale price to Cost.</>}
               </div>
             )}
 
@@ -2589,7 +2648,12 @@ function ResidentialJobDetailInner() {
                 <div style={{ ...s.inlineForm, marginBottom: '16px' }}>
                   <div className="rx-grid-2" style={{ ...s.grid2, marginBottom: '10px' }}>
                     <div><label style={s.label}>Description *</label><input style={s.input} placeholder="Additional scope..." value={newCO.description} onChange={e => setNewCO(f => ({ ...f, description: e.target.value }))} autoFocus /></div>
-                    <div><label style={s.label}>Amount *</label><input style={s.input} type="number" placeholder="0.00" value={newCO.amount} onChange={e => setNewCO(f => ({ ...f, amount: e.target.value }))} /></div>
+                    <div><label style={s.label}>Amount (sale price to homeowner) *</label><input style={s.input} type="number" placeholder="0.00" value={newCO.amount} onChange={e => setNewCO(f => ({ ...f, amount: e.target.value }))} /></div>
+                  </div>
+                  <div style={{ marginBottom: '10px' }}>
+                    <label style={s.label}>Nv cost (optional)</label>
+                    <input style={s.input} type="number" placeholder={newCO.amount ? `Blank = ${newCO.amount} (the sale price)` : 'Blank = the sale price'} value={newCO.nv_cost} onChange={e => setNewCO(f => ({ ...f, nv_cost: e.target.value }))} />
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>What this change costs Nv. On approval the Cost budget moves by this and Bank by the sale price. If left blank, Nv cost = the sale price.</div>
                   </div>
                   <div style={{ marginBottom: '10px' }}>
                     <label style={s.label}>Budget Line (required to approve)</label>
@@ -2624,6 +2688,7 @@ function ResidentialJobDetailInner() {
                           {co.created_at ? new Date(co.created_at).toLocaleDateString() : ''}
                           {lines.length > 0 && ` · Budget line: ${lines.map(b => b.description).join(', ')}`}
                           {co.status === 'approved' && (co.budget_applied ? ' · Applied to budget' : ' · Not applied to budget')}
+                          {co.nv_cost !== null && co.nv_cost !== undefined && co.nv_cost !== '' && ` · Nv cost $${fmt(co.nv_cost)}`}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -2810,13 +2875,15 @@ function ResidentialJobDetailInner() {
                     const ownerMismatch = ownerDraw && amountsDiffer(ownerDraw.amount_requested, drTotal)
                     const isExpanded = expandedDrawId === dr.id
                     const undrawnCosts = directCosts.filter(c => !c.draw_request_id && !c.drawn_application_id)
-                    const undrawnBillings = billingSubmissions.filter(b => !b.draw_request_id)
+                    // Only approved billings may be added (billing-entry refuses others too).
+                    const undrawnBillings = billingSubmissions.filter(b => !b.draw_request_id && b.status === 'approved')
+                    const drAwaiting = drawAwaitingBillings(dr.id, billingSubmissions)
                     return (
                       <div key={dr.id} style={{ marginBottom: '12px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', cursor: 'pointer' }} onClick={() => setExpandedDrawId(isExpanded ? null : dr.id)}>
                           <div>
                             <div style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{dr.title}</div>
-                            <div style={{ fontSize: '12px', color: '#6b7280' }}>{drCosts.length} costs · {drBillings.length} billings · ${fmt(drTotal)}</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>{drCosts.length} costs · {drBillings.length - drAwaiting.length} billings · ${fmt(drTotal)}{drAwaiting.length > 0 && <span style={{ color: '#92400e' }}> · {drAwaiting.length} awaiting approval (${fmt(drAwaiting.reduce((a, b) => a + Number(b.amount_billed || 0), 0))}, not in total)</span>}</div>
                             {ownerDraw && (
                               <div style={{ fontSize: '12px', color: ownerMismatch ? '#92400e' : '#6b7280', marginTop: '2px' }}>
                                 Owner/Lender Draw #{ownerDraw.draw_number} · ${fmt(ownerDraw.amount_requested)} · {ownerDraw.status}
@@ -2877,7 +2944,7 @@ function ResidentialJobDetailInner() {
                                 </div>
                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                                   <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>${fmt(b.amount_billed)}</span>
-                                  <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status}</span>
+                                  <span style={s.badge(statusColor[b.status] || 'gray')}>{b.status === 'pending' ? 'awaiting approval' : b.status}</span>
                                   {dr.status === 'open' && <button style={{ ...s.btnSmGray, fontSize: '11px' }} onClick={() => removeBillingFromDraw(b.id)}>Remove</button>}
                                 </div>
                               </div>
@@ -3057,7 +3124,7 @@ function ResidentialJobDetailInner() {
 
         {/* ── INSPECTIONS ── */}
         {visibleTab === 'inspections' && (() => {
-          const TYPES = ['Foundation','Framing','Rough Plumbing','Rough Electrical','Rough HVAC','Insulation','Drywall','Final Plumbing','Final Electrical','Final HVAC','Final']
+          const TYPES = INSPECTION_TYPES
           const resultColor = { pending: 'orange', passed: 'green', failed: 'red', rescheduled: 'blue' }
           return (
             <div style={s.card}>
@@ -3184,6 +3251,11 @@ function ResidentialJobDetailInner() {
                       {b.lien_waiver_signed_at ? <span style={s.badge('green')}>E-SIGNED</span> : b.lien_waiver_sent_at ? <span style={s.badge('amber')}>SENT</span> : <span style={s.badge('gray')}>NOT SENT</span>}
                       {b.lien_waiver_received && <span style={s.badge('green')}>RECEIVED</span>}
                       {b.lien_waiver_signed_at && <button style={s.btnSmGray} onClick={() => viewBillingWaiver(b)}>View</button>}
+                      {!b.lien_waiver_signed_at && isOffice && (
+                        <button style={s.btnSm} disabled={!!sendingWaiverId} onClick={() => sendWaiver(b)}>
+                          {sendingWaiverId === b.id ? 'Sending…' : b.lien_waiver_sent_at ? 'Resend' : 'Send waiver'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

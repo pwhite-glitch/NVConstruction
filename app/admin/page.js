@@ -470,7 +470,8 @@ export default function AdminPortal() {
   async function sendLienWaiver(sub) {
     setSendingWaiver(sub.id)
     setLienMsg('')
-    const res = await fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id }) })
+    // An explicit click always emails (resend), even when approving already sent one.
+    const res = await fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id, resend: true }) })
     const data = await res.json()
     setSendingWaiver(null)
     if (data?.ok) {

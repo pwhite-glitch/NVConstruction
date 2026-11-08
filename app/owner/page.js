@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { isBeforeTodayCentral } from '../../lib/central-date'
 import { coNumberLabel } from '../../lib/co-number'
 import { authFetch } from '../../lib/client-fetch'
+import { ownerResBilling } from '../../lib/owner-res-draws'
 
 const s = {
   root: { display: 'flex', minHeight: '100vh', background: '#f4f6f8', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -88,6 +89,7 @@ function statusBadge(status) {
     pending:   { background: '#fefce8', color: '#a16207', border: '1px solid #fde68a' },
     rejected:  { background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca' },
     submitted: { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' },
+    funded:    { background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' },
     answered:  { background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0' },
   }
   const style = map[status?.toLowerCase()] || { background: '#f9fafb', color: '#6b7280', border: '1px solid #e5e7eb' }
@@ -104,7 +106,9 @@ function fmtDate(d) {
 }
 
 // Job columns the client owner page uses.
-const OWNER_JOB_FIELDS = 'id, job_number, project_name, location, status, start_date, owner_company, owner_email, pm_email, contract_value'
+const OWNER_JOB_FIELDS = 'id, job_number, project_name, location, status, start_date, owner_company, owner_email, pm_email, contract_value, job_type'
+// Residential jobs bill through owner/lender draws (res_owner_draws), not AIA pay apps.
+const isResidentialJob = j => String(j?.job_type ?? '').trim().toLowerCase() === 'residential'
 // Draw statuses an owner may see (draw_requests use open / closed; never draft).
 const OWNER_DRAW_STATUSES = ['open', 'closed', 'submitted', 'approved']
 
@@ -132,6 +136,8 @@ export default function OwnerPortal() {
   const [photos, setPhotos] = useState([])
   const [photosError, setPhotosError] = useState(null)
   const [payAppsInfo, setPayAppsInfo] = useState({ billed_to_date: 0, has_aia: false, error: null })
+  // Residential: owner/lender draws from /api/owner-res-draws ({ draws, totals } or error)
+  const [resDraws, setResDraws] = useState({ draws: [], totals: null, error: null })
   const [loadingJob, setLoadingJob] = useState(false)
 
   // RFI UI
@@ -185,6 +191,11 @@ export default function OwnerPortal() {
     setChangeOrders([]); setRfis([]); setRfiComments({}); setAiaApps([])
     setDrawRequests([]); setMilestones([]); setPhotos([]); setPhotosError(null); setPmProfile(null)
     setPayAppsInfo({ billed_to_date: 0, has_aia: false, error: null })
+    setResDraws({ draws: [], totals: null, error: null })
+    const residential = isResidentialJob(jobObj)
+    const fetchJson = (url, label) => authFetch(url)
+      .then(async r => { const j = await r.json().catch(() => ({})); return r.ok && !j.error ? { data: j } : { error: j.error || `HTTP ${r.status}` } })
+      .catch(e => ({ error: e?.message || label }))
 
     const [cosRes, rfisRes, aiaRes, drawRes, milestonesRes] = await Promise.all([
       // Owner (prime) change orders, not the sub change_orders table
@@ -197,11 +208,16 @@ export default function OwnerPortal() {
       supabase.from('rfis').select('*').eq('job_id', jobId).order('created_at', { ascending: false }),
       // Prime pay apps (no drafts) with the G702 current payment due, computed on the
       // server from the G703 lines (owners can't read the lines themselves).
-      authFetch(`/api/owner-pay-apps?job_id=${encodeURIComponent(jobId)}`)
-        .then(async r => { const j = await r.json().catch(() => ({})); return r.ok ? { data: j } : { error: j.error || `HTTP ${r.status}` } })
-        .catch(e => ({ error: e?.message || 'Could not load pay applications' })),
-      // Never drafts. Needs the owner SELECT policy from migration 042; until then this returns nothing.
-      supabase.from('draw_requests').select('id, job_id, draw_number, title, status, created_at').eq('job_id', jobId).in('status', OWNER_DRAW_STATUSES).order('draw_number', { ascending: true }),
+      // Residential jobs have no AIA pay apps; their billing is the owner/lender draws below.
+      residential ? Promise.resolve({ data: { apps: [], billed_to_date: 0, has_aia: false } })
+        : authFetch(`/api/owner-pay-apps?job_id=${encodeURIComponent(jobId)}`)
+          .then(async r => { const j = await r.json().catch(() => ({})); return r.ok ? { data: j } : { error: j.error || `HTTP ${r.status}` } })
+          .catch(e => ({ error: e?.message || 'Could not load pay applications' })),
+      // Residential: the homeowner's owner/lender draws (requested / received), read on the
+      // server for this job only. Nv's internal draw_requests packages are not shown to them.
+      // Commercial: never drafts. Needs the owner SELECT policy from migration 042; until then this returns nothing.
+      residential ? fetchJson(`/api/owner-res-draws?job_id=${encodeURIComponent(jobId)}`, 'Could not load draws')
+        : supabase.from('draw_requests').select('id, job_id, draw_number, title, status, created_at').eq('job_id', jobId).in('status', OWNER_DRAW_STATUSES).order('draw_number', { ascending: true }),
       supabase.from('milestones').select('*').eq('job_id', jobId).order('due_date', { ascending: true }),
     ])
 
@@ -212,7 +228,11 @@ export default function OwnerPortal() {
     setRfis(rfiList)
     setAiaApps(aiaRes.data?.apps || [])
     setPayAppsInfo({ billed_to_date: Number(aiaRes.data?.billed_to_date || 0), has_aia: !!aiaRes.data?.has_aia, error: aiaRes.error || null })
-    setDrawRequests((drawRes.data || []).filter(d => d.status !== 'draft'))
+    if (residential) {
+      setResDraws({ draws: drawRes.data?.draws || [], totals: drawRes.data?.totals || null, error: drawRes.error || null })
+    } else {
+      setDrawRequests((drawRes.data || []).filter(d => d.status !== 'draft'))
+    }
     setMilestones(milestonesRes.data || [])
 
     // Load PM profile
@@ -293,6 +313,10 @@ export default function OwnerPortal() {
   // owner receivables, so there is no fallback to them.
   const totalBilled = payAppsInfo.billed_to_date
   const pct = revised > 0 ? Math.min(100, Math.round(totalBilled / revised * 100)) : 0
+  // Residential: requested vs received from the owner/lender draws. Received is unknown
+  // (never assumed) when a funded draw's amount was not recorded.
+  const isRes = isResidentialJob(job)
+  const resBill = ownerResBilling(resDraws.totals, revised)
   const openRfis = rfis.filter(r => !['closed', 'answered'].includes(r.status?.toLowerCase())).length
   const nextMilestone = milestones.find(m => !m.completed_at && m.status !== 'complete')
   const hasAia = aiaApps.length > 0 || payAppsInfo.has_aia
@@ -301,8 +325,10 @@ export default function OwnerPortal() {
   const TABS = [
     { id: 'overview', label: 'Overview' },
     { id: 'budget', label: 'Budget' },
-    ...(hasAia || !hasDraws ? [{ id: 'payapps', label: 'Pay Applications' }] : []),
-    ...(hasDraws || !hasAia ? [{ id: 'draws', label: 'Draw Requests' }] : []),
+    ...(isRes ? [{ id: 'resdraws', label: 'Draws' }] : [
+      ...(hasAia || !hasDraws ? [{ id: 'payapps', label: 'Pay Applications' }] : []),
+      ...(hasDraws || !hasAia ? [{ id: 'draws', label: 'Draw Requests' }] : []),
+    ]),
     { id: 'modifications', label: 'Modifications' },
     { id: 'rfis', label: `RFIs${openRfis > 0 ? ` (${openRfis})` : ''}` },
     { id: 'photos', label: 'Photos' },
@@ -388,11 +414,23 @@ export default function OwnerPortal() {
                         <div style={s.statValue}>{fmt(revised)}</div>
                         {approvedCOs !== 0 && <div style={s.statSub}>{approvedCOs >= 0 ? '+' : ''}{fmt(approvedCOs)} in modifications</div>}
                       </div>
+                      {isRes ? (
+                        <div style={s.statCard}>
+                          <div style={s.statLabel}>Requested to Date</div>
+                          <div style={s.statValue}>{resDraws.error ? '—' : fmt(resBill.requested)}</div>
+                          <div style={s.statSub}>
+                            {resDraws.error ? 'Couldn\u2019t load draws'
+                              : resBill.received === null ? `Received: not fully recorded (${resBill.unknown_received_count} funded draw${resBill.unknown_received_count !== 1 ? 's' : ''} without an amount)`
+                              : `Received ${fmt(resBill.received)}${resBill.pct_received !== null ? ` · ${resBill.pct_received}% of contract` : ''}`}
+                          </div>
+                        </div>
+                      ) : (
                       <div style={s.statCard}>
                         <div style={s.statLabel}>Billed to Date</div>
                         <div style={s.statValue}>{fmt(totalBilled)}</div>
                         <div style={s.statSub}>{pct}% of contract</div>
                       </div>
+                      )}
                       <div style={s.statCard}>
                         <div style={s.statLabel}>Open RFIs</div>
                         <div style={{ ...s.statValue, color: openRfis > 0 ? '#fbbf24' : '#4ade80' }}>{openRfis}</div>
@@ -436,17 +474,29 @@ export default function OwnerPortal() {
                       <span style={{ color: approvedCOs >= 0 ? '#4ade80' : '#f87171' }}>{approvedCOs >= 0 ? '+' : ''}{fmt(approvedCOs)}</span>
                     </div>
                     <div style={{ ...s.budgetRow, ...s.budgetRowTotal }}><span>Revised Contract Total</span><span>{fmt(revised)}</span></div>
+                    {isRes ? (resDraws.error ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load draws: {resDraws.error}</div> : <>
+                      <div style={{ ...s.budgetRow, marginTop: '1.5rem' }}><span style={{ color: '#6b7280' }}>Requested to Date (draws)</span><span>{fmt(resBill.requested)}</span></div>
+                      <div style={s.budgetRow}><span style={{ color: '#6b7280' }}>Received to Date</span><span>{resBill.received === null ? `${fmt(resBill.received_known)} recorded · ${resBill.unknown_received_count} funded draw${resBill.unknown_received_count !== 1 ? 's' : ''} not recorded` : fmt(resBill.received)}</span></div>
+                      <div style={s.budgetRow}><span style={{ color: '#6b7280' }}>Remaining to Request</span><span style={{ color: '#16a34a' }}>{fmt(Math.max(0, revised - resBill.requested))}</span></div>
+                      <div style={s.progressBarWrap}>
+                        <div style={{ ...s.progressBar, width: `${resBill.pct_requested ?? 0}%` }} />
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'right', marginTop: '6px' }}>
+                        {resBill.pct_requested ?? 0}% requested{resBill.pct_received !== null ? ` · ${resBill.pct_received}% received` : ' · received not fully recorded'}
+                      </div>
+                    </>) : <>
                     <div style={{ ...s.budgetRow, marginTop: '1.5rem' }}><span style={{ color: '#6b7280' }}>Amount Billed to Date</span><span>{fmt(totalBilled)}</span></div>
                     <div style={s.budgetRow}><span style={{ color: '#6b7280' }}>Remaining Balance</span><span style={{ color: '#16a34a' }}>{fmt(Math.max(0, revised - totalBilled))}</span></div>
                     <div style={s.progressBarWrap}>
                       <div style={{ ...s.progressBar, width: `${pct}%` }} />
                     </div>
                     <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'right', marginTop: '6px' }}>{pct}% billed</div>
+                    </>}
                   </div>
                 )}
 
                 {/* ── PAY APPLICATIONS ── */}
-                {activeTab === 'payapps' && (
+                {activeTab === 'payapps' && !isRes && (
                   <div style={s.card}>
                     <div style={s.cardTitle}>Pay Applications ({aiaApps.length})</div>
                     {payAppsInfo.error ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load pay applications: {payAppsInfo.error}</div> : aiaApps.length === 0 ? <div style={s.emptyMsg}>No pay applications submitted yet.</div> : (
@@ -478,8 +528,43 @@ export default function OwnerPortal() {
                   </div>
                 )}
 
+                {/* ── RESIDENTIAL OWNER / LENDER DRAWS ── */}
+                {activeTab === 'resdraws' && isRes && (
+                  <div style={s.card}>
+                    <div style={s.cardTitle}>Draws ({resDraws.draws.length})</div>
+                    {resDraws.error ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load draws: {resDraws.error}</div> : resDraws.draws.length === 0 ? <div style={s.emptyMsg}>No draws submitted yet.</div> : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={s.table}>
+                          <thead>
+                            <tr>
+                              <th style={s.th}>Draw #</th>
+                              <th style={s.th}>Period</th>
+                              <th style={s.th}>Requested</th>
+                              <th style={s.th}>Received</th>
+                              <th style={s.th}>Status</th>
+                              <th style={s.th}>Submitted</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resDraws.draws.map(d => (
+                              <tr key={d.id}>
+                                <td style={s.td}>{String(d.draw_number ?? '').padStart(3, '0')}</td>
+                                <td style={s.td}>{d.period_start || d.period_end ? `${fmtDate(d.period_start)} – ${fmtDate(d.period_end)}` : '—'}</td>
+                                <td style={{ ...s.td, fontVariantNumeric: 'tabular-nums' }}>{fmt(d.amount_requested)}</td>
+                                <td style={{ ...s.td, fontVariantNumeric: 'tabular-nums' }}>{d.status !== 'funded' ? '—' : d.received_unknown ? 'Funded — amount not recorded' : `${fmt(d.amount_received)}${d.funded_date ? ' · ' + fmtDate(d.funded_date) : ''}`}</td>
+                                <td style={s.td}><span style={statusBadge(d.status)}>{d.status}</span></td>
+                                <td style={s.td}>{fmtDate(d.submitted_date)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ── DRAW REQUESTS ── */}
-                {activeTab === 'draws' && (
+                {activeTab === 'draws' && !isRes && (
                   <div style={s.card}>
                     <div style={s.cardTitle}>Draw Requests ({drawRequests.length})</div>
                     {drawRequests.length === 0 ? <div style={s.emptyMsg}>No draw requests submitted yet.</div> : (

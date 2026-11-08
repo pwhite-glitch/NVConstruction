@@ -4,8 +4,9 @@ import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
-import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock, billingDrawLockError } from '../../../lib/billing-fields'
-import { drawTargetError } from '../../../lib/draw-guards'
+import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock, billingDrawLockError, isFirstReviewOnOpenDraw } from '../../../lib/billing-fields'
+import { drawTargetError, DRAWABLE } from '../../../lib/draw-guards'
+import { sendLienWaiver } from '../../../lib/lien-waiver'
 import { planBillingPayment, netBelowPaidError } from '../../../lib/billing-payment'
 import { escapeHtml, emailWrap } from '../../../lib/email'
 import { siteUrl } from '../../../lib/site-url'
@@ -63,6 +64,78 @@ async function emailBillingDecision(current, status, reason) {
     return e.message || 'Email failed'
   }
 }
+
+// First review (pending → approved / rejected) of a billing on a draw: one guarded write in
+// the database (migration 059) that only lands while that draw is still OPEN and the billing
+// is still the pending invoice on it, so a concurrent Close can't be raced. Null on success,
+// else { status, error }. Never falls back to the plain update, which can't see the draw's
+// status: when 059 isn't applied yet, firstReviewFallback below checks the draw around a
+// compare-and-set write and undoes it if a Close is seen.
+const DRAW_NOT_OPEN_ERROR = 'The draw request this billing is on was closed (or removed) by someone else, so it can\'t be reviewed on it now. Nothing was changed. Refresh and try again.'
+const BILLING_CHANGED_ERROR = 'This billing was changed by someone else. Refresh and try again.'
+const rpcMissing = e => e?.code === 'PGRST202' || e?.code === '42883' || /could not find the function|function .*billing_first_review.* does not exist/i.test(e?.message || '')
+async function firstReviewWrite(id, drawId, status, update) {
+  const { data, error } = await adminSupabase.rpc('billing_first_review', { p_billing_id: id, p_draw_id: drawId, p_status: status, p_patch: update })
+  if (error) {
+    if (rpcMissing(error)) return firstReviewFallback(id, drawId, status, update)
+    return { status: 500, error: error.message }
+  }
+  if (data?.updated === true) return null
+  if (data?.reason === 'draw_not_open') return { status: 409, error: DRAW_NOT_OPEN_ERROR }
+  return { status: 409, error: BILLING_CHANGED_ERROR }
+}
+
+// Until migration 059 is applied (JS only, no new SQL):
+//  1. re-read the draw and the billing right before writing — draw must be open, billing still
+//     the pending invoice on it, else 409 and nothing written;
+//  2. the same status + link compare-and-set update as other guarded billing writes;
+//  3. re-read the draw — if it is no longer open, put the billing back exactly as it was
+//     (pending, still on the draw, prior rejection_reason etc.) and 409, so no email / waiver /
+//     notification goes out. Only a still-open draw after the write counts as success.
+// Residual race (Close landing after step 3 saw open) is accepted for this fallback only; the
+// 059 RPC (draw held FOR SHARE) is the real atomic fix.
+async function drawIsOpen(drawId) {
+  const { data, error } = await adminSupabase.from('draw_requests').select('id, status').eq('id', drawId).maybeSingle()
+  if (error) return { error: 'Could not check the draw request: ' + error.message }
+  return { open: data?.status === 'open' }
+}
+async function firstReviewFallback(id, drawId, status, update) {
+  const before = await drawIsOpen(drawId)
+  if (before.error) return { status: 500, error: before.error }
+  if (!before.open) return { status: 409, error: DRAW_NOT_OPEN_ERROR }
+  const { data: prior, error: priorErr } = await adminSupabase.from('billing_submissions').select('*').eq('id', id).maybeSingle()
+  if (priorErr) return { status: 500, error: priorErr.message }
+  if (!prior || prior.status !== 'pending' || prior.draw_request_id !== drawId) return { status: 409, error: BILLING_CHANGED_ERROR }
+
+  const guarded = patch => adminSupabase.from('billing_submissions').update(patch).eq('id', id).eq('status', 'pending').eq('draw_request_id', drawId).select('id')
+  let written = update
+  let { data: rows, error } = await guarded(written)
+  if (error?.message?.includes('schema cache')) {
+    written = withoutNew032(update)
+    ;({ data: rows, error } = await guarded(written))
+  }
+  if (error) return { status: 500, error: error.message }
+  if (!rows?.length) return { status: 409, error: BILLING_CHANGED_ERROR }
+
+  const after = await drawIsOpen(drawId)
+  if (!after.error && after.open) return null
+
+  // Close (or a failed check) after the write: undo it — only while the row is still what we wrote.
+  const revert = { status: 'pending', draw_request_id: drawId }
+  for (const k of Object.keys(written)) if (!(k in revert)) revert[k] = prior[k] === undefined ? null : prior[k]
+  const wroteLink = 'draw_request_id' in written ? written.draw_request_id : drawId
+  let undo = adminSupabase.from('billing_submissions').update(revert).eq('id', id).eq('status', status)
+  undo = wroteLink === null ? undo.is('draw_request_id', null) : undo.eq('draw_request_id', wroteLink)
+  const { data: undone, error: undoErr } = await undo.select('id')
+  if (undoErr || !undone?.length) {
+    return { status: 409, error: `The draw request this billing is on was closed while it was being reviewed, and the review could not be undone automatically${undoErr ? ' (' + undoErr.message + ')' : ''}. No email or lien waiver was sent. Refresh and check this billing.` }
+  }
+  if (after.error) return { status: 500, error: after.error + ' The review was undone; nothing was sent.' }
+  return { status: 409, error: DRAW_NOT_OPEN_ERROR }
+}
+
+// What the decision email / notification describe: the row as saved, not the pre-edit read.
+const SAVED_COLS = 'id, status, sub_id, sub_email, job_id, amount_billed, company_name, draw_request_id'
 
 async function uploadBillingDoc(file, jobId) {
   const ext = file.name.split('.').pop()
@@ -235,15 +308,24 @@ export async function PATCH(request) {
       // On a draw (open or closed): status, amount, retainage and period are locked on EVERY
       // PATCH — even when draw_request_id is unchanged or not sent, and even when the same
       // request also tries to unlink it. Payment recording is not a financial change.
+      // Exception: the first review (pending → approved / rejected) while the draw is OPEN.
       if (current.draw_request_id) {
         const { data: curDraw, error: curDrawErr } = await adminSupabase.from('draw_requests').select('id, job_id, status, draw_number').eq('id', current.draw_request_id).maybeSingle()
         if (curDrawErr) return Response.json({ error: 'Could not check the draw request: ' + curDrawErr.message }, { status: 500 })
         const locked = billingDrawLockError(current, curDraw, fields)
         if (locked) return Response.json({ error: locked.error }, { status: locked.status })
+        // A rejected invoice leaves the package in the same guarded update (the link guard
+        // below still matches the draw we just read).
+        if (fields.status === 'rejected' && isFirstReviewOnOpenDraw(current.status, fields.status, curDraw)) fields.draw_request_id = null
       }
 
       // Draw link: must be a draw on this job, and a closed draw can't gain or lose items.
       if ('draw_request_id' in fields && (fields.draw_request_id || null) !== (current.draw_request_id || null)) {
+        // Same rule as /api/draw-requests: only approved billings go onto a draw. (A pending
+        // invoice a sub filed into an open draw becomes approved there by its first review.)
+        if (fields.draw_request_id && !DRAWABLE.billing({ status: nextStatus })) {
+          return Response.json({ error: `Only an approved billing can be put on a draw request (this one is ${nextStatus || 'not approved'}). Approve it first.` }, { status: 422 })
+        }
         const ids = [fields.draw_request_id, current.draw_request_id].filter(Boolean)
         const { data: draws, error: drawErr } = await adminSupabase.from('draw_requests').select('id, job_id, status, draw_number').in('id', ids)
         if (drawErr) return Response.json({ error: drawErr.message }, { status: 500 })
@@ -253,6 +335,11 @@ export async function PATCH(request) {
           if (d.job_id !== current.job_id) return Response.json({ error: 'That draw request is on a different job.' }, { status: 422 })
           if (d.status === 'closed') return Response.json({ error: `Draw #${d.draw_number} is closed. Reopen it first.` }, { status: 409 })
         }
+      }
+      // A first review on a draw may take the invoice off it (reject does) but not move it
+      // to another draw in the same request: review it first, then move it.
+      if (current.draw_request_id && fields.status && fields.status !== current.status && fields.draw_request_id && fields.draw_request_id !== current.draw_request_id) {
+        return Response.json({ error: 'Review this billing on its current draw first, then move it to another draw.' }, { status: 422 })
       }
     } else if (isSub(auth.role)) {
       // Subs can only edit their own pending submissions
@@ -287,13 +374,35 @@ export async function PATCH(request) {
     // net underneath it.
     const changesNet = !paymentPlan && ['amount_billed', 'retainage_held', 'retainage_pct'].some(k => k in update)
     const paidGuard = q => (changesNet ? same(same(q, 'paid_at', current.paid_at), 'payment_amount', current.payment_amount) : q)
-    const statusGuard = q => paidGuard(payGuard(linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)))
-    let { data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(update).eq('id', id)).select('id')
-    if (error?.message?.includes('schema cache')) {
-      ({ data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id)).select('id'))
+    // Putting a billing onto a draw (new non-null draw_request_id) lands only while it is
+    // still approved — the 422 above checked the status we READ, and a concurrent reopen or
+    // reject must not let an unapproved invoice onto the draw. A single PATCH that approves
+    // (pending → approved) and tags is covered by the status CAS on 'pending' instead.
+    const tagging = isPM(auth.role) && !!update.draw_request_id && update.draw_request_id !== (current.draw_request_id || null)
+    const approvingNow = fields.status === 'approved' && current.status !== 'approved'
+    const tagGuard = q => (tagging && !approvingNow ? q.eq('status', 'approved') : q)
+    const statusGuard = q => tagGuard(paidGuard(payGuard(linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q))))
+
+    // First review of a billing on a draw (the lock above only lets that through on an OPEN
+    // draw, with no other financial change): the write must also see the draw still open.
+    const firstReview = isPM(auth.role) && !!current.draw_request_id && !!fields.status && fields.status !== current.status
+    let saved = null
+    if (firstReview) {
+      const bad = await firstReviewWrite(id, current.draw_request_id, fields.status, update)
+      if (bad) return Response.json({ error: bad.error }, { status: bad.status })
+      const { data: reloaded } = await adminSupabase.from('billing_submissions').select(SAVED_COLS).eq('id', id).maybeSingle()
+      saved = reloaded
+    } else {
+      let { data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(update).eq('id', id)).select(SAVED_COLS)
+      if (error?.message?.includes('schema cache')) {
+        ({ data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id)).select(SAVED_COLS))
+      }
+      if (error) return Response.json({ error: error.message }, { status: 500 })
+      if (!updatedRows?.length) return Response.json({ error: 'This billing was changed by someone else. Refresh and try again.' }, { status: 409 })
+      saved = updatedRows[0]
     }
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    if (!updatedRows?.length) return Response.json({ error: 'This billing was changed by someone else. Refresh and try again.' }, { status: 409 })
+    // The row as it was saved (falls back to read + patch if the reload came back empty).
+    const savedRow = { ...current, ...update, ...(saved || {}) }
 
     // Log auditable changes
     const fmtAmt = v => v != null ? '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null
@@ -305,7 +414,7 @@ export async function PATCH(request) {
           notify({
             recipient_id: current.sub_id,
             type:         `billing_${fields.status}`,
-            title:        fields.status === 'approved' ? `Billing approved — ${fmtBill(current.amount_billed)}` : `Billing returned — please review and resubmit`,
+            title:        fields.status === 'approved' ? `Billing approved — ${fmtBill(savedRow.amount_billed)}` : `Billing returned — please review and resubmit`,
             body:         fields.status === 'rejected' ? (rawFields.rejection_reason || 'Check your billing history for the reason.') : null,
             link:         fields.status === 'rejected' ? 'history' : 'history',
             job_id:       current.job_id,
@@ -357,13 +466,30 @@ export async function PATCH(request) {
       } catch {}
     }
 
-    // Email the sub about approve / reject when the screen asks for it (dashboard, job page reject)
+    // Approval (pending → approved), from ANY screen: email the sub and send the conditional
+    // lien waiver here, so the dashboard, residential and commercial job pages all behave the
+    // same. The waiver helper skips a billing whose waiver was already sent / signed, so an
+    // older client's follow-up POST /api/lien-waiver can't email twice.
+    // Rejection: email only when the screen asks (email_sub), as before.
     let emailError = null
-    if (isPM(auth.role) && emailSub && fields.status && fields.status !== current.status && (fields.status === 'approved' || fields.status === 'rejected')) {
-      emailError = await emailBillingDecision(current, fields.status, fields.rejection_reason)
+    let waiverError = null
+    let waiverSent = false
+    const decided = isPM(auth.role) && fields.status && fields.status !== current.status
+    if (decided && fields.status === 'approved' && current.status === 'pending') {
+      emailError = await emailBillingDecision(savedRow, 'approved', null)
+      const w = await sendLienWaiver({ db: adminSupabase, resend, submissionId: id })
+      if (!w.ok) waiverError = w.error
+      else waiverSent = !w.skipped
+    } else if (decided && emailSub && (fields.status === 'approved' || fields.status === 'rejected')) {
+      emailError = await emailBillingDecision(savedRow, fields.status, fields.rejection_reason)
     }
 
-    return Response.json({ ok: true, emailError, ...(paymentPlan?.summary ? { payment: paymentPlan.summary } : {}) })
+    return Response.json({
+      ok: true, emailError,
+      ...(decided && fields.status === 'approved' ? { waiverSent, waiverError } : {}),
+      ...('draw_request_id' in update && update.draw_request_id === null && current.draw_request_id ? { untagged: true } : {}),
+      ...(paymentPlan?.summary ? { payment: paymentPlan.summary } : {}),
+    })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

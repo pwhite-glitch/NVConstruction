@@ -21,7 +21,7 @@ describe('draw package print (item 5 — sub-typed text)', () => {
   const html = buildDrawPackageHtml({
     job, draw: { draw_number: 3, title: `Draw ${EVIL}` },
     costs: [{ description: `Lumber ${EVIL}`, amount: 100, cost_date: '2026-11-02' }, { description: 'Return', amount: 20, is_credit: true }],
-    billings: [{ company_name: `ACME "&" ${EVIL}`, work_description: '</td><script>alert(1)</script>', amount_billed: 50, status: 'pending' }],
+    billings: [{ company_name: `ACME "&" ${EVIL}`, work_description: '</td><script>alert(1)</script>', amount_billed: 50, status: 'approved' }], // approved: only approved billings are in the totals (prompt61)
     logoUrl: 'javascript:alert(1)',
   })
   test('hostile text renders literally; quotes/ampersands escaped', () => {

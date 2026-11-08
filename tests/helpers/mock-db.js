@@ -138,7 +138,8 @@ function query(table) {
     insert: p => { op = 'insert'; payload = p; return q },
     update: p => { op = 'update'; payload = p; return q },
     delete: () => { op = 'delete'; return q },
-    eq: (c, v) => { filters.push(r => get(r, c) === v); return q },
+    // jsonb column vs a JSON text literal compares as JSON (like PostgREST eq on jsonb).
+    eq: (c, v) => { filters.push(r => { const x = get(r, c); return x !== null && typeof x === 'object' && typeof v === 'string' ? JSON.stringify(x) === v : x === v }); return q },
     neq: (c, v) => { filters.push(r => { const x = get(r, c); return x != null && x !== v }); return q },
     is: (c, v) => { filters.push(r => (get(r, c) ?? null) === v); return q },
     in: (c, vs) => { filters.push(r => vs.includes(get(r, c))); return q },
@@ -171,6 +172,8 @@ const client = {
   rpc: async (fn, args) => {
     const impl = mockState.rpc[fn]
     if (!impl) return { data: null, error: { message: `Could not find the function public.${fn} in the schema cache`, code: 'PGRST202' } }
+    // An RPC runs as one statement / transaction: a paused request waits BEFORE it starts.
+    if (mockState.pauseWrite) await mockState.pauseWrite(`rpc:${fn}`, 'rpc', args)
     mockState.calls.push({ table: `rpc:${fn}`, op: 'rpc', payload: args })
     return impl(args, mockState.db)
   },
@@ -204,8 +207,30 @@ const client = {
   } },
 }
 
+// Stand-in for migration 059 public.billing_first_review (unapplied in the real DB): in one
+// step, the draw must still be open and the billing still the pending invoice on that draw,
+// then the patch is written. Register with mockState.rpc.billing_first_review = billingFirstReviewRpc.
+const FIRST_REVIEW_LOCKED = ['id', 'job_id', 'sub_id', 'created_at', 'amount_billed', 'retainage_pct', 'retainage_held', 'nv_reimbursement', 'billing_period']
+function billingFirstReviewRpc({ p_billing_id, p_draw_id, p_status, p_patch }, db) {
+  if (!p_billing_id || !p_draw_id) return { data: null, error: { message: 'billing_first_review_bad_args' } }
+  if (!['approved', 'rejected'].includes(p_status)) return { data: null, error: { message: 'billing_first_review_bad_status' } }
+  if (!p_patch || p_patch.status !== p_status) return { data: null, error: { message: 'billing_first_review_bad_patch' } }
+  if ('draw_request_id' in p_patch && p_patch.draw_request_id !== null && p_patch.draw_request_id !== p_draw_id) return { data: null, error: { message: 'billing_first_review_moves_draw' } }
+  const locked = Object.keys(p_patch).find(k => FIRST_REVIEW_LOCKED.includes(k))
+  if (locked) return { data: null, error: { message: `billing_first_review_locked_field: ${locked}` } }
+  mockState.beforeWrite?.('billing_submissions', 'update')
+  const draw = (db.draw_requests || []).find(d => d.id === p_draw_id && d.status === 'open')
+  if (!draw) return { data: { updated: false, reason: 'draw_not_open' }, error: null }
+  const b = (db.billing_submissions || []).find(r => r.id === p_billing_id && r.status === 'pending' && r.draw_request_id === p_draw_id)
+  if (!b) return { data: { updated: false, reason: 'changed' }, error: null }
+  Object.assign(b, p_patch)
+  mockState.calls.push({ table: 'billing_submissions', op: 'update', payload: p_patch, ids: [b.id], via: 'rpc:billing_first_review' })
+  return { data: { updated: true }, error: null }
+}
+
 module.exports = {
   mockState,
+  billingFirstReviewRpc,
   supabaseModule: { createClient: () => client },
   resetMockState(db = {}) {
     mockState.db = db

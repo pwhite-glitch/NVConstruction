@@ -6,6 +6,7 @@ import { authFetch } from '../../lib/client-fetch'
 import { vehicleLogLabel } from '../../lib/vehicle-log-types'
 import { fieldTarget, fieldTabFromParam } from '../../lib/notification-labels'
 import NotificationBell from '../components/NotificationBell'
+import FieldInspections from './FieldInspections'
 import { openFile } from '../../lib/open-file'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
@@ -56,6 +57,9 @@ const IC = {
   chevU:    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>,
   dnload:   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
 }
+
+// Same job_type rule as the job pages / APIs.
+const isResidentialJob = j => String(j?.job_type ?? '').trim().toLowerCase() === 'residential'
 
 const s = {
   page: { minHeight: '100vh', background: '#f4f6f8' },
@@ -198,6 +202,7 @@ export default function Field() {
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
   const [punchItems, setPunchItems] = useState([])
+  const [pendingInspections, setPendingInspections] = useState(null) // residential jobs: pending count for the tile
   const [punchForm, setPunchForm] = useState({ title: '', description: '', due_date: '' })
   const [showPunchForm, setShowPunchForm] = useState(false)
   const [submittingPunch, setSubmittingPunch] = useState(false)
@@ -332,6 +337,7 @@ export default function Field() {
   }
 
   useEffect(() => { if (activeTab === 'daily') setWizardStep(1) }, [activeTab])
+  useEffect(() => { setPendingInspections(null) }, [selectedJobId])
 
   useEffect(() => {
     if (!selectedJobId) return
@@ -1305,6 +1311,8 @@ export default function Field() {
                       { key: 'subs', icon: IC.subs, label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
                       { key: 'costs', icon: IC.costs, label: 'Direct Costs', count: directCosts.length || null },
                       { key: 'docs', icon: IC.docs, label: 'Documents', count: jobDocs.length || null },
+                      // Residential jobs only: building-department inspections (/api/res-inspections).
+                      ...(isResidentialJob(selectedJob) ? [{ key: 'inspections', icon: IC.punch, label: 'Inspections', count: pendingInspections || null }] : []),
                       { key: 'punch', icon: IC.punch, label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
                       { key: 'photos', icon: IC.photos, label: 'Site Photos', count: totalGalleryPhotos || null },
                       { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
@@ -1352,7 +1360,7 @@ export default function Field() {
                   <div style={{ position: 'sticky', top: '64px', zIndex: 9, background: '#f9fafb', borderBottom: '1px solid #f3f4f6', margin: '0 -1.5rem', padding: '0 1.5rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '14px', height: '52px' }}>
                     <button style={{ padding: '7px 14px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '8px', color: '#4b5563', fontSize: '13px', fontWeight: '700', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => setActiveTab('')}>{IC.arrowL} Back</button>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead', maintenance: 'Maintenance Report' }[activeTab]}
+                      {{ daily: 'Daily Reports', rfi: 'RFIs', deliveries: 'Deliveries', schedule: 'Schedule', subs: 'Contacts', costs: 'Direct Costs', docs: 'Documents', punch: 'Punch List', inspections: 'Inspections', photos: 'Site Photos', vehicles: 'My Vehicle', tools: 'My Tools', lookahead: '2-Week Lookahead', maintenance: 'Maintenance Report' }[activeTab]}
                     </span>
                   </div>
                 )}
@@ -2357,6 +2365,11 @@ export default function Field() {
                       </div>
                     ))}
                   </>
+                )}
+
+                {/* INSPECTIONS (residential jobs) */}
+                {activeTab === 'inspections' && isResidentialJob(selectedJob) && (
+                  <FieldInspections jobId={selectedJobId} userId={user?.id} s={s} onCount={setPendingInspections} />
                 )}
 
                 {/* SITE PHOTOS */}

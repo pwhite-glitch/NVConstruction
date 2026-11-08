@@ -1106,6 +1106,7 @@ export default function Dashboard() {
 
   // Approve / reject through /api/billing-entry so the status check, change log,
   // in-app notification and the email to the sub (real recipient looked up server side) all run.
+  // Approving also sends the lien waiver there.
   async function updateStatus(sub, status, rejectionReason = '') {
     if (status === 'rejected' && !String(rejectionReason || '').trim()) { alert('Enter a rejection reason for the sub.'); return }
     const res = await authFetch('/api/billing-entry', {
@@ -1121,10 +1122,9 @@ export default function Dashboard() {
     })
     const out = await res.json().catch(() => ({}))
     if (!res.ok || out.error) { alert(`Could not mark billing ${status}: ` + (out.error || `HTTP ${res.status}`)); return }
-    if (status === 'approved') {
-      fetch('/api/lien-waiver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submission_id: sub.id }) }).catch(() => {})
-    }
+    // Approving sends the lien waiver server side (billing-entry), so no second request here.
     if (out.emailError) alert(`Billing ${status}, but the email to the sub was not sent: ${out.emailError}`)
+    if (out.waiverError) alert(`Billing approved, but the lien waiver was not sent: ${out.waiverError}`)
     setRejectingSubId(null)
     setRejectionReasonDraft('')
     await loadAll()

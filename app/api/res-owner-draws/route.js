@@ -4,7 +4,7 @@ import { denyJob } from '../../../lib/roles'
 import { isMissingRelation } from '../../../lib/budget-line-refs'
 import { todayCentral } from '../../../lib/central-date'
 import {
-  isDrawEditable, drawStatusChangeError, validateDrawLines, drawAttachmentPathOk, round2, MIGRATION_REQUIRED,
+  isDrawEditable, drawStatusChangeError, validateDrawLines, drawAttachmentPathOk, round2, MIGRATION_REQUIRED, OWNER_DRAW_ROLES,
 } from '../../../lib/owner-draws'
 
 const adminSupabase = createClient(
@@ -15,10 +15,12 @@ const adminSupabase = createClient(
 // Residential owner/lender draws (res_owner_draws). Same people as the job page's
 // money tabs: Owner/admin on every job, PM/APM on their jobs. Supers, subs,
 // client owners and reps are refused.
-const DRAW_ROLES = new Set(['principal', 'admin', 'pm', 'apm'])
+const DRAW_ROLES = new Set(OWNER_DRAW_ROLES)
 // PROPOSED by migration 046 (written, NOT applied). Before it is applied these
 // features answer 409 instead of pretending to save.
 const NEW_COLS = 'amount_funded, schedule_lines, attachments'
+// Attach: compare-and-set attempts before giving up (each retry re-reads the row).
+const ATTACH_TRIES = 5
 
 const bad = (error, status = 400) => Response.json({ error }, { status })
 const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
@@ -173,6 +175,9 @@ export async function PATCH(request) {
     const to = body.status
     const err = drawStatusChangeError(draw.status, to)
     if (err) return bad(err, 409)
+    // Same state (a repeated "submitted" from a stale tab or double click): no-op. Nothing
+    // is written, so submitted_date keeps the day the bank actually got it.
+    if (draw.status === to) return Response.json({ draw, unchanged: true })
     if (to === 'funded') return bad('Use "Record funding" with the amount actually received.', 400)
     if (to === 'void') {
       const cols = await hasNewColumns()
@@ -180,7 +185,8 @@ export async function PATCH(request) {
       if (cols.missing) return bad(MIGRATION_REQUIRED, 409)
     }
     update.status = to
-    if (to === 'submitted') update.submitted_date = todayCentral()
+    // Stamp the send date only on the first draft → submitted.
+    if (to === 'submitted' && draw.status === 'draft') update.submitted_date = todayCentral()
     const { data, error } = await adminSupabase.from('res_owner_draws').update(update).eq('id', draw.id).eq('status', draw.status).select('*')
     if (error) return bad(error.message, 500)
     if (!data?.length) return bad('The draw changed while you were editing. Reload and try again.', 409)
@@ -214,14 +220,30 @@ export async function PATCH(request) {
     const cols = await hasNewColumns()
     if (cols.error) return bad(cols.error.message, 500)
     if (cols.missing) return bad(MIGRATION_REQUIRED, 409)
-    if (draw.status === 'void') return bad('This draw is void.', 409)
     if (!drawAttachmentPathOk(body.path, draw.job_id, draw.id)) return bad('Attachment path must be in this draw\'s folder.')
-    const list = Array.isArray(draw.attachments) ? draw.attachments : []
-    if (list.some(a => a?.path === body.path)) return Response.json({ draw })
-    update.attachments = [...list, { path: body.path, name: optText(body.name, 200) || body.path.split('/').pop(), uploaded_at: new Date().toISOString(), uploaded_by: g.auth.userId }]
-    const { data, error } = await adminSupabase.from('res_owner_draws').update(update).eq('id', draw.id).select('*')
-    if (error) return bad(error.message, 500)
-    return Response.json({ draw: data?.[0] || { ...draw, ...update } })
+    const entry = { path: body.path, name: optText(body.name, 200) || body.path.split('/').pop(), uploaded_at: new Date().toISOString(), uploaded_by: g.auth.userId }
+    // Append with compare-and-set on the attachments array we read: two uploads at
+    // nearly the same time can't erase each other. A lost race re-reads and retries a few
+    // times so both files land (rather than refusing the second one).
+    let cur = draw
+    for (let attempt = 0; attempt < ATTACH_TRIES; attempt++) {
+      if (attempt > 0) {
+        const again = await loadDraw(draw.id)
+        if (again.res) return again.res
+        cur = again.draw
+      }
+      if (cur.status === 'void') return bad('This draw is void.', 409)
+      const prev = Array.isArray(cur.attachments) ? cur.attachments : null
+      const list = prev || []
+      if (list.some(a => a?.path === body.path)) return Response.json({ draw: cur })
+      const next = [...list, entry]
+      let q = adminSupabase.from('res_owner_draws').update({ attachments: next }).eq('id', draw.id)
+      q = cur.attachments === null || cur.attachments === undefined ? q.is('attachments', null) : q.eq('attachments', JSON.stringify(cur.attachments))
+      const { data, error } = await q.select('*')
+      if (error) return bad(error.message, 500)
+      if (data?.length) return Response.json({ draw: data[0] })
+    }
+    return bad('The draw\'s attachments kept changing. Reload and try again.', 409)
   }
 
   return bad('Unknown action.')

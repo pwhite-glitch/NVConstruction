@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM, isSub } from '../../../lib/server-auth'
 import { denyJobs, isJobLimited } from '../../../lib/roles'
+import { canReadBidPackage, canEditBidPackage, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,10 +23,11 @@ async function subInvitedToPlans(auth, paths) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// PM/APM: the bid packages behind these plan paths (bid_plans rows, else the
-// <package id>/ path prefix) must be on their jobs. Packages with no job pass.
-async function denyPlanJobs(auth, body) {
-  if (!isJobLimited(auth.role)) return null
+const WRITE_ACTIONS = new Set(['upload-url', 'insert', 'delete'])
+
+// The bid packages behind a request: bid_package_id, bid_plans rows for the
+// paths, and the <package id>/ path prefix.
+async function planPackageIds(body) {
   const paths = (body.action === 'bulk-signed-urls' ? (body.paths || []) : [body.path || body.storage_path]).filter(Boolean)
   const pkgIds = new Set(body.bid_package_id ? [body.bid_package_id] : [])
   if (paths.length) {
@@ -36,10 +38,25 @@ async function denyPlanJobs(auth, body) {
       if (UUID_RE.test(prefix)) pkgIds.add(prefix)
     }
   }
-  if (!pkgIds.size) return null
-  const { data: pkgs, error } = await adminSupabase.from('bid_packages').select('job_id').in('id', [...pkgIds])
+  return [...pkgIds]
+}
+
+// Office staff: APMs only on packages they are listed on (allowed_users), supers
+// read-only, and PM/APM job limits for packages linked to a job.
+async function denyPlanPackages(auth, body) {
+  const write = WRITE_ACTIONS.has(body.action)
+  if (write && auth.role === 'super') return Response.json({ error: 'Superintendents cannot change bid plans.' }, { status: 403 })
+  if (auth.role !== 'apm' && !isJobLimited(auth.role)) return null
+  const ids = await planPackageIds(body)
+  // An APM must name a package they are on; a bare path with no package is refused.
+  if (!ids.length) return auth.role === 'apm' ? Response.json({ error: NO_BID_ACCESS_MESSAGE }, { status: 403 }) : null
+  const { data: pkgs, error } = await adminSupabase.from('bid_packages').select('id, job_id, allowed_users').in('id', ids)
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return denyJobs(adminSupabase, auth, (pkgs || []).map(p => p.job_id))
+  if (auth.role === 'apm') {
+    const ok = (pkgs || []).length === ids.length && pkgs.every(p => (write ? canEditBidPackage : canReadBidPackage)(auth.role, auth.userId, p))
+    if (!ok) return Response.json({ error: NO_BID_ACCESS_MESSAGE }, { status: 403 })
+  }
+  return isJobLimited(auth.role) ? denyJobs(adminSupabase, auth, (pkgs || []).map(p => p.job_id)) : null
 }
 
 // Office staff: every action. Sub users: view (signed) URLs for plans on
@@ -55,7 +72,7 @@ export async function POST(request) {
       const paths = body.action === 'signed-url' ? [body.path].filter(Boolean) : (body.paths || [])
       if (!(await subInvitedToPlans(auth, paths))) return Response.json({ error: 'Forbidden' }, { status: 403 })
     } else {
-      const denied = await denyPlanJobs(auth, body)
+      const denied = await denyPlanPackages(auth, body)
       if (denied) return denied
     }
     // Office can issue long-lived links for bid invite emails; sub links last at most an hour

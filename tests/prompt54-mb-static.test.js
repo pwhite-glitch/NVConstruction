@@ -19,7 +19,9 @@ describe('migration 050', () => {
   test('is the next unused number and the only new migration', () => {
     const files = fs.readdirSync(path.join(root, 'migrations')).filter(f => /^\d{3}_/.test(f)).sort()
     expect(files.filter(f => f.startsWith('050_'))).toEqual(['050_metal_building_order_workflow.sql'])
-    expect(files[files.length - 1]).toBe('050_metal_building_order_workflow.sql')
+    // Later packages add higher numbers (053+ in prompt 58); 050 is still the last of its batch.
+    const upTo050 = files.filter(f => f < '051_')
+    expect(upTo050[upTo050.length - 1]).toBe('050_metal_building_order_workflow.sql')
   })
   test('extends doc categories keeping all seven old ones', () => {
     for (const c of ['contract', 'quote', 'photo', 'permit', 'completion', 'other', 'general', 'supplier_order_form', 'client_order_form']) expect(sqlCode).toContain(`'${c}'`)

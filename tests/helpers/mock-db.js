@@ -148,6 +148,13 @@ function query(table) {
     lte: (c, v) => { filters.push(r => get(r, c) <= v); return q },
     // Real LIKE semantics (case-insensitive): % and _ are wildcards unless escaped with \.
     ilike: (c, v) => { const re = likeRegex(v); filters.push(r => get(r, c) != null && re.test(String(get(r, c)))); return q },
+    // not(col, 'is', null) / not(col, 'in', '("a","b")')
+    not: (c, op, v) => {
+      if (op === 'is') filters.push(r => (get(r, c) ?? null) !== v)
+      else if (op === 'in') { const list = String(v).replace(/^\(|\)$/g, '').split(',').map(x => x.trim().replace(/^"|"$/g, '')); filters.push(r => !list.includes(get(r, c))) }
+      else if (op === 'eq') filters.push(r => get(r, c) !== v)
+      return q
+    },
     or: () => q,
     order: () => q,
     limit: n => { lim = n; return q },

@@ -7,6 +7,7 @@ import { openFile, openStorageFile } from '../../lib/open-file'
 import { isPartner } from '../../lib/partners'
 import { jobHrefById } from '../../lib/job-links'
 import BotAccessPanel from './BotAccessPanel'
+import { isBotAccount } from '../../lib/bot-rules'
 import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
@@ -260,7 +261,8 @@ export default function AdminPortal() {
       const [{ data: jobList }, { data: dir }, { data: team }, { data: cos }, membersRes] = await Promise.all([
         supabase.from('jobs').select('id, job_number, project_name, payment_type, job_type').order('created_at', { ascending: false }),
         supabase.from('sub_directory').select('*').order('company_name'),
-        supabase.from('profiles').select('id, full_name').in('role', ['principal', 'pm', 'apm', 'admin', 'super']),
+        // '*' works before and after migration 036 adds is_bot; bots are filtered out below.
+        supabase.from('profiles').select('*').in('role', ['principal', 'pm', 'apm', 'admin', 'super']),
         supabase.from('companies').select('*'),
         authFetch('/api/company-members').then(r => r.json()),
       ])
@@ -269,7 +271,8 @@ export default function AdminPortal() {
       setCompaniesData(cos || [])
       setSubProfiles(membersRes.members || [])
       const map = {}
-      for (const t of team || []) map[t.id] = t.full_name || 'Unknown'
+      // Staff only: Portal Bot logins live in the Bot Access tab, not here.
+      for (const t of team || []) if (!isBotAccount(t)) map[t.id] = t.full_name || 'Unknown'
       setTeamMap(map)
       setLoading(false)
     }

@@ -10,6 +10,7 @@ import { contractCommittedForItem } from '../../lib/residential-money'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
+import { canRecordAiaPayment, parseAiaPaymentAmount, aiaPaymentDiffers, aiaPaymentMismatchMessage } from '../../lib/aia-payments'
 import { isPreviewActive, PRIME_CO_APPLIED_NO_DELETE } from '../../lib/prime-co-review'
 import { companyKey, sameCompany } from '../../lib/company-name'
 import { pickSignerContact } from '../../lib/signer-contact'
@@ -43,6 +44,7 @@ import { getSiteUrl } from '../../lib/site-url'
 import RfiCommentThread from '../components/RfiCommentThread'
 import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
 import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
+import { canWriteJobDetails } from '../../lib/job-details'
 
 const s = {
   // ── Layout ──
@@ -183,6 +185,8 @@ function JobDetailInner() {
   const [budgetView, setBudgetView] = useState('lines')
   const [showBillingDates, setShowBillingDates] = useState(false)
   const [userRole, setUserRole] = useState(null)
+  // Complete Job uses the Details API, which refuses supers (and anyone else not a writer).
+  const canCompleteJob = canWriteJobDetails(userRole)
   const [currentUserName, setCurrentUserName] = useState('')
   const [hideBudget, setHideBudget] = useState(false)
 
@@ -429,7 +433,11 @@ function JobDetailInner() {
   const [showNewNvSubAia, setShowNewNvSubAia] = useState(null) // nv_subcontract_id | null
   const [newNvSubAiaForm, setNewNvSubAiaForm] = useState({ period_from: '', period_to: todayCentral().slice(0, 7), retainage_pct: '10', markup_pct: '0' })
   const [savingNvSubAia, setSavingNvSubAia] = useState(false)
-  const [paymentForm, setPaymentForm] = useState({ appId: null, amount: '', received_at: todayCentral() })
+  const EMPTY_PAYMENT_FORM = { appId: null, draft: false, amount: '', received_at: todayCentral(), reference: '', due: null, received: 0, remaining: null, entries: [], loading: false, error: '' }
+  const [paymentForm, setPaymentForm] = useState(EMPTY_PAYMENT_FORM)
+  // Itemized owner payments on this job's pay apps (/api/aia-payments). null = not loaded
+  // (e.g. migration 053 not applied yet) — Cash Flow then uses the summary columns.
+  const [aiaPaymentEntries, setAiaPaymentEntries] = useState(null)
   const [savingPayment, setSavingPayment] = useState(false)
   const [periodDirectCosts, setPeriodDirectCosts] = useState([])
   const [periodBilling, setPeriodBilling] = useState([])
@@ -480,6 +488,7 @@ function JobDetailInner() {
   const [expandedDrawingSheets, setExpandedDrawingSheets] = useState({})
 
   const [teamMembers, setTeamMembers] = useState([])
+  const [teamLoadError, setTeamLoadError] = useState('')
   const [generatingReport, setGeneratingReport] = useState(false)
 
   // Contacts tab state
@@ -762,8 +771,15 @@ function JobDetailInner() {
 
       const { data: initialCOs } = await supabase.from('prime_change_orders').select('*').eq('job_id', id).order('created_at', { ascending: false })
       setPrimeCOs(initialCOs || [])
-      const teamRes = await fetch('/api/team-members')
-      if (teamRes.ok) { const teamJson = await teamRes.json(); setTeamMembers(teamJson.members || []) }
+      // Staff list needs the session token (requirePM); show a failure instead of an empty picker.
+      try {
+        const teamRes = await authFetch('/api/team-members')
+        const teamJson = await teamRes.json().catch(() => ({}))
+        if (teamRes.ok && !teamJson.error) { setTeamMembers(teamJson.members || []); setTeamLoadError('') }
+        else setTeamLoadError(teamJson.error || `HTTP ${teamRes.status}`)
+      } catch (e) {
+        setTeamLoadError(e?.message || 'network error')
+      }
       setLoading(false)
     }
     load()
@@ -1538,7 +1554,17 @@ function JobDetailInner() {
   async function loadAiaApplications() {
     const { data } = await supabase.from('aia_applications').select('*').eq('job_id', id).order('app_number', { ascending: false })
     setAiaApplications(data || [])
+    loadAiaPaymentEntries()
     return data || []
+  }
+
+  async function loadAiaPaymentEntries() {
+    try {
+      const res = await authFetch(`/api/aia-payments?job_id=${encodeURIComponent(id)}`)
+      if (!res.ok) { setAiaPaymentEntries(null); return }
+      const out = await res.json().catch(() => ({}))
+      setAiaPaymentEntries(Array.isArray(out.entries) ? out.entries : null)
+    } catch { setAiaPaymentEntries(null) }
   }
 
   async function openAiaApp(app) {
@@ -2204,31 +2230,69 @@ function JobDetailInner() {
     await loadAiaApplications()
   }
 
-  async function markPaymentReceived(appId, current) {
-    if (current) {
-      // Reopening a paid app is the Owner's call
-      if (!isPrincipal(userRole)) { alert('Only an Owner can unmark a recorded payment.'); return }
-      if (!window.confirm('Unmark this payment as received? The app will no longer be locked by payment.')) return
-      const { error } = await supabase.from('aia_applications').update({ payment_received: false, payment_received_at: null, amount_received: null }).eq('id', appId)
-      if (error) { alert('Could not unmark payment: ' + error.message); return }
-      await loadAiaApplications()
-    } else {
-      setPaymentForm({ appId, amount: '', received_at: todayCentral() })
+  // Owner pay-app payments go through /api/aia-payments (Owner + PM). Each payment is
+  // its own entry; a wrong one is voided, never wiped. The amount starts at what is
+  // still due on the G702 (current payment due less payments already recorded).
+  // A draft opens the same modal read-only for recording (ledger + Void only):
+  // a legacy payment on a draft can be voided, but no new payment is taken.
+  async function openRecordPayment(app) {
+    if (!app || !canRecordAiaPayment(userRole)) return
+    const isDraft = app.status === 'draft'
+    setPaymentForm({ ...EMPTY_PAYMENT_FORM, appId: app.id, loading: true, draft: isDraft })
+    try {
+      const res = await authFetch(`/api/aia-payments?application_id=${encodeURIComponent(app.id)}`)
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok) { setPaymentForm(f => ({ ...f, loading: false, error: out.error || 'Could not load payments.' })); return }
+      const remaining = Number(out.remaining)
+      const draft = isDraft || out.status === 'draft'
+      setPaymentForm(f => ({
+        ...f, loading: false, draft, due: out.due, received: out.received || 0, remaining: Number.isFinite(remaining) ? remaining : null,
+        entries: out.entries || [], amount: !draft && Number.isFinite(remaining) && remaining > 0 ? remaining.toFixed(2) : '',
+      }))
+    } catch (e) {
+      setPaymentForm(f => ({ ...f, loading: false, error: 'Could not load payments: ' + (e?.message || 'network error') }))
     }
   }
 
+  async function postAiaPayment(method, body) {
+    const res = await authFetch('/api/aia-payments', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const out = await res.json().catch(() => ({}))
+    return { res, out }
+  }
+
   async function savePaymentReceived() {
-    if (!paymentForm.appId || !paymentForm.amount) return
+    if (!paymentForm.appId || paymentForm.draft) return
+    const parsed = parseAiaPaymentAmount(paymentForm.amount)
+    if (parsed.error) { alert(parsed.error); return }
+    let confirmMismatch = false
+    if (aiaPaymentDiffers(parsed.amount, paymentForm.remaining)) {
+      if (!window.confirm(aiaPaymentMismatchMessage(parsed.amount, paymentForm.remaining))) return
+      confirmMismatch = true
+    }
     setSavingPayment(true)
-    const { error } = await supabase.from('aia_applications').update({
-      payment_received: true,
-      payment_received_at: paymentForm.received_at ? new Date(paymentForm.received_at + 'T12:00:00').toISOString() : new Date().toISOString(),
-      amount_received: parseFloat(paymentForm.amount),
-    }).eq('id', paymentForm.appId)
+    const body = { application_id: paymentForm.appId, amount: parsed.amount, received_on: paymentForm.received_at, reference: paymentForm.reference, confirm_mismatch: confirmMismatch }
+    let { res, out } = await postAiaPayment('POST', body)
+    // The stored figures moved since the modal opened: show the server's numbers and ask again.
+    if (res.status === 409 && out.code === 'amount_mismatch' && window.confirm(out.error)) {
+      ;({ res, out } = await postAiaPayment('POST', { ...body, confirm_mismatch: true }))
+    }
     setSavingPayment(false)
-    if (error) { alert('Save failed: ' + error.message + '\n\nYou may need to run this SQL in Supabase:\nALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;'); return }
-    setPaymentForm({ appId: null, amount: '', received_at: todayCentral() })
+    if (!res.ok) { if (out.code !== 'amount_mismatch') alert('Payment was NOT recorded: ' + (out.error || `HTTP ${res.status}`)); return }
+    setPaymentForm(EMPTY_PAYMENT_FORM)
     await loadAiaApplications()
+    if (activeAia?.id === body.application_id && out.application) setActiveAia(a => ({ ...a, ...out.application }))
+  }
+
+  async function voidAiaPayment(entry) {
+    const reason = window.prompt(`Void the $${Number(entry.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} payment${entry.received_on ? ` received ${entry.received_on}` : ''}? Say why (kept in Change History):`)
+    if (reason == null) return
+    if (!reason.trim()) { alert('A reason is required to void a payment.'); return }
+    const { res, out } = await postAiaPayment('PATCH', { id: entry.id, action: 'void', reason })
+    if (!res.ok) { alert('Payment was NOT voided: ' + (out.error || `HTTP ${res.status}`)); return }
+    const app = aiaApplications.find(a => a.id === entry.application_id)
+    await loadAiaApplications()
+    if (activeAia?.id === entry.application_id && out.application) setActiveAia(a => ({ ...a, ...out.application }))
+    if (app) await openRecordPayment({ ...app, ...(out.application || {}) })
   }
 
   // Draw / Undo a direct cost on the pay app. The server (/api/aia-draw) changes the tag and
@@ -2629,7 +2693,11 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
         supabase.from('billing_submissions').select('id, company_name, amount_billed, status').eq('job_id', id),
         supabase.from('rfis').select('id, title, status').eq('job_id', id),
         supabase.from('milestones').select('id, title, due_date, status').eq('job_id', id).or('status.is.null,status.neq.complete'),
-        supabase.from('change_log').select('id, entity_type, field_name, note, created_at, changed_by_name').eq('job_id', id).order('created_at', { ascending: false }).limit(6)
+        // Through the API (job-scoped), not a direct table read.
+        authFetch(`/api/change-log?job_id=${encodeURIComponent(id)}&limit=6`)
+          .then(r => (r.ok ? r.json() : { log: [] }))
+          .then(out => ({ data: out.log || [] }))
+          .catch(() => ({ data: [] })),
       ])
       setOverviewSummary({
         billing: billingRes.data || [],
@@ -3382,7 +3450,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       const res = await authFetch('/api/parse-meeting', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: meetingTranscript }),
+        // Meeting Date anchors "next Friday"-style deadlines (server falls back to today, Central).
+        body: JSON.stringify({ transcript: meetingTranscript, meeting_date: meetingForm.meeting_date || null }),
       })
       const data = await res.json()
       if (!res.ok) { setMeetingMsg({ ok: false, text: data.error || 'Parse failed' }); return }
@@ -5229,9 +5298,49 @@ ${attachmentHtml}
   }
 
   // ── Completion Report ────────────────────────────────────────
+  // Same path as residential completeJob: the status goes through /api/jobs/details
+  // (principal / PM / APM / admin + job access; never a super), res.ok is checked
+  // before anything changes on screen, and openHtml opens the report window inside
+  // the tap (iOS) and closes it if the save fails.
   async function generateCompletionReport(markComplete = false) {
+    if (markComplete && !canCompleteJob) { alert('Only an Owner, PM, APM or Admin can mark a job complete.'); return }
     setGeneratingReport(true)
+    let saveErr = null
+    let saved = null
     try {
+      const shown = await openHtml(async () => {
+        if (markComplete) {
+          // A thrown fetch (offline, etc.) is a save failure too — never "complete".
+          let res, out
+          try {
+            res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields: { status: 'complete' } }) })
+            out = await res.json().catch(() => ({}))
+          } catch (e) {
+            saveErr = e?.message || 'network error'
+            return null
+          }
+          if (!res.ok || out.error) { saveErr = out.error || `HTTP ${res.status}`; return null }
+          saved = out.job || { ...job, status: 'complete' }
+        }
+        return buildCompletionReportHtml()
+      })
+      if (markComplete && !saved) {
+        // Only a confirmed save (res.ok) counts. Anything else: say it was NOT marked complete.
+        alert('Job was NOT marked complete: ' + (saveErr || 'the save did not run. Check your connection and try again.'))
+        return
+      }
+      if (saved) {
+        setJob(j => ({ ...j, ...saved }))
+        setForm(f => ({ ...f, status: saved.status || 'complete' }))
+      }
+      if (!shown) alert(saved ? 'Job marked complete. Allow pop-ups for this site to see the report.' : 'Could not open the report. Allow pop-ups for this site.')
+    } finally {
+      setGeneratingReport(false)
+    }
+  }
+
+  // Builds the completion report HTML (reads only; never writes the job).
+  async function buildCompletionReportHtml() {
       const [
         { data: billings },
         { data: dcs },
@@ -5245,12 +5354,6 @@ ${attachmentHtml}
         supabase.from('budget_items').select('*').eq('job_id', id).order('cost_code'),
         supabase.from('prime_change_orders').select('*').eq('job_id', id).eq('status', 'approved'),
       ])
-
-      if (markComplete) {
-        await supabase.from('jobs').update({ status: 'complete' }).eq('id', id)
-        setJob(j => ({ ...j, status: 'complete' }))
-        setForm(f => ({ ...f, status: 'complete' }))
-      }
 
       const fmt = n => '$' + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       const fmtSigned = n => (n < 0 ? '-' : '') + fmt(n)
@@ -5267,10 +5370,6 @@ ${attachmentHtml}
         : baseContractReport + approvedCOsTotal
       const origContract = job.nv_role === 'sub' ? contractSumToDate : baseContractReport
 
-      const totalBilledAIA = (aiaApps || []).reduce((a, app) => {
-        // Use last app's completed value — we'll calc from lines if needed; use billed from apps status
-        return a
-      }, 0)
       const receivedApps = (aiaApps || []).filter(a => a.payment_received)
       // Sum received via AIA: calculate from the apps that were payment_received
       // We'll compute received total from billing submissions as a proxy, plus direct costs
@@ -5290,7 +5389,7 @@ ${attachmentHtml}
       const dcByCategory = {}
       ;(dcs || []).forEach(c => {
         if (!dcByCategory[c.category]) dcByCategory[c.category] = 0
-        dcByCategory[c.category] += Number(c.amount || 0)
+        dcByCategory[c.category] += (c.is_credit ? -1 : 1) * Number(c.amount || 0)
       })
 
       // Budget vs actual per line
@@ -5298,7 +5397,7 @@ ${attachmentHtml}
       ;(dcs || []).forEach(c => {
         if (c.budget_item_id) {
           if (!dcByBudgetItem[c.budget_item_id]) dcByBudgetItem[c.budget_item_id] = 0
-          dcByBudgetItem[c.budget_item_id] += Number(c.amount || 0)
+          dcByBudgetItem[c.budget_item_id] += (c.is_credit ? -1 : 1) * Number(c.amount || 0)
         }
       })
       // Sub costs by budget item — from AIA lines of the latest app
@@ -5314,14 +5413,6 @@ ${attachmentHtml}
         })
       }
 
-      // Revenue received: contract sum × % billed via last AIA app (or just use contractSumToDate if all received)
-      const allReceived = receivedApps.length > 0 && receivedApps.length === (aiaApps || []).length
-      const lastApp = aiaApps && aiaApps.length > 0 ? aiaApps[aiaApps.length - 1] : null
-      const revenueReceived = receivedApps.reduce((a, app) => {
-        // rough: pro-rate by app_number; better is to sum AIA lines
-        return a
-      }, 0) || contractSumToDate // fallback to contract if we can't calc
-      // Use total payment received from AIA apps that are marked received — value from contractSumToDate as best estimate
       const receivedCount = receivedApps.length
       const totalApps = (aiaApps || []).length
       const grossProfit = contractSumToDate - totalCosts
@@ -5330,9 +5421,7 @@ ${attachmentHtml}
       const pmMember = teamMembers.find(m => m.email === job.pm_email)
       const pmName = pmMember?.full_name || job.pm_email || '—'
 
-      const w = window.open('', '_blank')
-      if (!w) { alert('Please allow popups for this site to generate PDFs.'); setGeneratingReport(false); return; }
-      w.document.write(`<!DOCTYPE html><html><head>
+      return `<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
 <title>Job Completion Report — #${job.job_number}</title>
 <style>
@@ -5488,11 +5577,7 @@ ${(budgets || []).length > 0 ? `
 </div>` : ''}
 
 <div class="foot">NV Construction &nbsp;·&nbsp; Job #${job.job_number} — ${job.project_name} &nbsp;·&nbsp; Generated ${genDate}</div>
-</body></html>`)
-      w.document.close()
-    } finally {
-      setGeneratingReport(false)
-    }
+</body></html>`
   }
 
   // ── Job ─────────────────────────────────────────────────────
@@ -5970,7 +6055,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             <p style={s.jobMeta}>{job.location}{job.start_date ? ' · Started ' + new Date(job.start_date + 'T12:00:00').toLocaleDateString() : ''}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {job.status !== 'complete' && !job.archived && (
+            {job.status !== 'complete' && !job.archived && canCompleteJob && (
               <button
                 style={{ padding: '9px 18px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: generatingReport ? 'default' : 'pointer', letterSpacing: '1px', textTransform: 'uppercase', opacity: generatingReport ? 0.6 : 1 }}
                 disabled={generatingReport}
@@ -6446,6 +6531,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <option key={m.id} value={m.email}>{m.full_name || m.email} ({m.role.toUpperCase()})</option>
                     ))}
                   </select>
+                  {teamLoadError && <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#dc2626' }}>Could not load staff: {teamLoadError}. Refresh to try again.</p>}
                 </div>
               </div>
 
@@ -11408,13 +11494,20 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         ) : (
                           <button style={s.btnSmall} onClick={() => { setRelinkDrawOpen(true); setRelinkDrawId(activeAia.linked_draw_request_id || '') }}>Relink draw</button>
                         )}
-                        <button
-                          style={activeAia.payment_received ? s.btnSmallGreen : s.btnSmall}
-                          disabled={activeAia.payment_received && !isPrincipal(userRole)}
-                          title={activeAia.payment_received && !isPrincipal(userRole) ? 'Only an Owner can unmark a recorded payment' : undefined}
-                          onClick={() => markPaymentReceived(activeAia.id, activeAia.payment_received)}>
-                          {activeAia.payment_received ? '✓ Received' : 'Record Payment'}
-                        </button>
+                        {/* Owner + PM, submitted/certified apps only (never drafts). */}
+                        {activeAia.status !== 'draft' && canRecordAiaPayment(userRole) && (
+                          <button
+                            style={activeAia.payment_received ? s.btnSmallGreen : s.btnSmall}
+                            onClick={() => openRecordPayment(activeAia)}>
+                            {activeAia.payment_received ? 'Payments / Record another' : 'Record Payment'}
+                          </button>
+                        )}
+                        {/* Draft that already carries a (legacy) payment: Owner + PM can open the ledger and void it; no new recording. */}
+                        {activeAia.status === 'draft' && canRecordAiaPayment(userRole) && (activeAia.payment_received || Number(activeAia.amount_received) > 0) && (
+                          <button style={s.btnSmall} onClick={() => openRecordPayment(activeAia)}>
+                            Payments (void only)
+                          </button>
+                        )}
                         {(!aiaLocked || isPrincipal(userRole)) && (
                           <button style={s.btnSmallRed} onClick={() => deleteAiaApplication(activeAia.id)}>Delete</button>
                         )}
@@ -11993,27 +12086,71 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
         )}
 
         {/* ── PAYMENT RECEIVED MODAL ── */}
-        {paymentForm.appId && (
+        {paymentForm.appId && (() => {
+          const money = n => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          const close = () => setPaymentForm(EMPTY_PAYMENT_FORM)
+          return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '400px' }}>
-              <p style={{ margin: '0 0 1.25rem', fontSize: '16px', fontWeight: '700', color: '#111827' }}>Record Payment Received</p>
-              <div style={{ marginBottom: '12px' }}>
-                <label style={s.label}>Amount received ($)</label>
-                <input type="number" step="0.01" min="0" autoFocus style={s.input} value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-              </div>
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={s.label}>Date received</label>
-                <input type="date" style={s.input} value={paymentForm.received_at} onChange={e => setPaymentForm(f => ({ ...f, received_at: e.target.value }))} />
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button style={{ ...s.btn, opacity: savingPayment || !paymentForm.amount ? 0.5 : 1 }} disabled={savingPayment || !paymentForm.amount} onClick={savePaymentReceived}>
-                  {savingPayment ? 'Saving...' : 'Save payment'}
-                </button>
-                <button style={s.btnGray} onClick={() => setPaymentForm({ appId: null, amount: '', received_at: todayCentral() })}>Cancel</button>
-              </div>
+            <div style={{ background: '#ffffff', border: '1px solid #222', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '460px', maxHeight: '90vh', overflowY: 'auto' }}>
+              <p style={{ margin: '0 0 1rem', fontSize: '16px', fontWeight: '700', color: '#111827' }}>Owner Payments</p>
+              {paymentForm.loading ? <p style={{ fontSize: '13px', color: '#6b7280' }}>Loading…</p> : paymentForm.error ? (
+                <>
+                  <p style={{ fontSize: '13px', color: '#dc2626', marginBottom: '1rem' }}>{paymentForm.error}</p>
+                  <button style={s.btnGray} onClick={close}>Close</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: '13px', color: '#374151', marginBottom: '12px', lineHeight: 1.6 }}>
+                    <div>G702 current payment due: <strong>{money(paymentForm.due)}</strong></div>
+                    <div>Received so far: <strong>{money(paymentForm.received)}</strong></div>
+                    <div>Still due: <strong style={{ color: Number(paymentForm.remaining) < 0 ? '#dc2626' : '#111827' }}>{money(paymentForm.remaining)}</strong></div>
+                  </div>
+                  {paymentForm.entries.length > 0 && (
+                    <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '14px' }}>
+                      {paymentForm.entries.map(e => (
+                        <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '12px', opacity: e.voided_at ? 0.55 : 1 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, textDecoration: e.voided_at ? 'line-through' : 'none' }}>{money(e.amount)} · {e.received_on || 'no date'}</div>
+                            <div style={{ color: '#6b7280' }}>{e.reference || '—'}{e.recorded_by_name ? ` · ${e.recorded_by_name}` : ''}{e.voided_at ? ` · voided${e.voided_by_name ? ` by ${e.voided_by_name}` : ''}: ${e.void_reason || ''}` : ''}</div>
+                          </div>
+                          {!e.voided_at && canRecordAiaPayment(userRole) && <button style={s.btnSmallRed} onClick={() => voidAiaPayment(e)}>Void</button>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {paymentForm.draft ? (
+                    <>
+                      <p style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 10px', marginBottom: '14px' }}>
+                        This application is a draft. New payments can only be recorded once it is submitted or certified. You can still void a payment recorded on it earlier.
+                      </p>
+                      <button style={s.btnGray} onClick={close}>Close</button>
+                    </>
+                  ) : (<>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Amount received ($)</label>
+                    <input type="number" step="0.01" min="0" autoFocus style={s.input} value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                  </div>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={s.label}>Date received</label>
+                    <input type="date" style={s.input} max={todayCentral()} value={paymentForm.received_at} onChange={e => setPaymentForm(f => ({ ...f, received_at: e.target.value }))} />
+                  </div>
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <label style={s.label}>Reference (check # / wire)</label>
+                    <input type="text" maxLength={120} style={s.input} value={paymentForm.reference} onChange={e => setPaymentForm(f => ({ ...f, reference: e.target.value }))} placeholder="Optional" />
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button style={{ ...s.btn, opacity: savingPayment || !paymentForm.amount ? 0.5 : 1 }} disabled={savingPayment || !paymentForm.amount} onClick={savePaymentReceived}>
+                      {savingPayment ? 'Saving...' : 'Save payment'}
+                    </button>
+                    <button style={s.btnGray} onClick={close}>Close</button>
+                  </div>
+                  </>)}
+                </>
+              )}
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* ── SCHEDULE TAB ── */}
         {activeTab === 'schedule' && (
@@ -12756,7 +12893,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           // Cash IN: payments received from owner via AIA / draw request applications
           const cashInByMonth = {}
           const receivedNoAmount = aiaApplications.filter(a => a.payment_received && !a.amount_received)
+          // Itemized entries (each payment in its own month) when loaded; amount_received is
+          // their synced sum, so an app is counted from one source only.
+          const liveEntriesByApp = {}
+          for (const e of aiaPaymentEntries || []) if (!e.voided_at) (liveEntriesByApp[e.application_id] = liveEntriesByApp[e.application_id] || []).push(e)
           aiaApplications.filter(a => a.payment_received && a.amount_received).forEach(a => {
+            const list = liveEntriesByApp[a.id]
+            if (list?.length) {
+              list.forEach(e => {
+                const key = (e.received_on || a.payment_received_at || a.period_to || '').slice(0, 7)
+                if (key) cashInByMonth[key] = (cashInByMonth[key] || 0) + Number(e.amount || 0)
+              })
+              return
+            }
             const key = (a.payment_received_at || a.period_to || '').slice(0, 7)
             if (key) cashInByMonth[key] = (cashInByMonth[key] || 0) + Number(a.amount_received)
           })
@@ -12800,10 +12949,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               {receivedNoAmount.length > 0 && (
                 <div style={{ background: '#fff7ed', border: '1px solid #5a2800', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', fontSize: '13px', color: '#e8590c' }}>
                   <strong>{receivedNoAmount.length} {receivedNoAmount.length === 1 ? 'application is' : 'applications are'} marked received but have no dollar amount.</strong>
-                  {' '}Go to the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab, click <strong style={{ color: '#111827' }}>Record Payment</strong> on each one, and enter the amount — or run this SQL migration first if amounts aren't saving:
-                  <code style={{ display: 'block', marginTop: '8px', padding: '8px 10px', background: '#fff7ed', borderRadius: '6px', fontSize: '12px', color: '#4b5563', userSelect: 'all' }}>
-                    ALTER TABLE aia_applications ADD COLUMN IF NOT EXISTS amount_received numeric;
-                  </code>
+                  {' '}Go to the <strong style={{ color: '#111827' }}>Prime Contract</strong> tab, open each one, click <strong style={{ color: '#111827' }}>Payments / Record another</strong>, and record the amount received (Owner or PM).
                 </div>
               )}
               {totalIn === 0 && receivedNoAmount.length === 0 && (

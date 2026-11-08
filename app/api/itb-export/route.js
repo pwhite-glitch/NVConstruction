@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { buildZip } from '../../../lib/zip-builder'
 import { denyJob } from '../../../lib/roles'
+import { canReadBidPackage, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -34,13 +35,14 @@ export async function POST(request) {
   // Verify the bid package exists
   const { data: pkg, error: pkgErr } = await adminSupabase
     .from('bid_packages')
-    .select('id, title, job_id')
+    .select('id, title, job_id, allowed_users')
     .eq('id', bidPackageId)
     .maybeSingle()
 
   if (pkgErr || !pkg) {
     return Response.json({ error: 'Bid package not found' }, { status: 404 })
   }
+  if (!canReadBidPackage(auth.role, auth.userId, pkg)) return Response.json({ error: NO_BID_ACCESS_MESSAGE }, { status: 403 })
   // A package with no job is not job-scoped
   if (pkg.job_id) {
     const denied = await denyJob(adminSupabase, auth, pkg.job_id)

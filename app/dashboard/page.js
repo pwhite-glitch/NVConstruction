@@ -18,6 +18,7 @@ import EstimatorHome from '../components/estimating/EstimatorHome'
 import EstimateWorkspace from '../components/estimating/EstimateWorkspace'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { formatDuePill } from '../../lib/meeting-parse'
 import { isConverted } from '../../lib/estimate-pipeline'
 import { calcTotal as estimateCalcTotal, estimateBreakdown, validateTaxRate, normalizeTaxRateInput, taxLabel, isMissingTaxRateColumn, DEFAULT_TAX_RATE, MAX_TAX_RATE, TAX_RATE_MIGRATION_MSG } from '../../lib/calc-total'
 import { estimateTotal, mapEstimateLinesToBudget } from '../../lib/estimate-to-job'
@@ -442,6 +443,7 @@ export default function Dashboard() {
 
   // NV Directory state
   const [teamMembers, setTeamMembers] = useState([])
+  const [teamLoadError, setTeamLoadError] = useState('')
   const [pmJobAssigns, setPmJobAssigns] = useState([])
   const [teamExpandedId, setTeamExpandedId] = useState(null)
   const [teamAssignTarget, setTeamAssignTarget] = useState({})
@@ -1145,8 +1147,10 @@ export default function Dashboard() {
   async function loadBidPackages(jobIds = null) {
     const { data: { session } } = await supabase.auth.getSession()
     if (profile?.role === 'apm') {
-      const { data } = await supabase.from('bid_packages').select('*').contains('allowed_users', [session.user.id]).order('created_at', { ascending: false })
-      setBidPackages(data || [])
+      // Server-filtered: only packages this APM is listed on (APM Access).
+      const res = await fetch('/api/bid-packages', { headers: { 'Authorization': `Bearer ${session?.access_token}` } })
+      const out = await res.json().catch(() => ({}))
+      setBidPackages(res.ok ? (out.packages || []) : [])
       return
     }
     const ids = jobIds !== undefined ? jobIds : assignedJobIds
@@ -1188,7 +1192,8 @@ export default function Dashboard() {
     const current = pkg?.allowed_users || []
     const updated = current.includes(userId) ? current.filter(id => id !== userId) : [...current, userId]
     const { data: { session } } = await supabase.auth.getSession()
-    await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, allowed_users: updated }) })
+    const res = await fetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ id: bidId, allowed_users: updated }) })
+    if (!res.ok) { const out = await res.json().catch(() => ({})); alert('APM Access was not changed: ' + (out.error || `HTTP ${res.status}`)); return }
     setBidPackages(prev => prev.map(b => b.id === bidId ? { ...b, allowed_users: updated } : b))
   }
 
@@ -1986,12 +1991,25 @@ export default function Dashboard() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  // /api/team-members needs the session token (requirePM). A failed load is
+  // shown as an error, not as an empty team.
+  async function loadTeamMembers() {
+    try {
+      const res = await authFetch('/api/team-members')
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) { setTeamLoadError(json.error || `HTTP ${res.status}`); return }
+      setTeamLoadError('')
+      setTeamMembers(json.members || [])
+    } catch (e) {
+      setTeamLoadError(e?.message || 'network error')
+    }
+  }
+
   async function loadTeamData() {
-    const [teamRes, { data: assigns }] = await Promise.all([
-      fetch('/api/team-members').then(r => r.json()),
+    const [, { data: assigns }] = await Promise.all([
+      loadTeamMembers(),
       supabase.from('pm_job_assignments').select('*, jobs(id, job_number, project_name)').order('assigned_at'),
     ])
-    setTeamMembers(teamRes.members || [])
     setPmJobAssigns(assigns || [])
   }
 
@@ -2001,7 +2019,7 @@ export default function Dashboard() {
     setTeamAssigningId(member.id)
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/pm-job-assignments', {
+      const res = await authFetch('/api/pm-job-assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ job_id: jobId, user_id: member.id, assigned_by: session?.user?.id }),
@@ -2023,20 +2041,28 @@ export default function Dashboard() {
   }
 
   async function removeApmFromJob(assignId) {
-    await fetch('/api/pm-job-assignments', {
+    const res = await authFetch('/api/pm-job-assignments', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: assignId }),
-    })
+    }).catch(e => ({ ok: false, json: async () => ({ error: e?.message || 'network error' }) }))
+    if (!res.ok) { const j = await res.json().catch(() => ({})); alert('Could not remove the assignment: ' + (j.error || `HTTP ${res.status}`)) }
     await loadTeamData()
   }
 
   async function updateTeamRole(userId, role) {
     setUpdatingRoleId(userId)
     setRoleMsg(prev => ({ ...prev, [userId]: null }))
-    const { error } = await supabase.from('profiles').update({ role }).eq('id', userId)
+    // Owner-only server route: allow-listed roles, last-Owner guard, logged from the session.
+    let error = null
+    try {
+      const res = await authFetch('/api/fix-profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'team_role', user_id: userId, role }) })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok || out.error) error = { message: out.error || `HTTP ${res.status}` }
+    } catch (e) { error = { message: e?.message || 'network error' } }
     if (error) {
       setRoleMsg(prev => ({ ...prev, [userId]: { ok: false, text: 'Failed: ' + (error.message || 'permission denied') } }))
+      await loadTeamData()
     } else {
       await loadTeamData()
       setRoleMsg(prev => ({ ...prev, [userId]: { ok: true, text: 'Saved' } }))
@@ -3983,7 +4009,7 @@ ${planLinks.map(p => p.url
                         <div style={{ marginTop: '2px' }}>{jobTag(item)}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
-                        {item.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: isOverdue(item.due_date) ? '#dc2626' : '#374151' }}>Due {fmtDate(item.due_date)}</span>}
+                        {item.due_date && <span style={{ fontSize: '12px', fontWeight: '600', color: isOverdue(item.due_date) ? '#dc2626' : '#374151' }}>Due {formatDuePill(item.due_date)}</span>}
                         <span style={{ fontSize: '12px', color: '#d97706' }}>View →</span>
                       </div>
                     </>
@@ -6861,7 +6887,9 @@ ${planLinks.map(p => p.url
                   </div>
                 </div>
 
-                {teamMembers.length === 0 ? (
+                {teamLoadError ? (
+                  <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Could not load the team list: {teamLoadError}. Refresh to try again.</div>
+                ) : teamMembers.length === 0 ? (
                   <div style={s.emptyMsg}>No team members yet. Create accounts in Supabase and assign a role.</div>
                 ) : teamMembers.map(member => {
                   const isExp = teamExpandedId === member.id

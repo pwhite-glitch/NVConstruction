@@ -2,7 +2,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
-import { atLeastPM } from '../../../lib/roles'
+import { authFetch } from '../../../lib/client-fetch'
+import { canEditBidPackage, isBidManager, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
 import { jobHref } from '../../../lib/job-links'
 import JobNumberHint from '../../components/JobNumberHint'
 import { useJobNumbers, confirmJobNumberFree } from '../../../lib/use-job-numbers'
@@ -1447,8 +1448,9 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
   const [newStatus, setNewStatus] = useState(pkg?.status || 'open')
   const [savingStatus, setSavingStatus] = useState(false)
 
-  const canEdit = ['principal', 'pm', 'apm'].includes(profile?.role)
-  const isPM    = atLeastPM(profile?.role)
+  // Supers are read-only; APMs only reach this page for packages they are on.
+  const canEdit = canEditBidPackage(profile?.role, profile?.id, pkg)
+  const isPM    = isBidManager(profile?.role)
   const awarded = submissions.find(s => s.status === 'awarded')
 
   useEffect(() => {
@@ -1517,8 +1519,12 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
         await supabase.from('budget_items').insert(budgetRows)
       }
 
-      // Link bid package to job
-      await supabase.from('bid_packages').update({ job_id: job.id, status: 'awarded' }).eq('id', bidId)
+      // Link bid package to job (server checks who may change the package)
+      const linkRes = await authFetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bidId, job_id: job.id, status: 'awarded' }) })
+      if (!linkRes.ok) {
+        const out = await linkRes.json().catch(() => ({}))
+        alert(`Job created, but the bid package could not be linked to it: ${out.error || `HTTP ${linkRes.status}`}`)
+      }
 
       router.push(`/jobdetail?id=${job.id}`)
     } catch (e) {
@@ -1529,7 +1535,11 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
 
   async function saveStatus() {
     setSavingStatus(true)
-    await supabase.from('bid_packages').update({ status: newStatus }).eq('id', bidId)
+    const res = await authFetch('/api/bid-packages', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bidId, status: newStatus }) })
+    if (!res.ok) {
+      const out = await res.json().catch(() => ({}))
+      alert('Status was not saved: ' + (out.error || `HTTP ${res.status}`))
+    }
     await reload()
     setSavingStatus(false)
     setShowStatus(false)
@@ -1644,7 +1654,12 @@ function ProposalSection({ pkg, bidId, scopeItems, submissions, profile, reload 
             style={s.btnDanger}
             onClick={async () => {
               if (!confirm(`Delete bid package "${pkg?.title}"? This cannot be undone.`)) return
-              await supabase.from('bid_packages').delete().eq('id', bidId)
+              const res = await authFetch('/api/bid-packages', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bidId }) })
+              if (!res.ok) {
+                const out = await res.json().catch(() => ({}))
+                alert('Bid package was NOT deleted: ' + (out.error || `HTTP ${res.status}`))
+                return
+              }
               router.push('/dashboard?tab=estimator&inner=bids')
             }}
           >
@@ -1676,7 +1691,7 @@ export default function BidWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const canEdit = ['principal', 'pm', 'apm'].includes(profile?.role)
+  const canEdit = canEditBidPackage(profile?.role, profile?.id, pkg)
 
   const loadAll = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -1686,29 +1701,25 @@ export default function BidWorkspacePage() {
     const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle()
     setProfile({ ...prof, id: session.user.id, email: session.user.email })
 
-    // Bid package
-    const { data: bidPkg, error: bidErr } = await supabase.from('bid_packages').select('*').eq('id', id).maybeSingle()
-    if (bidErr || !bidPkg) { setError('Bid package not found.'); setLoading(false); return }
-    setPkg(bidPkg)
+    // Bid package + plans, invitations, submissions, RFIs: through the server, which
+    // checks the caller is allowed on this package (APMs: listed under APM Access).
+    let bundle
+    try {
+      const res = await authFetch(`/api/bid-packages?id=${encodeURIComponent(id)}`)
+      bundle = await res.json().catch(() => ({}))
+      if (res.status === 403) { setError(bundle.error || NO_BID_ACCESS_MESSAGE); setLoading(false); return }
+      if (!res.ok || !bundle.package) { setError(res.status === 404 ? 'Bid package not found.' : (bundle.error || 'Could not load the bid package.')); setLoading(false); return }
+    } catch (e) {
+      setError('Could not load the bid package: ' + (e?.message || 'network error')); setLoading(false); return
+    }
+    setPkg(bundle.package)
 
-    // Parallel data loads
-    const [plansRes, scopeRes, invRes, subRes, levelRes] = await Promise.all([
-      supabase.from('bid_plans').select('*').eq('bid_package_id', id).order('uploaded_at'),
-      supabase.from('bid_scope_items').select('*').eq('bid_package_id', id).order('sort_order'),
-      supabase.from('bid_invitations').select('*').eq('bid_package_id', id).order('sent_at'),
-      supabase.from('bid_submissions').select('*').eq('bid_package_id', id).order('submitted_at'),
-      supabase.from('bid_leveling_entries').select('*').eq('bid_submission_id', 'dummy').then(() =>
-        supabase.from('bid_leveling_entries').select('*').in('bid_submission_id',
-          // Will be populated after submissions load
-          ['00000000-0000-0000-0000-000000000000']
-        )
-      ),
-    ])
+    const { data: scopeData } = await supabase.from('bid_scope_items').select('*').eq('bid_package_id', id).order('sort_order')
 
-    setPlans(plansRes.data || [])
-    setScopeItems(scopeRes.data || [])
-    setInvitations(invRes.data || [])
-    const subs = subRes.data || []
+    setPlans(bundle.plans || [])
+    setScopeItems(scopeData || [])
+    setInvitations(bundle.invitations || [])
+    const subs = bundle.submissions || []
     setSubmissions(subs)
 
     // Load leveling entries for actual submission IDs
@@ -1717,13 +1728,9 @@ export default function BidWorkspacePage() {
       setLevelingEntries(lvl || [])
     }
 
-    // Try to load RFIs (table may not exist yet)
-    const { data: rfiData, error: rfiErr } = await supabase.from('bid_rfis').select('*').eq('bid_package_id', id).order('rfi_number')
-    if (rfiErr?.message?.includes('relation') || rfiErr?.message?.includes('does not exist')) {
-      setRfiTableExists(false)
-    } else {
-      setRfis(rfiData || [])
-    }
+    // RFIs came with the package (the table may not exist yet)
+    if (bundle.rfi_table_exists === false) setRfiTableExists(false)
+    else setRfis(bundle.rfis || [])
 
     setLoading(false)
   }, [id, router])

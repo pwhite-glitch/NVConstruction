@@ -1,5 +1,6 @@
 ﻿'use client'
 import React from 'react'
+import { MEETING_TRANSCRIPT_MAX, formatDuePill, dueFlagText } from '../../lib/meeting-parse'
 
 export default function MeetingsTab({
   s,
@@ -66,7 +67,10 @@ export default function MeetingsTab({
               placeholder="Paste your Plaud meeting minutes or notes here..."
               value={meetingTranscript}
               onChange={e => setMeetingTranscript(e.target.value)} />
-            <p style={{ fontSize: '11px', color: '#444', margin: '4px 0 0' }}>{meetingTranscript.length.toLocaleString()} characters</p>
+            <p style={{ fontSize: '11px', color: meetingTranscript.length > MEETING_TRANSCRIPT_MAX ? '#dc2626' : '#444', margin: '4px 0 0' }}>
+              {meetingTranscript.length.toLocaleString()} / {MEETING_TRANSCRIPT_MAX.toLocaleString()} characters
+              {meetingTranscript.length > MEETING_TRANSCRIPT_MAX && ' — too long for AI parsing; split it into parts'}
+            </p>
           </div>
 
           <div style={{ display: 'flex', gap: '8px', marginBottom: parsedMeeting ? '1.5rem' : 0 }}>
@@ -108,8 +112,9 @@ export default function MeetingsTab({
                             <input type="text" style={{ ...s.input, flex: 1 }} placeholder="Assigned to" value={a.assigned_to || ''}
                               onChange={e => setParsedMeeting(p => ({ ...p, action_items: p.action_items.map((x, j) => j === i ? { ...x, assigned_to: e.target.value } : x) }))} />
                             <input type="date" style={{ ...s.input, width: '150px' }} value={a.due_date || ''}
-                              onChange={e => setParsedMeeting(p => ({ ...p, action_items: p.action_items.map((x, j) => j === i ? { ...x, due_date: e.target.value } : x) }))} />
+                              onChange={e => setParsedMeeting(p => ({ ...p, action_items: p.action_items.map((x, j) => j === i ? { ...x, due_date: e.target.value, due_date_flag: null } : x) }))} />
                           </div>
+                          {a.due_date_flag && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#b45309' }}>⚠ {dueFlagText(a)}</p>}
                         </div>
                         <button style={s.btnSmallRed} onClick={() => setParsedMeeting(p => ({ ...p, action_items: p.action_items.filter((_, j) => j !== i) }))}>&#x2715;</button>
                       </div>
@@ -208,7 +213,7 @@ export default function MeetingsTab({
                               <p style={{ margin: '0 0 3px', fontSize: '14px', color: a.status === 'done' ? '#444' : '#f1f1f1', textDecoration: a.status === 'done' ? 'line-through' : 'none' }}>{a.description}</p>
                               <div style={{ display: 'flex', gap: '12px' }}>
                                 {a.assigned_to && <span style={{ fontSize: '12px', color: '#60a5fa' }}>→ {a.assigned_to}</span>}
-                                {a.due_date && <span style={{ fontSize: '12px', color: '#888' }}>Due {new Date(a.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                                {a.due_date && <span style={{ fontSize: '12px', color: '#888' }}>Due {formatDuePill(a.due_date)}</span>}
                               </div>
                             </div>
                           </div>

@@ -1,4 +1,13 @@
 import { requirePM } from '../../../lib/server-auth'
+import { todayCentral } from '../../../lib/central-date'
+import {
+  MEETING_TRANSCRIPT_MAX, MEETING_PARSE_MAX_TOKENS, TRUNCATED_REPLY_MESSAGE,
+  meetingAnchorDate, normalizeDueDate, buildMeetingPrompt,
+} from '../../../lib/meeting-parse'
+
+// POST { transcript, meeting_date? } — meeting_date (YYYY-MM-DD, else today in
+// America/Chicago) anchors relative deadlines. Due dates far from the meeting
+// come back null with due_date_flag so the reviewer checks them.
 
 export async function POST(req) {
   const auth = await requirePM(req)
@@ -14,13 +23,18 @@ export async function POST(req) {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { transcript } = body
+  const { transcript, meeting_date } = body
   if (!transcript || typeof transcript !== 'string' || transcript.trim().length < 20) {
     return Response.json({ error: 'Transcript text is required (minimum 20 characters)' }, { status: 400 })
   }
-  if (transcript.length > 100000) {
-    return Response.json({ error: 'Transcript too long — max ~100,000 characters' }, { status: 400 })
+  if (transcript.length > MEETING_TRANSCRIPT_MAX) {
+    return Response.json({ error: `Transcript too long — max ${MEETING_TRANSCRIPT_MAX.toLocaleString('en-US')} characters. Split it and parse each part.` }, { status: 400 })
   }
+  if (meeting_date != null && meeting_date !== '' && typeof meeting_date !== 'string') {
+    return Response.json({ error: 'meeting_date must be YYYY-MM-DD' }, { status: 400 })
+  }
+  const today = todayCentral()
+  const anchor = meetingAnchorDate(meeting_date)
 
   const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -31,38 +45,10 @@ export async function POST(req) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4096,
+      max_tokens: MEETING_PARSE_MAX_TOKENS,
       messages: [{
         role: 'user',
-        content: `You are a construction project management assistant. Analyze this meeting transcript or meeting minutes from a construction/design-build project and extract structured information.
-
-Return a single valid JSON object with exactly these four keys:
-
-"action_items": array of objects with:
-  - "description": what needs to be done (string, required)
-  - "assigned_to": who is responsible — a person's name or company name (string or null)
-  - "due_date": deadline in YYYY-MM-DD format if mentioned, otherwise null
-
-"decisions": array of objects with:
-  - "description": what was decided or confirmed (string, required)
-
-"contacts": array of objects with:
-  - "name": full name (string, required)
-  - "company": company or firm name (string or null)
-  - "role": their role on the project e.g. "Architect", "Owner", "Engineer" (string or null)
-  - "phone": phone number if mentioned (string or null)
-  - "email": email if mentioned (string or null)
-
-"topics": array of strings — the main subjects discussed (e.g. "Structural system", "MEP coordination", "Permit timeline")
-
-Rules:
-- Only include contacts if they are actual people mentioned with a name; not just roles
-- Only include action items for things explicitly assigned or committed to
-- Only include decisions for things explicitly agreed upon or resolved
-- Return ONLY valid JSON, no markdown fences, no explanation
-
-Transcript:
-${transcript.slice(0, 80000)}`,
+        content: buildMeetingPrompt(transcript, anchor, today),
       }],
     }),
   })
@@ -75,6 +61,11 @@ ${transcript.slice(0, 80000)}`,
 
   const aiData = await aiRes.json()
   const rawText = aiData.content?.[0]?.text ?? ''
+  // A cut-off reply is not "unreadable" — say what happened.
+  if (aiData.stop_reason === 'max_tokens') {
+    console.error('parse-meeting: reply truncated at max_tokens')
+    return Response.json({ error: TRUNCATED_REPLY_MESSAGE, code: 'truncated' }, { status: 422 })
+  }
 
   let parsed
   try {
@@ -96,7 +87,7 @@ ${transcript.slice(0, 80000)}`,
     action_items: (parsed.action_items ?? []).filter(a => a?.description).map(a => ({
       description: String(a.description).slice(0, 500),
       assigned_to: a.assigned_to ? String(a.assigned_to).slice(0, 100) : null,
-      due_date: /^\d{4}-\d{2}-\d{2}$/.test(a.due_date) ? a.due_date : null,
+      ...normalizeDueDate(a.due_date, anchor),
     })),
     decisions: (parsed.decisions ?? []).filter(d => d?.description).map(d => ({
       description: String(d.description).slice(0, 1000),
@@ -111,5 +102,7 @@ ${transcript.slice(0, 80000)}`,
     topics: (parsed.topics ?? []).filter(t => t).map(t => String(t).slice(0, 100)).slice(0, 10),
   }
 
+  result.meeting_date = anchor
+  result.analyzed_chars = transcript.length
   return Response.json(result)
 }

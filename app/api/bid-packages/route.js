@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
-import { denyJob, isJobLimited } from '../../../lib/roles'
+import { denyJob, isJobLimited, accessibleJobIds } from '../../../lib/roles'
+import { isMissingRelation } from '../../../lib/budget-line-refs'
+import {
+  canReadBidPackage, canCreateBidPackage, bidPatchError, bidDeleteError,
+  normalizeAllowedUsers, NO_BID_ACCESS_MESSAGE,
+} from '../../../lib/bid-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,15 +13,65 @@ const adminSupabase = createClient(
 )
 
 // Guard the package's job when it has one (packages with no job are not job-scoped).
-async function denyPackage(auth, id) {
+async function denyPackageJob(auth, pkg) {
   if (!isJobLimited(auth.role)) return null
-  const { data: pkg } = await adminSupabase.from('bid_packages').select('job_id').eq('id', id).maybeSingle()
   return pkg?.job_id ? denyJob(adminSupabase, auth, pkg.job_id) : null
+}
+
+async function loadPackage(id) {
+  return adminSupabase.from('bid_packages').select('*').eq('id', id).maybeSingle()
+}
+
+const fail = e => Response.json({ error: e.error }, { status: e.status })
+
+// GET ?id=… — the package and its plans, invitations, submissions and RFIs,
+// only for someone allowed on it (APMs: listed in allowed_users) AND, for a
+// job-limited PM / APM, on the package's job when it has one. /bid/[id]
+// loads through here so an APM who is not on the package sees "no access".
+// GET (no id) — the packages the caller may read (same two rules). Jobless
+// pre-award packages follow the package-role rules only.
+export async function GET(request) {
+  const auth = await requirePM(request)
+  if (auth.error) return auth.error
+  const id = new URL(request.url).searchParams.get('id')
+  if (!id) {
+    const { data, error } = await adminSupabase.from('bid_packages').select('*').order('created_at', { ascending: false })
+    if (error) return Response.json({ error: error.message }, { status: 500 })
+    let jobIds = null
+    if (isJobLimited(auth.role)) {
+      const r = await accessibleJobIds(adminSupabase, auth)
+      if (r.error) return Response.json({ error: r.error.message || 'Could not check job access.' }, { status: 500 })
+      jobIds = r.ids
+    }
+    const onJob = p => !p.job_id || !jobIds || jobIds.has(p.job_id)
+    return Response.json({ packages: (data || []).filter(p => canReadBidPackage(auth.role, auth.userId, p) && onJob(p)) })
+  }
+  const { data: pkg, error } = await loadPackage(id)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (!pkg) return Response.json({ error: 'Bid package not found.' }, { status: 404 })
+  if (!canReadBidPackage(auth.role, auth.userId, pkg)) return Response.json({ error: NO_BID_ACCESS_MESSAGE, code: 'no_access' }, { status: 403 })
+  const deniedJob = await denyPackageJob(auth, pkg)
+  if (deniedJob) return deniedJob
+
+  const [plans, invitations, submissions, rfis] = await Promise.all([
+    adminSupabase.from('bid_plans').select('*').eq('bid_package_id', id).order('uploaded_at'),
+    adminSupabase.from('bid_invitations').select('*').eq('bid_package_id', id).order('sent_at'),
+    adminSupabase.from('bid_submissions').select('*').eq('bid_package_id', id).order('submitted_at'),
+    adminSupabase.from('bid_rfis').select('*').eq('bid_package_id', id).order('rfi_number'),
+  ])
+  for (const r of [plans, invitations, submissions]) if (r.error) return Response.json({ error: r.error.message }, { status: 500 })
+  const rfiTableExists = !(rfis.error && isMissingRelation(rfis.error))
+  if (rfis.error && rfiTableExists) return Response.json({ error: rfis.error.message }, { status: 500 })
+  return Response.json({
+    package: pkg, plans: plans.data || [], invitations: invitations.data || [], submissions: submissions.data || [],
+    rfis: rfis.data || [], rfi_table_exists: rfiTableExists,
+  })
 }
 
 export async function POST(request) {
   const auth = await requirePM(request)
   if (auth.error) return auth.error
+  if (!canCreateBidPackage(auth.role)) return Response.json({ error: 'Superintendents cannot create bid packages.' }, { status: 403 })
 
   try {
     const body = await request.json()
@@ -40,6 +95,8 @@ export async function POST(request) {
       bid_instructions: bid_instructions || null,
       created_by: auth.userId,
       status: 'open',
+      // An APM who creates a package is put on it, or they could not open it.
+      ...(auth.role === 'apm' ? { allowed_users: [auth.userId] } : {}),
     }).select('id').single()
 
     if (error) return Response.json({ error: error.message }, { status: 500 })
@@ -65,8 +122,19 @@ export async function PATCH(request) {
     }
 
     if (Object.keys(updates).length === 0) return Response.json({ ok: true })
+    if ('allowed_users' in updates) {
+      const n = normalizeAllowedUsers(updates.allowed_users)
+      if (n.error) return Response.json({ error: n.error }, { status: 400 })
+      updates.allowed_users = n.list
+    }
 
-    const denied = await denyPackage(auth, id) || (updates.job_id ? await denyJob(adminSupabase, auth, updates.job_id) : null)
+    const { data: pkg, error: pkgErr } = await loadPackage(id)
+    if (pkgErr) return Response.json({ error: pkgErr.message }, { status: 500 })
+    if (!pkg) return Response.json({ error: 'Bid package not found.' }, { status: 404 })
+    const refused = bidPatchError(auth, pkg, updates)
+    if (refused) return fail(refused)
+
+    const denied = await denyPackageJob(auth, pkg) || (updates.job_id ? await denyJob(adminSupabase, auth, updates.job_id) : null)
     if (denied) return denied
 
     const { error } = await adminSupabase.from('bid_packages').update(updates).eq('id', id)
@@ -82,9 +150,14 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
 
   try {
+    const refused = bidDeleteError(auth)
+    if (refused) return fail(refused)
     const { id } = await request.json()
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
-    const denied = await denyPackage(auth, id)
+    const { data: pkg, error: pkgErr } = await loadPackage(id)
+    if (pkgErr) return Response.json({ error: pkgErr.message }, { status: 500 })
+    if (!pkg) return Response.json({ error: 'Bid package not found.' }, { status: 404 })
+    const denied = await denyPackageJob(auth, pkg)
     if (denied) return denied
     const { error } = await adminSupabase.from('bid_packages').delete().eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })

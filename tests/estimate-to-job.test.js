@@ -49,7 +49,7 @@ jest.mock('../lib/server-auth', () => ({
 
 const route = require('../app/api/estimates/to-job/route')
 const {
-  lineCost, linePrice, estimateTotal, mapEstimateLinesToBudget, findDuplicates, planLink, budgetSnapshot, JOB_LINK_ROLES,
+  lineCost, linePrice, estimateTotal, mapEstimateLinesToBudget, findDuplicates, planLink, budgetSnapshot, JOB_LINK_ROLES, round2,
 } = require('../lib/estimate-to-job')
 const { calcTotal } = require('../lib/calc-total')
 
@@ -147,6 +147,54 @@ describe('line mapping: cost vs price with markup', () => {
     const expected = Math.round(calcTotal({ ...est, estimate_line_items: lines }) * 100) / 100
     expect(estimateTotal(est, lines)).toBe(expected)
     expect(expected).toBe(1100 + 2450 + 500 + 3000 * 0.0825)
+  })
+})
+
+describe('line mapping: global flat markup becomes a "Markup / fee" SOV line', () => {
+  const LINES = [
+    { description: 'a', amount: 1000, markup_pct: null, markup_flat: null, sort_order: 0 },
+    { description: 'b', amount: 2000, markup_pct: 20, markup_flat: 50, sort_order: 1 },
+  ]
+  const sum = (ls, k) => round2(ls.reduce((a, l) => a + l[k], 0))
+  const fee = ls => ls.filter(l => l.description === 'Markup / fee')
+
+  test('non-zero markup_flat appends exactly one "Markup / fee" line (cost 0, owner = flat)', () => {
+    const out = mapEstimateLinesToBudget({ markup_pct: 10, markup_flat: 500 }, LINES)
+    expect(fee(out)).toHaveLength(1)
+    expect(out[out.length - 1]).toEqual({ description: 'Markup / fee', cost_code: null, budget_amount: 0, owner_amount: 500, sort_order: 2 })
+  })
+
+  test('markup_flat 0 / null / missing / blank appends no markup line', () => {
+    for (const est of [{ markup_flat: 0 }, { markup_flat: '0' }, { markup_flat: null }, {}, { markup_flat: '' }, { markup_flat: undefined }]) {
+      const out = mapEstimateLinesToBudget({ markup_pct: 10, ...est }, LINES)
+      expect(fee(out)).toHaveLength(0)
+      expect(out).toHaveLength(2)
+    }
+  })
+
+  test('negative non-zero flat still gets a line, rounded to cents', () => {
+    const est = { markup_pct: 10, markup_flat: '-123.456' }
+    const out = mapEstimateLinesToBudget(est, LINES)
+    expect(fee(out)).toEqual([{ description: 'Markup / fee', cost_code: null, budget_amount: 0, owner_amount: -123.46, sort_order: 2 }])
+    expect(sum(out, 'owner_amount')).toBe(estimateTotal(est, LINES))
+  })
+
+  test('taxable + non-zero flat: tax line then markup line; owner sum === estimateTotal', () => {
+    const est = { markup_pct: 10, markup_flat: 500, taxable: true, tax_rate: 8.25 }
+    const out = mapEstimateLinesToBudget(est, LINES)
+    expect(out.map(l => l.description)).toEqual(['a', 'b', 'Sales tax (8.25% on raw cost)', 'Markup / fee'])
+    expect(out.map(l => l.sort_order)).toEqual([0, 1, 2, 3])
+    expect(sum(out, 'owner_amount')).toBe(estimateTotal(est, LINES))
+    expect(sum(out, 'budget_amount')).toBe(round2(3000 + 3000 * 0.0825))
+  })
+
+  test('taxable:false + flat 500: two priced lines + markup, owner sum === estimateTotal, budget sum === raw cost', () => {
+    const est = { markup_pct: 10, markup_flat: 500, taxable: false }
+    const out = mapEstimateLinesToBudget(est, LINES)
+    expect(out.map(l => l.description)).toEqual(['a', 'b', 'Markup / fee'])
+    expect(sum(out, 'owner_amount')).toBe(estimateTotal(est, LINES))
+    expect(sum(out, 'owner_amount')).toBe(1100 + 2450 + 500)
+    expect(sum(out, 'budget_amount')).toBe(3000)
   })
 })
 
@@ -301,7 +349,9 @@ describe('convert', () => {
     expect(args.p_lines).toEqual([
       { description: 'Site work', cost_code: null, budget_amount: 1000, owner_amount: 1100, sort_order: 0 },
       { description: 'Framing', cost_code: '06-100', budget_amount: 2000, owner_amount: 2450, sort_order: 1 },
+      { description: 'Markup / fee', cost_code: null, budget_amount: 0, owner_amount: 500, sort_order: 2 },
     ])
+    expect(round2(args.p_lines.reduce((a, l) => a + l.owner_amount, 0))).toBe(args.p_contract_value)
     for (const l of args.p_lines) expect(Object.keys(l).sort()).toEqual(['budget_amount', 'cost_code', 'description', 'owner_amount', 'sort_order'])
   })
 
@@ -406,7 +456,7 @@ describe('link', () => {
       p_set_contract: true, p_contract_value: 4050, p_expected_contract_value: 90000, p_user_name: 'Pat PM',
     })
     expect(args.p_expected_lines).toEqual(budgetSnapshot(jobB()))
-    expect(args.p_lines.map(l => [l.description, l.merge_into])).toEqual([['Site work', 'b1'], ['Framing', null]])
+    expect(args.p_lines.map(l => [l.description, l.merge_into])).toEqual([['Site work', 'b1'], ['Framing', null], ['Markup / fee', null]])
   })
 
   test('replace refused by the database when lines are referenced -> 409 with the message', async () => {

@@ -145,20 +145,28 @@ describe('conversion / link budget carries actual tax once', () => {
     expect(taxLines[0]).toMatchObject({ description: 'Sales tax (9.125% on raw cost)', budget_amount: 1551.25, owner_amount: 1551.25, cost_code: null, sort_order: 3 })
     const ownerSum = mapped.reduce((a, l) => a + l.owner_amount, 0)
     const costSum = mapped.reduce((a, l) => a + l.budget_amount, 0)
-    expect(round2(ownerSum + e.markup_flat)).toBe(estimateTotal(e, LINES)) // global flat stays contract-only, as before
+    expect(round2(ownerSum)).toBe(estimateTotal(e, LINES)) // global flat is its own "Markup / fee" line now
+    expect(mapped[4]).toMatchObject({ description: 'Markup / fee', cost_code: null, budget_amount: 0, owner_amount: e.markup_flat, sort_order: 4 })
     expect(round2(costSum)).toBe(RAW + 1551.25)
   })
   test('no tax line when not taxable or rate 0; legacy null rate → 8.25 line', () => {
-    expect(mapEstimateLinesToBudget(est({ taxable: false }), LINES)).toHaveLength(3)
-    expect(mapEstimateLinesToBudget(est({ tax_rate: 0 }), LINES)).toHaveLength(3)
+    for (const e of [est({ taxable: false }), est({ tax_rate: 0 })]) {
+      const m = mapEstimateLinesToBudget(e, LINES)
+      expect(m).toHaveLength(4) // three estimate lines + "Markup / fee"
+      expect(m.filter(l => /^Sales tax/.test(l.description))).toHaveLength(0)
+      expect(m[3]).toMatchObject({ description: 'Markup / fee', budget_amount: 0, owner_amount: 500 })
+    }
     const legacy = mapEstimateLinesToBudget(est({ tax_rate: null }), LINES)
     expect(legacy[3]).toMatchObject({ description: 'Sales tax (8.25% on raw cost)', budget_amount: 1402.5 })
+    expect(legacy[4]).toMatchObject({ description: 'Markup / fee', budget_amount: 0, owner_amount: 500 })
   })
   test('planLink: contract total includes tax exactly once and lines include the tax line', () => {
     const e = est({ tax_rate: 9 })
     const { plan } = planLink({ estimate: e, estimateLines: LINES, job: { contract_value: 0 }, jobLines: [], opts: { contract_action: 'set' } })
     expect(plan.contract_value).toBe(round2(SUBTOTAL + 1530))
     expect(plan.lines.filter(l => /^Sales tax/.test(l.description))).toHaveLength(1)
+    expect(plan.lines.filter(l => l.description === 'Markup / fee')).toEqual([expect.objectContaining({ budget_amount: 0, owner_amount: 500 })])
+    expect(round2(plan.lines.reduce((a, l) => a + l.owner_amount, 0))).toBe(plan.contract_value)
   })
   test('dashboard legacy convertToJob uses the shared mapping, not its own global multiplier', () => {
     const src = fs.readFileSync(path.join(__dirname, '../app/dashboard/page.js'), 'utf8')

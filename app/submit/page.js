@@ -10,8 +10,8 @@ import { openSignedContract, openBidPlan, startSigning, printSubcontract } from 
 import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
 import { todayCentral, addDaysCentral } from '../../lib/central-date'
 import { billingPaymentSummary, billingPaidAmount } from '../../lib/billing-payment'
+import { billingDraftKey, LEGACY_BILLING_DRAFT_KEY, restoreBillingDraft, applyDraftPcts, draftToPersist, loadOpenDraws, drawAfterLoad } from '../../lib/billing-draft'
 
-const BILLING_DRAFT_KEY = 'nvc_billing_draft'
 
 const s = {
   // ── Layout ──
@@ -135,12 +135,6 @@ export default function Submit() {
   const [calMonth, setCalMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() })
   const update = (f, v) => setForm(x => ({ ...x, [f]: v }))
 
-  // Persist billing draft to localStorage whenever form changes
-  useEffect(() => {
-    if (form.job_id || form.amount_billed || form.work_description || form.invoice_number) {
-      try { localStorage.setItem(BILLING_DRAFT_KEY, JSON.stringify(form)) } catch {}
-    }
-  }, [form])
 
   // Bid invitations state
   const [bidInvitations, setBidInvitations] = useState([])
@@ -158,6 +152,16 @@ export default function Submit() {
   const [docsSaved, setDocsSaved] = useState(false)
   const [jobSovContracts, setJobSovContracts] = useState([])
   const [sovForm, setSovForm] = useState([])
+  const [pendingDraft, setPendingDraft] = useState(null) // { form, sovPct } waiting to be restored
+  const [draftRestored, setDraftRestored] = useState(false)
+  const [draftChecked, setDraftChecked] = useState(false)
+  // True while a restored draft is still loading its job's draws / SOV: nothing is
+  // persisted until then, so the saved % per line is never overwritten with {}.
+  const [draftHydrating, setDraftHydrating] = useState(false)
+  const [draftRestoreError, setDraftRestoreError] = useState('')
+  // { jobId, sovPct } restored from storage but not yet applied (SOV/draw load failed).
+  const heldDraftPctRef = useRef(null)
+  const signingOutRef = useRef(false)
   const [sovRetainageMap, setSovRetainageMap] = useState({})
   const [sovError, setSovError] = useState('')
   const [noContract, setNoContract] = useState(false)
@@ -280,17 +284,73 @@ export default function Submit() {
         const nRes = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${session.access_token}` } })
         if (nRes.ok) { const nd = await nRes.json(); setNotifUnread(nd.unread || 0) }
       } catch {}
-      // Restore billing draft from localStorage
+      // Billing draft (this login's own key) is restored by the effect below once
+      // jobs, billing locks and the user are in state. The old shared key is dropped.
       try {
-        const saved = localStorage.getItem(BILLING_DRAFT_KEY)
-        if (saved) {
-          const draft = JSON.parse(saved)
-          setForm(f => ({ ...f, ...draft }))
-        }
+        localStorage.removeItem(LEGACY_BILLING_DRAFT_KEY)
+        const saved = localStorage.getItem(billingDraftKey(session.user.id))
+        const draft = saved ? restoreBillingDraft(saved, mergedJobs) : null
+        if (draft) setPendingDraft(draft)
+        else if (saved) localStorage.removeItem(billingDraftKey(session.user.id))
       } catch {}
+      setDraftChecked(true)
     }
     load()
   }, [router])
+
+  // Restore: form first, then load that job's SOV and re-apply the saved % per line.
+  // "Draft restored" shows only once the restore actually finished; a failed draw/SOV
+  // load keeps the stored % (heldDraftPctRef) and says so instead.
+  useEffect(() => {
+    if (!pendingDraft || !user) return
+    const { form: f, sovPct } = pendingDraft
+    setDraftHydrating(true)
+    setPendingDraft(null)
+    setForm(prev => ({ ...prev, ...f }))
+    const hasPct = sovPct && Object.keys(sovPct).length > 0
+    if (f.job_id && hasPct) heldDraftPctRef.current = { jobId: f.job_id, sovPct }
+    // Not cancelled on re-run: clearing pendingDraft re-runs this effect, and the
+    // hydration must still finish (and end draftHydrating).
+    ;(async () => {
+      let ok = true
+      if (f.job_id) {
+        try { ok = await loadJobSov(f.job_id, { sovPct, drawId: f.draw_request_id || '' }) } catch { ok = false }
+      }
+      if (ok !== false) {
+        setDraftRestored(true)
+        setDraftRestoreError('')
+      } else {
+        setDraftRestored(false)
+        setDraftRestoreError("Couldn't finish restoring your draft (the job's billing schedule didn't load). Your saved percentages are kept — reselect the job to try again.")
+      }
+      setDraftHydrating(false)
+    })()
+  }, [pendingDraft, user])
+
+  // Persist the billing draft (form + per-line %) under this login's key — never while
+  // a restore is still hydrating, and never dropping % that could not be applied yet.
+  useEffect(() => {
+    if (!user?.id || !draftChecked || pendingDraft || signingOutRef.current) return
+    const key = billingDraftKey(user.id)
+    try {
+      const draft = draftToPersist({ form, sovForm, hydrating: draftHydrating, held: heldDraftPctRef.current })
+      if (draft) localStorage.setItem(key, JSON.stringify(draft))
+    } catch {}
+  }, [form, sovForm, user, draftChecked, pendingDraft, draftHydrating])
+
+  function clearBillingDraft() {
+    try { if (user?.id) localStorage.removeItem(billingDraftKey(user.id)) } catch {}
+    heldDraftPctRef.current = null
+    setDraftRestored(false)
+    setDraftRestoreError('')
+  }
+
+  async function signOutAndClear() {
+    signingOutRef.current = true
+    clearBillingDraft()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   async function loadSubmissions() {
     const res = await authFetch('/api/sub-portal')
@@ -620,20 +680,34 @@ export default function Submit() {
     }
   }
 
-  async function loadJobSov(jobId) {
-    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setBillingLocked(null); setJobDrawRequests([]); return }
+  // restore = { sovPct, drawId } when re-opening a saved draft.
+  // Returns false when the job's draws or SOV could not be loaded (a restore keeps
+  // the stored draft in that case); true otherwise.
+  async function loadJobSov(jobId, restore = null) {
+    if (!jobId || !user) { setJobSovContracts([]); setSovForm([]); setNoContract(false); setBillingLocked(null); setJobDrawRequests([]); return true }
+    // Percentages restored earlier but not yet applied (their SOV load failed) are
+    // applied when this job's SOV does load.
+    const held = heldDraftPctRef.current
+    if (!restore && held && held.jobId === jobId) restore = { sovPct: held.sovPct }
     // Billing not on for the company, or this login isn't allowed to bill — block the form with a clear reason
-    if (billingLockByJob[jobId]) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(billingLockByJob[jobId]); setJobDrawRequests([]); return }
+    if (billingLockByJob[jobId]) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(billingLockByJob[jobId]); setJobDrawRequests([]); return true }
     setBillingLocked(null)
-    const drRes = await fetch(`/api/draw-requests?job_id=${jobId}`)
-    if (!drRes.ok) { setJobDrawRequests([]); return }
-    const { draws } = await drRes.json()
-    const openDraws = (draws || []).filter(d => d.status === 'open')
+    // A failed fetch, non-OK status, unparseable body or missing draws list is a
+    // failed load: keep the saved draw and the stored draft; never "no open draws".
+    const drawLoad = await loadOpenDraws(url => fetch(url), jobId)
+    if (!drawLoad.ok) { setJobDrawRequests([]); setSovForm([]); return false }
+    const { openDraws } = drawLoad
     setJobDrawRequests(openDraws)
+    if (restore && restore.drawId && !drawAfterLoad(restore.drawId, drawLoad)) setForm(f => ({ ...f, draw_request_id: '' }))
     // Contracts + SOV come from the server so every teammate sees the company's contracts,
     // not just the person the contract happens to be linked to.
-    const sovRes = await authFetch(`/api/sub-portal/sov?job_id=${jobId}`)
-    const sov = sovRes.ok ? await sovRes.json() : { contracts: [], lines: [] }
+    const sovRes = await authFetch(`/api/sub-portal/sov?job_id=${jobId}`).catch(() => null)
+    const sov = sovRes && sovRes.ok ? await sovRes.json().catch(() => null) : null
+    if (!sov) {
+      setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(false)
+      setSovError("Couldn't load the schedule of values for this job. Please try again.")
+      return false
+    }
     if (sov.locked) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setBillingLocked(sov.locked); return }
     const contracts = sov.contracts || []
     if (contracts.length === 0) { setJobSovContracts([]); setSovForm([]); setSovRetainageMap({}); setNoContract(true); setSovDraftLines([{ description: '', amount: '' }]); return }
@@ -654,7 +728,7 @@ export default function Submit() {
     const withBase = contractsWithBaseSov(lines)
     setJobSovContracts(contracts.map(c => ({ ...c, has_sov: withBase.has(c.id), co_lines: lines.filter(l => l.subcontract_id === c.id && isCoLine(l)) })))
     setSovError('')
-    setSovForm(lines.filter(l => withBase.has(l.subcontract_id)).map(l => ({
+    const freshLines = lines.filter(l => withBase.has(l.subcontract_id)).map(l => ({
       sov_line_id: l.id,
       subcontract_id: l.subcontract_id,
       description: l.description,
@@ -664,7 +738,14 @@ export default function Submit() {
       pct_prev: l.pct_prev || 0,
       pct_this: '',
       amount_this: 0,
-    })))
+    }))
+    const restored = restore?.sovPct ? applyDraftPcts(freshLines, restore.sovPct) : freshLines
+    setSovForm(restored)
+    if (held && held.jobId === jobId) heldDraftPctRef.current = null
+    if (restore?.sovPct && restored.some(l => l.amount_this > 0)) {
+      update('amount_billed', restored.reduce((a, l) => a + (Number(l.amount_this) || 0), 0).toFixed(2))
+    }
+    return true
   }
 
   // Creates the SOV for one contract — the first one on this job that doesn't have one yet.
@@ -858,7 +939,7 @@ export default function Submit() {
     }
     // The PM's "billing submitted" email is sent by /api/sub-portal/billing
     setSubmitError(result.warning || '')
-    try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}
+    clearBillingDraft()
     setSuccess(true)
     setPrefillSub(null)
     setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' })
@@ -982,7 +1063,7 @@ export default function Submit() {
               <div style={{ fontSize: '11px', color: '#9ca3af', letterSpacing: '1px', textTransform: 'uppercase' }}>{profile?.company_name || 'Sub Portal'}</div>
             </div>
           </div>
-          <button style={{ padding: '6px 14px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+          <button style={{ padding: '6px 14px', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280', cursor: 'pointer', fontSize: '13px' }} onClick={signOutAndClear}>Sign out</button>
         </div>
       </header>
       <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1.5rem' }}>
@@ -1079,7 +1160,7 @@ export default function Submit() {
           ))}
         </div>
         <div style={s.sidebarBottom}>
-          <button style={s.sidebarSignOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
+          <button style={s.sidebarSignOut} onClick={signOutAndClear}>Sign out</button>
         </div>
       </nav>
 
@@ -1273,16 +1354,15 @@ export default function Submit() {
           ) : (
             <div style={s.card}>
               <h2 style={s.cardTitle}>Submit billing</h2>
-              {!prefillSub && (form.job_id || form.amount_billed || form.work_description || form.invoice_number) && (() => {
-                let hasDraft = false
-                try { hasDraft = !!localStorage.getItem(BILLING_DRAFT_KEY) } catch {}
-                return hasDraft ? (
-                  <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '13px', color: '#c2410c', fontWeight: '600' }}>Draft restored — your previous entries have been loaded.</span>
-                    <button type="button" onClick={() => { try { localStorage.removeItem(BILLING_DRAFT_KEY) } catch {}; setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' }) }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
-                  </div>
-                ) : null
-              })()}
+              {!prefillSub && draftRestoreError && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', fontSize: '13px', color: '#dc2626' }}>{draftRestoreError}</div>
+              )}
+              {!prefillSub && draftRestored && (
+                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '13px', color: '#c2410c', fontWeight: '600' }}>Draft restored — your previous entries have been loaded.</span>
+                  <button type="button" onClick={() => { clearBillingDraft(); setForm({ job_id: '', amount_billed: '', pct_complete: '', work_description: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', invoice_number: '', invoice_date: '' }); loadJobSov('') }} style={{ background: 'none', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '6px', padding: '3px 10px', fontSize: '12px', cursor: 'pointer', flexShrink: 0 }}>Clear</button>
+                </div>
+              )}
               {prefillSub && (
                 <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: '8px', padding: '12px 16px', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                   <div>

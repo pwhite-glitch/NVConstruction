@@ -30,10 +30,10 @@ import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
 import NewPOForm from './NewPOForm'
 import LookaheadActivityModal from './LookaheadActivityModal'
-import { StatusChip, DayWeather, RainTag, WorkflowBar, SendToSubsDialog, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
+import { StatusChip, DayWeather, RainTag, ColdTag, WorkflowBar, SendToSubsDialog, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
 import { hasOpenConstraint, responsibleLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, shiftActivity, dayOfRange } from '../../lib/lookahead-dates'
-import { rainFlagged } from '../../lib/lookahead-weather'
+import { rainFlagged, coldFlagged } from '../../lib/lookahead-weather'
 import { openLookaheadPrint } from '../../lib/lookahead-print'
 import { equipmentLabel } from '../../lib/equipment-usage'
 import * as lookaheadApi from '../../lib/lookahead-client'
@@ -45,6 +45,7 @@ import RfiCommentThread from '../components/RfiCommentThread'
 import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib/job-doc-client'
 import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { canWriteJobDetails } from '../../lib/job-details'
+import { closeoutStatus, closeoutList, CLOSEOUT_SOURCE_LABELS } from '../../lib/closeout'
 
 const s = {
   // ── Layout ──
@@ -276,6 +277,7 @@ function JobDetailInner() {
 
   // Billing tab state
   const [billingSubmissions, setBillingSubmissions] = useState([])
+  const [closeoutLoads, setCloseoutLoads] = useState({}) // { punch, releases, notices, billing }: 'loading' | 'ok' | 'error'
   const [jobBillingLines, setJobBillingLines] = useState([])
   const [jobBillingLinesError, setJobBillingLinesError] = useState('')
   const [showCreateBilling, setShowCreateBilling] = useState(false)
@@ -937,9 +939,13 @@ function JobDetailInner() {
     setAllCOs(data || [])
   }
 
+  // Returns false when the billing list itself could not be loaded (Closeout checks this).
   async function loadBillingForJob() {
-    const { data } = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
-    setBillingSubmissions(data || [])
+    const billRes = await supabase.from('billing_submissions').select('*').eq('job_id', id).order('submitted_at', { ascending: false })
+    // Only a real array counts as loaded; null / missing data is a failed load, not "no billings".
+    const bills = closeoutList(billRes)
+    if (!bills) return false
+    setBillingSubmissions(bills)
     // Line breakdown for every billing on the job, with the contract each SOV line belongs to.
     // Paged: a job can pass the 1000-row API cap.
     const PAGE = 1000
@@ -952,12 +958,13 @@ function JobDetailInner() {
         .order('billing_submission_id')
         .order('sov_line_id')
         .range(from, from + PAGE - 1)
-      if (error) { setJobBillingLinesError(error.message); return }
+      if (error) { setJobBillingLinesError(error.message); return true }
       all.push(...(page || []))
       if (!page || page.length < PAGE) break
     }
     setJobBillingLinesError('')
     setJobBillingLines(all)
+    return true
   }
 
   // PATCH a draw (tag/untag items, close/reopen); shows the API error instead of failing silently.
@@ -2669,7 +2676,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'contacts') { loadJobContacts() }
     if (activeTab === 'meetings') { loadMeetings() }
     if (activeTab === 'labor' && !laborLoaded) { loadLaborData() }
-    if (activeTab === 'closeout') { loadPunchItems(); loadRetainageReleases(); loadPrelimNotices() }
+    if (activeTab === 'closeout') loadCloseout()
     if (activeTab === 'punch') { loadPunchItems(); loadContracts() }
     if (activeTab === 'retainage') { loadRetainageReleases(); loadContracts(); loadBillingForJob() }
     if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
@@ -3512,10 +3519,15 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setTimeout(() => setMeetingMsg(null), 3000)
   }
 
+  // Loaders below return true when loaded, false on a failed load (state left as is).
   async function loadPunchItems() {
-    const res = await fetch(`/api/punch-list?job_id=${id}`)
-    const { items } = await res.json()
-    setPunchItems(items || [])
+    try {
+      const res = await fetch(`/api/punch-list?job_id=${id}`)
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !Array.isArray(body?.items)) return false
+      setPunchItems(body.items)
+      return true
+    } catch { return false }
   }
 
   async function loadChangeLog() {
@@ -3529,9 +3541,13 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function loadRetainageReleases() {
-    const res = await fetch(`/api/retainage-release?job_id=${id}`)
-    const { releases } = await res.json()
-    setRetainageReleases(releases || [])
+    try {
+      const res = await fetch(`/api/retainage-release?job_id=${id}`)
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !Array.isArray(body?.releases)) return false
+      setRetainageReleases(body.releases)
+      return true
+    } catch { return false }
   }
 
   async function loadSubmittals() {
@@ -3541,9 +3557,26 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
   }
 
   async function loadPrelimNotices() {
-    const res = await fetch(`/api/prelim-notices?job_id=${id}`)
-    const { notices } = await res.json()
-    setPrelimNotices(notices || [])
+    try {
+      const res = await fetch(`/api/prelim-notices?job_id=${id}`)
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !Array.isArray(body?.notices)) return false
+      setPrelimNotices(body.notices)
+      return true
+    } catch { return false }
+  }
+
+  // Closeout: every list it checks, with a loaded / failed flag per list.
+  async function loadCloseout() {
+    setCloseoutLoads({ punch: 'loading', releases: 'loading', notices: 'loading', billing: 'loading' })
+    const track = (key, p) => Promise.resolve(p).then(ok => ok !== false, () => false)
+      .then(ok => setCloseoutLoads(prev => ({ ...prev, [key]: ok ? 'ok' : 'error' })))
+    await Promise.all([
+      track('punch', loadPunchItems()),
+      track('releases', loadRetainageReleases()),
+      track('notices', loadPrelimNotices()),
+      track('billing', loadBillingForJob()),
+    ])
   }
 
   async function loadSubRatings() {
@@ -10332,8 +10365,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   <div style={s.billingEntryHeader} onClick={() => setExpandedFieldRfi(expandedFieldRfi === rfi.id ? null : rfi.id)}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title}</span>
-                        <span style={s.coBadge(rfi.status === 'answered' ? 'approved' : rfi.status === 'closed' ? 'rejected' : 'pending')}>{rfi.status}</span>
+                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.number != null && <span style={{ color: '#6b7280', marginRight: '6px' }}>RFI #{rfi.number}</span>}{rfi.title}</span>
+                        <span style={s.coBadge(rfi.status === 'answered' ? 'approved' : rfi.status === 'closed' ? 'rejected' : 'pending')}>{rfi.status || 'open'}</span>
                       </div>
                       <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}{rfi.submitter_label ? ` · From ${rfi.submitter_label}` : ''}</span>
                     </div>
@@ -13088,6 +13121,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       {acts.length === 0 && <div style={{ fontSize: '11px', color: '#d1d5db', textAlign: 'center', padding: '6px 0' }}>—</div>}
                       {acts.map(act => {
                         const rain = rainFlagged(act, wx)
+                        const cold = coldFlagged(act, wx)
                         const span = dayOfRange(act, dt)
                         return (
                         <div key={act.id} onClick={() => openEditActivity(act)}
@@ -13095,15 +13129,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify({ id: act.id, fromDay: dt })); e.dataTransfer.effectAllowed = 'move' }}
                           onDragEnd={() => setDragOverDay(null)}
                           title="Click to edit · drag to another day to move"
-                          style={{ background: '#ffffff', border: `1px solid ${rain ? '#fca5a5' : '#252525'}`, borderRadius: '6px', padding: '8px', cursor: 'grab', fontSize: '12px', opacity: act.status === 'done' ? 0.6 : 1 }}
+                          style={{ background: '#ffffff', border: `1px solid ${rain ? '#fca5a5' : cold ? '#93c5fd' : '#252525'}`, borderRadius: '6px', padding: '8px', cursor: 'grab', fontSize: '12px', opacity: act.status === 'done' ? 0.6 : 1 }}
                           onMouseEnter={e => { e.currentTarget.style.borderColor = rain ? '#ef4444' : '#3a3a3a' }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = rain ? '#fca5a5' : '#252525' }}>
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = rain ? '#fca5a5' : cold ? '#93c5fd' : '#252525' }}>
                           <div style={{ fontWeight: '600', color: '#111827', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', textDecoration: act.status === 'done' ? 'line-through' : 'none' }}>{act.description}</div>
                           {act.location && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>{act.location}</div>}
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '5px' }}>
                             <StatusChip status={act.status} onChange={status => patchActivity(act, { status })} />
                             {span && <span style={{ fontSize: '10px', color: '#4b5563', background: '#f3f4f6', borderRadius: '99px', padding: '1px 6px' }}>{span}</span>}
                             {rain && <RainTag />}
+                            {cold && <ColdTag low={wx?.low} />}
                           </div>
                           <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
                             {act.responsible_type === 'sub'
@@ -13289,23 +13324,27 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
         {/* ── CLOSEOUT TAB ── */}
         {activeTab === 'closeout' && (() => {
-          const openItems = punchItems.filter(p => p.status === 'open')
-          const subComplete = punchItems.filter(p => p.status === 'sub_complete')
-          const approved = punchItems.filter(p => p.status === 'approved')
-          const totalRetainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
-          const totalReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
-          const retainageBalance = totalRetainageHeld - totalReleased
-          const activeNotices = prelimNotices.filter(n => n.status === 'active')
+          const co = closeoutStatus({ loads: closeoutLoads, punchItems, billingSubmissions, retainageReleases, prelimNotices })
+          const { openItems, subComplete, approvedPunch: approved, totalReleased, retainageBalance, activeNotices } = co
           const fmt = n => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-          const allClear = openItems.length === 0 && subComplete.length === 0 && retainageBalance <= 0 && activeNotices.length === 0
+          const allClear = co.state === 'ready'
 
           return (
             <>
-              {allClear ? (
+              {co.state === 'checking' ? (
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '13px', color: '#6b7280' }}>
+                  Checking closeout items…
+                </div>
+              ) : co.state === 'error' ? (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '13px', color: '#b91c1c' }}>
+                  <strong>Couldn&apos;t check closeout.</strong> The {co.failed.map(k => CLOSEOUT_SOURCE_LABELS[k]).join(', ')} did not load, so readiness is unknown.{' '}
+                  <button style={s.btnSmall} onClick={loadCloseout}>Retry</button>
+                </div>
+              ) : allClear ? (
                 <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', textAlign: 'center' }}>
                   <div style={{ fontSize: '28px', marginBottom: '8px' }}>✓</div>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#16a34a' }}>Project ready to close</div>
-                  <div style={{ fontSize: '13px', color: '#16a34a', opacity: 0.7, marginTop: '4px' }}>All punch items approved, retainage released, and no active lien notices.</div>
+                  <div style={{ fontSize: '13px', color: '#16a34a', opacity: 0.7, marginTop: '4px' }}>All punch items approved, sub billings reviewed, retainage released, and no active lien notices.</div>
                 </div>
               ) : (
                 <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '13px', color: '#e8590c' }}>
@@ -13322,8 +13361,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Retainage balance</div>
-                  <div style={s.statValue(retainageBalance > 0 ? '#d97706' : '#16a34a')}>{fmt(retainageBalance)}</div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{fmt(totalReleased)} released</div>
+                  <div style={s.statValue(co.retainage === 'released' ? '#16a34a' : co.retainage === 'over_released' ? '#dc2626' : '#d97706')}>{fmt(retainageBalance)}</div>
+                  <div style={{ fontSize: '12px', color: co.retainage === 'over_released' ? '#dc2626' : '#6b7280', marginTop: '4px' }}>{fmt(totalReleased)} released{co.retainage === 'over_released' ? ' — more than held; check releases' : ''}</div>
                 </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Active lien notices</div>
@@ -13339,15 +13378,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               <div style={s.card}>
                 <p style={s.cardTitle}>Closeout checklist</p>
                 {[
-                  { label: 'All punch list items approved', done: openItems.length === 0 && subComplete.length === 0, action: 'punch', actionLabel: 'View Punch List' },
-                  { label: 'Retainage fully released', done: retainageBalance <= 0, action: 'retainage', actionLabel: 'View Retainage' },
-                  { label: 'No active lien notices', done: activeNotices.length === 0, action: 'prelim', actionLabel: 'View Lien Log' },
-                  { label: 'All sub billing approved', done: billingSubmissions.every(b => b.status !== 'pending'), action: 'billing', actionLabel: 'View Billing' },
-                ].map(item => (
+                  { label: 'All punch list items approved', done: co.checks.punch, source: 'punch', action: 'punch', actionLabel: 'View Punch List' },
+                  { label: co.retainage === 'over_released' ? 'Retainage released exceeds held — check releases' : 'Retainage fully released', done: co.checks.retainage, sources: ['billing', 'releases'], action: 'retainage', actionLabel: 'View Retainage' },
+                  { label: 'No active lien notices', done: co.checks.notices, source: 'notices', action: 'prelim', actionLabel: 'View Lien Log' },
+                  { label: 'All sub billing approved', done: co.checks.billing, source: 'billing', action: 'billing', actionLabel: 'View Billing' },
+                ].map(item => ({ ...item, unknown: (item.sources || [item.source]).some(k => closeoutLoads[k] !== 'ok') })).map(item => ({ ...item, done: item.done && !item.unknown })).map(item => (
                   <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '16px' }}>{item.done ? '✓' : '○'}</span>
-                      <span style={{ fontSize: '14px', color: item.done ? '#16a34a' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}</span>
+                      <span style={{ fontSize: '16px' }}>{item.unknown ? '…' : item.done ? '✓' : '○'}</span>
+                      <span style={{ fontSize: '14px', color: item.done ? '#16a34a' : '#aaa', textDecoration: item.done ? 'line-through' : 'none', opacity: item.done ? 0.7 : 1 }}>{item.label}{item.unknown ? (item.sources || [item.source]).some(k => closeoutLoads[k] === 'error') ? ' (could not load)' : ' (checking…)' : ''}</span>
                     </div>
                     {!item.done && (
                       <button style={s.btnSmall} onClick={() => setActiveTab(item.action)}>{item.actionLabel}</button>

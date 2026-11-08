@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { isBeforeTodayCentral } from '../../lib/central-date'
 import { coNumberLabel } from '../../lib/co-number'
+import { authFetch } from '../../lib/client-fetch'
 
 const s = {
   root: { display: 'flex', minHeight: '100vh', background: '#f4f6f8', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -129,6 +130,8 @@ export default function OwnerPortal() {
   const [drawRequests, setDrawRequests] = useState([])
   const [milestones, setMilestones] = useState([])
   const [photos, setPhotos] = useState([])
+  const [photosError, setPhotosError] = useState(null)
+  const [payAppsInfo, setPayAppsInfo] = useState({ billed_to_date: 0, has_aia: false, error: null })
   const [loadingJob, setLoadingJob] = useState(false)
 
   // RFI UI
@@ -180,7 +183,8 @@ export default function OwnerPortal() {
   async function loadJobData(jobId, jobObj) {
     setLoadingJob(true)
     setChangeOrders([]); setRfis([]); setRfiComments({}); setAiaApps([])
-    setDrawRequests([]); setMilestones([]); setPhotos([]); setPmProfile(null)
+    setDrawRequests([]); setMilestones([]); setPhotos([]); setPhotosError(null); setPmProfile(null)
+    setPayAppsInfo({ billed_to_date: 0, has_aia: false, error: null })
 
     const [cosRes, rfisRes, aiaRes, drawRes, milestonesRes] = await Promise.all([
       // Owner (prime) change orders, not the sub change_orders table
@@ -191,7 +195,11 @@ export default function OwnerPortal() {
           ? supabase.from('prime_change_orders').select('id, description, amount, status, created_at').eq('job_id', jobId).order('created_at', { ascending: true })
           : r)),
       supabase.from('rfis').select('*').eq('job_id', jobId).order('created_at', { ascending: false }),
-      supabase.from('aia_applications').select('*').eq('job_id', jobId).order('app_number', { ascending: true }),
+      // Prime pay apps (no drafts) with the G702 current payment due, computed on the
+      // server from the G703 lines (owners can't read the lines themselves).
+      authFetch(`/api/owner-pay-apps?job_id=${encodeURIComponent(jobId)}`)
+        .then(async r => { const j = await r.json().catch(() => ({})); return r.ok ? { data: j } : { error: j.error || `HTTP ${r.status}` } })
+        .catch(e => ({ error: e?.message || 'Could not load pay applications' })),
       // Never drafts. Needs the owner SELECT policy from migration 042; until then this returns nothing.
       supabase.from('draw_requests').select('id, job_id, draw_number, title, status, created_at').eq('job_id', jobId).in('status', OWNER_DRAW_STATUSES).order('draw_number', { ascending: true }),
       supabase.from('milestones').select('*').eq('job_id', jobId).order('due_date', { ascending: true }),
@@ -202,7 +210,8 @@ export default function OwnerPortal() {
     setChangeOrders((cosRes.data || []).filter(co => co.status === 'approved' || co.status === 'pending' || !co.status))
     const rfiList = rfisRes.data || []
     setRfis(rfiList)
-    setAiaApps(aiaRes.data || [])
+    setAiaApps(aiaRes.data?.apps || [])
+    setPayAppsInfo({ billed_to_date: Number(aiaRes.data?.billed_to_date || 0), has_aia: !!aiaRes.data?.has_aia, error: aiaRes.error || null })
     setDrawRequests((drawRes.data || []).filter(d => d.status !== 'draft'))
     setMilestones(milestonesRes.data || [])
 
@@ -225,18 +234,20 @@ export default function OwnerPortal() {
       setRfiComments(byRfi)
     }
 
-    // Load photos
+    // Load photos: job_photos + daily report photos from daily-report-photos, signed on the
+    // server for this job only. A failure shows "Couldn't load photos", not an empty gallery.
     try {
-      const { data: files } = await supabase.storage.from('job-photos').list(jobId, { limit: 100 })
-      if (files?.length) {
-        const valid = files.filter(f => f.name !== '.emptyFolderPlaceholder' && !f.name.startsWith('.'))
-        const signed = await Promise.all(valid.map(async f => {
-          const { data } = await supabase.storage.from('job-photos').createSignedUrl(`${jobId}/${f.name}`, 3600)
-          return data?.signedUrl ? { name: f.name, url: data.signedUrl } : null
-        }))
-        setPhotos(signed.filter(Boolean))
-      }
-    } catch { setPhotos([]) }
+      const r = await authFetch(`/api/owner-photos?job_id=${encodeURIComponent(jobId)}`)
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`)
+      // Only a real list counts; a missing list is a failed load, not an empty gallery.
+      if (!Array.isArray(j.photos)) throw new Error('Photo list missing from response.')
+      setPhotosError(null)
+      setPhotos(j.photos)
+    } catch (e) {
+      setPhotos([])
+      setPhotosError(e?.message || 'error')
+    }
 
     setLoadingJob(false)
   }
@@ -277,13 +288,14 @@ export default function OwnerPortal() {
   const baseContract = Number(job?.contract_value || 0)
   const approvedCOs = changeOrders.filter(c => c.status === 'approved').reduce((s, c) => s + Number(c.amount || 0), 0)
   const revised = baseContract + approvedCOs
-  const aiaBilled = aiaApps.reduce((s, a) => s + Number(a.net_payment || a.amount || 0), 0)
-  const drawBilled = drawRequests.reduce((s, d) => s + Number(d.total_amount || d.amount || 0), 0)
-  const totalBilled = aiaBilled || drawBilled
+  // Billed to date = sum of the G702 current payment due on submitted/certified prime
+  // pay apps. A $0 AIA total is still the AIA figure; internal draw_requests are never
+  // owner receivables, so there is no fallback to them.
+  const totalBilled = payAppsInfo.billed_to_date
   const pct = revised > 0 ? Math.min(100, Math.round(totalBilled / revised * 100)) : 0
   const openRfis = rfis.filter(r => !['closed', 'answered'].includes(r.status?.toLowerCase())).length
   const nextMilestone = milestones.find(m => !m.completed_at && m.status !== 'complete')
-  const hasAia = aiaApps.length > 0
+  const hasAia = aiaApps.length > 0 || payAppsInfo.has_aia
   const hasDraws = drawRequests.length > 0
 
   const TABS = [
@@ -437,14 +449,14 @@ export default function OwnerPortal() {
                 {activeTab === 'payapps' && (
                   <div style={s.card}>
                     <div style={s.cardTitle}>Pay Applications ({aiaApps.length})</div>
-                    {aiaApps.length === 0 ? <div style={s.emptyMsg}>No pay applications submitted yet.</div> : (
+                    {payAppsInfo.error ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load pay applications: {payAppsInfo.error}</div> : aiaApps.length === 0 ? <div style={s.emptyMsg}>No pay applications submitted yet.</div> : (
                       <div style={{ overflowX: 'auto' }}>
                         <table style={s.table}>
                           <thead>
                             <tr>
                               <th style={s.th}>App #</th>
                               <th style={s.th}>Period</th>
-                              <th style={s.th}>Amount</th>
+                              <th style={s.th}>Current Payment Due</th>
                               <th style={s.th}>Status</th>
                               <th style={s.th}>Submitted</th>
                             </tr>
@@ -452,11 +464,11 @@ export default function OwnerPortal() {
                           <tbody>
                             {aiaApps.map(a => (
                               <tr key={a.id}>
-                                <td style={s.td}>{a.application_number || '—'}</td>
+                                <td style={s.td}>{a.app_number ?? '—'}</td>
                                 <td style={s.td}>{a.period_to ? new Date(a.period_to + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}</td>
-                                <td style={{ ...s.td, fontVariantNumeric: 'tabular-nums' }}>{fmt(a.net_payment || a.amount)}</td>
-                                <td style={s.td}><span style={statusBadge(a.status)}>{a.status || 'submitted'}</span></td>
-                                <td style={s.td}>{fmtDate(a.created_at)}</td>
+                                <td style={{ ...s.td, fontVariantNumeric: 'tabular-nums' }}>{fmt(a.current_payment_due)}</td>
+                                <td style={s.td}><span style={statusBadge(a.status)}>{a.status}</span></td>
+                                <td style={s.td}>{fmtDate(a.submitted_at)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -557,7 +569,7 @@ export default function OwnerPortal() {
                               <div style={s.rfiHeader} onClick={() => setExpandedRfi(isOpen ? null : rfi.id)}>
                                 <span style={statusBadge(rfi.status || 'open')}>{rfi.status || 'open'}</span>
                                 <span style={{ fontSize: '13px', fontWeight: '600', flex: 1, color: '#111827' }}>
-                                  RFI #{rfi.number ?? rfi.rfi_number ?? '—'} — {rfi.title || 'Untitled'}
+                                  RFI #{rfi.number ?? '—'} — {rfi.title || 'Untitled'}
                                 </span>
                                 {comments.length > 0 && <span style={{ fontSize: '11px', color: '#6b7280' }}>{comments.length} comment{comments.length !== 1 ? 's' : ''}</span>}
                                 <span style={{ color: '#6b7280', fontSize: '11px', marginLeft: '4px' }}>{isOpen ? '▲' : '▼'}</span>
@@ -615,11 +627,20 @@ export default function OwnerPortal() {
                 {activeTab === 'photos' && (
                   <div style={s.card}>
                     <div style={s.cardTitle}>Progress Photos ({photos.length})</div>
-                    {photos.length === 0 ? <div style={s.emptyMsg}>No photos uploaded for this project yet.</div> : (
+                    {photosError ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load photos. Please try again later.</div>
+                    : photos.length === 0 ? <div style={s.emptyMsg}>No photos uploaded for this project yet.</div> : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '8px' }}>
                         {photos.map(p => (
-                          <a key={p.name} href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', borderRadius: '6px', overflow: 'hidden', border: '1px solid #e5e7eb', aspectRatio: '4/3' }}>
-                            <img src={p.url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <a key={p.path} href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', borderRadius: '6px', overflow: 'hidden', border: '1px solid #e5e7eb', textDecoration: 'none', color: 'inherit' }}>
+                            <div style={{ aspectRatio: '4/3' }}>
+                              <img src={p.thumb_url || p.url} alt={p.caption || p.name || 'Progress photo'} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            </div>
+                            {(p.caption || p.date) && (
+                              <div style={{ padding: '6px 8px', fontSize: '11px', color: '#374151', lineHeight: 1.35 }}>
+                                {p.caption && <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
+                                {p.date && <div style={{ color: '#6b7280' }}>{fmtDate(p.date)}</div>}
+                              </div>
+                            )}
                           </a>
                         ))}
                       </div>

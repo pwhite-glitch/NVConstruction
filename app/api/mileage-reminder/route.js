@@ -4,6 +4,7 @@ import { verifyCronSecret } from '../../../lib/server-auth'
 import { todayCentral } from '../../../lib/central-date'
 import { mondayOf } from '../../../lib/lookahead-dates'
 import { getSiteUrl } from '../../../lib/site-url'
+import { weeklyMileageLogged } from '../../../lib/vehicle-log-types'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -42,15 +43,16 @@ export async function GET(request) {
       const email = userEmails[v.assigned_to]
       if (!email) continue
 
-      const { data: logs } = await adminSupabase
+      // Any log since Monday with an odometer reading counts (the field app's
+      // "Mileage Update" too), as does a Weekly Miles row.
+      const { data: logs, error: lErr } = await adminSupabase
         .from('vehicle_logs')
-        .select('id')
+        .select('id, log_type, log_date, mileage')
         .eq('vehicle_id', v.id)
-        .eq('log_type', 'Weekly Miles')
         .gte('log_date', weekStart)
-        .limit(1)
 
-      if (logs?.length > 0) continue
+      if (lErr) continue // don't nag on a failed read
+      if (weeklyMileageLogged(logs, weekStart)) continue
 
       const vehicleName = [v.year, v.make, v.model].filter(Boolean).join(' ') || v.name || 'your vehicle'
       const baseUrl = getSiteUrl()

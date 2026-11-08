@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { MbCommissionReport, MbPaymentSettings } from './MbCommissionTabs'
 import { isBeforeTodayCentral } from '../../lib/central-date'
+import NotificationBell from '../components/NotificationBell'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -304,6 +305,9 @@ function SalesPageInner() {
           <button style={s.navItem(divisionParam === 'commercial_roofing')} onClick={() => router.push('/sales?division=commercial_roofing')}>Commercial Roofing</button>
         </nav>
         <div style={s.sidebarBot}>
+          <div style={{ marginBottom: '10px' }}>
+            <NotificationBell dark dropUp onOpen={n => { if (n?.link?.startsWith('/')) router.push(n.link) }} />
+          </div>
           <button style={s.signOutBtn} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
         </div>
       </aside>

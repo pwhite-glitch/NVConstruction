@@ -3,6 +3,7 @@ import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
 import { getSubContracts } from '../../../lib/sub-access'
 import { denyJobOf, accessibleJobIds } from '../../../lib/roles'
 import { resolveUniqueCompany, renameImpact, sameExactName } from '../../../lib/company-identity'
+import { coiUploadError } from '../../../lib/coi-status'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -153,6 +154,16 @@ export async function POST(request) {
   const updates = {}
   for (const key of office ? ALLOWED_FIELDS : SUB_FIELDS) {
     if (key in body) updates[key] = body[key] || null
+  }
+  // Office upload / replace of a COI file: the new expiration date comes with it,
+  // so the expired list, badges and reminders don't keep using the old one.
+  if (office && updates.coi_url) {
+    const { data: curCoi, error: curErr } = await adminSupabase.from('sub_directory').select('coi_url').eq('id', directory_id).maybeSingle()
+    if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
+    if (curCoi?.coi_url !== updates.coi_url) {
+      const coiErr = coiUploadError(updates)
+      if (coiErr) return Response.json({ error: coiErr }, { status: 400 })
+    }
   }
   if (!office) {
     if (!dir || dir.id !== directory_id) return forbidden()

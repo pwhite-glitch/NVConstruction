@@ -5,6 +5,7 @@ import { supabase } from '../../../lib/supabase'
 import { authFetch } from '../../../lib/client-fetch'
 import { canEditBidPackage, isBidManager, NO_BID_ACCESS_MESSAGE } from '../../../lib/bid-access'
 import { jobHref } from '../../../lib/job-links'
+import LevelingMatrix, { loadLevelingEntries } from '../../components/bid/LevelingMatrix'
 import JobNumberHint from '../../components/JobNumberHint'
 import { useJobNumbers, confirmJobNumberFree } from '../../../lib/use-job-numbers'
 import { jobNumberSaveError } from '../../../lib/job-numbers'
@@ -1334,101 +1335,12 @@ function InvitationsSection({ bidId, pkg, plans, invitations, submissions, scope
 
 // ── Bid Leveling ──────────────────────────────────────────────────────────────
 
-function LevelingSection({ bidId, scopeItems, submissions, levelingEntries, reload }) {
-  const [saving, setSaving] = useState(false)
-  const [local, setLocal] = useState({}) // { [subId_scopeId]: { amount, included } }
-
-  useEffect(() => {
-    const m = {}
-    levelingEntries.forEach(e => { m[`${e.bid_submission_id}_${e.bid_scope_item_id}`] = { amount: e.amount, included: e.included } })
-    setLocal(m)
-  }, [levelingEntries])
-
-  const trades = [...new Set(scopeItems.map(i => i.trade).filter(Boolean))]
-  const subList = submissions.filter(s => s.amount > 0)
-
-  async function saveEntry(subId, scopeId, amount, included) {
-    setSaving(true)
-    await supabase.from('bid_leveling_entries').upsert({ bid_submission_id: subId, bid_scope_item_id: scopeId, amount: Number(amount) || 0, included: !!included }, { onConflict: 'bid_submission_id,bid_scope_item_id' })
-    setSaving(false)
-  }
-
-  if (subList.length === 0) {
-    return <div style={{ ...s.card, ...s.empty }}>Record quotes in Invitations & Quotes before leveling.</div>
-  }
-  if (scopeItems.length === 0) {
-    return <div style={{ ...s.card, ...s.empty }}>Add trade scope items before leveling.</div>
-  }
-
-  const subTotals = {}
-  subList.forEach(sub => {
-    let t = 0
-    scopeItems.forEach(sc => {
-      const k = `${sub.id}_${sc.id}`
-      t += Number(local[k]?.amount || 0)
-    })
-    subTotals[sub.id] = t
-  })
-
+function LevelingSection({ bidId, scopeItems, submissions, levelingEntries, onEntry, canEdit, loadError }) {
+  if (loadError) return <div style={{ ...s.card, ...s.empty, color: '#dc2626' }}>{loadError}</div>
   return (
     <div style={s.card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ ...s.cardH, margin: 0 }}>Bid Leveling Matrix</h3>
-        {saving && <span style={{ fontSize: '12px', color: '#6b7280' }}>Saving…</span>}
-      </div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', fontSize: '12px', minWidth: '600px' }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: '6px 12px 6px 0', fontWeight: '600', color: '#6b7280', fontSize: '11px', textTransform: 'uppercase', minWidth: '180px' }}>Scope Item</th>
-              {subList.map(sub => (
-                <th key={sub.id} style={{ textAlign: 'center', padding: '6px 8px', fontWeight: '600', color: '#111827', minWidth: '120px', borderLeft: '1px solid #f3f4f6' }}>
-                  <p style={{ margin: '0 0 2px', fontSize: '12px' }}>{sub.company_name || sub.sub_email}</p>
-                  <p style={{ margin: 0, fontSize: '11px', color: '#6b7280' }}>{fmtMoney(sub.amount)}</p>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {trades.map(trade => {
-              const items = scopeItems.filter(i => i.trade === trade)
-              return items.map((sc, idx) => (
-                <tr key={sc.id} style={{ borderTop: '1px solid #f3f4f6', background: idx === 0 ? '#fafafa' : '#fff' }}>
-                  <td style={{ padding: '7px 12px 7px 0', color: '#374151' }}>
-                    {idx === 0 && <span style={{ fontSize: '10px', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', display: 'block', marginBottom: '1px' }}>{trade}</span>}
-                    <span style={{ fontSize: '12px' }}>{sc.description || '—'}</span>
-                  </td>
-                  {subList.map(sub => {
-                    const k = `${sub.id}_${sc.id}`
-                    const entry = local[k] || {}
-                    return (
-                      <td key={sub.id} style={{ padding: '4px 8px', borderLeft: '1px solid #f3f4f6', textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          placeholder="—"
-                          value={entry.amount ?? ''}
-                          onChange={e => setLocal(p => ({ ...p, [k]: { ...entry, amount: e.target.value } }))}
-                          onBlur={e => saveEntry(sub.id, sc.id, e.target.value, entry.included !== false)}
-                          style={{ width: '90px', padding: '4px 6px', border: '1px solid #e5e7eb', borderRadius: '4px', fontSize: '12px', textAlign: 'right', outline: 'none' }}
-                        />
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))
-            })}
-            <tr style={{ borderTop: '2px solid #e5e7eb', background: '#f9fafb', fontWeight: '700' }}>
-              <td style={{ padding: '8px 12px 8px 0', fontSize: '13px' }}>Leveled Total</td>
-              {subList.map(sub => (
-                <td key={sub.id} style={{ padding: '8px', textAlign: 'center', borderLeft: '1px solid #f3f4f6', fontSize: '13px', color: '#111827' }}>
-                  {fmtMoney(subTotals[sub.id])}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#9ca3af' }}>Enter amounts per line item per bidder. Totals update as you type; values save on field blur.</p>
+      <h3 style={{ ...s.cardH, margin: '0 0 0.5rem' }}>Bid Leveling Matrix</h3>
+      <LevelingMatrix bidPackageId={bidId} scopeItems={scopeItems} submissions={submissions} entries={levelingEntries} onEntry={onEntry} canEdit={canEdit} />
     </div>
   )
 }
@@ -1686,6 +1598,11 @@ export default function BidWorkspacePage() {
   const [invitations, setInvitations] = useState([])
   const [submissions, setSubmissions] = useState([])
   const [levelingEntries, setLevelingEntries] = useState([])
+  const [levelingError, setLevelingError] = useState(null)
+  const mergeLevelingEntry = entry => setLevelingEntries(prev => {
+    const i = prev.findIndex(e => e.id === entry.id || (e.bid_submission_id === entry.bid_submission_id && e.bid_scope_item_id === entry.bid_scope_item_id))
+    return i >= 0 ? prev.map((e, j) => (j === i ? entry : e)) : [...prev, entry]
+  })
   const [rfis, setRfis] = useState([])
   const [rfiTableExists, setRfiTableExists] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -1722,10 +1639,11 @@ export default function BidWorkspacePage() {
     const subs = bundle.submissions || []
     setSubmissions(subs)
 
-    // Load leveling entries for actual submission IDs
+    // Leveling entries come through the server (bid_leveling_entries has no browser policies).
     if (subs.length > 0) {
-      const { data: lvl } = await supabase.from('bid_leveling_entries').select('*').in('bid_submission_id', subs.map(s => s.id))
-      setLevelingEntries(lvl || [])
+      const lvl = await loadLevelingEntries(id)
+      setLevelingError(lvl.error || null)
+      setLevelingEntries(lvl.entries || [])
     }
 
     // RFIs came with the package (the table may not exist yet)
@@ -1832,7 +1750,7 @@ export default function BidWorkspacePage() {
               <InvitationsSection bidId={id} pkg={pkg} plans={plans} invitations={invitations} submissions={submissions} scopeItems={scopeItems} profile={profile} reload={loadAll} canEdit={canEdit} />
             )}
             {section === 'leveling' && (
-              <LevelingSection bidId={id} scopeItems={scopeItems} submissions={submissions} levelingEntries={levelingEntries} reload={loadAll} />
+              <LevelingSection bidId={id} scopeItems={scopeItems} submissions={submissions} levelingEntries={levelingEntries} onEntry={mergeLevelingEntry} canEdit={canEdit} loadError={levelingError} />
             )}
             {section === 'proposal' && (
               <ProposalSection pkg={pkg} bidId={id} scopeItems={scopeItems} submissions={submissions} profile={profile} reload={loadAll} />

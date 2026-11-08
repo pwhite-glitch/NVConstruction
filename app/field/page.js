@@ -3,15 +3,18 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { authFetch } from '../../lib/client-fetch'
+import { vehicleLogLabel } from '../../lib/vehicle-log-types'
+import { fieldTarget, fieldTabFromParam } from '../../lib/notification-labels'
+import NotificationBell from '../components/NotificationBell'
 import { openFile } from '../../lib/open-file'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
-import { rainFlagged } from '../../lib/lookahead-weather'
+import { rainFlagged, coldFlagged } from '../../lib/lookahead-weather'
 import { openLookaheadPrint } from '../../lib/lookahead-print'
 import { openMaintenanceReportPrint } from '../../lib/maintenance-report-print'
 import * as lookaheadApi from '../../lib/lookahead-client'
-import { StatusChip, DayWeather, RainTag, WorkflowBar, ActivityDateFields, FormHint, MoveToDaySelect, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
+import { StatusChip, DayWeather, RainTag, ColdTag, WorkflowBar, ActivityDateFields, FormHint, MoveToDaySelect, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
 
 // Unique storage file name for the i-th photo of a batch picked at `ts`.
 const uniquePhotoName = (ts, i) => `${ts}-${i}-${Math.random().toString(36).slice(2, 8)}.jpg`
@@ -168,7 +171,7 @@ export default function Field() {
   const [vehicleLogs, setVehicleLogs] = useState({})
   const [expandedVehicleId, setExpandedVehicleId] = useState(null)
   const [showVehicleLogForm, setShowVehicleLogForm] = useState(null)
-  const [vehicleLogForm, setVehicleLogForm] = useState({ log_type: 'Mileage Update', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+  const [vehicleLogForm, setVehicleLogForm] = useState({ log_type: 'Weekly Miles', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
   const [vehicleLogFile, setVehicleLogFile] = useState(null)
   const [submittingVehicleLog, setSubmittingVehicleLog] = useState(false)
   const [vehicleLogMsg, setVehicleLogMsg] = useState('')
@@ -271,7 +274,7 @@ export default function Field() {
       // Bookmarkable links: /field?job=<id>&tab=lookahead&week=YYYY-MM-DD
       const params = new URLSearchParams(window.location.search)
       const pJob = params.get('job')
-      const pTab = params.get('tab')
+      const pTab = fieldTabFromParam(params.get('tab'))
       const pWeek = params.get('week')
       if (pWeek && /^\d{4}-\d{2}-\d{2}$/.test(pWeek)) setLookaheadWeekStart(mondayOf(pWeek))
       const linkedJob = jobs.find(j => j.id === pJob) || (pTab && jobs.length === 1 ? jobs[0] : null)
@@ -302,6 +305,24 @@ export default function Field() {
     const next = window.location.pathname + (qs ? `?${qs}` : '')
     if (next !== window.location.pathname + window.location.search) window.history.replaceState(window.history.state, '', next)
   }, [profile, selectedJobId, activeTab, pendingTab, lookaheadWeekStart])
+
+  // Bell click: links like /field?job=…&tab=… (and the old bare 'rfis') open that job/tab.
+  function openNotification(n) {
+    const t = fieldTarget(n)
+    if (t) {
+      const job = t.job && assignedJobs.find(j => j.id === t.job)
+      if (t.week && /^\d{4}-\d{2}-\d{2}$/.test(t.week)) setLookaheadWeekStart(mondayOf(t.week))
+      if (job) {
+        setSelectedJobId(job.id)
+        if (t.tab) setActiveTab(t.tab)
+        if (job.id === selectedJobId && t.tab === activeTab && t.tab === 'rfi') loadRfis()
+      } else if (t.tab) {
+        setPendingTab(t.tab)
+      }
+      return
+    }
+    if (n?.link?.startsWith('/')) router.push(n.link)
+  }
 
   // Header "Lookahead" link: straight to the lookahead, picking a project first if needed
   function openLookaheadNav() {
@@ -694,9 +715,10 @@ export default function Field() {
   }
 
   async function loadMyTools(userId) {
-    const res = await fetch('/api/tools')
+    const res = await authFetch('/api/tools')
     const json = await res.json()
-    const mine = (json.data || []).filter(t => t.assigned_to === userId)
+    // Checked-in / retired tools are unassigned on the server, so they drop off here.
+    const mine = (json.data || []).filter(t => t.assigned_to === userId && t.status !== 'retired')
     setMyTools(mine)
   }
 
@@ -959,20 +981,26 @@ export default function Field() {
     e.preventDefault()
     setSubmittingToolLog(true)
     setToolLogError('')
+    // The server sets logged_by from the session and updates the tool itself
+    // (check in → unassigned + available; lost → Lost; damage/maintenance → In Repair).
     const rowData = {
       tool_id: tool.id,
-      logged_by: user?.id,
-      assigned_to: tool.assigned_to || null,
       log_type: toolLogForm.log_type,
       log_date: toolLogForm.log_date,
       notes: toolLogForm.notes || null,
     }
-    const res = await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
-    const json = await res.json()
+    let json
+    try {
+      const res = await authFetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+      json = await res.json().catch(() => ({}))
+      if (!res.ok && !json.error) json.error = `Could not save (HTTP ${res.status}).`
+    } catch (err) { json = { error: err.message || 'Could not save.' } }
     if (json.error) { setToolLogError(json.error); setSubmittingToolLog(false); return }
     setToolLogsField(prev => ({ ...prev, [tool.id]: [json.data, ...(prev[tool.id] || [])] }))
-    if (toolLogForm.log_type === 'checkin') {
+    if (json.tool && json.tool.assigned_to !== tool.assigned_to) {
       setMyTools(prev => prev.filter(t => t.id !== tool.id))
+    } else if (json.tool) {
+      setMyTools(prev => prev.map(t => t.id === tool.id ? { ...t, ...json.tool } : t))
     }
     setToolLogForm({ log_type: 'checkin', log_date: localToday(), notes: '' })
     setShowToolLogForm(null)
@@ -1013,7 +1041,7 @@ export default function Field() {
     json = await res.json()
     if (json.error) { setVehicleLogError(json.error); setSubmittingVehicleLog(false); return }
     setVehicleLogs(prev => ({ ...prev, [vehicleId]: [json.data, ...(prev[vehicleId] || [])] }))
-    setVehicleLogForm({ log_type: 'Mileage Update', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
+    setVehicleLogForm({ log_type: 'Weekly Miles', log_date: localToday(), mileage: '', notes: '', fuel_gallons: '', fuel_cost: '' })
     setVehicleLogFile(null)
     setShowVehicleLogForm(null)
     setVehicleLogMsg('Log saved.')
@@ -1111,15 +1139,19 @@ export default function Field() {
 
   async function submitRfi(e) {
     e.preventDefault()
+    const title = rfiForm.title.trim()
+    const description = rfiForm.description.trim()
+    if (!title || !description) { alert('Add a subject and the details of your question.'); return }
     setSubmittingRfi(true)
-    const title = rfiForm.title
-    const description = rfiForm.description
-    const { error } = await supabase.from('rfis').insert({
-      job_id: selectedJobId, super_id: user.id,
-      title, description: description || null,
-    })
-    if (error) {
-      alert('Failed to submit RFI. Please try again.')
+    // Server assigns the next RFI # for the job, status open, super_id = you, and
+    // emails the PM. No browser insert (it could not number the RFI).
+    let json = {}
+    try {
+      const res = await authFetch('/api/rfis/staff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: selectedJobId, title, description }) })
+      json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`)
+    } catch (err) {
+      alert(`Failed to submit RFI: ${err.message || 'please try again.'}`)
       setSubmittingRfi(false)
       return
     }
@@ -1127,7 +1159,6 @@ export default function Field() {
     setRfiForm({ title: '', description: '' })
     await loadRfis()
     setTimeout(() => setRfiSuccess(false), 3000)
-    authFetch('/api/rfi-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'submitted', job_id: selectedJobId, title, description, super_name: profile?.full_name || profile?.email || 'Superintendent' }) })
     setSubmittingRfi(false)
   }
 
@@ -1200,6 +1231,7 @@ export default function Field() {
                 <span style={{ display: 'flex', transform: 'scale(0.8)' }}>{IC.lookahead}</span>Lookahead
               </button>
             )}
+            <NotificationBell onOpen={openNotification} />
             <button style={s.signOut} onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}>Sign out</button>
           </div>
         </div>
@@ -1663,8 +1695,8 @@ export default function Field() {
                           <input style={s.input} required value={rfiForm.title} onChange={e => setRfiForm(f => ({ ...f, title: e.target.value }))} placeholder="Question about electrical panel location..." />
                         </div>
                         <div style={{ marginBottom: '1.5rem' }}>
-                          <label style={s.label}>Details</label>
-                          <textarea rows={4} style={{ ...s.input, resize: 'vertical' }} value={rfiForm.description} onChange={e => setRfiForm(f => ({ ...f, description: e.target.value }))} placeholder="Provide details, reference drawings, etc..." />
+                          <label style={s.label}>Details *</label>
+                          <textarea required rows={4} style={{ ...s.input, resize: 'vertical' }} value={rfiForm.description} onChange={e => setRfiForm(f => ({ ...f, description: e.target.value }))} placeholder="Provide details, reference drawings, etc..." />
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                           <button type="submit" disabled={submittingRfi} style={{ ...s.btn, opacity: submittingRfi ? 0.6 : 1 }}>{submittingRfi ? 'Submitting...' : 'Submit RFI'}</button>
@@ -1679,8 +1711,8 @@ export default function Field() {
                             <div style={s.rowHead} onClick={() => setExpandedRfi(expandedRfi === rfi.id ? null : rfi.id)}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.title}</span>
-                                  <span style={s.badge(rfi.status)}>{rfi.status}</span>
+                                  <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{rfi.number != null && <span style={{ color: '#6b7280', marginRight: '6px' }}>RFI #{rfi.number}</span>}{rfi.title}</span>
+                                  <span style={s.badge(rfi.status || 'open')}>{rfi.status || 'open'}</span>
                                 </div>
                                 <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(rfi.created_at).toLocaleDateString()}</span>
                               </div>
@@ -2494,7 +2526,7 @@ export default function Field() {
                                   <div>
                                     <label style={s.label}>Log Type *</label>
                                     <select style={s.input} required value={vehicleLogForm.log_type} onChange={e => setVehicleLogForm(f => ({ ...f, log_type: e.target.value }))}>
-                                      {LOG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                      {LOG_TYPES.map(t => <option key={t} value={t}>{vehicleLogLabel(t)}</option>)}
                                     </select>
                                   </div>
                                   <div>
@@ -2548,7 +2580,7 @@ export default function Field() {
                                 {logs.map(l => (
                                   <div key={l.id} style={{ padding: '10px 0', borderTop: '1px solid #1a1a1a' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
+                                      <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{vehicleLogLabel(l.log_type)}</span>
                                       <span style={{ fontSize: '12px', color: '#6b7280' }}>{new Date(l.log_date + 'T12:00:00').toLocaleDateString()}</span>
                                       {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
                                       {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#6b7280' }}>{l.fuel_gallons} gal · ${Number(l.fuel_cost || 0).toFixed(2)}</span>}
@@ -2568,7 +2600,8 @@ export default function Field() {
 
                 {/* TOOLS */}
                 {activeTab === 'tools' && (() => {
-                  const LOG_TYPE_LABELS = { checkin: 'Check In', checkout: 'Checked Out', damage: 'Damage Report', lost: 'Report Lost', maintenance: 'Needs Maintenance' }
+                  const LOG_TYPE_LABELS = { checkin: 'Check In', checkout: 'Checked Out', damage: 'Damage Report', lost: 'Report Lost', maintenance: 'Needs Maintenance', repair: 'Sent for Repair', found: 'Found / Recovered' }
+                  const TOOL_STATUS_PILL = { lost: { label: 'Lost', color: '#dc2626' }, repair: { label: 'In Repair', color: '#2563eb' } }
                   return (
                     <>
                       {toolLogMsg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '1rem', fontSize: '13px', background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>{toolLogMsg}</div>}
@@ -2591,10 +2624,11 @@ export default function Field() {
                             try {
                               const userId = (await supabase.auth.getSession()).data.session?.user.id
                               // Add to tool inventory
-                              const toolRes = await fetch('/api/tools', {
+                              // Server assigns it to the caller and sets status checked_out.
+                              const toolRes = await authFetch('/api/tools', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ name: purchaseToolForm.name, brand: purchaseToolForm.brand || null, category: purchaseToolForm.category, purchase_date: purchaseToolForm.purchase_date, purchase_cost: purchaseToolForm.purchase_cost ? parseFloat(purchaseToolForm.purchase_cost) : null, condition: 'good', assigned_to: userId, notes: purchaseToolForm.notes || null })
+                                body: JSON.stringify({ name: purchaseToolForm.name, brand: purchaseToolForm.brand || null, category: purchaseToolForm.category, purchase_date: purchaseToolForm.purchase_date, purchase_cost: purchaseToolForm.purchase_cost ? parseFloat(purchaseToolForm.purchase_cost) : null, condition: 'good', assigned_to: userId, status: 'checked_out', notes: purchaseToolForm.notes || null })
                               })
                               if (!toolRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
                               // Log as job expense if cost entered and job selected
@@ -2605,6 +2639,7 @@ export default function Field() {
                                 const costRes = await fetch('/api/direct-costs', { method: 'POST', body: fd })
                                 if (!costRes.ok) { setPurchaseToolMsg('Failed to log tool purchase. Please try again.'); setPurchasingTool(false); return }
                               }
+                              if (userId) loadMyTools(userId)
                               setPurchaseToolMsg(`${purchaseToolForm.name} logged.${purchaseToolForm.purchase_cost && selectedJobId ? ' Cost posted to job.' : ''}`)
                               setPurchaseToolForm({ name: '', category: 'Power Tools', brand: '', purchase_cost: '', purchase_date: localToday(), notes: '' })
                               setPurchaseToolFile(null)
@@ -2671,7 +2706,7 @@ export default function Field() {
                           <div key={tool.id} style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden' }}>
                             <div style={{ padding: '14px 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <div>
-                                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{tool.name}</p>
+                                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: '700', color: '#111827' }}>{tool.name}{TOOL_STATUS_PILL[tool.status] && <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 700, color: TOOL_STATUS_PILL[tool.status].color }}>· {TOOL_STATUS_PILL[tool.status].label}</span>}</p>
                                 <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                                   {[tool.brand, tool.model].filter(Boolean).join(' ')}
                                   {tool.serial_number && ` · SN: ${tool.serial_number}`}
@@ -2820,9 +2855,10 @@ export default function Field() {
                                         {dayActs.map(act => {
                                           const tc = act.responsible_type === 'sub' ? { bg: '#eff6ff', fg: '#1d4ed8', bd: '#bfdbfe' } : act.responsible_type === 'other' ? { bg: '#fff7ed', fg: '#c2410c', bd: '#fed7aa' } : { bg: '#f0fdf4', fg: '#15803d', bd: '#bbf7d0' }
                                           const rain = rainFlagged(act, wx)
+                                          const cold = coldFlagged(act, wx)
                                           const span = dayOfRange(act, dateStr)
                                           return (
-                                            <div key={act.id} style={{ background: tc.bg, border: `1px solid ${rain ? '#fca5a5' : tc.bd}`, borderRadius: '8px', padding: '8px', opacity: act.status === 'done' ? 0.65 : 1 }}>
+                                            <div key={act.id} style={{ background: tc.bg, border: `1px solid ${rain ? '#fca5a5' : cold ? '#93c5fd' : tc.bd}`, borderRadius: '8px', padding: '8px', opacity: act.status === 'done' ? 0.65 : 1 }}>
                                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                   <div style={{ fontSize: '12px', fontWeight: '700', color: '#111827', marginBottom: '4px', textDecoration: act.status === 'done' ? 'line-through' : 'none', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{act.description}</div>
@@ -2831,6 +2867,7 @@ export default function Field() {
                                                     <StatusChip status={act.status} onChange={status => patchLAActivity(act, { status })} />
                                                     {span && <span style={{ fontSize: '10px', color: '#4b5563', padding: '1px 6px', borderRadius: '99px', background: '#ffffff', border: '1px solid #d1d5db' }}>{span}</span>}
                                                     {rain && <RainTag />}
+                                                    {cold && <ColdTag low={wx?.low} />}
                                                     <span style={{ fontSize: '10px', fontWeight: '700', padding: '1px 6px', borderRadius: '99px', background: tc.bg, color: tc.fg, border: `1px solid ${tc.bd}` }}>
                                                       {responsibleLabel(act, lookaheadContracts)}
                                                     </span>

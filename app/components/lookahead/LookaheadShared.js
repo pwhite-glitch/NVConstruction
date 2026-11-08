@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
 import { ACTIVITY_STATUSES, statusInfo, LOOKAHEAD_STAGES, lookaheadStage, stageHistory, isReturned } from '../../../lib/lookahead-fields'
-import { forecastText, isRainRisk } from '../../../lib/lookahead-weather'
+import { forecastText, isRainRisk, isColdRisk, COLD_RISK_F } from '../../../lib/lookahead-weather'
 import { loadForecast, loadSendPreview, sendToSubs } from '../../../lib/lookahead-client'
 
 // Lookahead pieces used by both the job page (PM) and the field app (super),
@@ -25,11 +25,13 @@ export function useLookaheadForecast(jobId) {
 export function DayWeather({ day, align = 'center' }) {
   if (!day) return null
   const risk = isRainRisk(day)
+  const cold = isColdRisk(day)
   return (
-    <div title={`${day.label}${day.precip != null ? ` · ${day.precip}% chance of precipitation` : ''}`}
+    <div title={`${day.label}${day.precip != null ? ` · ${day.precip}% chance of precipitation` : ''}${cold ? ` · low ${day.low}°F` : ''}`}
       style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: align, flexWrap: 'wrap', fontSize: '10px', color: '#6b7280', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
       <span>{day.icon} {forecastText(day)}</span>
       {risk && <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '99px', padding: '0 6px' }}>Rain risk</span>}
+      {cold && <span style={{ fontSize: '10px', fontWeight: 700, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '99px', padding: '0 6px' }}>Freeze risk</span>}
     </div>
   )
 }
@@ -37,6 +39,11 @@ export function DayWeather({ day, align = 'center' }) {
 // On a card: outdoor-looking work on a Rain risk day.
 export function RainTag() {
   return <span title="Outdoor work on a day with 50%+ chance of rain" style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '99px', padding: '1px 6px' }}>☔ Rain risk</span>
+}
+
+// On a card: pour / masonry / roofing / sealant-type work on a day with a low at or below 40°F.
+export function ColdTag({ low }) {
+  return <span title={`Forecast low ${low != null ? `${low}°F` : `≤ ${COLD_RISK_F}°F`}: plan cold-weather protection (blankets, heat, accelerator) or move the work`} style={{ fontSize: '10px', fontWeight: 700, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '99px', padding: '1px 6px' }}>❄ Freeze risk</span>
 }
 
 // One-tap status: tap opens a small picker. Clicks don't reach the card underneath.

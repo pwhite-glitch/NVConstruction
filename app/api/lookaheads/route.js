@@ -7,6 +7,8 @@ import { escapeHtml } from '../../../lib/email'
 import { writeWithFallback, droppedWarning, missingColumn, lookaheadTransitionError, activityLockError, LOOKAHEAD_OFFICE_ROLES, RETURN_COLS } from '../../../lib/lookahead-fields'
 import { addDays, mondayOf, planCopyForward } from '../../../lib/lookahead-dates'
 import { jobPmUserIds } from '../../../lib/lookahead-recipients'
+import { loadJobForecast, lookaheadWeatherFlags, weatherWarningHtml } from '../../../lib/lookahead-forecast'
+import { siteUrl } from '../../../lib/site-url'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -217,6 +219,8 @@ export async function PUT(request) {
         entity_id: current.id,
         dedup_key: `lookahead:${act === 'approve' ? 'approved' : 'returned'}:${current.id}:${now}`,
       })
+      // Send back needs action from the super: email too (the bell alone is easy to miss).
+      if (act === 'return') await sendReturnedEmail(current, proj, weekStr, updates)
     }
     return Response.json({ data, warning })
   } catch (e) {
@@ -244,11 +248,34 @@ async function sendSubmittedEmail(data, weekStr) {
       eqHtml = `<p style="margin-top:16px"><strong style="color:#f59e0b">⚠ Company Equipment Required:</strong></p><ul style="margin:8px 0;padding-left:20px">${lines.join('')}</ul>`
     }
 
+    // Rain / freeze warnings on the submitted activities (best effort; no forecast → no block).
+    let wxHtml = ''
+    try {
+      const { days } = await loadJobForecast(adminSupabase, data.job_id)
+      wxHtml = weatherWarningHtml(lookaheadWeatherFlags(data.lookahead_activities || [], data.week_start_date, days))
+    } catch {}
+
     await resend.emails.send({
       from: 'NV Construction <noreply@nvim.co>',
       to: data.jobs.pm_email,
       subject: `2-Week Lookahead Submitted — ${data.jobs.project_name}`,
-      html: `<p>A 2-week lookahead has been submitted for <strong>${escapeHtml(data.jobs.project_name)}</strong> (Job #${escapeHtml(data.jobs.job_number)}) for the week of <strong>${weekStr}</strong>.</p>${eqHtml}<p style="margin-top:16px">Log in to review the full lookahead.</p>`,
+      html: `<p>A 2-week lookahead has been submitted for <strong>${escapeHtml(data.jobs.project_name)}</strong> (Job #${escapeHtml(data.jobs.job_number)}) for the week of <strong>${weekStr}</strong>.</p>${wxHtml}${eqHtml}<p style="margin-top:16px">Log in to review the full lookahead.</p>`,
+    })
+  } catch {}
+}
+
+// "Lookahead sent back" email to the super who submitted it. Never throws.
+async function sendReturnedEmail(la, proj, weekStr, updates) {
+  try {
+    const { data } = await adminSupabase.auth.admin.getUserById(la.submitted_by)
+    const to = data?.user?.email
+    if (!to) return
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    await resend.emails.send({
+      from: 'NV Construction <noreply@nvim.co>',
+      to,
+      subject: `Lookahead sent back — ${proj}`,
+      html: `<p>${escapeHtml(updates.returned_by_name || 'The PM')} sent back your 2-week lookahead for <strong>${escapeHtml(proj)}</strong> (week of <strong>${escapeHtml(weekStr)}</strong>).</p><p><strong>Note:</strong> ${escapeHtml(updates.return_note)}</p><p><a href="${siteUrl(fieldLink(la))}">Open the lookahead</a> to make the changes and resubmit.</p>`,
     })
   } catch {}
 }

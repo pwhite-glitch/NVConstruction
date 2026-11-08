@@ -190,6 +190,11 @@ const client = {
       return { data: { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }, error: null }
     },
     createSignedUrl: async p => ({ data: { signedUrl: `https://signed/${p}` }, error: null }),
+    // mockState.failSignedUrls = { bucket: 'message' } → batch signing fails
+    // mockState.signedUrlResults = { bucket: path => ({ signedUrl: null, error: '…' }) | null } → per-object result override
+    createSignedUrls: async paths => (mockState.failSignedUrls?.[bucket]
+      ? { data: null, error: { message: mockState.failSignedUrls[bucket] } }
+      : { data: paths.map(p => ({ path: p, signedUrl: `https://signed/${bucket}/${p}`, error: null, ...(mockState.signedUrlResults?.[bucket]?.(p) || {}) })), error: null }),
     createSignedUploadUrl: async p => ({ data: { signedUrl: `https://upload/${p}` }, error: null }),
     remove: async paths => { for (const p of paths) delete mockState.files[`${bucket}/${p}`]; mockState.calls.push({ table: `storage:${bucket}`, op: 'remove', payload: paths }); return { data: paths, error: null } },
   }) },
@@ -219,5 +224,7 @@ module.exports = {
     mockState.strictUpload = false
     mockState.defaults = {}
     mockState.unique = {}
+    mockState.failSignedUrls = {}
+    mockState.signedUrlResults = {}
   },
 }

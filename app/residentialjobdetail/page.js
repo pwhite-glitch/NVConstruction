@@ -3561,7 +3561,7 @@ function ResidentialJobDetailInner() {
                   <p style={s.cardTitle}>RFIs</p>
                   {fieldData.rfis.length === 0 ? <div style={s.emptyMsg}>No RFIs.</div> : fieldData.rfis.map(r => (
                     <div key={r.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}><strong>{r.title}</strong><span style={s.badge(r.status === 'open' ? 'orange' : 'gray')}>{r.status}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}><strong>{r.number != null && <span style={{ color: '#6b7280', fontWeight: 600, marginRight: '6px' }}>RFI #{r.number}</span>}{r.title}</strong><span style={s.badge(r.status === 'open' || !r.status ? 'orange' : 'gray')}>{r.status || 'open'}</span></div>
                       {r.description && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.description}</div>}
                       {r.response && <div style={{ color: '#15803d', whiteSpace: 'pre-wrap' }}>Response: {r.response}</div>}
                       <button type="button" onClick={() => setOpenRfiThread(openRfiThread === r.id ? null : r.id)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '12px', padding: '4px 0 0' }}>

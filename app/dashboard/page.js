@@ -4,6 +4,11 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { sendEmail, emailWrap, billingOpenEmail } from '../../lib/email'
 import { authFetch } from '../../lib/client-fetch'
+import { vehicleLogLabel } from '../../lib/vehicle-log-types'
+import { coiState, coiNeedsReminder, fmtCoiDate, isCoiDate } from '../../lib/coi-status'
+import LevelingMatrix, { loadLevelingEntries as fetchLevelingEntries } from '../components/bid/LevelingMatrix'
+import { canEditBidPackage } from '../../lib/bid-access'
+import { notificationLabel } from '../../lib/notification-labels'
 import { localToday, mondayOf } from '../../lib/lookahead-dates'
 import { stageLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { openStorageFile } from '../../lib/open-file'
@@ -423,6 +428,7 @@ export default function Dashboard() {
   const [uploadingPlanFor, setUploadingPlanFor] = useState(null)
   const [uploadingW9For, setUploadingW9For] = useState(null)
   const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
+  const [pendingCoi, setPendingCoi] = useState(null) // { dirId, file, exp } while asking for the new expiration
   const [requestingDoc, setRequestingDoc] = useState(null)
   const [docRequestSent, setDocRequestSent] = useState({})
   const [showInviteFor, setShowInviteFor] = useState(null)
@@ -644,6 +650,17 @@ export default function Dashboard() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [router])
+
+  // Notifications badge: real unread count on load, every few minutes and on focus
+  // (not only once the Notifications tab has been opened).
+  useEffect(() => {
+    if (!profile?.id) return
+    loadPmNotifications()
+    const t = setInterval(loadPmNotifications, 3 * 60 * 1000)
+    const onFocus = () => loadPmNotifications()
+    window.addEventListener('focus', onFocus)
+    return () => { clearInterval(t); window.removeEventListener('focus', onFocus) }
+  }, [profile?.id])
 
   // Apply ?tab= once (checked against the role's nav), then keep the URL in step.
   // Invalid or not-allowed keys fall back to Overview (no loop: Overview is always allowed).
@@ -1955,31 +1972,46 @@ export default function Dashboard() {
     }
   }
 
-  async function uploadSubDoc(dirId, type, file) {
+  // Office upload / replace of a W-9 or COI. A COI needs its new expiration date
+  // (saved with the file, so the badges and reminders use the new date).
+  async function uploadSubDoc(dirId, type, file, coiExpiration) {
+    if (type === 'coi' && !isCoiDate(coiExpiration || '')) { alert('Enter the new COI expiration date.'); return false }
     if (type === 'w9') setUploadingW9For(dirId)
     else setUploadingCoiFor(dirId)
-    const ext = file.name.split('.').pop()
-    const path = `${dirId}/${type}-${Date.now()}.${ext}`
-    const urlRes = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-url', path }) })
-    const { signedUrl, error: urlErr } = await urlRes.json()
-    if (urlErr) { alert('Upload error: ' + urlErr); setUploadingW9For(null); setUploadingCoiFor(null); return }
-    await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    const field = type === 'w9' ? 'w9_url' : 'coi_url'
-    await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, [field]: path }) })
-    if (type === 'w9') setUploadingW9For(null)
-    else setUploadingCoiFor(null)
+    const done = () => { if (type === 'w9') setUploadingW9For(null); else setUploadingCoiFor(null) }
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${dirId}/${type}-${Date.now()}.${ext}`
+      const urlRes = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'upload-url', path }) })
+      const { signedUrl, error: urlErr } = await urlRes.json().catch(() => ({}))
+      if (urlErr || !urlRes.ok || !signedUrl) { alert('Upload error: ' + (urlErr || `HTTP ${urlRes.status}`)); done(); return false }
+      const put = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!put.ok) { alert(`Upload failed (HTTP ${put.status}). The file was not saved.`); done(); return false }
+      const fields = type === 'w9' ? { w9_url: path } : { coi_url: path, coi_expiration: coiExpiration }
+      const saveRes = await authFetch('/api/sub-docs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, ...fields }) })
+      const saved = await saveRes.json().catch(() => ({}))
+      if (!saveRes.ok || saved.error) { alert('The file uploaded but was not saved to the directory: ' + (saved.error || `HTTP ${saveRes.status}`)); done(); return false }
+    } catch (e) {
+      alert('Upload error: ' + (e?.message || 'unknown')); done(); return false
+    }
+    done()
     const { data } = await supabase.from('sub_directory').select('*').order('company_name')
     setDirectory(data || [])
+    return true
   }
 
   async function sendDocRequest(dirId, type) {
     const key = `${dirId}-${type}`
     setRequestingDoc(key)
-    const res = await fetch('/api/doc-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, type }) })
-    const data = await res.json()
+    try {
+      const res = await authFetch('/api/doc-request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory_id: dirId, type }) })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.ok) setDocRequestSent(prev => ({ ...prev, [key]: true }))
+      else alert('Failed to send: ' + (data?.error || `HTTP ${res.status}`))
+    } catch (e) {
+      alert('Failed to send: ' + (e?.message || 'Unknown error'))
+    }
     setRequestingDoc(null)
-    if (data?.ok) setDocRequestSent(prev => ({ ...prev, [key]: true }))
-    else alert('Failed to send: ' + (data?.error || 'Unknown error'))
   }
 
   function openBillingDoc(path) {
@@ -2494,12 +2526,20 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
     setScopeItems(prev => ({ ...prev, [bidId]: data || [] }))
   }
 
+  // Through /api/bid-leveling: bid_leveling_entries has no browser policies.
   async function loadLevelingEntries(bidId) {
-    const detail = bidDetails[bidId]
-    if (!detail?.submissions?.length) return
-    const subIds = detail.submissions.map(s => s.id)
-    const { data } = await supabase.from('bid_leveling_entries').select('*').in('bid_submission_id', subIds)
-    setLevelingEntries(prev => ({ ...prev, [bidId]: data || [] }))
+    const r = await fetchLevelingEntries(bidId)
+    if (r.error) { setBidWorkspaceErrors(prev => ({ ...prev, [bidId]: r.error })); return }
+    setLevelingEntries(prev => ({ ...prev, [bidId]: r.entries }))
+  }
+
+  // One saved cell from the leveling matrix → merge into the package's entries.
+  function mergeLevelingEntry(bidId, entry) {
+    setLevelingEntries(prev => {
+      const list = prev[bidId] || []
+      const i = list.findIndex(e => e.id === entry.id || (e.bid_submission_id === entry.bid_submission_id && e.bid_scope_item_id === entry.bid_scope_item_id))
+      return { ...prev, [bidId]: i >= 0 ? list.map((e, j) => (j === i ? entry : e)) : [...list, entry] }
+    })
   }
 
   async function addScopeItem(bidId) {
@@ -2535,16 +2575,6 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
   async function deleteScopeItem(itemId, bidId) {
     await supabase.from('bid_scope_items').delete().eq('id', itemId)
     await loadScopeItems(bidId)
-  }
-
-  async function upsertLevelingEntry(bidId, submissionId, scopeItemId, amount, included) {
-    await supabase.from('bid_leveling_entries').upsert({
-      bid_submission_id: submissionId,
-      bid_scope_item_id: scopeItemId,
-      amount: amount !== '' && amount != null ? parseFloat(amount) : null,
-      included: included !== false,
-    }, { onConflict: 'bid_submission_id,bid_scope_item_id' })
-    await loadLevelingEntries(bidId)
   }
 
   async function createJobFromBid(pkg) {
@@ -3210,9 +3240,10 @@ ${planLinks.map(p => p.url
   }
 
   async function loadTools() {
-    const res = await fetch('/api/tools')
+    const res = await authFetch('/api/tools')
     const json = await res.json()
-    setTools(json.data || [])
+    // Retired tools keep their history but leave the active inventory.
+    setTools((json.data || []).filter(t => t.status !== 'retired'))
     setToolsLoaded(true)
   }
 
@@ -3225,15 +3256,12 @@ ${planLinks.map(p => p.url
   async function addTool(e) {
     e.preventDefault()
     setSavingTool(true)
-    const body = { ...toolForm, purchase_cost: toolForm.purchase_cost ? parseFloat(toolForm.purchase_cost) : null, assigned_to: toolForm.assigned_to || null, purchase_date: toolForm.purchase_date || null }
-    const res = await fetch('/api/tools', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const json = await res.json()
+    // Server sets status from the assignee (checked_out when assigned) and logs the checkout.
+    const body = { ...toolForm, purchase_cost: toolForm.purchase_cost ? parseFloat(toolForm.purchase_cost) : null, assigned_to: toolForm.assigned_to || null, purchase_date: toolForm.purchase_date || null, status: toolForm.assigned_to ? 'checked_out' : 'available' }
+    const res = await authFetch('/api/tools', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const json = await res.json().catch(() => ({ error: `Could not add tool (HTTP ${res.status}).` }))
     setSavingTool(false)
-    if (json.error) { setToolMsg({ type: 'err', text: json.error }); return }
-    // log checkout if assigned
-    if (json.data.assigned_to) {
-      await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: json.data.id, log_type: 'checkout', log_date: todayCentral(), assigned_to: json.data.assigned_to, notes: 'Initial assignment' }) })
-    }
+    if (json.error || !res.ok) { setToolMsg({ type: 'err', text: json.error || `Could not add tool (HTTP ${res.status}).` }); return }
     setTools(prev => [...prev, json.data].sort((a, b) => a.name.localeCompare(b.name)))
     setToolForm({ name: '', brand: '', model: '', serial_number: '', category: 'Power Tools', purchase_date: '', purchase_cost: '', condition: 'good', assigned_to: '', job_site: '', notes: '' })
     setShowAddTool(false)
@@ -3244,25 +3272,23 @@ ${planLinks.map(p => p.url
   async function saveToolEdit() {
     setSavingToolEdit(true)
     const orig = tools.find(t => t.id === editingToolId)
+    // Server ties status to the assignee and writes the check-in / check-out history.
     const body = { id: editingToolId, ...editToolForm, purchase_cost: editToolForm.purchase_cost ? parseFloat(editToolForm.purchase_cost) : null, assigned_to: editToolForm.assigned_to || null, purchase_date: editToolForm.purchase_date || null }
-    const res = await fetch('/api/tools', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    const json = await res.json()
+    const res = await authFetch('/api/tools', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    const json = await res.json().catch(() => ({ error: `Could not save (HTTP ${res.status}).` }))
     setSavingToolEdit(false)
-    if (json.error) { setToolMsg({ type: 'err', text: json.error }); return }
-    // log reassignment if assigned_to changed
+    if (json.error || !res.ok) { setToolMsg({ type: 'err', text: json.error || `Could not save (HTTP ${res.status}).` }); return }
     const newAssignee = editToolForm.assigned_to || null
-    if (orig?.assigned_to !== newAssignee) {
-      if (orig?.assigned_to) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkin', log_date: todayCentral(), assigned_to: orig.assigned_to, notes: 'Returned / reassigned' }) })
-      if (newAssignee) await fetch('/api/tool-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool_id: editingToolId, log_type: 'checkout', log_date: todayCentral(), assigned_to: newAssignee, notes: 'Assigned by PM' }) })
-      if (toolLogs[editingToolId]) loadToolLogs(editingToolId)
-    }
+    if ((orig?.assigned_to || null) !== newAssignee && toolLogs[editingToolId]) loadToolLogs(editingToolId)
     setTools(prev => prev.map(t => t.id === editingToolId ? json.data : t))
     setEditingToolId(null)
   }
 
   async function deleteTool(toolId) {
-    if (!window.confirm('Delete this tool and all its history?')) return
-    await fetch('/api/tools', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: toolId }) })
+    if (!window.confirm('Retire this tool? It leaves the active inventory; its history is kept.')) return
+    const res = await authFetch('/api/tools', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: toolId }) })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok || json.error) { setToolMsg({ type: 'err', text: json.error || `Could not retire tool (HTTP ${res.status}).` }); return }
     setTools(prev => prev.filter(t => t.id !== toolId))
     if (expandedToolId === toolId) setExpandedToolId(null)
   }
@@ -4240,7 +4266,7 @@ ${planLinks.map(p => p.url
                   {pmNotifications.map(n => {
                     const isUnread = !n.read_at
                     const typeColor = n.type === 'billing_approved' || n.type === 'lookahead_submitted' ? '#16a34a' : n.type === 'billing_rejected' ? '#dc2626' : n.type === 'punch_assigned' ? '#e8590c' : '#2563eb'
-                    const typeLabel = { billing_approved: 'Approved', billing_rejected: 'Returned', punch_assigned: 'Punch list', rfi_answered: 'RFI answered', lookahead_submitted: 'Lookahead to review' }[n.type] || n.type
+                    const typeLabel = notificationLabel(n.type)
                     const ago = (() => {
                       const d = Math.floor((Date.now() - new Date(n.created_at)) / 60000)
                       if (d < 60) return `${d}m ago`
@@ -4982,24 +5008,45 @@ ${planLinks.map(p => p.url
                             )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: sub.coi_url ? '#dcfce7' : '#1a0a0a', border: `1px solid ${sub.coi_url ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '6px', minWidth: '80px' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '700', color: sub.coi_url ? '#16a34a' : '#dc2626' }}>
-                                {sub.coi_url ? '✓' : '✗'} COI{sub.coi_expiration ? ` · ${new Date(sub.coi_expiration).toLocaleDateString()}` : ''}
-                              </span>
-                            </div>
+                            {(() => {
+                              const cs = coiState(sub)
+                              const look = cs === 'ok' ? { bg: '#dcfce7', bd: '#bbf7d0', fg: '#16a34a', mark: '✓' }
+                                : cs === 'expiring' || cs === 'no_date' ? { bg: '#fffbeb', bd: '#fde68a', fg: '#b45309', mark: '⚠' }
+                                : { bg: '#1a0a0a', bd: '#3a1a1a', fg: '#dc2626', mark: '✗' }
+                              const detail = cs === 'no_date' ? ' · no expiration date' : cs === 'expired' ? ` · expired ${fmtCoiDate(sub.coi_expiration)}` : sub.coi_expiration ? ` · ${fmtCoiDate(sub.coi_expiration)}` : ''
+                              return (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: look.bg, border: `1px solid ${look.bd}`, borderRadius: '6px', minWidth: '80px' }}>
+                                  <span style={{ fontSize: '12px', fontWeight: '700', color: look.fg }}>{look.mark} COI{detail}</span>
+                                </div>
+                              )
+                            })()}
                             {sub.coi_url && <button style={s.btnSm('gray')} onClick={() => getDocUrl(sub.coi_url)}>View</button>}
                             {sub.coi_url && <button style={s.btnSm('gray')} onClick={() => downloadDoc(sub.coi_url, `COI-${sub.company_name}.pdf`)}>Download</button>}
                             <label style={{ ...s.btnSm('blue'), cursor: 'pointer', opacity: uploadingCoiFor === sub.id ? 0.6 : 1 }}>
                               {uploadingCoiFor === sub.id ? 'Uploading...' : sub.coi_url ? 'Replace COI' : 'Upload COI'}
                               <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingCoiFor === sub.id}
-                                onChange={e => { if (e.target.files?.[0]) uploadSubDoc(sub.id, 'coi', e.target.files[0]); e.target.value = '' }} />
+                                onChange={e => { if (e.target.files?.[0]) setPendingCoi({ dirId: sub.id, file: e.target.files[0], exp: '' }); e.target.value = '' }} />
                             </label>
-                            {(!sub.coi_url || isBeforeTodayCentral(sub.coi_expiration)) && sub.email && (
+                            {coiNeedsReminder(sub) && sub.email && (
                               <button style={{ ...s.btnSm('orange'), opacity: requestingDoc === `${sub.id}-coi` ? 0.6 : 1 }} disabled={!!requestingDoc} onClick={() => sendDocRequest(sub.id, 'coi')}>
                                 {docRequestSent[`${sub.id}-coi`] ? '✓ Sent' : requestingDoc === `${sub.id}-coi` ? '...' : 'Email Reminder'}
                               </button>
                             )}
                           </div>
+                          {pendingCoi?.dirId === sub.id && (
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap', padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px' }}>
+                              <div style={{ fontSize: '12px', color: '#92400e', flexBasis: '100%' }}>New COI: <strong>{pendingCoi.file.name}</strong>. Enter the expiration date on this certificate.</div>
+                              <div>
+                                <label style={s.label}>COI expiration *</label>
+                                <input type="date" required style={s.input} value={pendingCoi.exp} onChange={e => setPendingCoi(p => ({ ...p, exp: e.target.value }))} />
+                              </div>
+                              <button style={{ ...s.btnSm('blue'), opacity: !pendingCoi.exp || uploadingCoiFor === sub.id ? 0.6 : 1 }} disabled={!pendingCoi.exp || uploadingCoiFor === sub.id}
+                                onClick={async () => { if (await uploadSubDoc(sub.id, 'coi', pendingCoi.file, pendingCoi.exp)) setPendingCoi(null) }}>
+                                {uploadingCoiFor === sub.id ? 'Uploading...' : 'Save COI'}
+                              </button>
+                              <button style={s.btnSm('gray')} disabled={uploadingCoiFor === sub.id} onClick={() => setPendingCoi(null)}>Cancel</button>
+                            </div>
+                          )}
                         </div>
 
                         {/* ── View / Edit toggle ── */}
@@ -6706,110 +6753,16 @@ ${planLinks.map(p => p.url
                             }} />
                             </div>
                             {/* Leveling matrix */}
-                            {bidWorkspaceStep === 'compare' && (() => {
-                              const items = scopeItems[pkg.id] || []
-                              const subs = submissions.filter(s => s.status !== 'rejected')
-                              const entries = levelingEntries[pkg.id] || []
-                              if (items.length === 0) return <p style={{ fontSize: '13px', color: '#6b7280' }}>Add scope items to start leveling.</p>
-                              if (subs.length === 0) return <p style={{ fontSize: '13px', color: '#6b7280' }}>No active bids to level.</p>
-                              const getEntry = (subId, itemId) => entries.find(e => e.bid_submission_id === subId && e.bid_scope_item_id === itemId)
-                              const subLeveledTotal = (sub) => items.reduce((a, item) => {
-                                const e = getEntry(sub.id, item.id)
-                                return a + (e?.included !== false && e?.amount ? Number(e.amount) : 0)
-                              }, 0)
-                              const itemCovered = (item) => subs.some(sub => { const e = getEntry(sub.id, item.id); return e && e.included !== false })
-                              const gapItems = items.filter(item => subs.every(sub => { const e = getEntry(sub.id, item.id); return e && e.included === false }))
-                              const byTrade = {}
-                              items.forEach(item => { const t = item.trade || 'General'; if (!byTrade[t]) byTrade[t] = []; byTrade[t].push(item) })
-                              const budgetTotal = items.reduce((a, i) => a + Number(i.budget_amount || 0), 0)
-                              const colW = 120
-                              return (
-                                <div style={{ marginTop: '8px' }}>
-                                  {gapItems.length > 0 && <div style={{ background: '#2a0a00', border: '1px solid #5a1a00', borderRadius: '6px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', color: '#dc2626' }}>⚠ {gapItems.length} scope item{gapItems.length !== 1 ? 's' : ''} excluded by all subs — potential gap in coverage</div>}
-                                  <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${300 + subs.length * colW}px` }}>
-                                      <thead>
-                                        <tr style={{ borderBottom: '2px solid #1a1a1a' }}>
-                                          <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', minWidth: '200px' }}>Scope Item</th>
-                                          <th style={{ padding: '8px 10px', textAlign: 'right', fontSize: '10px', fontWeight: '800', color: '#6b7280', letterSpacing: '1.5px', textTransform: 'uppercase', width: '90px' }}>Budget</th>
-                                          {subs.map(sub => (
-                                            <th key={sub.id} style={{ padding: '8px 10px', textAlign: 'center', width: `${colW}px` }}>
-                                              <div style={{ fontSize: '11px', fontWeight: '700', color: sub.status === 'awarded' ? '#16a34a' : '#aaa' }}>{sub.company_name}</div>
-                                              <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500', marginTop: '2px' }}>${Number(sub.amount).toLocaleString()} bid</div>
-                                            </th>
-                                          ))}
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {Object.entries(byTrade).map(([trade, tradeItems]) => (
-                                          <>
-                                            <tr key={`hdr-${trade}`}>
-                                              <td colSpan={2 + subs.length} style={{ padding: '8px 10px 3px', fontSize: '9px', fontWeight: '800', color: '#e8590c', letterSpacing: '2px', textTransform: 'uppercase', background: '#f3f4f6', borderTop: '1px solid #e5e7eb' }}>{trade}</td>
-                                            </tr>
-                                            {tradeItems.map(item => {
-                                              const isGap = subs.length > 0 && subs.every(sub => { const e = getEntry(sub.id, item.id); return e && e.included === false })
-                                              return (
-                                                <tr key={item.id} style={{ borderBottom: '1px solid #111', background: isGap ? 'rgba(255,50,0,0.05)' : 'transparent' }}>
-                                                  <td style={{ padding: '8px 10px', color: isGap ? '#dc2626' : '#ccc', fontSize: '12px' }}>
-                                                    {isGap && <span style={{ marginRight: '5px', fontSize: '11px' }}>⚠</span>}
-                                                    {item.description}
-                                                  </td>
-                                                  <td style={{ padding: '8px 10px', textAlign: 'right', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>
-                                                    {item.budget_amount > 0 ? `$${Number(item.budget_amount).toLocaleString()}` : '—'}
-                                                  </td>
-                                                  {subs.map(sub => {
-                                                    const entry = getEntry(sub.id, item.id)
-                                                    const excluded = entry?.included === false
-                                                    const hasEntry = entry !== undefined
-                                                    return (
-                                                      <td key={sub.id} style={{ padding: '6px 8px', textAlign: 'center', background: excluded ? 'rgba(255,0,0,0.04)' : hasEntry ? 'rgba(74,222,128,0.03)' : 'transparent' }}>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                                          <button
-                                                            onClick={() => upsertLevelingEntry(pkg.id, sub.id, item.id, entry?.amount ?? '', excluded)}
-                                                            title={excluded ? 'Click to mark included' : hasEntry ? 'Click to mark excluded' : 'Click to mark included'}
-                                                            style={{ width: '30px', height: '24px', border: `1px solid ${excluded ? '#fecaca' : hasEntry ? '#bbf7d0' : '#222'}`, borderRadius: '4px', background: excluded ? '#2a0808' : hasEntry ? '#081a08' : '#111', color: excluded ? '#dc2626' : hasEntry ? '#16a34a' : '#444', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.12s ease' }}
-                                                          >
-                                                            {excluded ? '✗' : hasEntry ? '✓' : '·'}
-                                                          </button>
-                                                          <input
-                                                            type="number"
-                                                            step="0.01"
-                                                            value={entry?.amount ?? ''}
-                                                            placeholder="—"
-                                                            disabled={excluded}
-                                                            onChange={e => upsertLevelingEntry(pkg.id, sub.id, item.id, e.target.value, !excluded)}
-                                                            style={{ width: `${colW - 24}px`, background: excluded ? '#f9fafb' : '#111', border: '1px solid #f0f0f0', borderRadius: '4px', color: excluded ? '#d1d5db' : '#ccc', padding: '3px 6px', fontSize: '11px', textAlign: 'right', outline: 'none', fontVariantNumeric: 'tabular-nums' }}
-                                                          />
-                                                        </div>
-                                                      </td>
-                                                    )
-                                                  })}
-                                                </tr>
-                                              )
-                                            })}
-                                          </>
-                                        ))}
-                                        <tr style={{ borderTop: '2px solid #2a2a2a', background: '#f9fafb' }}>
-                                          <td style={{ padding: '10px 10px', fontSize: '11px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1px' }}>Leveled Total</td>
-                                          <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: '700', color: '#6b7280', fontVariantNumeric: 'tabular-nums' }}>{budgetTotal > 0 ? `$${Number(budgetTotal).toLocaleString()}` : '—'}</td>
-                                          {subs.map(sub => {
-                                            const levTotal = subLeveledTotal(sub)
-                                            const rawBid = Number(sub.amount)
-                                            const diff = levTotal - rawBid
-                                            return (
-                                              <td key={sub.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '15px', fontWeight: '800', color: sub.status === 'awarded' ? '#16a34a' : '#111827', fontVariantNumeric: 'tabular-nums' }}>{levTotal > 0 ? `$${Math.round(levTotal).toLocaleString()}` : '—'}</div>
-                                                {levTotal > 0 && diff !== 0 && <div style={{ fontSize: '10px', color: diff > 0 ? '#d97706' : '#16a34a', marginTop: '2px' }}>{diff > 0 ? '+' : '-'}${Math.round(Math.abs(diff)).toLocaleString()} vs bid</div>}
-                                              </td>
-                                            )
-                                          })}
-                                        </tr>
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              )
-                            })()}
+                            {bidWorkspaceStep === 'compare' && (
+                              <LevelingMatrix
+                                bidPackageId={pkg.id}
+                                scopeItems={scopeItems[pkg.id] || []}
+                                submissions={submissions}
+                                entries={levelingEntries[pkg.id] || []}
+                                onEntry={entry => mergeLevelingEntry(pkg.id, entry)}
+                                canEdit={canEditBidPackage(profile?.role, profile?.id, pkg)}
+                              />
+                            )}
                           </div>
                           </div>
 
@@ -8524,7 +8477,7 @@ ${planLinks.map(p => p.url
                               <div>
                                 <label style={s.label}>Log Type</label>
                                 <select style={s.input} value={apmVehicleLogForm.log_type} onChange={e => setApmVehicleLogForm(f => ({ ...f, log_type: e.target.value }))}>
-                                  {LOG_TYPES_APM.map(t => <option key={t} value={t}>{t}</option>)}
+                                  {LOG_TYPES_APM.map(t => <option key={t} value={t}>{vehicleLogLabel(t)}</option>)}
                                 </select>
                               </div>
                               <div>
@@ -8555,7 +8508,7 @@ ${planLinks.map(p => p.url
                               <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
                                 <div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                    <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
+                                    <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{vehicleLogLabel(l.log_type)}</span>
                                     {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
                                   </div>
                                   <div style={{ fontSize: '12px', color: '#6b7280' }}>
@@ -8575,7 +8528,7 @@ ${planLinks.map(p => p.url
               }
 
               const supers = teamMembers
-              const LOG_TYPES = ['Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
+              const LOG_TYPES = ['Weekly Miles', 'Mileage Update', 'Monthly Photo', 'Oil Change', 'Fuel Fill-up', 'Tire Rotation', 'Inspection', 'Damage Report', 'Other']
               const logTypeBadgeColor = t => t === 'Oil Change' ? '#d97706' : t === 'Damage Report' ? '#ef4444' : t === 'Monthly Photo' ? '#3b82f6' : t === 'Fuel Fill-up' ? '#22c55e' : t === 'Inspection' ? '#7c3aed' : '#555'
               return (
                 <>
@@ -8691,7 +8644,7 @@ ${planLinks.map(p => p.url
                                     <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
                                       <div style={{ flex: 1 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                                          <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{l.log_type}</span>
+                                          <span style={{ padding: '2px 8px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', background: '#f3f4f6', color: logTypeBadgeColor(l.log_type), border: '1px solid #d1d5db' }}>{vehicleLogLabel(l.log_type)}</span>
                                           {l.mileage && <span style={{ fontSize: '12px', color: '#6b7280' }}>{Number(l.mileage).toLocaleString()} mi</span>}
                                           {l.fuel_gallons && <span style={{ fontSize: '12px', color: '#6b7280' }}>{l.fuel_gallons} gal{l.fuel_cost ? ` · $${Number(l.fuel_cost).toFixed(2)}` : ''}</span>}
                                         </div>
@@ -8867,7 +8820,7 @@ ${planLinks.map(p => p.url
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <button style={s.btnSm('gray')} onClick={e => { e.stopPropagation(); setEditingToolId(t.id); setEditToolForm({ name: t.name, brand: t.brand || '', model: t.model || '', serial_number: t.serial_number || '', category: t.category || 'Other', purchase_date: t.purchase_date || '', purchase_cost: t.purchase_cost || '', condition: t.condition || 'good', status: t.status || 'available', assigned_to: t.assigned_to || '', job_site: t.job_site || '', notes: t.notes || '' }) }}>Edit</button>
-                                <button style={s.btnSm('red')} onClick={e => { e.stopPropagation(); deleteTool(t.id) }}>Delete</button>
+                                <button style={s.btnSm('red')} onClick={e => { e.stopPropagation(); deleteTool(t.id) }}>Retire</button>
                                 <span style={{ color: '#6b7280', fontSize: '12px' }}>{isExpanded ? '▲' : '▼'}</span>
                               </div>
                             </div>

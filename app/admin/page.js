@@ -10,6 +10,7 @@ import BotAccessPanel from './BotAccessPanel'
 import { isBotAccount } from '../../lib/bot-rules'
 import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
+import { isCoiDate, fmtCoiDate } from '../../lib/coi-status'
 import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
@@ -226,6 +227,7 @@ export default function AdminPortal() {
   const [filterDirTrade, setFilterDirTrade] = useState('')
   const [filterDirDocs, setFilterDirDocs] = useState('all')
   const [uploadingW9For, setUploadingW9For] = useState(null)
+  const [pendingCoi, setPendingCoi] = useState(null) // { dirId, file, exp } while asking for the new COI expiration
   const [uploadingCoiFor, setUploadingCoiFor] = useState(null)
   const [invitingSubFor, setInvitingSubFor] = useState(null)
   const [inviteSentFor, setInviteSentFor] = useState({})
@@ -499,18 +501,22 @@ export default function AdminPortal() {
   async function sendDocRequest(dirId, type) {
     const key = `${dirId}-${type}`
     setRequestingDoc(key)
-    const res = await fetch('/api/doc-request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ directory_id: dirId, type }),
-    })
-    const data = await res.json()
-    setRequestingDoc(null)
-    if (data?.ok) {
-      setDocRequestSent(prev => ({ ...prev, [key]: true }))
-    } else {
-      alert('Failed to send: ' + (data?.error || 'Unknown error'))
+    try {
+      const res = await authFetch('/api/doc-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory_id: dirId, type }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.ok) {
+        setDocRequestSent(prev => ({ ...prev, [key]: true }))
+      } else {
+        alert('Failed to send: ' + (data?.error || `HTTP ${res.status}`))
+      }
+    } catch (e) {
+      alert('Failed to send: ' + (e?.message || 'Unknown error'))
     }
+    setRequestingDoc(null)
   }
 
   async function reloadDirectory() {
@@ -582,31 +588,39 @@ export default function AdminPortal() {
     await reloadDirectory()
   }
 
-  async function uploadSubDoc(dirId, type, file) {
+  // Office upload / replace of a W-9 or COI. A COI needs its new expiration date,
+  // saved with the file so coiStatus, the filters and reminders use the new date.
+  async function uploadSubDoc(dirId, type, file, coiExpiration) {
+    if (type === 'coi' && !isCoiDate(coiExpiration || '')) { alert('Enter the new COI expiration date.'); return false }
     if (type === 'w9') setUploadingW9For(dirId)
     else setUploadingCoiFor(dirId)
-    const ext = file.name.split('.').pop()
-    const path = `${dirId}/${type}-${Date.now()}.${ext}`
-    const urlRes = await fetch('/api/sub-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload-url', path }),
-    })
-    const { signedUrl, error: urlErr } = await urlRes.json()
-    if (urlErr) { alert('Upload error: ' + urlErr); setUploadingW9For(null); setUploadingCoiFor(null); return }
-    const putRes = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
-    if (!putRes.ok) { alert('Upload failed — could not store file.'); setUploadingW9For(null); setUploadingCoiFor(null); return }
-    const field = type === 'w9' ? 'w9_url' : 'coi_url'
-    const { data: { session } } = await supabase.auth.getSession()
-    const saveRes = await fetch('/api/sub-docs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ directory_id: dirId, [field]: path }),
-    })
-    if (!saveRes.ok) { alert('Upload error — file stored but record not saved. Please try again.'); }
-    if (type === 'w9') setUploadingW9For(null)
-    else setUploadingCoiFor(null)
+    const done = () => { if (type === 'w9') setUploadingW9For(null); else setUploadingCoiFor(null) }
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${dirId}/${type}-${Date.now()}.${ext}`
+      const urlRes = await authFetch('/api/sub-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload-url', path }),
+      })
+      const { signedUrl, error: urlErr } = await urlRes.json().catch(() => ({}))
+      if (urlErr || !urlRes.ok || !signedUrl) { alert('Upload error: ' + (urlErr || `HTTP ${urlRes.status}`)); done(); return false }
+      const putRes = await fetch(signedUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+      if (!putRes.ok) { alert('Upload failed — could not store file.'); done(); return false }
+      const fields = type === 'w9' ? { w9_url: path } : { coi_url: path, coi_expiration: coiExpiration }
+      const saveRes = await authFetch('/api/sub-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directory_id: dirId, ...fields }),
+      })
+      const saved = await saveRes.json().catch(() => ({}))
+      if (!saveRes.ok || saved.error) { alert('Upload error — file stored but record not saved: ' + (saved.error || `HTTP ${saveRes.status}`)); done(); return false }
+    } catch (e) {
+      alert('Upload error: ' + (e?.message || 'unknown')); done(); return false
+    }
+    done()
     await reloadDirectory()
+    return true
   }
 
   async function getDocUrl(filePath) {
@@ -1462,8 +1476,8 @@ export default function AdminPortal() {
                 if (q && !d.company_name?.toLowerCase().includes(q) && !d.contact_name?.toLowerCase().includes(q) && !d.email?.toLowerCase().includes(q)) return false
                 if (filterDirTrade && d.trade !== filterDirTrade) return false
                 if (filterDirDocs === 'missing-w9') return !d.w9_url
-                if (filterDirDocs === 'missing-coi') { const st = coiStatus(d.coi_expiration); return !d.coi_url || st === 'expired' || st === 'warning' }
-                if (filterDirDocs === 'issues') { const st = coiStatus(d.coi_expiration); return !d.w9_url || !d.coi_url || st === 'expired' || st === 'warning' }
+                if (filterDirDocs === 'missing-coi') { const st = coiStatus(d.coi_expiration); return !d.coi_url || st === 'expired' || st === 'warning' || st === 'none' }
+                if (filterDirDocs === 'issues') { const st = coiStatus(d.coi_expiration); return !d.w9_url || !d.coi_url || st === 'expired' || st === 'warning' || st === 'none' }
                 return true
               })
               return (
@@ -1524,7 +1538,8 @@ export default function AdminPortal() {
                         const hasW9 = !!d.w9_url
                         const hasCOI = !!d.coi_url
                         const needsW9 = !hasW9
-                        const needsCOI = !hasCOI || st === 'expired' || st === 'warning'
+                        // A file with no expiration date is not "on file" either.
+                        const needsCOI = !hasCOI || st === 'expired' || st === 'warning' || st === 'none'
                         const w9Key = `${d.id}-w9`
                         const coiKey = `${d.id}-coi`
                         const bothKey = `${d.id}-both`
@@ -1622,7 +1637,7 @@ export default function AdminPortal() {
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: hasCOI && st === 'active' ? '#dcfce7' : '#1a0a0a', border: `1px solid ${hasCOI && st === 'active' ? '#bbf7d0' : '#3a1a1a'}`, borderRadius: '8px', minWidth: '100px' }}>
                                       <span style={{ fontSize: '12px', fontWeight: '700', color: hasCOI && st === 'active' ? '#16a34a' : st === 'warning' ? '#e8590c' : '#dc2626' }}>
-                                        {hasCOI ? '✓' : '✗'} COI{d.coi_expiration ? ` · ${new Date(d.coi_expiration).toLocaleDateString()}` : ''}
+                                        {hasCOI && st === 'active' ? '✓' : hasCOI ? '⚠' : '✗'} COI{d.coi_expiration ? ` · ${st === 'expired' ? 'expired ' : ''}${fmtCoiDate(d.coi_expiration)}` : hasCOI ? ' · no expiration date' : ''}
                                       </span>
                                     </div>
                                     {hasCOI && (
@@ -1634,8 +1649,22 @@ export default function AdminPortal() {
                                     <label style={{ ...s.btnSm('blue'), cursor: 'pointer', opacity: uploadingCoiFor === d.id ? 0.6 : 1 }}>
                                       {uploadingCoiFor === d.id ? 'Uploading...' : hasCOI ? 'Replace COI' : 'Upload COI'}
                                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploadingCoiFor === d.id}
-                                        onChange={e => { if (e.target.files?.[0]) uploadSubDoc(d.id, 'coi', e.target.files[0]); e.target.value = '' }} />
+                                        onChange={e => { if (e.target.files?.[0]) setPendingCoi({ dirId: d.id, file: e.target.files[0], exp: '' }); e.target.value = '' }} />
                                     </label>
+                                    {pendingCoi?.dirId === d.id && (
+                                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', flexWrap: 'wrap', flexBasis: '100%', padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px' }}>
+                                        <div style={{ fontSize: '12px', color: '#92400e', flexBasis: '100%' }}>New COI: <strong>{pendingCoi.file.name}</strong>. Enter the expiration date on this certificate.</div>
+                                        <div>
+                                          <label style={s.label}>COI expiration *</label>
+                                          <input type="date" required style={s.input} value={pendingCoi.exp} onChange={e => setPendingCoi(p => ({ ...p, exp: e.target.value }))} />
+                                        </div>
+                                        <button style={{ ...s.btnSm('blue'), opacity: !pendingCoi.exp || uploadingCoiFor === d.id ? 0.6 : 1 }} disabled={!pendingCoi.exp || uploadingCoiFor === d.id}
+                                          onClick={async () => { if (await uploadSubDoc(d.id, 'coi', pendingCoi.file, pendingCoi.exp)) setPendingCoi(null) }}>
+                                          {uploadingCoiFor === d.id ? 'Uploading...' : 'Save COI'}
+                                        </button>
+                                        <button style={s.btnSm('gray')} disabled={uploadingCoiFor === d.id} onClick={() => setPendingCoi(null)}>Cancel</button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 

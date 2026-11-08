@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
+import { MbCommissionReport, MbPaymentSettings } from './MbCommissionTabs'
 import { isBeforeTodayCentral } from '../../lib/central-date'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -244,6 +245,11 @@ function SalesPageInner() {
     setSaving(false)
   }
 
+  async function mbAuthHeader() {
+    const { data: { session } } = await supabase.auth.getSession()
+    return { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }
+  }
+
   // Computed stats
   const activeOrders = orders.filter(o => !['cancelled','on_hold'].includes(o.stage))
   const signedValue  = orders.filter(o => !['lead','quoted','cancelled'].includes(o.stage) && o.contract_value).reduce((a, o) => a + Number(o.contract_value), 0)
@@ -286,6 +292,12 @@ function SalesPageInner() {
         <nav style={s.nav}>
           <button style={s.navItem(tab === 'orders')} onClick={() => setTab('orders')}>📋 Orders</button>
           <button style={s.navItem(tab === 'leaderboard')} onClick={() => setTab('leaderboard')}>🏆 Leaderboard</button>
+          {(profile?.role === 'principal' || profile?.role === 'metal_rep') && (
+            <button style={s.navItem(tab === 'mb_commissions')} onClick={() => setTab('mb_commissions')}>💵 MB Commissions</button>
+          )}
+          {profile?.role === 'principal' && (
+            <button style={s.navItem(tab === 'mb_settings')} onClick={() => setTab('mb_settings')}>⚙ MB Payment Settings</button>
+          )}
           <div style={s.navDivider}>Navigate</div>
           <button style={s.navItem(false)} onClick={() => router.push('/dashboard')}>← Dashboard</button>
           <button style={s.navItem(divisionParam === 'metal_buildings')} onClick={() => router.push('/sales?division=metal_buildings')}>Metal Buildings</button>
@@ -460,6 +472,20 @@ function SalesPageInner() {
                 </div>
               )
             )}
+          </>
+        )}
+
+        {/* ── Metal-building commissions (Owner: all; metal rep: own only) ── */}
+        {tab === 'mb_commissions' && (profile?.role === 'principal' || profile?.role === 'metal_rep') && (
+          <>
+            <div style={s.topBar}><h1 style={s.pageTitle}>Metal Building Commissions</h1></div>
+            <MbCommissionReport authHeader={mbAuthHeader} isOwner={profile?.role === 'principal'} staffList={staffList} />
+          </>
+        )}
+        {tab === 'mb_settings' && profile?.role === 'principal' && (
+          <>
+            <div style={s.topBar}><h1 style={s.pageTitle}>Metal Building Payment Settings</h1></div>
+            <MbPaymentSettings authHeader={mbAuthHeader} />
           </>
         )}
 

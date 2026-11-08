@@ -2,6 +2,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
+import { openFile } from '../../../lib/open-file'
+import MbWorkflowPanel from './MbWorkflowPanel'
 
 // ─── Stage config ─────────────────────────────────────────────────────────────
 
@@ -37,6 +39,16 @@ const NEXT_ACTION_TEXT = {
 }
 
 const DOC_CATEGORIES = ['contract','quote','permit','photo','completion','other','general']
+// Metal-building orders also have the two order forms (internal supplier form + client form the customer signs).
+const MB_DOC_CATEGORIES = ['supplier_order_form','client_order_form', ...DOC_CATEGORIES]
+const CATEGORY_LABEL = { supplier_order_form: "Supplier's order form", client_order_form: 'Client order form (PDF)' }
+const catLabel = c => CATEGORY_LABEL[c] || (c.charAt(0).toUpperCase() + c.slice(1))
+// Fields a metal-building order's Save may send (the server allow-lists these too).
+const MB_SAVE_FIELDS = ['customer_name','customer_company','customer_email','customer_phone','site_address','city','state','zip',
+  'scope_description','exclusions','width_ft','length_ft','height_ft','building_use','supplier_ref','quoted_amount','deposit_amount',
+  'expected_delivery_date','confirmed_delivery_date','delivery_notes','expected_install_date','confirmed_install_date','install_notes',
+  'install_crew','supplier_order_confirmation','internal_notes']
+const MB_OFFICE_SAVE_FIELDS = ['contract_value','internal_cost','estimated_profit','salesperson_id','salesperson_name','ops_owner_id','ops_owner_name']
 const BUILDING_USES   = ['Storage','Workshop','Agriculture','Commercial','Industrial','Retail','Auto Shop','Church','Other']
 const ROOF_TYPES      = ['TPO','EPDM','Metal','Built-Up','Modified Bitumen','Shingle','Other']
 
@@ -306,13 +318,7 @@ export default function SalesOrderDetailPage() {
     setSaving(true); setSaveMsg('')
     try {
       const headers = await authHeader()
-      const res = await fetch('/api/sales-orders', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          action: 'update',
-          id,
-          fields: {
+      const allFields = {
             ...form,
             products,
             quoted_amount:   form.quoted_amount   !== '' ? Number(form.quoted_amount)   : null,
@@ -324,7 +330,20 @@ export default function SalesOrderDetailPage() {
             length_ft:       form.length_ft       !== '' ? Number(form.length_ft)       : null,
             height_ft:       form.height_ft       !== '' ? Number(form.height_ft)       : null,
             roof_size_sqft:  form.roof_size_sqft  !== '' ? Number(form.roof_size_sqft)  : null,
-          },
+          }
+      let fields = allFields
+      if (order?.division === 'metal_buildings') {
+        // Only the allow-listed fields; status/receipt/supplier go through the Order Forms tab.
+        const keys = [...MB_SAVE_FIELDS, ...(isAdmin ? MB_OFFICE_SAVE_FIELDS : []), 'products']
+        fields = Object.fromEntries(keys.filter(k => k in allFields).map(k => [k, allFields[k]]))
+      }
+      const res = await fetch('/api/sales-orders', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'update',
+          id,
+          fields,
           actor_name: profile?.full_name || profile?.email,
         }),
       })
@@ -465,23 +484,37 @@ export default function SalesOrderDetailPage() {
 
   async function uploadDoc() {
     if (!uploadFile) { setModalErr('Select a file first'); return }
+    if (order?.division === 'metal_buildings') {
+      if (uploadFile.size > 25 * 1024 * 1024) { setModalErr('Files must be 25 MB or smaller.'); return }
+      if (uploadMeta.category === 'client_order_form' && !/\.pdf$/i.test(uploadFile.name || '')) { setModalErr('Upload the client order form as a PDF.'); return }
+    }
     setUploading(true); setModalErr('')
-    const { data: { session } } = await supabase.auth.getSession()
-    const fd = new FormData()
-    fd.append('file', uploadFile)
-    fd.append('data', JSON.stringify({ order_id: id, category: uploadMeta.category, visible_to_customer: uploadMeta.visible_to_customer, uploaded_by_name: profile?.full_name }))
-    const res = await fetch('/api/sales-order-docs', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` }, body: fd })
-    if (!res.ok) { const j = await res.json(); setModalErr(j.error || 'Upload failed'); setUploading(false); return }
-    setUploading(false)
-    setShowUploadModal(false)
-    setUploadFile(null)
-    loadOrder()
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const fd = new FormData()
+      fd.append('file', uploadFile)
+      fd.append('data', JSON.stringify({ order_id: id, category: uploadMeta.category, visible_to_customer: uploadMeta.visible_to_customer, uploaded_by_name: profile?.full_name }))
+      const res = await fetch('/api/sales-order-docs', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` }, body: fd })
+      if (!res.ok) { const j = await res.json().catch(() => ({})); setModalErr(j.error || `Upload failed (${res.status})`); return }
+      setShowUploadModal(false)
+      setUploadFile(null)
+      loadOrder()
+    } catch (e) {
+      setModalErr('Upload failed: ' + (e.message || 'network error'))
+    } finally {
+      setUploading(false)
+    }
   }
 
-  async function downloadDoc(doc) {
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(`/api/sales-order-docs?signed_url=${encodeURIComponent(doc.storage_path)}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-    if (res.ok) { const { url } = await res.json(); window.open(url, '_blank') }
+  // Window is reserved in the tap (iPhone-safe); the signed URL is fetched inside.
+  function downloadDoc(doc) {
+    openFile(async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/sales-order-docs?doc_id=${encodeURIComponent(doc.id)}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || !j.url) { alert('Could not open the file: ' + (j.error || res.status)); return null }
+      return j.url
+    })
   }
 
   async function toggleDocVisibility(doc) {
@@ -551,9 +584,9 @@ export default function SalesOrderDetailPage() {
 
       {/* ── Tab nav ── */}
       <nav style={s.tabNav}>
-        {['overview','scope','documents','schedule','tasks','purchasing','updates','portal','history'].map(t => (
+        {['overview', ...(order.division === 'metal_buildings' ? ['mbflow'] : []), 'scope','documents','schedule','tasks','purchasing','updates','portal','history'].map(t => (
           <button key={t} style={s.tab(tab === t)} onClick={() => setTab(t)}>
-            {t === 'overview' ? 'Overview' : t === 'scope' ? 'Scope & Products' : t === 'documents' ? 'Documents' : t === 'schedule' ? 'Schedule' : t === 'tasks' ? `Tasks${overdueTasks.length ? ` (${overdueTasks.length})` : ''}` : t === 'purchasing' ? `Purchasing${supplierOrders.length ? ` (${supplierOrders.length})` : ''}` : t === 'updates' ? 'Updates' : t === 'portal' ? 'Customer Portal' : 'History'}
+            {t === 'mbflow' ? 'Order Forms & Signing' : t === 'overview' ? 'Overview' : t === 'scope' ? 'Scope & Products' : t === 'documents' ? 'Documents' : t === 'schedule' ? 'Schedule' : t === 'tasks' ? `Tasks${overdueTasks.length ? ` (${overdueTasks.length})` : ''}` : t === 'purchasing' ? `Purchasing${supplierOrders.length ? ` (${supplierOrders.length})` : ''}` : t === 'updates' ? 'Updates' : t === 'portal' ? 'Customer Portal' : 'History'}
           </button>
         ))}
       </nav>
@@ -718,6 +751,19 @@ export default function SalesOrderDetailPage() {
           </>
         )}
 
+        {/* ══ METAL BUILDING ORDER FORMS & SIGNING ═════════════════════════ */}
+        {tab === 'mbflow' && order.division === 'metal_buildings' && (
+          <MbWorkflowPanel
+            order={order}
+            mb={order.mb}
+            docs={docs}
+            profile={profile}
+            authHeader={authHeader}
+            reload={loadOrder}
+            onUpload={cat => { setUploadFile(null); setUploadMeta({ category: cat, visible_to_customer: false }); setModalErr(''); setShowUploadModal(true) }}
+          />
+        )}
+
         {/* ══ SCOPE & PRODUCTS ══════════════════════════════════════════════ */}
         {tab === 'scope' && (
           <>
@@ -820,6 +866,12 @@ export default function SalesOrderDetailPage() {
                   <div><label style={s.lbl}>Internal Cost</label><input type="number" style={s.inp} value={form.internal_cost} onChange={e => formSet('internal_cost', e.target.value)} /></div>
                   <div><label style={s.lbl}>Est. Gross Profit</label><input type="number" style={s.inp} value={form.estimated_profit} onChange={e => formSet('estimated_profit', e.target.value)} /></div>
                   <div><label style={s.lbl}>Deposit Amount</label><input type="number" style={s.inp} value={form.deposit_amount} onChange={e => formSet('deposit_amount', e.target.value)} /></div>
+                  {order.division === 'metal_buildings' ? (
+                    <div>
+                      <label style={s.lbl}>Deposit Received</label>
+                      <div style={{ fontSize: '13px', marginTop: '8px' }}>{order.deposit_received ? 'Yes' : 'No'} <button style={s.btnSm()} onClick={() => setTab('mbflow')}>Record on Order Forms tab</button></div>
+                    </div>
+                  ) : (
                   <div>
                     <label style={s.lbl}>Deposit Received</label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px' }}>
@@ -827,6 +879,7 @@ export default function SalesOrderDetailPage() {
                       <span style={{ fontSize: '13px' }}>Received</span>
                     </label>
                   </div>
+                  )}
                 </div>
               </div>
             )}
@@ -888,9 +941,9 @@ export default function SalesOrderDetailPage() {
 
             {docs.length === 0 && <p style={s.empty}>No documents attached yet.</p>}
 
-            {DOC_CATEGORIES.filter(cat => docs.some(d => d.category === cat)).map(cat => (
+            {(order.division === 'metal_buildings' ? MB_DOC_CATEGORIES : DOC_CATEGORIES).filter(cat => docs.some(d => d.category === cat)).map(cat => (
               <div key={cat} style={s.card}>
-                <p style={s.sec}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</p>
+                <p style={s.sec}>{catLabel(cat)}</p>
                 {docs.filter(d => d.category === cat).map(doc => (
                   <div key={doc.id} style={s.row}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -901,7 +954,7 @@ export default function SalesOrderDetailPage() {
                       {doc.visible_to_customer
                         ? <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: '600', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '2px 6px', borderRadius: '4px' }}>Customer visible</span>
                         : <span style={{ fontSize: '10px', color: '#9ca3af' }}>Internal</span>}
-                      {canEdit && <button style={s.btnSm(doc.visible_to_customer ? 'default' : 'green')} onClick={() => toggleDocVisibility(doc)}>{doc.visible_to_customer ? 'Hide from customer' : 'Share with customer'}</button>}
+                      {canEdit && doc.category !== 'supplier_order_form' && <button style={s.btnSm(doc.visible_to_customer ? 'default' : 'green')} onClick={() => toggleDocVisibility(doc)}>{doc.visible_to_customer ? 'Hide from customer' : 'Share with customer'}</button>}
                       <button style={s.btnSm()} onClick={() => downloadDoc(doc)}>Download ↗</button>
                     </div>
                   </div>
@@ -927,7 +980,7 @@ export default function SalesOrderDetailPage() {
               </div>
             )}
 
-            {isAdmin && (
+            {isAdmin && order.division !== 'metal_buildings' && (
               <div style={{ ...s.card, borderColor: '#e9d5ff', background: '#fdf4ff' }}>
                 <p style={{ ...s.sec, color: '#7e22ce' }}>E-Signature</p>
                 <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 10px' }}>
@@ -1320,11 +1373,13 @@ export default function SalesOrderDetailPage() {
             <div style={s.fRow}>
               <label style={s.lbl}>Category</label>
               <select style={s.sel} value={uploadMeta.category} onChange={e => setUploadMeta(m => ({ ...m, category: e.target.value }))}>
-                {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                {(order.division === 'metal_buildings' ? MB_DOC_CATEGORIES : DOC_CATEGORIES).map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
               </select>
+              {uploadMeta.category === 'client_order_form' && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>PDF only, up to 25 MB. The customer signs exactly this file.</div>}
+              {uploadMeta.category === 'supplier_order_form' && <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>Internal only: never shown to the customer. PDF, image, Word or Excel, up to 25 MB.</div>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.25rem' }}>
-              <input type="checkbox" id="vis2" checked={uploadMeta.visible_to_customer} onChange={e => setUploadMeta(m => ({ ...m, visible_to_customer: e.target.checked }))} />
+              <input type="checkbox" id="vis2" disabled={uploadMeta.category === 'supplier_order_form'} checked={uploadMeta.visible_to_customer && uploadMeta.category !== 'supplier_order_form'} onChange={e => setUploadMeta(m => ({ ...m, visible_to_customer: e.target.checked }))} />
               <label htmlFor="vis2" style={{ fontSize: '13px', cursor: 'pointer' }}>Share with customer immediately</label>
             </div>
             {modalErr && <p style={s.err}>{modalErr}</p>}

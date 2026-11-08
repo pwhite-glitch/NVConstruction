@@ -4,11 +4,33 @@ import { notify } from '../../../lib/notify'
 import { todayCentral } from '../../../lib/central-date'
 import { buildAttributionRows } from '../../../lib/sales-attribution'
 import { fetchAll } from '../../../lib/budget-line-refs'
+import { Resend } from 'resend'
+import { isMb, MB, canWorkMbOrder, checkMbUpdate, checkMbCreate, isOffice, mbStageNeeds, validDepositAmount } from '../../../lib/mb-orders'
+import { mbRequestsForOrder, actorName, SCHEMA_HINT, lockErrorMessage, preflightWorkflow, supplierTurnIn } from '../../../lib/mb-server'
+import { handleMbAction, syncMbPayment, carryLeadReceipt, mbDetailProjection, commissionReport, settingsView, mbSupplierList } from '../../../lib/mb-actions'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+const PAYMENT_TYPES = new Set(['deposit', 'progress', 'final', 'refund', 'other'])
+// Never taken from a client on supplier-order rows (reparenting / actor spoofing).
+const SUPPLIER_ORDER_FIXED = ['id', 'order_id', 'created_by', 'created_by_name', 'created_at']
+const stripFixed = fields => {
+  const out = { ...(fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {}) }
+  for (const k of SUPPLIER_ORDER_FIXED) delete out[k]
+  return out
+}
+
+// MB order access for generic actions: office, or a metal_rep on the order.
+async function mbGuard(order, auth) {
+  const { data: attribution, error } = await adminSupabase.from('sales_attribution').select('salesperson_id').eq('order_id', order.id)
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (!canWorkMbOrder(auth, order, attribution || [])) return Response.json({ error: 'You are not on this order.' }, { status: 403 })
+  return null
+}
 
 const SALES_ROLES   = new Set(['principal','pm','apm','admin','metal_rep','roofing_rep'])
 const FINANCE_ROLES = new Set(['principal','pm','apm','admin'])
@@ -38,23 +60,42 @@ function sanitizeForRole(order, role) {
 }
 
 // ─── Stage-gate requirements ──────────────────────────────────────────────────
-// Returns array of blocker strings; empty = allowed.
+// Returns { blockers, hard }: blockers may be overridden by office with a reason;
+// hard blockers (the metal-building signing / supplier turn-in sequence) never can.
 
 async function checkStageRequirements(order, toStage, docs) {
   const blockers = []
+  const hard = []
+  const mb = isMb(order)
+
+  // Metal buildings: contract_signed needs a SIGNED native client-order-form request and
+  // order_placed needs the recorded supplier-form turn-in (also when jumping past them).
+  if (mb) {
+    const need = mbStageNeeds(order, toStage)
+    if (need.signed) {
+      const reqs = await mbRequestsForOrder(adminSupabase, order.id)
+      if (reqs.error) hard.push(reqs.missingSchema ? SCHEMA_HINT : `Could not check the client order form signature: ${reqs.error.message}`)
+      else if (!reqs.signed) hard.push('The client order form must be signed by the customer (Send for signature) first. An uploaded contract document is not enough for metal-building orders.')
+    }
+    if (need.turnedIn) {
+      const t = await supplierTurnIn(adminSupabase, order.id)
+      if (t.error) hard.push(t.error)
+      else if (!t.turnedIn) hard.push("The supplier's order form must be turned in (Turn in supplier order form) first. A supplier order row or confirmation number is not enough for metal-building orders.")
+    }
+  }
 
   if (toStage === 'contract_signed') {
     if (!order.contract_value || Number(order.contract_value) <= 0) {
       blockers.push('Contract value must be recorded before marking as contract signed')
     }
-    // Require either a contract doc or a signature request
+    // Roofing: require a contract doc (MB uses the native signature above instead)
     const hasContractDoc = (docs || []).some(d => d.category === 'contract')
-    if (!hasContractDoc) {
+    if (!mb && !hasContractDoc) {
       blockers.push('Upload a signed contract document (category: contract) before advancing')
     }
   }
 
-  if (toStage === 'order_placed') {
+  if (toStage === 'order_placed' && !mb) {
     // Require at least one supplier order with a confirmation number
     const { data: supplierOrders } = await adminSupabase
       .from('sales_supplier_orders')
@@ -97,7 +138,7 @@ async function checkStageRequirements(order, toStage, docs) {
     }
   }
 
-  return blockers
+  return { blockers, hard }
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -154,6 +195,12 @@ export async function GET(request) {
       return Response.json({ data: staff })
     }
 
+    // Metal-building reads
+    if (searchParams.get('list') === 'mb_suppliers') return mbSupplierList(adminSupabase)
+    if (searchParams.get('mb') === 'settings') return settingsView(adminSupabase, auth)
+    if (searchParams.get('mb') === 'commission_report') return commissionReport(adminSupabase, auth, searchParams)
+    if (searchParams.get('mb')) return Response.json({ error: 'Unknown request' }, { status: 400 })
+
     const id = searchParams.get('id')
 
     if (id) {
@@ -165,6 +212,8 @@ export async function GET(request) {
 
       if (error) return Response.json({ error: error.message }, { status: 500 })
       if (!order) return Response.json({ error: 'Not found' }, { status: 404 })
+      // Roofing reps are scoped to roofing (as in the list).
+      if (isMb(order) && auth.role === 'roofing_rep') return Response.json({ error: 'Forbidden' }, { status: 403 })
 
       const [
         { data: docs },
@@ -190,9 +239,12 @@ export async function GET(request) {
         adminSupabase.from('customer_portal_access').select('id,email,name,invited_at,last_accessed_at,revoked_at,invited_by_name').eq('order_id', id).order('invited_at', { ascending: false }),
       ])
 
+      const mb = isMb(order) ? await mbDetailProjection(adminSupabase, auth, order, docs || [], attribution || []) : undefined
+
       return Response.json({
         data: {
           ...sanitizeForRole(order, auth.role),
+          ...(mb ? { mb } : {}),
           docs:             docs            || [],
           tasks:            tasks           || [],
           updates:          updates         || [],
@@ -250,13 +302,25 @@ export async function POST(request) {
 
   try {
     const body = await request.json()
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Invalid request' }, { status: 400 })
     const { action } = body
+
+    // ── Metal-building workflow actions (dedicated, allow-listed) ─────────────
+    if (typeof action === 'string' && action.startsWith('mb_')) {
+      if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      return handleMbAction(adminSupabase, resend, auth, body)
+    }
 
     // ── Create ────────────────────────────────────────────────────────────────
     if (action === 'create') {
       if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { fields } = body
+      let { fields } = body
       if (!fields?.division) return Response.json({ error: 'division required' }, { status: 400 })
+      if (fields.division === MB) {
+        const chk = checkMbCreate(auth, fields)
+        if (chk.error) return Response.json({ error: chk.error }, { status: chk.status })
+        fields = chk.fields
+      }
 
       // Normalize optional UUID fields — empty string is invalid for uuid columns
       if (fields.ops_owner_id === '') fields.ops_owner_id = null
@@ -329,8 +393,30 @@ export async function POST(request) {
     // ── Update fields ─────────────────────────────────────────────────────────
     if (action === 'update') {
       if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { id, fields, actor_name } = body
+      let { id, fields, actor_name } = body
       if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+      if (!fields || typeof fields !== 'object' || Array.isArray(fields)) return Response.json({ error: 'fields required' }, { status: 400 })
+
+      // Resolve the real order first; metal-building orders use an allow-list.
+      const { data: current, error: curErr } = await adminSupabase.from('sales_orders').select('*').eq('id', id).maybeSingle()
+      if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
+      if (!current) return Response.json({ error: 'Not found' }, { status: 404 })
+      // A non-MB order can never be turned into a metal-building order by a generic save
+      // (that would skip the MB allow-list, receipt and signing rules). Nothing is written.
+      if (!isMb(current) && 'division' in fields && String(fields.division ?? '').trim().toLowerCase() === MB) {
+        return Response.json({ error: 'An order cannot be moved into Metal Buildings. Create a new metal-building order instead.' }, { status: 403 })
+      }
+      if (isMb(current)) {
+        const denied = await mbGuard(current, auth)
+        if (denied) return denied
+        const reqs = await mbRequestsForOrder(adminSupabase, id)
+        if (reqs.error && !reqs.missingSchema) return Response.json({ error: reqs.error.message }, { status: 500 })
+        const chk = checkMbUpdate(auth, current, fields, { locked: !!(reqs.pending || reqs.signed) })
+        if (chk.error) return Response.json({ error: chk.error }, { status: chk.status })
+        fields = chk.fields
+        actor_name = await actorName(adminSupabase, auth.userId)
+        if (!Object.keys(fields).length) return Response.json({ ok: true, unchanged: true })
+      }
 
       if (!FINANCE_ROLES.has(auth.role)) {
         delete fields.internal_cost
@@ -356,14 +442,22 @@ export async function POST(request) {
       }
 
       // Fetch current values to compute before/after diff for history
-      const { data: before } = await adminSupabase.from('sales_orders').select('*').eq('id', id).maybeSingle()
+      const before = current
 
+      // On MB orders the DB itself refuses (migration 050 trigger, under the order row
+      // lock) a change to deposit amount / customer name / email / supplier while a
+      // pending or signed client-form request exists, or to the deposit amount once the
+      // deposit is received — so a request created after the check above still wins.
       const { error } = await adminSupabase
         .from('sales_orders')
         .update({ ...fields, updated_at: new Date().toISOString() })
         .eq('id', id)
 
-      if (error) return Response.json({ error: error.message }, { status: 500 })
+      if (error) {
+        const locked = isMb(current) ? lockErrorMessage(error) : null
+        if (locked) return Response.json({ error: locked }, { status: 409 })
+        return Response.json({ error: error.message }, { status: 500 })
+      }
 
       // Notify new salesperson on reassignment
       if (fields.salesperson_id && fields.salesperson_id !== auth.userId) {
@@ -419,12 +513,17 @@ export async function POST(request) {
       if (!id || !stage) return Response.json({ error: 'id and stage required' }, { status: 400 })
       if (!VALID_STAGES.includes(stage)) return Response.json({ error: 'Invalid stage' }, { status: 400 })
 
-      const { data: order } = await adminSupabase
+      const { data: order, error: orderErr } = await adminSupabase
         .from('sales_orders')
         .select('*')
         .eq('id', id)
         .maybeSingle()
+      if (orderErr) return Response.json({ error: orderErr.message }, { status: 500 })
       if (!order) return Response.json({ error: 'Not found' }, { status: 404 })
+      if (isMb(order)) {
+        const denied = await mbGuard(order, auth)
+        if (denied) return denied
+      }
 
       const { data: docs } = await adminSupabase
         .from('sales_order_docs')
@@ -432,7 +531,21 @@ export async function POST(request) {
         .eq('order_id', id)
 
       // Check gate requirements
-      const blockers = await checkStageRequirements(order, stage, docs || [])
+      const { blockers, hard } = await checkStageRequirements(order, stage, docs || [])
+
+      // Metal-building sequence gates: no override for anyone.
+      if (hard.length > 0) {
+        await adminSupabase.from('sales_stage_gate_log').insert({
+          order_id:   id,
+          actor_id:   auth.userId,
+          actor_name: actor_name || 'Staff',
+          from_stage: order.stage,
+          to_stage:   stage,
+          outcome:    'blocked',
+          blockers:   [...hard, ...blockers],
+        })
+        return Response.json({ blocked: true, blockers: [...hard, ...blockers], override_allowed: false }, { status: 422 })
+      }
 
       if (blockers.length > 0) {
         // Admins can override with a reason
@@ -580,11 +693,25 @@ export async function POST(request) {
         salesperson_name = prof?.full_name || null
       }
 
+      // Metal buildings: only office staff carry a lead's "deposit received" over (it
+      // makes the commission deposit leg eligible); reps record it via the order. A carried
+      // receipt needs the workflow schema (received-amount snapshot): check it before any
+      // insert, and never create a received MB order without its snapshot.
+      const mbCarryReceipt = division === MB && isOffice(auth.role) && lead.deposit_received === true
+      let mbReceiptWarning = null
+      if (mbCarryReceipt) {
+        const pf = await preflightWorkflow(adminSupabase, null)
+        if (pf.error) return Response.json({ error: pf.error }, { status: pf.status })
+        if (!validDepositAmount(lead.deposit_amount)) mbReceiptWarning = 'The lead is marked deposit received but has no deposit amount, so the receipt was not carried over. Save the deposit amount on the order, then record the deposit.'
+      }
+
       const order_number = await nextOrderNumber(division)
 
       // Convert "won" lead → contract_signed stage only if won_date is explicitly set
-      // Otherwise create as "quoted" (no automatic contract assumption)
-      const initialStage = lead.stage === 'won' && lead.won_date ? 'contract_signed' : 'quoted'
+      // Otherwise create as "quoted" (no automatic contract assumption).
+      // Metal buildings always start as "quoted": a lead's won date is not a signature;
+      // the native client-order-form signing records the real one.
+      const initialStage = division !== MB && lead.stage === 'won' && lead.won_date ? 'contract_signed' : 'quoted'
 
       const orderFields = {
         order_number,
@@ -599,7 +726,9 @@ export async function POST(request) {
         salesperson_name,
         quoted_amount:     lead.estimate_value,
         deposit_amount:    lead.deposit_amount  || null,
-        deposit_received:  lead.deposit_received || false,
+        // Metal buildings are always inserted NOT received; a carried receipt is recorded
+        // just below together with its snapshot.
+        deposit_received:  division === MB ? false : (lead.deposit_received || false),
         source_lead_id:    lead_id,
         internal_notes:    lead.notes || null,
         // Metal building specific
@@ -630,10 +759,24 @@ export async function POST(request) {
       const { data, error } = await adminSupabase
         .from('sales_orders')
         .insert(orderFields)
-        .select('id, order_number')
+        .select('id, order_number, deposit_received, deposit_received_date, payment_status')
         .single()
 
       if (error) return Response.json({ error: error.message }, { status: 500 })
+
+      if (mbCarryReceipt && !mbReceiptWarning) {
+        const carried = await carryLeadReceipt(adminSupabase, auth, data)
+        if (carried.error) {
+          // Do not leave the new order behind (and never a received one without its snapshot).
+          const { error: delErr } = await adminSupabase.from('sales_orders').delete().eq('id', data.id)
+          if (delErr) {
+            return Response.json({ error: carried.rollbackFailed
+              ? `The lead's deposit receipt could not be recorded (${carried.error}) and order ${data.order_number} could not be removed. It shows "received" without its received amount; the Owner must review it.`
+              : `Order ${data.order_number} was created NOT received: the lead's deposit receipt could not be recorded (${carried.error}). Record the deposit on the order.` }, { status: 500 })
+          }
+          return Response.json({ error: `The lead was not converted: its deposit receipt could not be recorded (${carried.error}).` }, { status: carried.status || 500 })
+        }
+      }
 
       // Mark lead won (only if genuinely won)
       if (lead.stage === 'won') {
@@ -691,19 +834,32 @@ export async function POST(request) {
         })
       }
 
-      return Response.json({ ok: true, id: data.id, order_number: data.order_number, stage: initialStage })
+      return Response.json({ ok: true, id: data.id, order_number: data.order_number, stage: initialStage, ...(mbReceiptWarning ? { warning: mbReceiptWarning } : {}) })
     }
 
     // ── Record payment ─────────────────────────────────────────────────────────
     if (action === 'record_payment') {
       if (!FINANCE_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
       const { id, payment_type, amount, payment_date, reference, notes } = body
-      if (!id || !amount) return Response.json({ error: 'id and amount required' }, { status: 400 })
+      if (!id || amount === undefined || amount === null || amount === '') return Response.json({ error: 'id and amount required' }, { status: 400 })
+      const amt = typeof amount === 'number' ? amount : (typeof amount === 'string' && amount.trim() !== '' ? Number(amount) : NaN)
+      if (!Number.isFinite(amt) || amt <= 0) return Response.json({ error: 'Amount must be a positive number (record refunds as type "refund").' }, { status: 400 })
+      if (payment_type !== undefined && payment_type !== null && !PAYMENT_TYPES.has(payment_type)) return Response.json({ error: 'Invalid payment type' }, { status: 400 })
+      if (payment_date !== undefined && payment_date !== null && payment_date !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(payment_date))) return Response.json({ error: 'payment_date must be YYYY-MM-DD' }, { status: 400 })
+
+      const { data: payOrder, error: payOrderErr } = await adminSupabase.from('sales_orders').select('*').eq('id', id).maybeSingle()
+      if (payOrderErr) return Response.json({ error: payOrderErr.message }, { status: 500 })
+      if (!payOrder) return Response.json({ error: 'Not found' }, { status: 404 })
+      // Metal buildings: receipt state lives partly in mb_order_workflow; fail before any write if it is missing.
+      if (isMb(payOrder)) {
+        const pf = await preflightWorkflow(adminSupabase, id)
+        if (pf.error) return Response.json({ error: pf.error }, { status: pf.status })
+      }
 
       const { error } = await adminSupabase.from('sales_order_payments').insert({
         order_id:        id,
         payment_type:    payment_type || 'deposit',
-        amount,
+        amount:          amt,
         payment_date:    payment_date || todayCentral(),
         reference,
         notes,
@@ -712,16 +868,31 @@ export async function POST(request) {
       })
       if (error) return Response.json({ error: error.message }, { status: 500 })
 
+      // Metal buildings: a full deposit (deposit payments minus refunds >= deposit due)
+      // marks the deposit received; a partial one does not.
+      if (isMb(payOrder)) {
+        const synced = await syncMbPayment(adminSupabase, id)
+        await adminSupabase.from('sales_order_history').insert({
+          order_id: id, actor_id: auth.userId, actor_name: await actorName(adminSupabase, auth.userId),
+          action: 'payment_recorded', details: { payment_type: payment_type || 'deposit', amount: amt, reference },
+        })
+        if (synced.error) return Response.json({ error: `Payment saved, but the order's payment status was not updated: ${synced.error}` }, { status: synced.status || 500 })
+        if (synced.receipt_cleared) {
+          await adminSupabase.from('sales_order_history').insert({
+            order_id: id, actor_id: auth.userId, actor_name: await actorName(adminSupabase, auth.userId),
+            action: 'deposit_receipt_cleared', details: { reason: 'net deposit payments no longer cover the deposit', net_deposit_cents: synced.deposit?.net_deposit_cents ?? null },
+          })
+        }
+        return Response.json({ ok: true, new_payment_status: synced.payment_status, deposit_received: synced.deposit_received })
+      }
+
       // Update payment_status based on totals
-      const { data: payments } = await adminSupabase
+      const { data: payments, error: payListErr } = await adminSupabase
         .from('sales_order_payments')
         .select('payment_type, amount')
         .eq('order_id', id)
-      const { data: order } = await adminSupabase
-        .from('sales_orders')
-        .select('contract_value, payment_status')
-        .eq('id', id)
-        .maybeSingle()
+      if (payListErr) return Response.json({ error: `Payment saved, but totals could not be read: ${payListErr.message}` }, { status: 500 })
+      const order = payOrder
 
       const total = (payments || []).reduce((s, p) => s + (p.payment_type === 'refund' ? -Number(p.amount) : Number(p.amount)), 0)
       const contractVal = Number(order?.contract_value || 0)
@@ -731,12 +902,13 @@ export async function POST(request) {
       else if (total > 0 && (payments || []).some(p => p.payment_type === 'deposit')) newStatus = 'deposit_received'
       else if (total > 0) newStatus = 'partial'
 
-      await adminSupabase.from('sales_orders').update({ payment_status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
+      const { error: stErr } = await adminSupabase.from('sales_orders').update({ payment_status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
       await adminSupabase.from('sales_order_history').insert({
         order_id:   id, actor_id: auth.userId, actor_name: body.actor_name || 'Staff',
         action:     'payment_recorded',
-        details:    { payment_type, amount, reference },
+        details:    { payment_type, amount: amt, reference },
       })
+      if (stErr) return Response.json({ error: `Payment saved, but the order's payment status was not updated: ${stErr.message}` }, { status: 500 })
 
       return Response.json({ ok: true, new_payment_status: newStatus })
     }
@@ -800,10 +972,23 @@ export async function POST(request) {
     // ── Supplier order actions ─────────────────────────────────────────────────
     if (action === 'create_supplier_order') {
       if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { id, fields } = body
+      const { id } = body
+      const fields = stripFixed(body.fields)
       if (!id) return Response.json({ error: 'id required' }, { status: 400 })
+      const { data: parent, error: parentErr } = await adminSupabase.from('sales_orders').select('id, division, salesperson_id').eq('id', id).maybeSingle()
+      if (parentErr) return Response.json({ error: parentErr.message }, { status: 500 })
+      if (!parent) return Response.json({ error: 'Not found' }, { status: 404 })
+      if (isMb(parent)) {
+        const denied = await mbGuard(parent, auth)
+        if (denied) return denied
+        // MB purchasing starts with the recorded supplier-form turn-in (which creates the
+        // submitted purchasing row). No hand-built purchasing state before that.
+        const t = await supplierTurnIn(adminSupabase, id)
+        if (t.error) return Response.json({ error: t.error }, { status: t.status })
+        if (!t.turnedIn) return Response.json({ error: "Turn in the supplier's order form first (it creates the purchasing record)." }, { status: 409 })
+      }
       const { data: so, error } = await adminSupabase.from('sales_supplier_orders').insert({
-        order_id: id, ...fields,
+        ...fields, order_id: id,
         created_by: auth.userId, created_by_name: body.actor_name || 'Staff',
       }).select('id').single()
       if (error) return Response.json({ error: error.message }, { status: 500 })
@@ -818,8 +1003,30 @@ export async function POST(request) {
 
     if (action === 'update_supplier_order') {
       if (!SALES_ROLES.has(auth.role)) return Response.json({ error: 'Forbidden' }, { status: 403 })
-      const { supplier_order_id, fields } = body
+      const { supplier_order_id } = body
+      const fields = stripFixed(body.fields)
       if (!supplier_order_id) return Response.json({ error: 'supplier_order_id required' }, { status: 400 })
+      const { data: soParentRow, error: soPErr } = await adminSupabase.from('sales_supplier_orders').select('*').eq('id', supplier_order_id).maybeSingle()
+      if (soPErr) return Response.json({ error: soPErr.message }, { status: 500 })
+      if (!soParentRow) return Response.json({ error: 'Not found' }, { status: 404 })
+      const { data: soParent, error: soOErr } = await adminSupabase.from('sales_orders').select('id, division, salesperson_id').eq('id', soParentRow.order_id).maybeSingle()
+      if (soOErr) return Response.json({ error: soOErr.message }, { status: 500 })
+      if (soParent && isMb(soParent)) {
+        const denied = await mbGuard(soParent, auth)
+        if (denied) return denied
+        const t = await supplierTurnIn(adminSupabase, soParent.id)
+        if (t.error) return Response.json({ error: t.error }, { status: t.status })
+        if (!t.turnedIn) return Response.json({ error: "Turn in the supplier's order form first; purchasing updates follow the turn-in." }, { status: 409 })
+        // The row the turn-in created keeps its audit fields (supplier, when it was turned in).
+        if (t.row?.supplier_order_row_id === supplier_order_id) {
+          for (const k of ['supplier_id', 'supplier_name', 'ordered_at']) {
+            if (k in fields && String(fields[k] ?? '') !== String(soParentRow[k] ?? '')) {
+              return Response.json({ error: `${k.replace(/_/g, ' ')} on the turned-in purchasing record cannot be changed.` }, { status: 409 })
+            }
+            delete fields[k]
+          }
+        }
+      }
       const { error } = await adminSupabase
         .from('sales_supplier_orders')
         .update({ ...fields, updated_at: new Date().toISOString() })

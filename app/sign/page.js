@@ -214,7 +214,9 @@ function SignPageInner() {
           </p>
           <div style={{ background: '#141414', border: '1px solid #222', borderRadius: '10px', padding: '20px 24px', maxWidth: '420px', margin: '0 auto' }}>
             <p style={{ margin: 0, fontSize: '13px', color: '#888', lineHeight: '1.6' }}>
-              You will receive a confirmation email shortly. Please keep it for your records.
+              {request?.document_kind === 'pdf'
+                ? 'Thank you. NV Construction has your signed order form and will email you about the deposit.'
+                : 'You will receive a confirmation email shortly. Please keep it for your records.'}
             </p>
           </div>
         </div>
@@ -280,7 +282,24 @@ function SignPageInner() {
           </p>
         </div>
 
-        {docHtml && (
+        {request?.document_kind === 'pdf' && request.document_url && (
+          <div style={{ marginBottom: '20px' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
+              Order Form{request.document_file_name ? ` — ${request.document_file_name}` : ''}
+            </p>
+            <iframe
+              src={request.document_url}
+              style={{ width: '100%', height: '640px', border: '1px solid #2a2a2a', borderRadius: '8px', background: '#fff', display: 'block' }}
+              title="Order Form"
+            />
+            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>
+              <a href={request.document_url} target="_blank" rel="noopener noreferrer" style={{ color: '#e8590c' }}>Open the full order form</a>
+              <span style={{ color: '#555' }}> — review every page before signing.</span>
+            </p>
+          </div>
+        )}
+
+        {request?.document_kind !== 'pdf' && docHtml && (
           <div style={{ marginBottom: '20px' }}>
             <p style={{ fontSize: '11px', fontWeight: '700', color: '#555', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>
               Contract Document

@@ -144,6 +144,10 @@ export async function PATCH(request) {
   if (auth.error) return auth.error
   const { id, action } = await request.json().catch(() => ({}))
   if (!id || action !== 'void') return Response.json({ error: 'id and action: "void" required' }, { status: 400 })
+  // Metal-building sales-order requests are cancelled from the sales order page.
+  const { data: mbRow, error: mbErr } = await adminSupabase.from('signing_requests').select('sales_order_id').eq('id', id).maybeSingle()
+  if (mbErr && !/sales_order_id|does not exist|schema cache/i.test(mbErr.message || '')) return Response.json({ error: mbErr.message }, { status: 500 })
+  if (mbRow?.sales_order_id) return Response.json({ error: 'Cancel this request from its sales order.' }, { status: 409 })
   const denied = await denyJobOf(adminSupabase, auth, 'signing_requests', id)
   if (denied) return denied
   const { data, error } = await adminSupabase.from('signing_requests')

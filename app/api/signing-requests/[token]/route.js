@@ -4,6 +4,8 @@ import { saveSignedContract } from '../../../../lib/generated-contract'
 import { escapeHtml } from '../../../../lib/email'
 import { canSign, signatureMatchesName } from '../../../../lib/signing'
 import { getSiteUrl } from '../../../../lib/site-url'
+import { mbRequestByToken, loadPinnedPdf, completeMbSigning, preflightWorkflow, getPaymentInstructions } from '../../../../lib/mb-server'
+import { isMb } from '../../../../lib/mb-orders'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -29,14 +31,70 @@ export async function GET(request, { params }) {
     .single()
 
   if (error || !data) return Response.json({ error: 'Not found' }, { status: 404 })
+
+  // Metal-building client order form: the signer sees the pinned PDF itself
+  // (served by /document for this token). Nothing about the order beyond the title.
+  const mbr = await mbRequestByToken(adminSupabase, token)
+  if (mbr.error) return Response.json({ error: 'Could not load this signing request.' }, { status: 500 })
+  if (mbr.mb) {
+    const m = mbr.mb
+    return Response.json({ data: {
+      id: m.id, token: m.token, signer_email: m.signer_email, signer_name: m.signer_name,
+      document_title: m.document_title, status: m.status, signed_at: m.signed_at, created_at: m.created_at,
+      document_kind: 'pdf', document_file_name: m.document_file_name, document_sha256: m.document_sha256,
+      document_url: `/api/signing-requests/${encodeURIComponent(token)}/document`,
+    } })
+  }
   return Response.json({ data })
+}
+
+// Metal-building client order form signature: native token checks, then the
+// server-side completion (signed copy + deposit request). No signer receipt,
+// no staff email: the only automatic email is the customer's deposit request.
+async function signMbRequest(request, token, existing, mb, signature_text, signer_ip) {
+  if (existing.status === 'signed') return Response.json({ error: 'Already signed' }, { status: 400 })
+  if (!canSign(existing.status)) return Response.json({ error: 'This signing link is no longer valid. Ask NV Construction for a new one.' }, { status: 410 })
+  if (!signatureMatchesName(signature_text, existing.signer_name)) {
+    return Response.json({ error: `Type your full name exactly as shown (${existing.signer_name}) to sign.` }, { status: 400 })
+  }
+  const { data: order, error: oErr } = await adminSupabase.from('sales_orders').select('*').eq('id', mb.sales_order_id).maybeSingle()
+  if (oErr) return Response.json({ error: 'Could not load the order. Please try again.' }, { status: 500 })
+  if (!order || !isMb(order)) return Response.json({ error: 'This signing link is no longer valid. Ask NV Construction for a new one.' }, { status: 410 })
+  // The exact pinned file must still be there, unchanged, before anything is signed.
+  const pin = await loadPinnedPdf(adminSupabase, mb)
+  if (pin.error) return Response.json({ error: pin.error }, { status: 409 })
+  // Completion needs the workflow + settings tables: fail before the signature is
+  // claimed (nothing changes) if migration 050 is only partly present.
+  const pf = await preflightWorkflow(adminSupabase, order.id)
+  if (pf.error) return Response.json({ error: pf.status === 503 ? 'Signing is temporarily unavailable. Please try again later or contact NV Construction.' : 'Could not load the order. Please try again.' }, { status: pf.status })
+  const settings = await getPaymentInstructions(adminSupabase)
+  if (settings.missingSchema) return Response.json({ error: 'Signing is temporarily unavailable. Please try again later or contact NV Construction.' }, { status: 503 })
+
+  const signedAt = new Date().toISOString()
+  const signerIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || signer_ip || null
+  const { data: claimed, error: updateErr } = await adminSupabase
+    .from('signing_requests')
+    .update({ status: 'signed', signature_text: signature_text.trim(), signed_at: signedAt, signer_ip: signerIp })
+    .eq('token', token)
+    .eq('status', 'pending')
+    .select('id')
+  if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
+  if (!claimed?.length) return Response.json({ error: 'Already signed' }, { status: 409 })
+
+  const signedRequest = { ...mb, status: 'signed', signature_text: signature_text.trim(), signed_at: signedAt, signer_ip: signerIp }
+  const result = await completeMbSigning(adminSupabase, resend, { order, request: signedRequest })
+  if (result.queued?.error || result.email?.error || result.signed_copy?.error) {
+    console.error('signing-requests: MB completion follow-up incomplete:', JSON.stringify({ order: order.id, queued: result.queued?.error || null, email: result.email?.error || null, copy: result.signed_copy?.error || null }))
+  }
+  // The signature is recorded either way; office staff see and can retry any failed follow-up.
+  return Response.json({ ok: true })
 }
 
 export async function POST(request, { params }) {
   const { token } = params
   const { signature_text, signer_ip } = await request.json()
 
-  if (!signature_text?.trim()) {
+  if (typeof signature_text !== 'string' || !signature_text.trim()) {
     return Response.json({ error: 'signature_text is required' }, { status: 400 })
   }
 
@@ -47,6 +105,9 @@ export async function POST(request, { params }) {
     .single()
 
   if (fetchErr || !existing) return Response.json({ error: 'Not found' }, { status: 404 })
+  const mbr = await mbRequestByToken(adminSupabase, token)
+  if (mbr.error) return Response.json({ error: 'Could not load this signing request. Please try again.' }, { status: 500 })
+  if (mbr.mb) return signMbRequest(request, token, existing, mbr.mb, signature_text, signer_ip)
   if (existing.status === 'signed') return Response.json({ error: 'Already signed' }, { status: 400 })
   if (!canSign(existing.status)) return Response.json({ error: 'This signing link is no longer valid. Ask NV Construction for a new one.' }, { status: 410 })
   if (!signatureMatchesName(signature_text, existing.signer_name)) {

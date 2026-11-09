@@ -39,6 +39,7 @@ import { jobNumberSaveError } from '../../lib/job-numbers'
 import { getSiteUrl } from '../../lib/site-url'
 import { retainagePctOrDefault } from '../../lib/retainage-pct'
 import { findDuplicateBillings, duplicateTooltip } from '../../lib/billing-duplicates'
+import { currentCompletionDate, daysLeftFromToday, completionFlag } from '../../lib/contract-time'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -293,6 +294,8 @@ export default function Dashboard() {
   const [jobsLoadError, setJobsLoadError] = useState('')
   const [resDraws, setResDraws] = useState({ byJob: {}, unknownFields: false, error: '' })
   const [resPrimeCOs, setResPrimeCOs] = useState({})
+  // Approved owner-CO days_added per commercial job (prompt 71, migration 069).
+  const [coDaysByJob, setCoDaysByJob] = useState({})
   const [resJobSort, setResJobSort] = useState('name')
   const [filterStatus, setFilterStatus] = useState('pending')
   const [filterJob, setFilterJob] = useState('')
@@ -993,6 +996,7 @@ export default function Dashboard() {
     setJobs(jobList || [])
     if (jobList?.length) loadCoverUrls(jobList)
     loadResidentialStats(jobList || [])
+    loadCommercialCoDays(jobList || [])
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
     const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
@@ -1002,6 +1006,28 @@ export default function Dashboard() {
     ])
     setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes2.members || [])
   }
+
+  // Commercial completion badge (prompt 71): approved owner-CO days_added for the active
+  // commercial jobs that have a contract completion date, in one query. Before migration
+  // 069 no job has the date (no query); if days_added is missing, every CO counts 0 days.
+  async function loadCommercialCoDays(jobList) {
+    const ids = jobList.filter(j => !isResidentialJob(j) && inActiveJobList(j) && j.contract_completion_date).map(j => j.id)
+    if (!ids.length) { setCoDaysByJob({}); return }
+    const { data, error } = await supabase.from('prime_change_orders').select('job_id, days_added, status').in('job_id', ids).eq('status', 'approved')
+    if (error) { setCoDaysByJob({}); return }
+    const byJob = {}
+    for (const c of data || []) if (c.status === 'approved') byJob[c.job_id] = (byJob[c.job_id] || 0) + (Math.trunc(Number(c.days_added || 0)) || 0)
+    setCoDaysByJob(byJob)
+  }
+
+  // Active commercial job → null | { kind: 'due'|'today'|'overdue', label } (≤ 14 days).
+  const jobCompletionFlag = j => {
+    if (isResidentialJob(j) || !inActiveJobList(j) || !j.contract_completion_date) return null
+    return completionFlag(daysLeftFromToday(currentCompletionDate(j.contract_completion_date, coDaysByJob[j.id] || 0)))
+  }
+  const completionBadgeStyle = f => (f.kind === 'overdue'
+    ? { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }
+    : { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' })
 
   async function loadCoverUrls(jobList) {
     const withCovers = (jobList || []).filter(j => j.cover_image_path)
@@ -5783,6 +5809,7 @@ ${planLinks.map(p => p.url
                         const isStarred = starredJobIds.has(j.id)
                         const pmFirst = teamByEmail[j.pm_email]?.full_name?.split(' ')[0] || null
                         const pendingCount = pendingByJob[j.id] || 0
+                        const completion = jobCompletionFlag(j)
                         return (
                           <div key={j.id} className="nv-project-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                             <div style={{ position: 'relative', paddingBottom: '58%', background: '#f3f4f6', overflow: 'hidden', flexShrink: 0 }}>
@@ -5804,6 +5831,7 @@ ${planLinks.map(p => p.url
                               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
                                 <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>
                                 {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 5px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>SUB</span>}
+                                {completion && <span title="Current contract completion (original + approved CO days)" style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', ...completionBadgeStyle(completion) }}>{completion.label}</span>}
                               </div>
                               {pmFirst && <div style={{ marginTop: '5px', fontSize: '11px', color: '#6b7280' }}>PM: {pmFirst}</div>}
                               {j.nv_role !== 'sub' && contract > 0 && (
@@ -5830,6 +5858,7 @@ ${planLinks.map(p => p.url
                     const over = pct > 100
                     const isStarred = starredJobIds.has(j.id)
                     const pendingCount = pendingByJob[j.id] || 0
+                    const completion = jobCompletionFlag(j)
                     return (
                       <div key={j.id} style={{ padding: '10px 8px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{ width: '52px', height: '38px', borderRadius: '5px', overflow: 'hidden', background: '#f3f4f6', flexShrink: 0 }}>
@@ -5844,6 +5873,7 @@ ${planLinks.map(p => p.url
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                               {pendingCount > 0 && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>{pendingCount} pending</span>}
+                              {completion && <span title="Current contract completion (original + approved CO days)" style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '99px', ...completionBadgeStyle(completion) }}>{completion.label}</span>}
                               {j.nv_role === 'sub' ? (contract > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '13px', fontWeight: '700', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(contract)}</div><div style={{ fontSize: '10px', color: '#3a5a8a' }}>our contract</div></div>) : (contract > 0 && <div style={{ textAlign: 'right' }}><div style={{ fontSize: '13px', fontWeight: '700', color: over ? '#dc2626' : '#111827', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}</div><div style={{ fontSize: '10px', color: over ? '#dc2626' : '#6b7280' }}>{pct.toFixed(0)}% sub-billed</div></div>)}
                               {j.nv_role === 'sub' && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '99px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>SUB</span>}
                               <span style={s.jobBadge(j.archived ? 'archived' : j.status)}>{j.archived ? 'Archived' : j.status}</span>

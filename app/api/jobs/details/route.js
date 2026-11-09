@@ -3,6 +3,8 @@ import { requireAuth } from '../../../../lib/server-auth'
 import { denyJob, isPrincipal, normEmail } from '../../../../lib/roles'
 import { jobDetailsUpdate, JOB_DETAILS_WRITER_ROLES } from '../../../../lib/job-details'
 import { isBotAccount, isBotEmail, BOT_NOT_STAFF_MESSAGE } from '../../../../lib/bot-rules'
+import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } from '../../../../lib/missing-column-retry'
+import { CONTRACT_DATE_NEEDS_069, CONTRACT_TIME_MIGRATION } from '../../../../lib/contract-time'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -51,8 +53,23 @@ export async function POST(request) {
   }
 
   if (!Object.keys(update).length) return Response.json({ ok: true, job })
-  const { data, error } = await adminSupabase.from('jobs').update(update).eq('id', id).select('*')
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  // contract_completion_date needs migration 069: before it, the update is retried
+  // without that column only, and the answer carries a warning (200, rest saved).
+  const { data, error, dropped } = await writeWithMissingColumnRetry(
+    row => adminSupabase.from('jobs').update(row).eq('id', id).select('*'),
+    update, { fallbackCols: ['contract_completion_date'] })
+  if (error) {
+    // Only the completion date changed and the column is missing: nothing else to save.
+    const onlyDate = Object.keys(update).length === 1 && 'contract_completion_date' in update
+    if (onlyDate && isMissingColumnError(error) && missingColumnName(error) === 'contract_completion_date') {
+      return Response.json({ ok: true, job, warning: CONTRACT_DATE_NEEDS_069, migration_required: CONTRACT_TIME_MIGRATION })
+    }
+    return Response.json({ error: error.message }, { status: 500 })
+  }
   if (!data?.length) return Response.json({ error: 'Job not found.' }, { status: 404 })
-  return Response.json({ ok: true, job: data[0], unarchived: update.archived === false })
+  const needs069 = dropped.includes('contract_completion_date')
+  return Response.json({
+    ok: true, job: data[0], unarchived: update.archived === false,
+    ...(needs069 ? { warning: CONTRACT_DATE_NEEDS_069, migration_required: CONTRACT_TIME_MIGRATION } : {}),
+  })
 }

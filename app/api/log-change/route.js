@@ -12,7 +12,8 @@ const adminSupabase = createClient(
 const clip = (v, n) => (v == null ? null : String(v).slice(0, n))
 
 // POST /api/log-change { job_id, entity_type, entity_id?, field_name, old_value, new_value, note }
-// Lets the job page record a Details change (status / contract value). Only the
+// Lets the job page record a Details change (status / contract value / contract
+// completion date) or an owner CO's days_added on create. Only the
 // Details writer roles, only allow-listed entity types and fields, job_id
 // required and job access checked. changed_by / changed_by_name come from the
 // session and the caller's profile — never from the body.
@@ -25,7 +26,7 @@ export async function POST(request) {
   try { body = await request.json() } catch { return Response.json({ error: 'Invalid JSON' }, { status: 400 }) }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return Response.json({ error: 'Invalid body' }, { status: 400 })
 
-  const { job_id, entity_type, field_name, old_value, new_value, note } = body
+  const { job_id, entity_type, entity_id, field_name, old_value, new_value, note } = body
   if (typeof job_id !== 'string' || !job_id) return Response.json({ error: 'job_id required' }, { status: 400 })
   if (!CLIENT_LOG_ENTITY_TYPES.has(entity_type)) return Response.json({ error: `entity_type must be one of: ${[...CLIENT_LOG_ENTITY_TYPES].join(', ')}` }, { status: 400 })
   if (!CLIENT_LOG_FIELDS[entity_type]?.has(field_name)) return Response.json({ error: 'field_name not allowed for this entity_type' }, { status: 400 })
@@ -36,11 +37,21 @@ export async function POST(request) {
   if (jobErr) return Response.json({ error: jobErr.message }, { status: 500 })
   if (!job) return Response.json({ error: 'Job not found.' }, { status: 404 })
 
+  // A 'job' entry is always about this job (body entity_id ignored). Any other entity
+  // (prime_change_order) names its own row, which must belong to this job.
+  let entityId = job_id
+  if (entity_type === 'prime_change_order') {
+    if (typeof entity_id !== 'string' || !entity_id) return Response.json({ error: 'entity_id required' }, { status: 400 })
+    const { data: co, error: coErr } = await adminSupabase.from('prime_change_orders').select('id, job_id').eq('id', entity_id).maybeSingle()
+    if (coErr) return Response.json({ error: coErr.message }, { status: 500 })
+    if (!co || co.job_id !== job_id) return Response.json({ error: 'Change order not found on this job.' }, { status: 404 })
+    entityId = co.id
+  }
+
   await logChange({
     job_id,
     entity_type,
-    // A 'job' entry is always about this job.
-    entity_id: job_id,
+    entity_id: entityId,
     field_name,
     old_value: clip(old_value, 200),
     new_value: clip(new_value, 200),

@@ -6,6 +6,9 @@ import {
   primeCOLineIds, primeCORpcError, requestInPreview, isUuid,
 } from '../../../../lib/prime-co-review'
 import { coDeleteBlock, coDbErrorMessage } from '../../../../lib/co-number'
+import { writeWithMissingColumnRetry, isMissingColumnError, missingColumnName } from '../../../../lib/missing-column-retry'
+import { DAYS_ADDED_NEEDS_069, CONTRACT_TIME_MIGRATION } from '../../../../lib/contract-time'
+import { logChange } from '../../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -21,7 +24,7 @@ const isResidential = job => String(job?.job_type ?? '').trim().toLowerCase() ==
 // reviewer on that job. Status, SOV and budget lines change together in one
 // transaction (public.prime_co_review, migration 049): all or nothing.
 // Also (commercial job page Edit / Delete):
-//   revise: { description, amount, notes, sov } — approved + applied COs go through
+//   revise: { description, amount, notes, sov, days_added? } — approved + applied COs go through
 //           public.prime_co_revise (049) so the budget re-sync and the CO save are one
 //           transaction; un-applied COs are saved with a still-not-applied guard.
 //   delete: unnumbered, not-applied COs only; applied COs are refused.
@@ -54,7 +57,7 @@ export async function POST(request) {
   const denied = await denyUnlessOnJob(adminSupabase, auth, job.id)
   if (denied) return denied
 
-  if (action === 'revise') return revise(body, co, job, residential)
+  if (action === 'revise') return revise(body, co, job, residential, auth)
   if (action === 'delete') return remove(co)
 
   // Optional inputs (approve only).
@@ -129,11 +132,12 @@ function stillNotApplied(q, co) {
 const CHANGED = 'This change order was changed by someone else (it may have just been applied to the budget). Refresh and try again. Nothing was changed.'
 
 // revise: edit description / amount / notes / SOV of a commercial prime CO.
-async function revise(body, co, job, residential) {
+async function revise(body, co, job, residential, auth) {
   if (residential) return Response.json({ error: 'Residential change orders can’t be edited here.' }, { status: 400 })
   const r = normalizeRevision(body)
   if (r.error) return Response.json({ error: r.error }, { status: 400 })
   const fields = r.fields
+  const daysAdded = r.daysAdded
 
   // Every budget line the new SOV names must be on this CO's job.
   const ids = [...new Set((fields.sov || []).map(x => x.budget_item_id).filter(Boolean))]
@@ -154,7 +158,8 @@ async function revise(body, co, job, residential) {
       const e = primeCORpcError(error, { revise: true })
       return Response.json({ error: e.error, ...(e.migration_required ? { migration_required: e.migration_required } : {}) }, { status: e.status })
     }
-    return Response.json({ ok: true, resynced: true, ...(data && typeof data === 'object' ? data : {}) })
+    const days = await saveDaysAdded(co, daysAdded, auth)
+    return Response.json({ ok: true, resynced: true, ...(data && typeof data === 'object' ? data : {}), ...days })
   }
 
   // Not applied: no budget line moves. Never sets status / budget_applied.
@@ -163,7 +168,34 @@ async function revise(body, co, job, residential) {
   ).select('id')
   if (error) return Response.json({ error: coDbErrorMessage(error.message) }, { status: 500 })
   if (!saved || saved.length !== 1) return Response.json({ error: CHANGED }, { status: 409 })
-  return Response.json({ ok: true, resynced: false, status: co.status, budget_applied: !!co.budget_applied })
+  const days = await saveDaysAdded(co, daysAdded, auth)
+  return Response.json({ ok: true, resynced: false, status: co.status, budget_applied: !!co.budget_applied, ...days })
+}
+
+// days_added (prompt 71, migration 069): contract time, not money — saved in its own
+// update after the CO save (the prime_co_revise RPC is unchanged). Before 069 the
+// column is missing: the CO edit still stands and the answer carries a warning.
+async function saveDaysAdded(co, daysAdded, auth) {
+  if (daysAdded === undefined) return {}
+  const before = Number(co.days_added || 0)
+  // Unchanged (incl. 0 before 069, when the column is absent): no write, no log.
+  if (before === daysAdded) return { days_added: daysAdded }
+  // One-column row: the retry helper never sends an empty update, so a missing column
+  // comes back as the error naming days_added.
+  const { error } = await writeWithMissingColumnRetry(
+    row => adminSupabase.from('prime_change_orders').update(row).eq('id', co.id).eq('job_id', co.job_id),
+    { days_added: daysAdded }, { fallbackCols: ['days_added'] })
+  if (error && isMissingColumnError(error) && missingColumnName(error) === 'days_added') {
+    return { warning: DAYS_ADDED_NEEDS_069, migration_required: CONTRACT_TIME_MIGRATION }
+  }
+  if (error) return { warning: `The change order was saved, but its days could not be: ${error.message}` }
+  if (before !== daysAdded) {
+    await logChange({
+      job_id: co.job_id, entity_type: 'prime_change_order', entity_id: co.id, field_name: 'days_added',
+      old_value: before, new_value: daysAdded, changed_by: auth?.userId || null,
+    })
+  }
+  return { days_added: daysAdded }
 }
 
 // delete: only an unnumbered CO that is not applied to the budget (moves no money).

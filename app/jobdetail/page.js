@@ -53,6 +53,9 @@ import { findDuplicateBillings, duplicateTooltip, duplicateDate, duplicateMoney 
 import { signedWaiverTerms, throughLabel, safeSignatureSrc, LEGACY_WAIVER_NOTE, waiverTermChanges } from '../../lib/lien-waiver-terms'
 import { escapeHtml } from '../../lib/email'
 import { poCashOutByMonth, summarizeOwnerCheckPOs } from '../../lib/po-cash'
+import { contractTimeSummary, weatherDelayCount, parseDaysAdded, formatDaysAdded, DAYS_ADDED_NEEDS_069 } from '../../lib/contract-time'
+import { buildWeatherDayLogHtml } from '../../lib/weather-day-log-print'
+import { writeWithMissingColumnRetry } from '../../lib/missing-column-retry'
 
 const s = {
   // ── Layout ──
@@ -157,7 +160,7 @@ const s = {
 
 const emptyContract = { dir_id: '', contract_value: '', description: '', onedrive_url: '', budget_item_id: '', retainage_pct: '10', budget_allocations: [] }
 const emptyCO = { subcontract_id: '', amount: '', description: '', direction: 'pm_to_sub', sov: [] }
-const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [] }
+const emptyPrimeCO = { amount: '', description: '', notes: '', sov: [], days_added: '' }
 const emptySOVRow = { description: '', budget_item_id: '', amount: '' }
 const emptyBudgetItem = { cost_code: '', description: '', budget_amount: '', owner_amount: '' }
 const emptyCreateBilling = { _contract_id: '', _contract_value: '', _retainage_pct: '0', sub_id: '', company_name: '', contact_name: '', contact_info: '', amount_billed: '', pct_complete: '', work_description: '', invoice_number: '', invoice_date: '', billing_period: todayCentral().slice(0, 7), draw_request_id: '', auto_approve: false, nv_reimbursement: false }
@@ -248,6 +251,9 @@ function JobDetailInner() {
   const [pushCOId, setPushCOId] = useState(null)
   const [pushMarkup, setPushMarkup] = useState('')
   const [pushAdditional, setPushAdditional] = useState('')
+  const [pushDays, setPushDays] = useState('')
+  const [weatherLogFrom, setWeatherLogFrom] = useState('')
+  const [weatherLogTo, setWeatherLogTo] = useState('')
   const [pushingToPrime, setPushingToPrime] = useState(false)
   const [expandedPrimeCOId, setExpandedPrimeCOId] = useState(null)
   const [editingPrimeCOId, setEditingPrimeCOId] = useState(null)
@@ -2699,7 +2705,8 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'punch') { loadPunchItems(); loadContracts() }
     if (activeTab === 'retainage') { loadRetainageReleases(); loadContracts(); loadBillingForJob() }
     if (activeTab === 'submittals') { loadSubmittals(); loadContracts() }
-    if (activeTab === 'overview') loadOverviewSummary()
+    // Contract time card needs owner COs (approved days) + daily reports (weather days).
+    if (activeTab === 'overview') { loadOverviewSummary(); if (!primeCOs.length) loadPrimeCOs(); if (!fieldDailyReports.length) loadFieldData() }
     if (activeTab === 'prelim') { loadPrelimNotices() }
     if (activeTab === 'reimb') { loadReimbursements(); loadDirectCosts() }
     if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications(); loadPurchaseOrders() }
@@ -4572,11 +4579,13 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const sovTotal = primeCOForm.sov.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
     const finalAmount = primeCOForm.sov.length > 0 ? sovTotal : parseFloat(primeCOForm.amount)
     if (finalAmount == null || isNaN(finalAmount) || !primeCOForm.description) return
+    const days = parseDaysAdded(primeCOForm.days_added)
+    if (days.error) { alert(days.error); return }
     setAddingPrimeCO(true)
     const { data: { session } } = await supabase.auth.getSession()
     const validSOV = primeCOForm.sov.filter(r => r.description || r.budget_item_id || r.amount)
     // co_number is assigned by the database (migration 045); never sent from here.
-    const { data: inserted, error } = await supabase.from('prime_change_orders').insert({
+    const { data: inserted, error, daysNote } = await insertPrimeCO({
       job_id: id,
       description: primeCOForm.description,
       amount: finalAmount,
@@ -4584,14 +4593,30 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       status: 'pending',
       created_by: session.user.id,
       sov: validSOV.length > 0 ? validSOV : null,
-    }).select('*').single()
+    }, days.value)
     if (error) { setErrMsg(error.message); setTimeout(() => setErrMsg(''), 4000) }
     else {
       setShowAddPrimeCO(false); setPrimeCOForm(emptyPrimeCO); await loadPrimeCOs()
       const missing = coNumberMissingMessage(inserted)
-      if (missing) alert(missing)
+      if (missing || daysNote) alert([missing, daysNote].filter(Boolean).join('\n\n'))
     }
     setAddingPrimeCO(false)
+  }
+
+  // Insert an owner CO with its contract days (prompt 71). days_added is sent only when
+  // non-zero (the column defaults to 0). Before migration 069 the insert is retried
+  // without days_added and daysNote tells the user the days were not saved. A saved
+  // non-zero value is logged to change_log via /api/log-change.
+  async function insertPrimeCO(row, daysAdded = 0) {
+    const r = await writeWithMissingColumnRetry(
+      x => supabase.from('prime_change_orders').insert(x).select('*').single(),
+      daysAdded ? { ...row, days_added: daysAdded } : row, { fallbackCols: ['days_added'] })
+    if (r.error) return { data: null, error: r.error }
+    if (r.dropped.includes('days_added')) return { data: r.data, error: null, daysNote: DAYS_ADDED_NEEDS_069 }
+    if (daysAdded && r.data?.id) {
+      authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'prime_change_order', entity_id: r.data.id, field_name: 'days_added', old_value: '0', new_value: String(daysAdded), note: `Owner CO days added: ${formatDaysAdded(daysAdded)}` }) }).catch(() => {})
+    }
+    return { data: r.data, error: null }
   }
 
   // Approve / reject / apply go through POST /api/prime-change-orders/review: the
@@ -4665,6 +4690,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const validSOV = editPrimeCOForm.sov
       .filter(r => r.description || r.budget_item_id || r.amount)
       .map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || null, amount: parseFloat(r.amount) || 0 }))
+    const days = parseDaysAdded(editPrimeCOForm.days_added)
+    if (days.error) { alert(days.error); return }
     setSavingPrimeCO(true)
     const r = await postPrimeCOReview({
       co_id: editingPrimeCOId,
@@ -4673,6 +4700,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       amount: newAmount,
       notes: editPrimeCOForm.notes || null,
       sov: validSOV.length > 0 ? validSOV : null,
+      days_added: days.value,
     })
     setSavingPrimeCO(false)
     if (!r.ok) {
@@ -4680,6 +4708,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       return
     }
     setEditingPrimeCOId(null)
+    if (r.data?.warning) alert(r.data.warning)
     await Promise.all([r.data?.resynced ? loadBudgetItems() : null, loadPrimeCOs()])
   }
 
@@ -4691,6 +4720,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const base = subAmt + additionalAmt
     const finalAmt = Math.round(base * (1 + markupPct / 100) * 100) / 100
     const fmt = n => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
+    const days = parseDaysAdded(pushDays)
+    if (days.error) { alert(days.error); setPushingToPrime(false); return }
     const noteParts = []
     if (markupPct > 0) noteParts.push(`Markup: ${markupPct}%`)
     noteParts.push(`Total: $${fmt(finalAmt)}`)
@@ -4698,7 +4729,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     const pushedSOV = co.sov?.length > 0
       ? co.sov.map(r => ({ ...r, amount: markupPct > 0 ? Math.round(Number(r.amount) * (1 + markupPct / 100) * 100) / 100 : Number(r.amount) }))
       : null
-    const { data: inserted, error } = await supabase.from('prime_change_orders').insert({
+    const { data: inserted, error, daysNote } = await insertPrimeCO({
       job_id: id,
       description: `${subName} — ${co.description}`,
       amount: finalAmt,
@@ -4707,12 +4738,12 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
       created_by: session.user.id,
       sov: pushedSOV,
       attachment_url: co.attachment_url || null,
-    }).select('*').single()
+    }, days.value)
     if (error) { alert('Error: ' + error.message) }
     else {
-      setPushCOId(null); setPushMarkup(''); setPushAdditional(''); await loadPrimeCOs()
+      setPushCOId(null); setPushMarkup(''); setPushAdditional(''); setPushDays(''); await loadPrimeCOs()
       const missing = coNumberMissingMessage(inserted)
-      if (missing) alert(missing)
+      if (missing || daysNote) alert([missing, daysNote].filter(Boolean).join('\n\n'))
     }
     setPushingToPrime(false)
   }
@@ -5738,6 +5769,11 @@ ${(budgets || []).length > 0 ? `
     // A non-Owner can't move an archived job's status (the select is disabled
     // too); send the saved status so other edits still save.
     if (job.archived && !isPrincipal(userRole)) fields.status = job.status
+    // Contract completion (migration 069): sent only when changed, so a save before 069
+    // is applied doesn't warn when nobody touched the date.
+    const priorCompletion = job.contract_completion_date || null
+    const nextCompletion = form.contract_completion_date || null
+    if (nextCompletion !== priorCompletion) fields.contract_completion_date = nextCompletion
     try {
       let data = {}
       const res = await authFetch('/api/jobs/details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, fields }) })
@@ -5753,11 +5789,16 @@ ${(budgets || []).length > 0 ? `
         const fmtAmt = v => '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'contract_value', old_value: fmtAmt(job.contract_value || 0), new_value: fmtAmt(saved.contract_value), note: `Contract value updated: ${fmtAmt(job.contract_value || 0)} → ${fmtAmt(saved.contract_value)}` }) }))
       }
+      if ('contract_completion_date' in fields && saved.contract_completion_date !== undefined && (saved.contract_completion_date || null) !== priorCompletion) {
+        logCalls.push(authFetch('/api/log-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, entity_type: 'job', entity_id: id, field_name: 'contract_completion_date', old_value: priorCompletion || '', new_value: saved.contract_completion_date || '', note: `Contract completion date: ${priorCompletion || 'not set'} → ${saved.contract_completion_date || 'not set'}` }) }))
+      }
       if (logCalls.length) Promise.all(logCalls).catch(() => {})
       const unarchived = !!data.unarchived
       setJob(j => ({ ...j, ...saved }))
       setForm(f => ({ ...f, ...saved }))
       setMsg(unarchived ? 'Job saved and unarchived (status set to Active).' : 'Job saved successfully.'); setTimeout(() => setMsg(''), 3000)
+      // e.g. contract completion date needs migration 069 (the rest was saved).
+      if (data.warning) { setErrMsg(data.warning); setTimeout(() => setErrMsg(''), 10000) }
     } catch (err) {
       // Form input is kept so the user can fix it and save again.
       setErrMsg('Save failed: ' + err.message); setTimeout(() => setErrMsg(''), 8000)
@@ -6363,6 +6404,16 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
           const recentActivity = overviewSummary?.activity || []
           const keyContacts = jobContacts.filter(c => ['pm', 'superintendent', 'owner', 'architect'].includes(c.role)).slice(0, 4)
           const contractVal = parseFloat(job?.adjusted_contract_value || job?.contract_value || 0)
+          // Contract time (prompt 71). Before migration 069 the date is absent → "Not set",
+          // and days_added is absent → 0. Weather days never move the completion date.
+          const ct = contractTimeSummary(job, primeCOs)
+          const weatherDays = weatherDelayCount(fieldDailyReports)
+          const monthPrefix = todayCentral().slice(0, 7)
+          const weatherDaysMonth = weatherDelayCount(fieldDailyReports.filter(r => String(r.report_date || '').startsWith(monthPrefix)))
+          const printWeatherLog = () => openHtml(() => buildWeatherDayLogHtml({
+            job, reports: fieldDailyReports, contractCompletionDate: ct.original, currentCompletion: ct.current,
+            approvedDays: ct.approvedDays, from: weatherLogFrom, to: weatherLogTo,
+          }))
 
           const ovCard = (children, opts = {}) => (
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1.25rem 1.5rem', marginBottom: '1rem', ...opts.style }}>
@@ -6378,6 +6429,30 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               {/* Left column */}
               <div>
+                {/* Contract time */}
+                {ovCard(
+                  <>
+                    {ovSec('Contract time')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: '13px', opacity: ct.original ? 1 : 0.6 }}>
+                      <div><div style={{ fontSize: '11px', color: '#6b7280' }}>Original completion</div><div style={{ fontWeight: '600', color: '#111827' }}>{ct.original ? fmtDFull(ct.original) : 'Not set'}</div></div>
+                      <div><div style={{ fontSize: '11px', color: '#6b7280' }}>Approved CO days</div><div style={{ fontWeight: '600', color: '#111827' }}>{formatDaysAdded(ct.approvedDays)}</div></div>
+                      <div><div style={{ fontSize: '11px', color: '#6b7280' }}>Current completion</div><div style={{ fontWeight: '600', color: '#111827' }}>{ct.current ? fmtDFull(ct.current) : '—'}</div></div>
+                      <div><div style={{ fontSize: '11px', color: '#6b7280' }}>Days left</div><div style={{ fontWeight: '700', color: ct.daysLeft == null ? '#6b7280' : ct.daysLeft < 0 ? '#dc2626' : ct.daysLeft <= 14 ? '#d97706' : '#16a34a' }}>{ct.daysLeft == null ? '—' : ct.daysLeft < 0 ? `Overdue by ${-ct.daysLeft} day${ct.daysLeft === -1 ? '' : 's'}` : ct.daysLeft === 0 ? 'Due today' : `${ct.daysLeft} day${ct.daysLeft === 1 ? '' : 's'}`}</div></div>
+                    </div>
+                    {!ct.original && <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#6b7280' }}>Set the contract completion date in Details to track days left.</p>}
+                    <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #f3f4f6', fontSize: '13px' }}>
+                      <span style={{ fontWeight: '600', color: '#111827' }}>Weather delay days: {weatherDays}</span>
+                      <span style={{ color: '#6b7280' }}> · this month {weatherDaysMonth}</span>
+                      <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>From daily reports marked weather delay. Not added to the completion date.</div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '8px' }}>
+                        <div><label style={{ ...s.label, fontSize: '11px' }}>From</label><input type="date" style={{ ...s.input, width: '150px' }} value={weatherLogFrom} onChange={e => setWeatherLogFrom(e.target.value)} /></div>
+                        <div><label style={{ ...s.label, fontSize: '11px' }}>To</label><input type="date" style={{ ...s.input, width: '150px' }} value={weatherLogTo} onChange={e => setWeatherLogTo(e.target.value)} /></div>
+                        <button type="button" style={s.btnSmall} onClick={printWeatherLog}>Print weather-day log</button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 {/* Attention needed */}
                 {(pending.length > 0 || openRfis.length > 0) && ovCard(
                   <>
@@ -6615,6 +6690,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     )}
                   </div>
                   <div><label style={s.label}>Start date</label><input type="date" style={s.input} value={form.start_date || ''} onChange={e => update('start_date', e.target.value)} /></div>
+                  <div><label style={s.label}>Contract completion</label><input type="date" style={s.input} value={form.contract_completion_date || ''} onChange={e => update('contract_completion_date', e.target.value)} />
+                    <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#6b7280' }}>Original contract date. Approved owner CO days extend it (see Overview).</p>
+                  </div>
                   <div><label style={s.label}>Status</label>
                     <select style={s.input} value={form.status || 'active'} onChange={e => update('status', e.target.value)} disabled={!!job.archived && !isPrincipal(userRole)}>
                       <option value="active">Active</option>
@@ -8743,6 +8821,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <input style={s.input} placeholder="Additional notes..." value={primeCOForm.notes} onChange={e => setPrimeCOForm(f => ({ ...f, notes: e.target.value }))} />
                     </div>
                   </div>
+                  <div style={{ marginBottom: '12px', maxWidth: '220px' }}>
+                    <label style={s.label}>Days added (contract time)</label>
+                    <input type="number" step="1" style={s.input} placeholder="0" value={primeCOForm.days_added ?? ''} onChange={e => setPrimeCOForm(f => ({ ...f, days_added: e.target.value }))} />
+                    <p style={{ fontSize: '11px', color: '#6b7280', margin: '3px 0 0' }}>Calendar days; negative shortens. Counts toward completion once approved.</p>
+                  </div>
 
                   <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -8830,6 +8913,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <input style={s.input} value={editPrimeCOForm.notes || ''} onChange={e => setEditPrimeCOForm(f => ({ ...f, notes: e.target.value }))} />
                         </div>
                       </div>
+                      <div style={{ marginBottom: '12px', maxWidth: '220px' }}>
+                        <label style={s.label}>Days added (contract time)</label>
+                        <input type="number" step="1" style={s.input} placeholder="0" value={editPrimeCOForm.days_added ?? ''} onChange={e => setEditPrimeCOForm(f => ({ ...f, days_added: e.target.value }))} />
+                      </div>
 
                       <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', marginBottom: '12px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -8904,6 +8991,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         <span style={{ fontSize: '13px', fontWeight: '600', color: '#111827' }}>{co.description}</span>
                         {hasSov && <span style={{ fontSize: '10px', fontWeight: '700', color: '#e8590c', letterSpacing: '1px', textTransform: 'uppercase', cursor: 'pointer' }} onClick={() => setExpandedPrimeCOId(isExpanded ? null : co.id)}>{co.sov.length} SOV lines {isExpanded ? '▲' : '▼'}</span>}
                         <span style={{ fontSize: '11px', color: '#6b7280' }}>{new Date(co.created_at).toLocaleDateString()}</span>
+                        <span title="Contract time this CO adds (counts once approved)" style={{ fontSize: '11px', fontWeight: '600', color: Number(co.days_added || 0) ? '#2563eb' : '#9ca3af' }}>{formatDaysAdded(co.days_added)}</span>
                       </div>
                       {co.notes && <span style={{ fontSize: '13px', color: '#4b5563' }}>{co.notes}</span>}
                       {co.attachment_url && <CoAttachmentLink path={co.attachment_url} supabase={supabase} />}
@@ -8929,7 +9017,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         loadBudgetItems()
                         setEditingPrimeCOId(co.id)
                         setExpandedPrimeCOId(null)
-                        setEditPrimeCOForm({ description: co.description || '', notes: co.notes || '', amount: String(co.amount || ''), sov: co.sov?.length > 0 ? co.sov.map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || '', amount: String(r.amount || '') })) : [] })
+                        setEditPrimeCOForm({ description: co.description || '', notes: co.notes || '', amount: String(co.amount || ''), sov: co.sov?.length > 0 ? co.sov.map(r => ({ description: r.description || '', budget_item_id: r.budget_item_id || '', amount: String(r.amount || '') })) : [], days_added: String(Number(co.days_added || 0)) })
                       }}>Edit</button>
                       <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => printPrimeCO(co)}>Print CO</button>
                       {co.attachment_url && <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px' }} onClick={() => printPrimeCO(co, true)}>Print + Attachment</button>}
@@ -9189,7 +9277,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </div>
                         )}
                         {(
-                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup(''); setPushAdditional('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')); setPushAdditional('') } }}>
+                          <button style={{ ...s.btnSmall, fontSize: '11px', padding: '3px 10px', color: isPushing ? '#e8590c' : undefined }} onClick={() => { if (isPushing) { setPushCOId(null); setPushMarkup(''); setPushAdditional(''); setPushDays('') } else { setPushCOId(co.id); setPushMarkup(String(job.markup_pct || '')); setPushAdditional(''); setPushDays('') } }}>
                             {isPushing ? '✕ Cancel' : '↑ Push to Mod'}
                           </button>
                         )}
@@ -9266,6 +9354,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div>
                             <label style={s.label}>Additional $</label>
                             <input type="number" style={{ ...s.input, width: '110px' }} placeholder="0.00" value={pushAdditional} onChange={e => setPushAdditional(e.target.value)} />
+                          </div>
+                          <div>
+                            <label style={s.label}>Days added</label>
+                            <input type="number" step="1" style={{ ...s.input, width: '90px' }} placeholder="0" value={pushDays} onChange={e => setPushDays(e.target.value)} />
                           </div>
                           {markedUpPreview != null && (
                             <div>

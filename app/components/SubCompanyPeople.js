@@ -106,7 +106,8 @@ export function CompanyPeoplePanel({ companyId, companyName, contactEmail = null
   const company = data.company
   const people = data.people || []
   const job = data.job
-  const canEdit = !!company?.id
+  // The API decides (Owner/admin, or a PM/APM/super with this company on one of their jobs).
+  const canEdit = !!company?.id && !!data.can_manage
   const portalUsers = people.filter(p => p.has_login)
   const seeing = job ? portalUsers.filter(p => p.job?.sees_job) : []
   const billers = job ? portalUsers.filter(p => p.job?.can_bill_job) : []
@@ -114,9 +115,14 @@ export function CompanyPeoplePanel({ companyId, companyName, contactEmail = null
 
   return (
     <div>
-      {!canEdit && (
+      {!company?.id && (
         <p style={{ fontSize: '12px', color: c.red, margin: '0 0 10px' }}>
           No company record matches “{companyName}”, so people and access can't be managed here yet. Use Directory → Fix Company Links to create or link it.
+        </p>
+      )}
+      {company?.id && !canEdit && (
+        <p style={{ fontSize: '12px', color: c.muted, margin: '0 0 10px' }}>
+          You can view this company but only an Owner, or a PM/APM/super on a job with this company, can change access, billing permission, or contacts.
         </p>
       )}
       {err && <p style={{ fontSize: '12px', color: c.red, margin: '0 0 8px' }}>{err}</p>}

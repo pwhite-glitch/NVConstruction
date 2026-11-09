@@ -11,6 +11,7 @@ import { isBotAccount } from '../../lib/bot-rules'
 import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { isCoiDate, fmtCoiDate } from '../../lib/coi-status'
+import { findDirectoryEntry, coiBadgeModel, confirmCoiOrProceed } from '../../lib/coi-warning'
 import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
 import { signedWaiverTerms, waiverTermChanges } from '../../lib/lien-waiver-terms'
 
@@ -380,6 +381,12 @@ export default function AdminPortal() {
     await loadCosts()
   }
 
+  // Commercial COI warning (client-side only): confirm when the sub's COI is missing / expired.
+  const confirmBillingCoi = (row, action) => {
+    const company = String(row?.company_name || '').trim()
+    return !company || confirmCoiOrProceed(findDirectoryEntry(directory, company), { action, company })
+  }
+
   // Records ONE check against the billing. The amount is added to paid-to-date on the
   // server; paid_at (settled) is only sent — and only stamped — when it covers the rest.
   async function markPaid(subId) {
@@ -388,6 +395,7 @@ export default function AdminPortal() {
     if (!row) { setPayMsg('Error saving payment: billing not found — refresh and try again.'); return }
     const req = buildPaymentRequest(row, payForm)
     if (req.error) { setPayMsg('Error saving payment: ' + req.error); return }
+    if (!confirmBillingCoi(row, 'pay')) return
     if (req.warning && !window.confirm(req.warning + '\n\nRecord this payment?')) return
     setSavingPay(true)
     try {
@@ -460,6 +468,7 @@ export default function AdminPortal() {
   }
 
   async function toggleReadyToPay(subId, current) {
+    if (!current && !confirmBillingCoi(billing.find(b => b.id === subId), 'ready')) return
     const { data: { session } } = await supabase.auth.getSession()
     await fetch('/api/billing-entry', {
       method: 'PATCH',
@@ -1169,6 +1178,7 @@ export default function AdminPortal() {
                       <div style={{ flex: 1, minWidth: '200px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '14px', fontWeight: '700', color: '#111827' }}>{sub.company_name}</span>
+                          {String(sub.company_name || '').trim() && (() => { const m = coiBadgeModel(findDirectoryEntry(directory, sub.company_name)); return <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '10px', background: m.bg, color: m.color, border: `1px solid ${m.border}`, whiteSpace: 'nowrap' }}>{m.label}</span> })()}
                           {sub.ready_to_pay && <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 8px', fontWeight: '800', letterSpacing: '0.5px' }}>✓ Ready to Pay</span>}
                           {isOwnerPays && !sub.nv_cuts_check && <span style={{ fontSize: '10px', color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>Owner Pays</span>}
                           {(!isOwnerPays || sub.nv_cuts_check) && <span style={{ fontSize: '10px', color: '#e8590c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 7px', fontWeight: '700' }}>NV Invoice</span>}

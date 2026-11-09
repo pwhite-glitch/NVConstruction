@@ -56,6 +56,7 @@ import { poCashOutByMonth, summarizeOwnerCheckPOs } from '../../lib/po-cash'
 import { contractTimeSummary, weatherDelayCount, parseDaysAdded, formatDaysAdded, DAYS_ADDED_NEEDS_069 } from '../../lib/contract-time'
 import { buildWeatherDayLogHtml } from '../../lib/weather-day-log-print'
 import { writeWithMissingColumnRetry } from '../../lib/missing-column-retry'
+import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../lib/coi-warning'
 
 const s = {
   // ── Layout ──
@@ -351,6 +352,8 @@ function JobDetailInner() {
 
   // Subs tab state
   const [subDirectory, setSubDirectory] = useState([])
+  // true only after a successful sub_directory load (COI badges / confirms wait for it)
+  const [subDirectoryLoaded, setSubDirectoryLoaded] = useState(false)
   const [expandedCompanyKey, setExpandedCompanyKey] = useState(null)
   const [billingPanelKey, setBillingPanelKey] = useState(null)
   const [billingEmailOpt, setBillingEmailOpt] = useState(false)
@@ -1017,9 +1020,36 @@ function JobDetailInner() {
     setSubs(rows.map(a => ({ ...a, _companyName: names[a.company_id || a.profiles?.company_id] || null })))
   }
 
+  // Returns the fresh rows, or null when the load failed (state left as it was).
   async function loadSubDirectory() {
-    const { data } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
-    setSubDirectory(data || [])
+    try {
+      const { data, error } = await supabase.from('sub_directory').select('*').eq('status', 'approved').order('company_name')
+      if (error) { console.warn('sub_directory load failed:', error.message || error); return null }
+      const rows = data || []
+      setSubDirectory(rows)
+      setSubDirectoryLoaded(true)
+      return rows
+    } catch (e) {
+      console.warn('sub_directory load failed:', e?.message || e)
+      return null
+    }
+  }
+
+  // Commercial COI warning: directory row for a company name (no match → treated as missing).
+  const dirForCompany = name => findDirectoryEntry(subDirectory, name)
+  // Billing company: its company_name, else the linked subcontract's vendor.
+  const billingCoiCompany = b => String(b?.company_name || '').trim() || (b?.sub_id && contracts.find(c => c.sub_id === b.sub_id)?.vendor_name) || ''
+  // Directory not loaded yet → load it once and use the fresh rows; still failing → no confirm (fail open).
+  const confirmBillingCoi = async (b, action) => {
+    const company = billingCoiCompany(b)
+    if (!company) return true
+    const rows = subDirectoryLoaded ? subDirectory : await loadSubDirectory()
+    return confirmCoiForCompany(rows, company, action)
+  }
+  const renderCoiBadge = (name, entry) => {
+    if (!subDirectoryLoaded || !String(name || '').trim()) return null
+    const m = coiBadgeModel(entry !== undefined ? entry : dirForCompany(name))
+    return <span title={m.label} style={{ fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '10px', background: m.bg, color: m.color, border: `1px solid ${m.border}`, whiteSpace: 'nowrap' }}>{m.label}</span>
   }
 
   async function loadFieldData() {
@@ -2689,7 +2719,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'contracts') { loadContracts(); loadBudgetItems(); loadSubDirectory(); loadSigningRequests(); loadBillingForJob(); reloadSubs() }
     if (activeTab === 'budget') { loadBudgetItems(); loadContracts(); loadAllCOs(); loadDirectCosts(); loadPurchaseOrders(); loadBillingByItem(); loadPrimeCOs(); loadJobAllocations(); loadNvSubcontracts() }
     if (activeTab === 'changeorders') { loadContracts(); loadAllCOs(); loadPrimeCOs() }
-    if (activeTab === 'billing') { loadBillingForJob(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
+    if (activeTab === 'billing') { loadBillingForJob(); loadSubDirectory(); loadContracts(); reloadSubs(); loadDrawRequests(); loadDirectCosts(); loadPurchaseOrders(); loadGeneralConditions() }
     if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
@@ -5220,6 +5250,7 @@ ${attachmentHtml}
   // ── Billing (PM-managed) ─────────────────────────────────────
   async function createBilling() {
     if (!createBillingForm.amount_billed || !createBillingForm.company_name) return
+    if (createBillingForm.auto_approve && !(await confirmBillingCoi({ company_name: createBillingForm.company_name, sub_id: createBillingForm.sub_id }, 'approve'))) return
     setCreatingBilling(true)
     const now = new Date().toISOString()
     const status = createBillingForm.auto_approve ? 'approved' : 'pending'
@@ -5292,6 +5323,9 @@ ${attachmentHtml}
       alert('Enter a rejection reason for the sub.')
       return
     }
+    const savedForCoi = billingSubmissions.find(x => x.id === editingBilling)
+    if (editBillingForm.status === 'approved' && editBillingForm.original_status !== 'approved' && (!editBillingForm.draw_request_id || firstReviewOnDraw)
+      && !(await confirmBillingCoi({ ...(savedForCoi || {}), company_name: editBillingForm.company_name }, 'approve'))) return
     const now = new Date().toISOString()
     const origAmt = parseFloat(editBillingForm.amount_billed) || 0
     const retPctRaw = parseFloat(editBillingForm.retainage_pct)
@@ -5418,6 +5452,7 @@ ${attachmentHtml}
   }
 
   async function toggleReadyToPay(billingId, current) {
+    if (!current && !(await confirmBillingCoi(billingSubmissions.find(x => x.id === billingId), 'ready'))) return
     setTogglingReadyToPay(billingId)
     const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
@@ -5431,6 +5466,7 @@ ${attachmentHtml}
   }
 
   async function approveBilling(billingId) {
+    if (!(await confirmBillingCoi(billingSubmissions.find(x => x.id === billingId), 'approve'))) return
     const dupMatches = findDuplicateBillings(billingSubmissions)[billingId]
     if (dupMatches?.length && !window.confirm(`This billing looks like a possible duplicate of:\n${duplicateTooltip(dupMatches, billingSubmissions)}\n\nApprove anyway?`)) return
     setApprovingBillingId(billingId)
@@ -7187,6 +7223,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                       <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '99px', fontWeight: '700', whiteSpace: 'nowrap', background: billingAllOn ? '#eff6ff' : '#f9fafb', color: billingAllOn ? '#1d4ed8' : '#6b7280', border: `1px solid ${billingAllOn ? '#bfdbfe' : '#e5e7eb'}` }}>
                         {billingAllOn ? 'Billing on' : billingOnCount > 0 ? 'Billing partly on' : 'Billing off'}
                       </span>
+                      {renderCoiBadge(group.name, dirForCompany(group.name) || group.members.find(m => m._dirEntry)?._dirEntry || null)}
                       {group.company_id ? (
                         <span style={{ fontSize: '12px', color: '#e8590c', fontWeight: '600' }}>{isExpanded ? 'Hide people & billing' : 'People, access & billing'}</span>
                       ) : <button
@@ -8267,6 +8304,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ ...s.contractRowHeader, ...(isDraft ? { background: '#fffbeb' } : {}) }} className="rx-stack-sm">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#111827' }}>{subName}</span>
+                        {renderCoiBadge(c.vendor_name || registeredSubs.find(s => s.sub_id === c.sub_id)?.profiles?.company_name)}
                         {allocations.length > 0
                           ? allocations.map((a, i) => {
                               const item = budgetItems.find(b => b.id === a.budget_item_id)
@@ -10104,6 +10142,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {b.contact_name && <span style={{ fontSize: '12px', color: '#6b7280' }}>{b.contact_name}</span>}
                           <span style={s.coBadge(b.status)}>{b.status}</span>
                           {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
+                          {renderCoiBadge(billingCoiCompany(b))}
                           {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
                           {b.nv_reimbursement && <span style={{ fontSize: '10px', color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV REIMBURSEMENT</span>}
                           {billingDups[b.id]?.length > 0 && (

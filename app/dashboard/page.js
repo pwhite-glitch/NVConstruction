@@ -39,6 +39,7 @@ import { jobNumberSaveError } from '../../lib/job-numbers'
 import { getSiteUrl } from '../../lib/site-url'
 import { retainagePctOrDefault } from '../../lib/retainage-pct'
 import { findDuplicateBillings, duplicateTooltip } from '../../lib/billing-duplicates'
+import { confirmCoiForCompany } from '../../lib/coi-warning'
 import { currentCompletionDate, daysLeftFromToday, completionFlag } from '../../lib/contract-time'
 
 const TRADES = [
@@ -270,6 +271,8 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState([])
   const [assignments, setAssignments] = useState([])
   const [directory, setDirectory] = useState([])
+  // true only after a successful sub_directory load (billing COI confirm waits for it)
+  const [directoryLoaded, setDirectoryLoaded] = useState(false)
   const [expanded, setExpanded] = useState(null)
   const [expandedDir, setExpandedDir] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -981,12 +984,13 @@ export default function Dashboard() {
       asgnQ = asgnQ.in('job_id', ids)
     } else if (ids !== null && ids.length === 0) {
       setSubmissions([]); setJobs([]); setAssignments([])
-      const [{ data: dir }, { data: cos }, membersRes1] = await Promise.all([
+      const [{ data: dir, error: dirErr1 }, { data: cos }, membersRes1] = await Promise.all([
         supabase.from('sub_directory').select('*').order('company_name'),
         supabase.from('companies').select('*'),
         authFetch('/api/company-members').then(r => r.json()),
       ])
       setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes1.members || [])
+      if (dirErr1) console.warn('sub_directory load failed:', dirErr1.message || dirErr1); else setDirectoryLoaded(true)
       return
     }
     const { data: subs } = await billingQ
@@ -999,12 +1003,29 @@ export default function Dashboard() {
     loadCommercialCoDays(jobList || [])
     const { data: asgn } = await asgnQ
     setAssignments(asgn || [])
-    const [{ data: dir }, { data: cos }, membersRes2] = await Promise.all([
+    const [{ data: dir, error: dirErr2 }, { data: cos }, membersRes2] = await Promise.all([
       supabase.from('sub_directory').select('*').order('company_name'),
       supabase.from('companies').select('*'),
       authFetch('/api/company-members').then(r => r.json()),
     ])
     setDirectory(dir || []); setCompaniesData(cos || []); setSubProfiles(membersRes2.members || [])
+    if (dirErr2) console.warn('sub_directory load failed:', dirErr2.message || dirErr2); else setDirectoryLoaded(true)
+  }
+
+  // Commercial COI warning before approving a sub billing (warning only, Cancel = no write).
+  // Residential jobs are skipped. Directory not loaded yet → fetch it once; still failing → no confirm.
+  async function confirmBillingCoiApprove(jobId, companyName) {
+    const job = jobs.find(j => j.id === jobId)
+    if (job && isResidentialJob(job)) return true
+    let rows = directoryLoaded ? directory : null
+    if (!rows) {
+      try {
+        const { data, error } = await supabase.from('sub_directory').select('*').order('company_name')
+        if (error) console.warn('sub_directory load failed:', error.message || error)
+        else { rows = data || []; setDirectory(rows); setDirectoryLoaded(true) }
+      } catch (e) { console.warn('sub_directory load failed:', e?.message || e) }
+    }
+    return confirmCoiForCompany(rows, companyName, 'approve')
   }
 
   // Commercial completion badge (prompt 71): approved owner-CO days_added for the active
@@ -1138,6 +1159,7 @@ export default function Dashboard() {
   async function updateStatus(sub, status, rejectionReason = '') {
     if (status === 'rejected' && !String(rejectionReason || '').trim()) { alert('Enter a rejection reason for the sub.'); return }
     if (status === 'approved') {
+      if (!(await confirmBillingCoiApprove(sub.job_id, sub.company_name))) return
       const dupMatches = findDuplicateBillings(submissions)[sub.id]
       if (dupMatches?.length && !window.confirm(`This billing looks like a possible duplicate of:\n${duplicateTooltip(dupMatches, submissions)}\n\nApprove anyway?`)) return
     }
@@ -1491,6 +1513,9 @@ export default function Dashboard() {
   }
 
   async function saveBillingEdit() {
+    const savedForCoi = submissions.find(x => x.id === editingBilling)
+    if (editBillingForm.status === 'approved' && savedForCoi?.status !== 'approved'
+      && !(await confirmBillingCoiApprove(savedForCoi?.job_id, editBillingForm.company_name || savedForCoi?.company_name))) return
     const now = new Date().toISOString()
     const patchData = {
       id: editingBilling,

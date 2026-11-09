@@ -51,13 +51,16 @@ export async function GET(request) {
   const fail = (what, error) => json({ error: `Could not read ${what}: ${error?.message || 'unknown error'}. The outlook is incomplete, so nothing is shown.` }, 500)
 
   // PROPOSED columns (migration 047 / 046, written, NOT applied): probe, never assume.
-  const [aiaDate, billDate, drawDate, drawFunded] = await Promise.all([
+  // direct_costs.purchase_order_id is migration 067 (written, NOT applied): without it no
+  // cost is linked to a PO and every reimbursement PO counts at its full amount.
+  const [aiaDate, billDate, drawDate, drawFunded, dcPoLink] = await Promise.all([
     hasColumn('aia_applications', 'expected_payment_date'),
     hasColumn('billing_submissions', 'expected_payment_date'),
     hasColumn('res_owner_draws', 'expected_payment_date'),
     hasColumn('res_owner_draws', 'amount_funded'),
+    hasColumn('direct_costs', 'purchase_order_id'),
   ])
-  for (const [what, r] of [['pay apps', aiaDate], ['sub billings', billDate], ['owner draws', drawDate], ['owner draws', drawFunded]]) {
+  for (const [what, r] of [['pay apps', aiaDate], ['sub billings', billDate], ['owner draws', drawDate], ['owner draws', drawFunded], ['direct costs', dcPoLink]]) {
     if (r.error) return fail(what, r.error)
   }
   const datesMigrated = !!(aiaDate.ok && billDate.ok && drawDate.ok)
@@ -82,6 +85,16 @@ export async function GET(request) {
   if (posRes.error) return fail('purchase orders', posRes.error)
   if (empRes.error) return fail('payroll data', empRes.error)
 
+  // Approved costs linked to a PO (067) pay that PO down. Not added as their own outflow.
+  let linkedDcs = []
+  if (dcPoLink.ok) {
+    // Unlinked rows are dropped here (small select; keeps the query to eq/order like the rest of the route).
+    const dcRes = await fetchAll(() => adminSupabase.from('direct_costs').select('id, purchase_order_id, amount, status, is_credit')
+      .eq('status', 'approved').order('id'))
+    if (dcRes.error && !isMissingRelation(dcRes.error)) return fail('direct costs linked to POs', dcRes.error)
+    linkedDcs = dcRes.error ? [] : dcRes.data.filter(dc => dc.purchase_order_id)
+  }
+
   const apps = appsRes.data.filter(a => jobsById[a.job_id])
   // Lines + budget lines for every job with a draft or sent app (sequence math needs prior apps).
   const appJobIds = [...new Set(apps.filter(a => ['draft', 'submitted', 'certified'].includes(a.status)).map(a => a.job_id))]
@@ -100,7 +113,7 @@ export async function GET(request) {
   const aia = aiaItems({ jobsById, apps, linesByApp, budgetByJob, datesMigrated })
   const draws = lenderDrawItems({ jobsById, draws: drawsRes.data, fundedMigrated: !!drawFunded.ok, datesMigrated })
   const bills = billingItems({ jobsById, billings: billsRes.data, datesMigrated })
-  const pos = poItems({ jobsById, pos: posRes.data })
+  const pos = poItems({ jobsById, pos: posRes.data, directCosts: linkedDcs })
   const payroll = payrollItems({ employees: empRes.data, today, weeks: DEFAULT_WEEKS })
 
   // Active jobs with no draft pay app / lender draw: their unbilled work is not quantified (not $0).

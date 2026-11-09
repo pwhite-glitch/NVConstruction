@@ -52,6 +52,7 @@ import { closeoutStatus, closeoutList, CLOSEOUT_SOURCE_LABELS } from '../../lib/
 import { findDuplicateBillings, duplicateTooltip, duplicateDate, duplicateMoney } from '../../lib/billing-duplicates'
 import { signedWaiverTerms, throughLabel, safeSignatureSrc, LEGACY_WAIVER_NOTE, waiverTermChanges } from '../../lib/lien-waiver-terms'
 import { escapeHtml } from '../../lib/email'
+import { poCashOutByMonth, summarizeOwnerCheckPOs } from '../../lib/po-cash'
 
 const s = {
   // ── Layout ──
@@ -169,6 +170,9 @@ function CoAttachmentLink({ path, supabase }) {
   if (!url) return null
   return <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#e8590c', textDecoration: 'none', marginTop: '3px', display: 'inline-block' }}>📎 Attachment</a>
 }
+
+// Shown when the server saved a direct cost but had to drop its PO link (migration 067 not applied).
+const PO_LINK_NOT_SAVED = 'Saved, but the purchase order link was not saved yet (needs migration 067). The cost counts on its own; the PO still shows in full.'
 
 function JobDetailInner() {
   const router = useRouter()
@@ -398,12 +402,13 @@ function JobDetailInner() {
   const [confirmingMoveCostId, setConfirmingMoveCostId] = useState(null)
   const [showDcForm, setShowDcForm] = useState(false)
   const [drawingCostIds, setDrawingCostIds] = useState(new Set())
-  const [dcForm, setDcForm] = useState({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
+  const [dcForm, setDcForm] = useState({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false, purchase_order_id: '' })
   const [dcFile, setDcFile] = useState(null)
   const [showCsvImport, setShowCsvImport] = useState(false)
 
   // Purchase Orders state
   const [purchaseOrders, setPurchaseOrders] = useState([])
+  const [poLoadError, setPoLoadError] = useState(false)
   const [showNewPO, setShowNewPO] = useState(false)
   const [poForm, setPOForm] = useState({ vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] })
   const [savingPO, setSavingPO] = useState(false)
@@ -1243,6 +1248,8 @@ function JobDetailInner() {
         bill_to_owner: dcForm.bill_to_owner || false,
         owner_auth_ref: dcForm.owner_auth_ref || null,
         is_credit: dcForm.is_credit || false,
+        // Optional PO this cost pays down (migration 067; the server retries without it before 067).
+        ...(dcForm.purchase_order_id ? { purchase_order_id: dcForm.purchase_order_id } : {}),
       }
       let res, json
       if (dcFile) {
@@ -1256,11 +1263,12 @@ function JobDetailInner() {
       json = await res.json()
       if (json.error) { setDcSaveErr('Save failed: ' + json.error); setSubmittingDc(false); return }
       setDcSaveErr('')
-      setDcForm({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false })
+      setDcForm({ cost_date: todayCentral(), description: '', vendor: '', category: 'Materials', amount: '', reason: '', notes: '', budget_item_id: '', assigned_to: '', bill_to_owner: false, owner_auth_ref: '', is_credit: false, purchase_order_id: '' })
       setDcFile(null)
       setShowDcForm(false)
       await loadDirectCosts()
       if (userRole === 'apm') { setMsg('Cost submitted for PM approval.'); setTimeout(() => setMsg(''), 5000) }
+      if (json.po_link_saved === false) alert(PO_LINK_NOT_SAVED)
     } catch (err) {
       setDcSaveErr('Error submitting cost: ' + err.message)
     }
@@ -1424,6 +1432,7 @@ function JobDetailInner() {
     setReviewMsg('')
     const editResult = await callDcReview('edit', costId, reviewForm)
     if (editResult.error) { setReviewMsg('Save failed: ' + editResult.error); setSavingReview(false); return }
+    if (editResult.po_link_saved === false) alert(PO_LINK_NOT_SAVED)
     if (andApprove) {
       if (!reviewForm.budget_item_id) { setReviewMsg('Assign a budget line before approving.'); setSavingReview(false); return }
       const cost = directCosts.find(c => c.id === costId)
@@ -1451,6 +1460,8 @@ function JobDetailInner() {
       budget_item_id: c.budget_item_id || '',
       bill_to_owner: c.bill_to_owner || false,
       owner_auth_ref: c.owner_auth_ref || '',
+      // Only when the column exists (migration 067); otherwise edits never send it.
+      ...('purchase_order_id' in c ? { purchase_order_id: c.purchase_order_id || '' } : {}),
     })
   }
 
@@ -2676,7 +2687,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'gc') { loadGeneralConditions(); loadBudgetItems() }
     if (activeTab === 'field') { loadFieldData() }
     if (activeTab === 'photos') { loadFieldPhotos() }
-    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications(); loadDrawRequests() }
+    if (activeTab === 'costs') { loadDirectCosts(); loadBudgetItems(); loadAiaApplications(); loadDrawRequests(); loadPurchaseOrders() }
     if (activeTab === 'prime') { loadBudgetItems(); loadAllCOs(); loadPrimeCOs(); loadAiaApplications(); loadContracts(); loadDrawRequests(); loadNvSubcontracts(); loadPurchaseOrders() }
     if (activeTab === 'schedule') { loadScheduleFiles() }
     if (activeTab === 'documents') { loadJobDocs() }
@@ -2691,7 +2702,7 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'overview') loadOverviewSummary()
     if (activeTab === 'prelim') { loadPrelimNotices() }
     if (activeTab === 'reimb') { loadReimbursements(); loadDirectCosts() }
-    if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications() }
+    if (activeTab === 'cashflow') { loadBillingForJob(); loadContracts(); loadDirectCosts(); loadDrawRequests(); loadAiaApplications(); loadPurchaseOrders() }
     if (activeTab === 'subs') { loadSubDirectory(); loadSubRatings() }
     if (activeTab === 'warranty') { loadWarranty(); loadContracts(); if (!laborLoaded) loadLaborData() }
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
@@ -2731,9 +2742,17 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
 
   // ── Purchase Orders ──────────────────────────────────────────
   async function loadPurchaseOrders() {
-    const res = await authFetch(`/api/purchase-orders?job_id=${id}`)
-    const data = await res.json()
-    setPurchaseOrders(data.purchase_orders || [])
+    // A failed load leaves the list empty; poLoadError lets Cash Flow say so instead of a silent $0.
+    try {
+      const res = await authFetch(`/api/purchase-orders?job_id=${id}`)
+      const data = await res.json().catch(() => ({}))
+      const failed = !res.ok || !!data.error || !Array.isArray(data.purchase_orders)
+      setPoLoadError(failed)
+      setPurchaseOrders(data.purchase_orders || [])
+    } catch {
+      setPoLoadError(true)
+      setPurchaseOrders([])
+    }
   }
 
   async function savePO(issueImmediately = false) {
@@ -10784,6 +10803,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           </select>
                         </div>
                       )}
+                      {purchaseOrders.length > 0 && (
+                        <div>
+                          <label style={s.label}>Purchase order (optional)</label>
+                          <select style={s.input} value={dcForm.purchase_order_id || ''} onChange={e => setDcForm(f => ({ ...f, purchase_order_id: e.target.value }))}>
+                            <option value="">— None —</option>
+                            {purchaseOrders.map(po => <option key={po.id} value={po.id}>{`${po.po_number || 'PO'} · ${po.vendor_name || 'vendor'} · $${Number(po.amount || 0).toLocaleString()} · ${po.status}`}</option>)}
+                          </select>
+                        </div>
+                      )}
                       <div>
                         <label style={s.label}>Notes</label>
                         <input style={s.input} value={dcForm.notes} onChange={e => setDcForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
@@ -10952,6 +10980,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <span style={s.coBadge('pending')}>{c.category}</span>
                           <span style={s.coBadge(c.status)}>{c.status}</span>
                           {c.is_credit && <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Return / Credit</span>}
+                          {c.purchase_order_id && (
+                            <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                              PO {purchaseOrders.find(po => po.id === c.purchase_order_id)?.po_number || '(linked)'}
+                            </span>
+                          )}
                           {drawnApp && (
                             <span style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff' }}>
                               Drawn — App #{drawnApp.app_number}
@@ -11125,6 +11158,15 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               <option value="">— Unassigned —</option>
                               {budgetItems.map(b => <option key={b.id} value={b.id}>{b.cost_code ? `${b.cost_code} · ` : ''}{b.description}</option>)}
                             </select>
+                            {'purchase_order_id' in reviewForm && purchaseOrders.length > 0 && (
+                              <>
+                                <label style={{ ...s.label, marginTop: '8px' }}>Purchase order (optional)</label>
+                                <select style={s.input} value={reviewForm.purchase_order_id || ''} onChange={e => setReviewForm(f => ({ ...f, purchase_order_id: e.target.value }))}>
+                                  <option value="">— None —</option>
+                                  {purchaseOrders.map(po => <option key={po.id} value={po.id}>{`${po.po_number || 'PO'} · ${po.vendor_name || 'vendor'} · $${Number(po.amount || 0).toLocaleString()} · ${po.status}`}</option>)}
+                                </select>
+                              </>
+                            )}
                           </div>
                           <div>
                             <label style={s.label}>Notes</label>
@@ -13040,21 +13082,34 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             dcByMonth[key] = (dcByMonth[key] || 0) + Number(c.amount || 0)
           })
 
-          const allMonths = [...new Set([...Object.keys(cashInByMonth), ...Object.keys(subPayByMonth), ...Object.keys(dcByMonth)])].filter(k => k && k !== 'unknown').sort()
+          // Cash OUT (estimated): open POs NV pays (payment_type 'reimbursement') by issued month,
+          // less approved direct costs linked to the PO (lib/po-cash.js, same rule as the Owner
+          // cash outlook). Owner-check POs are disclosed only.
+          const poByMonth = poCashOutByMonth(purchaseOrders, directCosts)
+          const ownerCheckPOs = summarizeOwnerCheckPOs(purchaseOrders)
+
+          const allMonths = [...new Set([...Object.keys(cashInByMonth), ...Object.keys(subPayByMonth), ...Object.keys(dcByMonth), ...Object.keys(poByMonth)])].filter(k => k && k !== 'unknown').sort()
           const totalIn = Object.values(cashInByMonth).reduce((a, v) => a + v, 0)
           const totalSubPay = Object.values(subPayByMonth).reduce((a, v) => a + v, 0)
           const totalDC = Object.values(dcByMonth).reduce((a, v) => a + v, 0)
-          const totalOut = totalSubPay + totalDC
+          const totalPOs = Object.values(poByMonth).reduce((a, v) => a + v, 0)
+          const totalOut = totalSubPay + totalDC + totalPOs
           const netCashFlow = totalIn - totalOut
           const retainageHeld = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.retainage_held || 0), 0)
           const retainageReleased = retainageReleases.reduce((a, r) => a + Number(r.amount || 0), 0)
 
           return (
             <>
-              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(5, 1fr)' }} className="rx-stats">
+              <div style={{ ...s.statRow, gridTemplateColumns: 'repeat(6, 1fr)' }} className="rx-stats">
                 <div style={s.statCard}><div style={s.statLabel}>Cash in (received)</div><div style={s.statValue('#16a34a')}>{fmt(totalIn)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Sub billings out</div><div style={s.statValue('#e8590c')}>{fmt(totalSubPay)}</div></div>
                 <div style={s.statCard}><div style={s.statLabel}>Direct costs out</div><div style={s.statValue()}>{fmt(totalDC)}</div></div>
+                <div style={s.statCard}>
+                  <div style={s.statLabel}>POs out (est.)</div>
+                  <div style={s.statValue()}>{fmt(totalPOs)}</div>
+                  {poLoadError && <div style={{ fontSize: '12px', color: '#b45309', marginTop: '4px' }}>⚠ POs couldn't load — not included</div>}
+                  {ownerCheckPOs.count > 0 && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>{ownerCheckPOs.count} owner-check PO{ownerCheckPOs.count === 1 ? '' : 's'} excluded ({fmt(ownerCheckPOs.total)})</div>}
+                </div>
                 <div style={s.statCard}>
                   <div style={s.statLabel}>Net cash flow</div>
                   <div style={s.statValue(netCashFlow >= 0 ? '#16a34a' : '#dc2626')}>{fmtSigned(netCashFlow)}</div>
@@ -13076,12 +13131,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 
               <div style={s.card}>
                 <p style={s.cardTitle}>Monthly cash flow</p>
-                {allMonths.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved billing, direct costs, or payments yet.</p> : (
+                {allMonths.length === 0 ? <p style={{ color: '#6b7280', fontSize: '14px' }}>No approved billing, direct costs, POs, or payments yet.</p> : (
                   <div className="rx-scroll-x">
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                          {['Month', 'Cash in', 'Sub billings', 'Direct costs', 'Total out', 'Net'].map(h => (
+                          {['Month', 'Cash in', 'Sub billings', 'Direct costs', 'POs out', 'Total out', 'Net'].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: h === 'Month' ? 'left' : 'right', color: '#6b7280', fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700' }}>{h}</th>
                           ))}
                         </tr>
@@ -13093,7 +13148,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             const inflow = cashInByMonth[m] || 0
                             const sub = subPayByMonth[m] || 0
                             const dc = dcByMonth[m] || 0
-                            const out = sub + dc
+                            const poOut = poByMonth[m] || 0
+                            const out = sub + dc + poOut
                             const net = inflow - out
                             running += net
                             return (
@@ -13102,6 +13158,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: inflow > 0 ? '#16a34a' : '#444' }}>{fmt(inflow)}</td>
                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: sub > 0 ? '#e8590c' : '#444' }}>{fmt(sub)}</td>
                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: dc > 0 ? '#aaa' : '#444' }}>{fmt(dc)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'right', color: poOut > 0 ? '#aaa' : '#444' }}>{fmt(poOut)}</td>
                                 <td style={{ padding: '10px 12px', textAlign: 'right', color: out > 0 ? '#dc2626' : '#444' }}>{fmt(out)}</td>
                                 <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: net >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(net)}</td>
                               </tr>
@@ -13113,6 +13170,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a', fontWeight: '700' }}>{fmt(totalIn)}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#e8590c', fontWeight: '700' }}>{fmt(totalSubPay)}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalDC)}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>{fmt(totalPOs)}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: '#dc2626', fontWeight: '700' }}>{fmt(totalOut)}</td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', fontSize: '15px', color: netCashFlow >= 0 ? '#16a34a' : '#dc2626' }}>{fmtSigned(netCashFlow)}</td>
                         </tr>

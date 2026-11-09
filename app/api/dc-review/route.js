@@ -3,6 +3,8 @@ import { requireAuth } from '../../../lib/server-auth'
 import { Resend } from 'resend'
 import { DC_APPROVER_ROLES as APPROVER_ROLES } from '../../../lib/direct-cost-queue'
 import { jobAccessError, budgetLineError, dcBilledLinkError } from '../../../lib/dc-guards'
+import { normalizePoId, poLinkError, isInvalidIdError } from '../../../lib/po-cash'
+import { writeWithMissingColumnRetry, poLinkDropped } from '../../../lib/missing-column-retry'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,21 +12,19 @@ const adminSupabase = createClient(
 )
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-// Columns added in migration 022 — may not exist yet if migration hasn't been run.
-const NEW_022_COLS = new Set(['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at'])
+// Columns added in migration 022 — may not exist yet (live has no vendor / review columns).
+// Only stripped as a group when a schema error doesn't name its column; otherwise just the
+// named column is dropped, and only if it is on OPTIONAL_COLS (lib/missing-column-retry.js).
+// purchase_order_id (067) is droppable by name only, never group-stripped.
+const NEW_022_COLS = ['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at']
+const OPTIONAL_COLS = [...NEW_022_COLS, 'purchase_order_id']
+const retryOpts = { fallbackCols: OPTIONAL_COLS }
 
-// Try the update; if Supabase reports a missing-column schema error, strip the
-// migration-022 columns and retry so pre-migration databases keep working.
+// Try the update; if Supabase reports a missing column, drop it and retry so
+// pre-migration databases keep working.
 async function dcUpdate(updates, id) {
-  const { error } = await adminSupabase.from('direct_costs').update(updates).eq('id', id)
-  if (!error) return null
-  if (error.message && error.message.includes('schema cache')) {
-    const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => !NEW_022_COLS.has(k)))
-    if (Object.keys(safe).length === 0) return error
-    const { error: e2 } = await adminSupabase.from('direct_costs').update(safe).eq('id', id)
-    return e2
-  }
-  return error
+  const { error } = await writeWithMissingColumnRetry(u => adminSupabase.from('direct_costs').update(u).eq('id', id), updates, retryOpts)
+  return error || null
 }
 
 // Approve only if the row is still pending on the same job, saving the budget line in the
@@ -33,31 +33,23 @@ async function dcApproveIfPending(updates, cost) {
   const run = u => adminSupabase.from('direct_costs').update(u)
     .eq('id', cost.id).eq('status', 'pending').eq('job_id', cost.job_id)
     .select('id')
-  let { data, error } = await run(updates)
-  if (error && error.message && error.message.includes('schema cache')) {
-    const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => !NEW_022_COLS.has(k)))
-    ;({ data, error } = await run(safe))
-  }
+  const { data, error } = await writeWithMissingColumnRetry(run, updates, retryOpts)
   if (error) return { error }
   return { rows: data || [] }
 }
 
 // Status / money change that only lands if the row is still exactly what we checked:
 // same status, same job, and still on no draw request and no pay app. Returns
-// { error } or { rows } (rows empty = it changed under us; nothing was written).
+// { error } or { rows, poLinkDropped } (rows empty = it changed under us; nothing was written).
+// poLinkDropped: a PO link was asked for but the column is missing (067 not applied).
 async function dcUpdateIfUnchanged(updates, cost) {
   const run = u => adminSupabase.from('direct_costs').update(u)
     .eq('id', cost.id).eq('status', cost.status).eq('job_id', cost.job_id)
     .is('draw_request_id', null).is('drawn_application_id', null)
     .select('id')
-  let { data, error } = await run(updates)
-  if (error && error.message && error.message.includes('schema cache')) {
-    const safe = Object.fromEntries(Object.entries(updates).filter(([k]) => !NEW_022_COLS.has(k)))
-    if (Object.keys(safe).length === 0) return { error }
-    ;({ data, error } = await run(safe))
-  }
+  const { data, error, dropped } = await writeWithMissingColumnRetry(run, updates, retryOpts)
   if (error) return { error }
-  return { rows: data || [] }
+  return { rows: data || [], poLinkDropped: poLinkDropped(updates, dropped) }
 }
 
 const STALE = 'This cost changed (status or draw / pay app link) since you loaded it. Nothing was saved. Refresh and try again.'
@@ -280,8 +272,20 @@ export async function POST(request) {
       if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
     }
 
-    const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes', 'budget_item_id', 'bill_to_owner', 'owner_auth_ref']
-    const UUID_FIELDS = new Set(['budget_item_id'])
+    // purchase_order_id (migration 067): the PO this cost pays down — same job only; '' / null clears.
+    if (fields.purchase_order_id !== undefined) {
+      fields.purchase_order_id = normalizePoId(fields.purchase_order_id)
+      if (fields.purchase_order_id) {
+        const { data: po, error: poErr } = await adminSupabase.from('purchase_orders').select('id, job_id').eq('id', fields.purchase_order_id).maybeSingle()
+        if (poErr && isInvalidIdError(poErr)) return Response.json({ error: 'Invalid purchase order: that is not a valid purchase order id.' }, { status: 400 })
+        if (poErr) return Response.json({ error: 'Could not check the purchase order: ' + poErr.message }, { status: 500 })
+        const bad = poLinkError(po, cost.job_id)
+        if (bad) return Response.json({ error: bad.error }, { status: bad.status })
+      }
+    }
+
+    const EDITABLE = ['cost_date', 'vendor', 'description', 'amount', 'category', 'notes', 'budget_item_id', 'bill_to_owner', 'owner_auth_ref', 'purchase_order_id']
+    const UUID_FIELDS = new Set(['budget_item_id', 'purchase_order_id'])
     const updates = { reviewed_by: auth.userId, reviewed_at: now }
     for (const f of EDITABLE) {
       if (fields[f] !== undefined) {
@@ -295,10 +299,10 @@ export async function POST(request) {
       updates.amount = parsed
     }
 
-    const { rows, error } = await dcUpdateIfUnchanged(updates, cost)
+    const { rows, error, poLinkDropped } = await dcUpdateIfUnchanged(updates, cost)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     if (!rows.length) return Response.json({ error: STALE }, { status: 409 })
-    return Response.json({ ok: true })
+    return Response.json(poLinkDropped ? { ok: true, po_link_saved: false } : { ok: true })
   }
 
   // ── RESUBMIT ─────────────────────────────────────────────────────────────────

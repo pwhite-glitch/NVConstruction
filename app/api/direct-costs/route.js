@@ -3,6 +3,16 @@ import { requirePM } from '../../../lib/server-auth'
 import { DC_APPROVER_ROLES, buildApprovalQueue, budgetLinesByJob } from '../../../lib/direct-cost-queue'
 import { jobAccessError, budgetLineError, accessibleJobIds, dcBilledLinkError } from '../../../lib/dc-guards'
 import { isJobLimited, denyJob, denyJobs, denyJobOf } from '../../../lib/roles'
+import { normalizePoId, poLinkError, isInvalidIdError } from '../../../lib/po-cash'
+import { writeWithMissingColumnRetry, poLinkDropped } from '../../../lib/missing-column-retry'
+
+// Columns from migration 022 that may be missing. Only stripped as a group when a schema
+// error doesn't name its column.
+const NEW_022_COLS = ['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at']
+// The only columns a missing-column retry may drop: the 022 columns plus purchase_order_id (067),
+// which is dropped only when the error names it (never by the group strip). Any other named
+// column (is_credit, amount, job_id, status …) returns the original error.
+const OPTIONAL_COLS = [...NEW_022_COLS, 'purchase_order_id']
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -103,11 +113,13 @@ export async function POST(request) {
       if (denied) return denied
 
       if (file && file.size > 0) {
+        // One receipt file belongs to one cost.
+        if (Array.isArray(row) && row.length !== 1) return Response.json({ error: 'A receipt can only be attached to a single cost.' }, { status: 400 })
         fileAttached = true
         const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')
         const safeExt = isPdf ? 'pdf' : 'jpg'
         const safeMime = isPdf ? 'application/pdf' : 'image/jpeg'
-        const path = `${row.job_id}/${Date.now()}.${safeExt}`
+        const path = `${(Array.isArray(row) ? row[0] : row)?.job_id}/${Date.now()}.${safeExt}`
         const buffer = Buffer.from(await file.arrayBuffer())
         const { error: uploadError } = await adminSupabase.storage
           .from('receipts')
@@ -121,32 +133,71 @@ export async function POST(request) {
       if (denied) return denied
     }
 
+    // Bulk insert (CSV import on the job page) sends an array of rows; a single cost sends an object.
+    const isBulk = Array.isArray(row)
+    const rows = isBulk ? row : [row]
+    if (isBulk && (!rows.length || rows.some(r => !r || typeof r !== 'object' || Array.isArray(r)))) {
+      return Response.json({ error: 'Each imported cost must be an object.' }, { status: 400 })
+    }
+
     // Enforce receipt for field submissions (super role, status=pending)
-    if (authRole === 'super' && !fileAttached && row.status === 'pending') {
+    if (authRole === 'super' && !fileAttached && rows.some(r => r.status === 'pending')) {
       return Response.json({ error: 'A receipt photo or PDF is required before submitting.' }, { status: 400 })
     }
 
     // Strip fields that field workers (super) should not set
     if (authRole === 'super') {
-      delete row.bill_to_owner
-      delete row.owner_auth_ref
-      delete row.billing_route
+      for (const r of rows) {
+        delete r.bill_to_owner
+        delete r.owner_auth_ref
+        delete r.billing_route
+      }
     }
 
-    // Columns from migration 022 may not exist yet — retry without them on schema cache error
-    const NEW_022_COLS = new Set(['vendor', 'rejection_reason', 'rejected_at', 'rejected_by', 'review_cycle', 'reviewed_by', 'reviewed_at', 'notif_sent_at', 'is_credit'])
-    let insertRow = { ...row, receipt_url }
-    let { error } = await adminSupabase.from('direct_costs').insert(insertRow)
-    if (error && error.message && error.message.includes('schema cache')) {
-      insertRow = Object.fromEntries(Object.entries(insertRow).filter(([k]) => !NEW_022_COLS.has(k)))
-      const retry = await adminSupabase.from('direct_costs').insert(insertRow)
-      error = retry.error
-    }
+    // Optional link to the PO this cost pays down (migration 067): same job only.
+    const poErr = await poLinkCheck(row)
+    if (poErr) return Response.json({ error: poErr.error }, { status: poErr.status })
+
+    // Columns from migration 022 (e.g. vendor, missing live) and 067 (purchase_order_id) may not
+    // exist yet: retry without ONLY the column the error names, if it is optional
+    // (lib/missing-column-retry.js); a bulk insert drops it from every row.
+    // Bulk rows carry receipt_url only when the one uploaded receipt applies (a single row).
+    const insertRow = isBulk
+      ? rows.map(r => (receipt_url && rows.length === 1 ? { ...r, receipt_url } : { ...r }))
+      : { ...row, receipt_url }
+    const { error, dropped } = await writeWithMissingColumnRetry(
+      r => adminSupabase.from('direct_costs').insert(r), insertRow, { fallbackCols: OPTIONAL_COLS })
     if (error) return Response.json({ error: error.message }, { status: 500 })
-    return Response.json({ ok: true })
+    return Response.json(poLinkDropped(insertRow, dropped) ? { ok: true, po_link_saved: false } : { ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
+}
+
+// purchase_order_id on a new cost (or each row of a bulk insert): '' → null; a set id
+// must be a PO on that cost's job. Any PO status / payment_type may be linked.
+// Mutates row(s) to normalize the value. Returns null or { status, error }.
+async function poLinkCheck(row) {
+  const rows = Array.isArray(row) ? row : [row]
+  const want = []
+  for (const r of rows) {
+    if (!r || typeof r !== 'object' || !('purchase_order_id' in r)) continue
+    r.purchase_order_id = normalizePoId(r.purchase_order_id)
+    if (r.purchase_order_id) want.push(r)
+  }
+  if (!want.length) return null
+  const ids = [...new Set(want.map(r => r.purchase_order_id))]
+  const { data: pos, error } = await adminSupabase.from('purchase_orders').select('id, job_id').in('id', ids)
+  if (error) {
+    if (isInvalidIdError(error)) return { status: 400, error: 'Invalid purchase order: that is not a valid purchase order id.' }
+    return { status: 500, error: 'Could not check the purchase order: ' + error.message }
+  }
+  const byId = Object.fromEntries((pos || []).map(p => [String(p.id), p]))
+  for (const r of want) {
+    const bad = poLinkError(byId[String(r.purchase_order_id)], r.job_id)
+    if (bad) return bad
+  }
+  return null
 }
 
 // A cost that is already billed must not move to another job (that would unlink
@@ -239,10 +290,19 @@ export async function PUT(request) {
       if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
     }
 
+    // A PO link (067) points at the old job's PO: clear it in the same update. Before 067 the
+    // column is missing and the retry drops just that key.
+    if (moving) fields.purchase_order_id = null
+
     // Only lands if the job and draw / pay-app links are still what we checked.
-    let q = adminSupabase.from('direct_costs').update(fields).eq('id', id).eq('job_id', cost.job_id).is('drawn_application_id', null)
-    q = cost.draw_request_id ? q.eq('draw_request_id', cost.draw_request_id) : q.is('draw_request_id', null)
-    const { data: rows, error } = await q.select('id')
+    const run = u => {
+      let q = adminSupabase.from('direct_costs').update(u).eq('id', id).eq('job_id', cost.job_id).is('drawn_application_id', null)
+      q = cost.draw_request_id ? q.eq('draw_request_id', cost.draw_request_id) : q.is('draw_request_id', null)
+      return q.select('id')
+    }
+    const { data: rows, error } = moving
+      ? await writeWithMissingColumnRetry(run, fields, { fallbackCols: ['purchase_order_id'] })
+      : await run(fields)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     if (!rows?.length) return Response.json({ error: 'This cost changed (job, draw or pay app link) since you loaded it. Nothing was saved. Refresh and try again.' }, { status: 409 })
     return Response.json({ ok: true })

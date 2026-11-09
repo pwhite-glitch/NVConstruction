@@ -82,7 +82,7 @@ beforeEach(() => {
     pm_job_assignments: [{ id: 'a1', job_id: JOB, user_id: 'u1' }],
     profiles: [{ id: 'p1', role: 'principal' }, { id: 'p2', role: 'pm' }],
     bd_opportunities: [], bd_goals: [], employees: [], employee_job_allocations: [{ id: 'al1', job_id: JOB }],
-    budget_items: [], direct_costs: [], change_orders: [], billing_submissions: [], billing_sov_lines: [], subcontracts: [], subcontracts_summary: [],
+    budget_items: [], direct_costs: [], change_orders: [], billing_submissions: [], billing_sov_lines: [], subcontracts: [], subcontract_summary: [],
     drawings: [{ id: 'dr1', job_id: OTHER_JOB, storage_path: `${OTHER_JOB}/1-a.pdf` }],
   }
 })

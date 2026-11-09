@@ -113,20 +113,25 @@ export async function POST(request) {
     if (!page || page.length < 1000) break
   }
 
-  // Fetch subcontracts separately (view may differ by environment)
-  const { data: contractsRaw } = await adminSupabase
+  // Base subcontracts supply vendor, budget line and allocations; the subcontract_summary
+  // view (migration 038) supplies the revised amount (adjusted_contract_value includes
+  // approved sub COs). Either read failing stops here — original contract_value must never
+  // reach Gemini presented as the revised committed total.
+  const { data: contractsRaw, error: contractsErr } = await adminSupabase
     .from('subcontracts')
     .select('id, vendor_name, sub_id, description, contract_value, budget_item_id, budget_allocations')
     .eq('job_id', job_id)
+  if (contractsErr) { console.error('ask-ai subcontracts:', contractsErr.message); return contextLoadFailed() }
 
-  // Try to get adjusted values from the summary view
-  const { data: contractsSummary } = await adminSupabase
-    .from('subcontracts_summary')
+  const { data: contractsSummary, error: summaryErr } = await adminSupabase
+    .from('subcontract_summary')
     .select('id, adjusted_contract_value, approved_change_orders')
     .eq('job_id', job_id)
+  if (summaryErr) { console.error('ask-ai subcontract_summary:', summaryErr.message); return contextLoadFailed() }
 
+  const summaryById = new Map((contractsSummary || []).map(s => [s.id, s]))
   const contracts = (contractsRaw || []).map(c => {
-    const summary = (contractsSummary || []).find(s => s.id === c.id)
+    const summary = summaryById.get(c.id)
     return { ...c, adjusted_contract_value: summary?.adjusted_contract_value ?? c.contract_value }
   })
 

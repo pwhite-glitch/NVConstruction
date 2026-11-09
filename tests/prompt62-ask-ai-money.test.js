@@ -241,7 +241,7 @@ describe('POST /api/ask-ai builds the prompt from the right tables', () => {
     budget_items: [{ id: 'b1', job_id: JOB_ID, description: 'L', budget_amount: 1000, owner_amount: 1000 }],
     direct_costs: Array.from({ length: 2500 }, (_, i) => ({ id: `c${i}`, job_id: JOB_ID, amount: 1, status: 'approved', budget_item_id: 'b1', cost_date: '2026-01-01' })),
     change_orders: [], billing_submissions: [{ id: 's1', job_id: JOB_ID, amount_billed: 50000, status: 'approved' }],
-    billing_sov_lines: [], subcontracts: [], subcontracts_summary: [],
+    billing_sov_lines: [], subcontracts: [], subcontract_summary: [],
     prime_change_orders: [{ id: 'p1', job_id: JOB_ID, co_number: 1, description: 'Owner CO', amount: 500, status: 'approved' }],
     aia_applications: [{ id: 'a1', job_id: JOB_ID, app_number: 1, status: 'submitted', retainage_pct: 0, nv_subcontract_id: null }],
     aia_application_lines: [{ application_id: 'a1', budget_item_id: 'b1', dollar_this_period: 300 }],
@@ -325,6 +325,50 @@ describe('POST /api/ask-ai builds the prompt from the right tables', () => {
     const res = await post()
     expect(res.status).toBe(200)
     expect(captured.messages[0].content).toContain('Contract Value: $1,500')
+  })
+  // ── Prompt63: revised sub amounts come from the real subcontract_summary view ──
+  // The misspelled name is built at runtime so a repo-wide search for it stays empty.
+  const WRONG_VIEW = ['subcontracts', 'summary'].join('_')
+  const subDb = () => ({
+    ...baseDb('commercial'),
+    subcontracts: [{ id: 'sc1', job_id: JOB_ID, vendor_name: 'Acme Framing', contract_value: 30000, budget_item_id: 'b1', budget_allocations: null }],
+    subcontract_summary: [{ id: 'sc1', job_id: JOB_ID, contract_value: 30000, approved_change_orders: 3000, adjusted_contract_value: 33000 }],
+    [WRONG_VIEW]: [{ id: 'sc1', job_id: JOB_ID, contract_value: 30000, approved_change_orders: 69999, adjusted_contract_value: 99999 }],
+  })
+  test('subcontract revised $33,000 from subcontract_summary (header + vendor line), not $30,000 or decoy', async () => {
+    db = subDb()
+    const res = await post()
+    expect(res.status).toBe(200)
+    const sys = captured.messages[0].content
+    expect(sys).toContain('SUBCONTRACTS (1, total committed $33,000 revised)')
+    expect(sys).toContain('Acme Framing: contract $30,000, revised $33,000')
+    expect(sys).toContain('committed $33,000, direct')
+    expect(sys).not.toContain('$99,999')
+    expect(sys).not.toContain('total committed $30,000')
+    expect(selects.some(s => s.table === 'subcontract_summary' && /adjusted_contract_value/.test(s.cols))).toBe(true)
+    expect(selects.some(s => s.table === WRONG_VIEW)).toBe(false)
+    // Base table still supplies budget line / allocations / vendor; no revised columns there.
+    const base = selects.filter(s => s.table === 'subcontracts')
+    expect(base).toHaveLength(1)
+    expect(base[0].cols).toMatch(/budget_item_id/)
+    expect(base[0].cols).toMatch(/budget_allocations/)
+    expect(base[0].cols).not.toMatch(/adjusted_contract_value|approved_change_orders/)
+  })
+  test('subcontract with no summary row falls back to contract_value', async () => {
+    db = { ...subDb(), subcontract_summary: [] }
+    const res = await post()
+    expect(res.status).toBe(200)
+    expect(captured.messages[0].content).toContain('SUBCONTRACTS (1, total committed $30,000 revised)')
+  })
+  test('subcontract_summary errors: 500, Gemini not called (no original amounts as revised)', async () => {
+    db = subDb()
+    failWith = t => (t === 'subcontract_summary' ? READ_ERR : null)
+    await expectFailedClosed(await post())
+  })
+  test('base subcontracts read errors: 500, Gemini not called (not "no contracts")', async () => {
+    db = subDb()
+    failWith = t => (t === 'subcontracts' ? READ_ERR : null)
+    await expectFailedClosed(await post())
   })
   test('res_owner_draws errors on a residential job: 500, Gemini not called', async () => {
     db = baseDb('residential')

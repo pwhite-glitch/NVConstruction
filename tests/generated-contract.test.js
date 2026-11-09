@@ -1,6 +1,6 @@
 import { describe, it, expect, jest } from '@jest/globals'
 import {
-  generatedContractPath, esignedContractPath, escapeHtml, withSignatureCertificate,
+  generatedContractPath, esignedContractPath, escapeHtml, withSignatureCertificate, signatureCertificateHtml,
   saveGeneratedContract, saveSignedContract, latestGeneratedContractPath, CONTRACT_BUCKET,
 } from '../lib/generated-contract'
 
@@ -68,6 +68,23 @@ describe('signature certificate', () => {
     expect(out).toContain('a@b.com')
     expect(out.indexOf('Electronic Signature Record')).toBeLessThan(out.indexOf('</body>'))
     expect(out.indexOf('<p>Contract</p>')).toBeLessThan(out.indexOf('Electronic Signature Record'))
+  })
+  it('adds Title and On behalf of rows when given, escaped', () => {
+    const out = signatureCertificateHtml({
+      signature_text: 'Jane Doe', signer_name: 'Jane Doe', signer_title: '<script>t</script> Owner', company_name: 'JC & <script>c</script>',
+      signer_email: 'a@b.com', signed_at: AT.toISOString(), request_id: 'r1',
+    })
+    expect(out).toMatch(/>Title<\/td><td[^>]*>&lt;script&gt;t&lt;\/script&gt; Owner</)
+    expect(out).toMatch(/>On behalf of<\/td><td[^>]*>JC &amp; &lt;script&gt;c&lt;\/script&gt;</)
+    expect(out).not.toContain('<script>')
+    expect(out.indexOf('Signed by')).toBeLessThan(out.indexOf('>Title<'))
+    expect(out).toContain('October 27, 2026 at 10:04 AM CT')
+  })
+  it('omits Title and On behalf of when blank', () => {
+    const out = signatureCertificateHtml({ signature_text: 'Al', signer_name: 'Al', signer_title: '  ', company_name: null, signer_email: 'a@b.com', signed_at: AT.toISOString() })
+    expect(out).not.toContain('>Title<')
+    expect(out).not.toContain('On behalf of')
+    expect(out).toContain('Signed by')
   })
 })
 

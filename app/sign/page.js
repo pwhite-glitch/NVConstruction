@@ -12,6 +12,7 @@ function SignPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [sigText, setSigText] = useState('')
+  const [sigTitle, setSigTitle] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
@@ -48,9 +49,14 @@ function SignPageInner() {
     fetchRequest()
   }, [token])
 
+  // Subcontracts (HTML documents) are signed by a person for the company: title required.
+  // Metal-building order forms (PDF) keep the name-only signature.
+  const titleRequired = !!request && request.document_kind !== 'pdf'
+  const canSubmit = !!sigText.trim() && (!titleRequired || !!sigTitle.trim()) && agreed
+
   async function handleSign(e) {
     e.preventDefault()
-    if (!sigText.trim() || !agreed) return
+    if (!canSubmit) return
     setSubmitting(true)
     try {
       let signer_ip = ''
@@ -63,7 +69,9 @@ function SignPageInner() {
       const res = await fetch(`/api/signing-requests/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signature_text: sigText.trim(), signer_ip }),
+        body: JSON.stringify(titleRequired
+          ? { signature_text: sigText.trim(), signer_title: sigTitle.trim(), signer_ip }
+          : { signature_text: sigText.trim(), signer_ip }),
       })
       const json = await res.json()
       if (!res.ok || json.error) {
@@ -319,6 +327,11 @@ function SignPageInner() {
           </p>
 
           <form onSubmit={handleSign}>
+            {titleRequired && request?.company_name && (
+              <p style={{ margin: '0 0 16px', fontSize: '14px', color: '#f1f1f1' }}>
+                Signing on behalf of <strong>{request.company_name}</strong>
+              </p>
+            )}
             <div style={{ marginBottom: '20px' }}>
               <label style={s.label}>Full legal name *{request?.signer_name ? ` (type: ${request.signer_name})` : ''}</label>
               <input
@@ -331,6 +344,21 @@ function SignPageInner() {
                 autoComplete="name"
               />
             </div>
+
+            {titleRequired && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={s.label}>Title *</label>
+                <input
+                  type="text"
+                  style={s.input}
+                  placeholder="e.g. Owner, President, Managing Member"
+                  value={sigTitle}
+                  onChange={e => setSigTitle(e.target.value)}
+                  required
+                  autoComplete="organization-title"
+                />
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '24px' }}>
               <input
@@ -351,8 +379,8 @@ function SignPageInner() {
 
             <button
               type="submit"
-              style={sigText.trim() && agreed ? s.btn : s.btnDisabled}
-              disabled={!sigText.trim() || !agreed || submitting}
+              style={canSubmit ? s.btn : s.btnDisabled}
+              disabled={!canSubmit || submitting}
             >
               {submitting ? 'Signing...' : 'Sign Document'}
             </button>

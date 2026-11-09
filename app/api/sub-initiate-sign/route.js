@@ -83,13 +83,22 @@ export async function POST(request) {
     const { data: authUser } = await adminSupabase.auth.admin.getUserById(sub_user_id)
     const signer_email = authUser?.user?.email || ''
 
+    // The signer is the logged-in person (profiles.full_name), never the company.
+    // No name on file: store null so the sign page accepts their typed full name.
+    const { data: profile } = await adminSupabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', sub_user_id)
+      .maybeSingle()
+    const signer_name = String(profile?.full_name || '').trim() || null
+
     const { data: row, error: insertErr } = await adminSupabase
       .from('signing_requests')
       .insert({
         job_id: sc.job_id,
         subcontract_id,
         signer_email,
-        signer_name: sc.vendor_name || null,
+        signer_name,
         document_html,
         document_title,
         created_by: sub_user_id,

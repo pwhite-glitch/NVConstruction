@@ -21,8 +21,10 @@ export async function POST(request) {
   if (auth.error) return auth.error
 
   const { job_id, subcontract_id, signer_email, signer_name, document_html, document_title } = await request.json()
-  if (!job_id || !signer_email || !document_html) {
-    return Response.json({ error: 'job_id, signer_email, and document_html are required' }, { status: 400 })
+  // signer_name is the person who will sign (not the company); never filled in for them.
+  const signerName = typeof signer_name === 'string' ? signer_name.trim() : ''
+  if (!job_id || !signer_email || !document_html || !signerName) {
+    return Response.json({ error: 'job_id, signer_email, signer_name, and document_html are required' }, { status: 400 })
   }
   const denied = await denyJob(adminSupabase, auth, job_id) ||
     (subcontract_id ? await denyJobOf(adminSupabase, auth, 'subcontracts', subcontract_id) : null)
@@ -41,7 +43,7 @@ export async function POST(request) {
       job_id,
       subcontract_id: subcontract_id || null,
       signer_email: signer_email.trim().toLowerCase(),
-      signer_name: signer_name?.trim() || null,
+      signer_name: signerName,
       document_html,
       document_title: document_title || null,
       created_by: auth.userId,  // always from verified session
@@ -64,7 +66,7 @@ export async function POST(request) {
   const siteUrl = getSiteUrl()
   const signingLink = `${siteUrl}/sign?token=${row.token}`
   const logo = logoSrc()
-  const firstName = escapeHtml(signer_name?.split(' ')[0] || 'there')
+  const firstName = escapeHtml(signerName.split(' ')[0] || 'there')
   const title = escapeHtml(document_title || 'Subcontract Agreement')
 
   let emailError = null

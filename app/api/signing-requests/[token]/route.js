@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { saveSignedContract } from '../../../../lib/generated-contract'
+import { saveSignedContract, fillSubcontractSignatureLines } from '../../../../lib/generated-contract'
 import { escapeHtml } from '../../../../lib/email'
 import { canSign, signatureMatchesName } from '../../../../lib/signing'
 import { getSiteUrl } from '../../../../lib/site-url'
@@ -45,7 +45,21 @@ export async function GET(request, { params }) {
       document_url: `/api/signing-requests/${encodeURIComponent(token)}/document`,
     } })
   }
-  return Response.json({ data })
+  // Subcontract: show the signer which company they sign for ("Signing on behalf of").
+  const company_name = await subcontractCompany(data.subcontract_id)
+  return Response.json({ data: company_name ? { ...data, company_name } : data })
+}
+
+// The subcontract's company (vendor_name). Best effort: null when unknown or the read fails.
+async function subcontractCompany(subcontractId) {
+  if (!subcontractId) return null
+  try {
+    const { data, error } = await adminSupabase.from('subcontracts').select('vendor_name').eq('id', subcontractId).maybeSingle()
+    if (error) return null
+    return String(data?.vendor_name || '').trim() || null
+  } catch {
+    return null
+  }
 }
 
 // Metal-building client order form signature: native token checks, then the
@@ -92,7 +106,7 @@ async function signMbRequest(request, token, existing, mb, signature_text, signe
 
 export async function POST(request, { params }) {
   const { token } = params
-  const { signature_text, signer_ip } = await request.json()
+  const { signature_text, signer_ip, signer_title } = await request.json()
 
   if (typeof signature_text !== 'string' || !signature_text.trim()) {
     return Response.json({ error: 'signature_text is required' }, { status: 400 })
@@ -110,6 +124,10 @@ export async function POST(request, { params }) {
   if (mbr.mb) return signMbRequest(request, token, existing, mbr.mb, signature_text, signer_ip)
   if (existing.status === 'signed') return Response.json({ error: 'Already signed' }, { status: 400 })
   if (!canSign(existing.status)) return Response.json({ error: 'This signing link is no longer valid. Ask NV Construction for a new one.' }, { status: 410 })
+  // Subcontracts are signed by a person for the company: their title goes on the
+  // contract's Title line and the signature record (not stored on signing_requests).
+  const signerTitle = typeof signer_title === 'string' ? signer_title.trim() : ''
+  if (!signerTitle) return Response.json({ error: 'Title is required' }, { status: 400 })
   if (!signatureMatchesName(signature_text, existing.signer_name)) {
     return Response.json({ error: `Type your full name exactly as shown (${existing.signer_name}) to sign.` }, { status: 400 })
   }
@@ -134,14 +152,19 @@ export async function POST(request, { params }) {
   if (updateErr) return Response.json({ error: updateErr.message }, { status: 500 })
   if (!claimed?.length) return Response.json({ error: 'Already signed' }, { status: 409 })
 
+  const typedName = signature_text.trim()
+  const personName = String(existing.signer_name || '').trim() || typedName
+  const companyName = await subcontractCompany(existing.subcontract_id)
+
   // Store the signed document and link it as the subcontract's signed contract.
   // The signature itself is already recorded above, so a failure here is only logged.
   if (existing.subcontract_id) {
     try {
+      const html = fillSubcontractSignatureLines(existing.document_html || '', { signature_text: typedName, signer_title: signerTitle, signed_at: signedAt, company_name: companyName })
       await saveSignedContract(adminSupabase, {
         subcontractId: existing.subcontract_id,
-        html: existing.document_html,
-        certificate: { signature_text: signature_text.trim(), signer_name: existing.signer_name, signer_email: existing.signer_email, signed_at: signedAt, signer_ip: signerIp, request_id: existing.id },
+        html,
+        certificate: { signature_text: typedName, signer_name: personName, signer_title: signerTitle, company_name: companyName, signer_email: existing.signer_email, signed_at: signedAt, signer_ip: signerIp, request_id: existing.id },
         at: signedAt,
       })
     } catch (e) {
@@ -153,8 +176,8 @@ export async function POST(request, { params }) {
   const logo = logoSrc()
   // User-entered text going into email HTML is escaped
   const title = escapeHtml(existing.document_title || 'Subcontract Agreement')
-  const signerDisplay = escapeHtml(existing.signer_name || existing.signer_email)
-  const firstName = escapeHtml(existing.signer_name?.split(' ')[0] || 'there')
+  const signerDisplay = escapeHtml(personName + (signerTitle ? `, ${signerTitle}` : '') + (companyName ? ` on behalf of ${companyName}` : ''))
+  const firstName = escapeHtml(personName.split(' ')[0] || 'there')
   const signedDate = new Date(signedAt).toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })
   const jobPortalLink = `${siteUrl}/jobdetail?id=${existing.job_id}&tab=contracts`
 

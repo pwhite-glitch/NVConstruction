@@ -262,6 +262,8 @@ describe('deposit email durability and retries', () => {
 })
 
 describe('subcontract signing is unchanged', () => {
+  // Prompt 64: subcontract signatures also carry the signer's title (MB posts above stay name-only).
+  const subSignPost = (token, signature_text) => tokenRoute.POST(jsonReq(`http://x/api/signing-requests/${token}`, 'POST', { signature_text, signer_title: 'Owner' }), { params: { token } }).then(out)
   const subSeed = () => {
     mockState.db.subcontracts = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', job_id: 'job1', status: 'active', signed_at: null, signed_contract_url: null }]
     mockState.db.signing_requests.push({ id: 'sr-sub', token: 'subtok', job_id: 'job1', subcontract_id: 'aaaaaaaa-0000-4000-8000-000000000001', signer_email: 'sub@x.test', signer_name: 'Sub Guy', document_title: 'Subcontract', document_html: '<html><body>Contract</body></html>', status: 'pending' })
@@ -271,7 +273,7 @@ describe('subcontract signing is unchanged', () => {
     const g = await out(await tokenRoute.GET(getReq('http://x?html=1'), { params: { token: 'subtok' } }))
     expect(g.body.data.document_html).toContain('Contract')
     expect(g.body.data.document_kind).toBeUndefined()
-    const r = await signPost('subtok', 'Sub Guy')
+    const r = await subSignPost('subtok', 'Sub Guy')
     expect(r.status).toBe(200)
     expect(mockState.db.subcontracts[0]).toMatchObject({ status: 'signed' })
     expect(mockState.db.subcontracts[0].signed_contract_url).toMatch(/^contracts\//)
@@ -281,7 +283,7 @@ describe('subcontract signing is unchanged', () => {
   test('works the same when migration 050 is not applied', async () => {
     subSeed()
     mockState.missingSelectCols.signing_requests = ['sales_order_id']
-    expect((await signPost('subtok', 'Sub Guy')).status).toBe(200)
+    expect((await subSignPost('subtok', 'Sub Guy')).status).toBe(200)
     expect(mockState.sent).toHaveLength(2)
   })
   test('subcontract void endpoint refuses MB requests', async () => {

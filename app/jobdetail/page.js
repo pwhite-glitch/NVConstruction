@@ -4087,7 +4087,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
   <p>Nishil Patel<br>CEO<br>NV Construction LLC</p>
   <br><br>
   <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-    <div style="text-align:center;width:290px"><div style="border-bottom:1px solid #000;height:24px;margin-bottom:4px"></div><div style="font-size:9pt">Subcontractor Signature</div></div>
+    <div style="text-align:center;width:290px"><div data-esign="cover-signature" style="border-bottom:1px solid #000;height:24px;margin-bottom:4px"></div><div style="font-size:9pt">Subcontractor Signature</div></div>
   </div>
   <br>
   <p>Subcontract #<br>${f.subcontract_number}</p>
@@ -4120,9 +4120,9 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
     </div>
     <div>
       <p><strong>SUBCONTRACTOR:</strong> ${f.sub_name}</p><br>
-      <p>Signature: <span class="sig-line" style="width:190px"></span></p>
+      <p>Signature: <span class="sig-line" data-esign="sub-signature" style="width:190px"></span></p>
       <p style="font-size:9pt;text-align:center">(Company officer's signature)</p><br>
-      <p>Title: <span class="sig-line" style="width:110px"></span> &nbsp; Date: <span class="sig-line" style="width:80px"></span></p>
+      <p>Title: <span class="sig-line" data-esign="sub-title" style="width:110px"></span> &nbsp; Date: <span class="sig-line" data-esign="sub-date" style="width:80px"></span></p>
       <p>Federal I.D. <span class="sig-line" style="width:120px"></span></p>
       <p>Phone #: <span class="sig-line" style="width:85px"></span> &nbsp; Fax #: <span class="sig-line" style="width:75px"></span></p>
       <p>Cell#: <span class="sig-line" style="width:125px"></span></p>
@@ -4315,6 +4315,8 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
 
   async function sendForESign() {
     if (!signerEmail.trim()) return
+    // The person who will sign (not the company); there is no fallback to the sub's company name.
+    if (!signerName.trim()) { setSignMsg("Error: Enter the recipient's full legal name (the person who will sign)."); return }
     if (contracts.find(c => c.id === contractGenForm.contract_id)?.status === 'draft') {
       setSignMsg('Error: This subcontract is a draft. Activate it before sending it for signature.')
       return
@@ -4331,7 +4333,7 @@ p{margin-bottom:8px;line-height:1.5;overflow-wrap:break-word}
           job_id: id,
           subcontract_id: contractGenForm.contract_id || null,
           signer_email: signerEmail.trim().toLowerCase(),
-          signer_name: signerName.trim() || contractGenForm.sub_name,
+          signer_name: signerName.trim(),
           document_html: html,
           document_title: `Subcontract — ${contractGenForm.sub_name} — Job #${contractGenForm.job_number}`,
           created_by: session?.user?.id,
@@ -7927,7 +7929,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <input
                         style={{ ...s.input, flex: 1, minWidth: '180px' }}
-                        placeholder="Recipient name"
+                        placeholder="Recipient's full legal name"
                         value={signerName}
                         onChange={e => setSignerName(e.target.value)}
                       />
@@ -7939,13 +7941,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                         onChange={e => setSignerEmail(e.target.value)}
                       />
                       <button
-                        style={{ ...s.btn, opacity: !signerEmail.trim() || sendingSign ? 0.6 : 1 }}
-                        disabled={!signerEmail.trim() || sendingSign}
+                        style={{ ...s.btn, opacity: !signerName.trim() || !signerEmail.trim() || sendingSign ? 0.6 : 1 }}
+                        disabled={!signerName.trim() || !signerEmail.trim() || sendingSign}
                         onClick={sendForESign}
                       >
                         {sendingSign ? 'Sending...' : 'Send Link'}
                       </button>
                     </div>
+                    <p style={{ fontSize: '11px', color: '#64748b', marginTop: '6px' }}>Name of the person who will sign (not the company). They will also enter their title when signing.</p>
                     {signMsg && (
                       <p style={{ fontSize: '12px', color: signMsg.startsWith('Error') ? '#dc2626' : '#16a34a', marginTop: '8px' }}>{signMsg}</p>
                     )}

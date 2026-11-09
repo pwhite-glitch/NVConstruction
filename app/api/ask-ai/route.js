@@ -2,75 +2,21 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '../../../lib/server-auth'
 import { denyUnlessOnJob } from '../../../lib/roles'
 import { sanitizeChatMessages } from '../../../lib/ai-messages'
-import { allocateJobBillings } from '../../../lib/contract-billing'
+import { buildSystemPrompt } from '../../../lib/ask-ai-context'
+import { isResidentialJob } from '../../../lib/job-links'
+import { isMissingRelation } from '../../../lib/budget-line-refs'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const fmt = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-
-function buildSystemPrompt(job, budgetItems, costs, contracts, changeOrders, billings, billingLines = []) {
-  const totalBudget = budgetItems.reduce((a, b) => a + Number(b.budget_amount || 0), 0)
-  const totalCommitted = contracts.reduce((a, c) => a + Number(c.contract_value || 0), 0)
-  const approvedCosts = costs.filter(c => c.status === 'approved')
-  const pendingCosts = costs.filter(c => c.status === 'pending')
-  const totalApprovedCosts = approvedCosts.reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
-  const approvedBilling = billings.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
-
-  const budgetLines = budgetItems.map(b => {
-    const lineContracts = contracts.filter(c =>
-      c.budget_item_id === b.id ||
-      (c.budget_allocations || []).some(a => a.budget_item_id === b.id)
-    )
-    const lineCommitted = lineContracts.reduce((a, c) => a + Number(c.adjusted_contract_value || c.contract_value || 0), 0)
-    const lineCosts = approvedCosts.filter(c => c.budget_item_id === b.id)
-      .reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
-    return `  • ${b.cost_code ? b.cost_code + ' ' : ''}${b.description}: budget ${fmt(b.budget_amount)}, committed ${fmt(lineCommitted)}, direct costs ${fmt(lineCosts)}`
-  }).join('\n')
-
-  // Billings credited per contract through billing_sov_lines -> subcontract_sov_lines
-  const alloc = allocateJobBillings({ contracts, submissions: billings, billingLines })
-  const subLines = contracts.map(c =>
-    `  • ${c.vendor_name || 'Unknown'}${c.description ? ' (' + String(c.description).split('\n')[0].slice(0, 60) + ')' : ''}: contract ${fmt(c.contract_value)}, revised ${fmt(c.adjusted_contract_value || c.contract_value)}, billed ${fmt(alloc.byContract[c.id]?.billedApproved || 0)}`
-  ).join('\n')
-  const unassignedApproved = alloc.unassigned.filter(b => b.status === 'approved')
-  const unassignedLine = unassignedApproved.length
-    ? `\n  • Unassigned approved sub billings (no line items, sub has several contracts): ${fmt(unassignedApproved.reduce((a, b) => a + Number(b.amount_billed || 0), 0))}`
-    : ''
-
-  const recentCosts = costs.slice(0, 30).map(c =>
-    `  • ${c.cost_date} ${c.description} ${fmt(c.amount)} [${c.status}] ${c.category}${c.vendor ? ' — ' + c.vendor : ''}`
-  ).join('\n')
-
-  const coLines = changeOrders.map(co =>
-    `  • ${co.description || 'Change order'}: ${fmt(co.amount)} [${co.status}] ${co.direction === 'pm_to_sub' ? '(to sub)' : '(from owner)'}`
-  ).join('\n') || '  None'
-
-  return `You are an AI assistant for NV Construction's project management portal. You have live data for the job below and can answer questions about budget, costs, subcontractors, billing, and profitability. Be concise and use the actual dollar figures. If you don't know something, say so.
-
-JOB: ${job.project_name || job.name || 'Unnamed'} ${job.job_number ? '#' + job.job_number : ''}
-Address: ${job.address || '—'}
-Contract Value: ${fmt(job.contract_value)}${job.approved_change_orders ? ' + COs ' + fmt(job.approved_change_orders) : ''}
-Status: ${job.status || 'active'}
-
-BUDGET (${budgetItems.length} lines, total ${fmt(totalBudget)}):
-${budgetLines || '  No budget items'}
-
-SUBCONTRACTS (${contracts.length}, total committed ${fmt(totalCommitted)}):
-${subLines || '  None'}${unassignedLine}
-
-CHANGE ORDERS:
-${coLines}
-
-DIRECT COSTS — approved total ${fmt(totalApprovedCosts)}, ${pendingCosts.length} pending:
-${recentCosts || '  None'}
-
-OWNER BILLING — approved ${fmt(approvedBilling)} billed to date
-
-Today's date: ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
-}
+// A money read failed (after any schema-column fallback). Stop before the model request:
+// a missing or partial list must never reach Gemini as a complete total.
+const contextLoadFailed = () => Response.json(
+  { error: "Could not load this job's numbers (costs, owner billing or change orders). Please try again." },
+  { status: 500 }
+)
 
 export async function POST(request) {
   const auth = await requireAuth(request)
@@ -95,16 +41,62 @@ export async function POST(request) {
   const [
     { data: job },
     { data: budgetItems },
-    { data: costs },
     { data: changeOrders },
     { data: billings },
   ] = await Promise.all([
-    adminSupabase.from('jobs').select('project_name, job_number, address, contract_value, approved_change_orders, status').eq('id', job_id).maybeSingle(),
+    adminSupabase.from('jobs').select('project_name, job_number, address, contract_value, approved_change_orders, status, job_type').eq('id', job_id).maybeSingle(),
     adminSupabase.from('budget_items').select('id, cost_code, description, budget_amount, owner_amount').eq('job_id', job_id).order('sort_order', { ascending: true }),
-    adminSupabase.from('direct_costs').select('id, description, amount, status, category, cost_date, vendor, budget_item_id, is_credit').eq('job_id', job_id).order('cost_date', { ascending: false }).limit(100),
     adminSupabase.from('change_orders').select('description, amount, status, direction').eq('job_id', job_id),
     adminSupabase.from('billing_submissions').select('id, amount_billed, retainage_held, status, sub_id, company_name, submitted_at').eq('job_id', job_id),
   ])
+
+  // Every direct cost on the job (newest first), paged — totals must not stop at a cap.
+  const costs = []
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: costErr } = await adminSupabase
+      .from('direct_costs')
+      .select('id, description, amount, status, category, cost_date, vendor, budget_item_id, is_credit')
+      .eq('job_id', job_id)
+      .order('cost_date', { ascending: false })
+      .order('id')
+      .range(from, from + 999)
+    if (costErr) { console.error('ask-ai direct_costs:', costErr.message); return contextLoadFailed() }
+    costs.push(...(page || []))
+    if (!page || page.length < 1000) break
+  }
+
+  // Owner / prime change orders (prime_change_orders). nv_cost is not read (058 not applied).
+  let { data: primeChangeOrders, error: pcoErr } = await adminSupabase
+    .from('prime_change_orders').select('id, co_number, description, amount, status').eq('job_id', job_id)
+  if (pcoErr && isMissingRelation(pcoErr)) {
+    ({ data: primeChangeOrders, error: pcoErr } = await adminSupabase
+      .from('prime_change_orders').select('id, description, amount, status').eq('job_id', job_id))
+  }
+  if (pcoErr) { console.error('ask-ai prime_change_orders:', pcoErr.message); return contextLoadFailed() }
+
+  // Owner billing: residential → res_owner_draws only; commercial / unknown → prime AIA apps only.
+  let primeApps = []
+  const primeLinesByApp = {}
+  let resDraws = []
+  if (job && isResidentialJob(job)) {
+    const DRAW_COLS = 'id, job_id, draw_number, title, period_start, period_end, amount_requested, status, submitted_date, funded_date'
+    let { data, error } = await adminSupabase.from('res_owner_draws').select(`${DRAW_COLS}, amount_funded`).eq('job_id', job_id).order('draw_number')
+    if (error && isMissingRelation(error)) {
+      // 046 not applied: no funded amounts exist, so a funded draw's received cash is unknown.
+      ({ data, error } = await adminSupabase.from('res_owner_draws').select(DRAW_COLS).eq('job_id', job_id).order('draw_number'))
+    }
+    if (error) { console.error('ask-ai res_owner_draws:', error.message); return contextLoadFailed() }
+    resDraws = data || []
+  } else if (job) {
+    const { data: apps, error: appErr } = await adminSupabase.from('aia_applications').select('*').eq('job_id', job_id).is('nv_subcontract_id', null)
+    if (appErr) { console.error('ask-ai aia_applications:', appErr.message); return contextLoadFailed() }
+    primeApps = apps || []
+    if (primeApps.length) {
+      const { data: lines, error: lErr } = await adminSupabase.from('aia_application_lines').select('*').in('application_id', primeApps.map(a => a.id))
+      if (lErr) { console.error('ask-ai aia_application_lines:', lErr.message); return contextLoadFailed() }
+      for (const l of lines || []) (primeLinesByApp[l.application_id] ||= []).push(l)
+    }
+  }
 
   // Line breakdown with each SOV line's contract — this is what ties a billing to a contract
   const billingLines = []
@@ -140,15 +132,19 @@ export async function POST(request) {
 
   if (!job) return Response.json({ error: 'Job not found' }, { status: 404 })
 
-  const systemPrompt = buildSystemPrompt(
+  const systemPrompt = buildSystemPrompt({
     job,
-    budgetItems || [],
-    costs || [],
+    budgetItems: budgetItems || [],
+    costs,
     contracts,
-    changeOrders || [],
-    billings || [],
-    billingLines
-  )
+    changeOrders: changeOrders || [],
+    primeChangeOrders: primeChangeOrders || [],
+    billings: billings || [],
+    billingLines,
+    primeApps,
+    primeLinesByApp,
+    resDraws,
+  })
 
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return Response.json({ error: 'AI not configured' }, { status: 503 })

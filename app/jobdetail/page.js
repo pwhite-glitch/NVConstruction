@@ -14698,10 +14698,21 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             setSavingReimbPayment(false)
           }
 
-          function generateReimbPDF(inv) {
-            const w = window.open('', '_blank')
-            if (!w) { alert('Allow popups to generate PDF.'); return }
-            const lines = inv.owner_reimb_invoice_lines || []
+          // Same order as /api/owner-reimb-export (sort_order asc, nulls last, then id)
+          // so Invoice.html rows, the on-screen list, INDEX.txt and Receipts/NN_ agree.
+          function sortReimbInvoiceLines(arr) {
+            return [...(arr || [])].sort((a, b) => {
+              const sa = a.sort_order == null ? Infinity : Number(a.sort_order)
+              const sb = b.sort_order == null ? Infinity : Number(b.sort_order)
+              if (sa !== sb) return sa < sb ? -1 : 1
+              return String(a.id).localeCompare(String(b.id))
+            })
+          }
+
+          // Builds the owner-facing invoice HTML. No popup — used by both
+          // Export PDF (print tab) and Export ZIP (sent to the server as Invoice.html).
+          function buildReimbInvoiceHtml(inv) {
+            const lines = sortReimbInvoiceLines(inv.owner_reimb_invoice_lines)
             const payments = (inv.owner_reimb_payments || []).filter(p => !p.voided)
             const totalBilled = lines.reduce((a, l) => a + Number(l.billed_amount || 0), 0)
             const totalPaid = payments.reduce((a, p) => a + Number(p.amount || 0), 0)
@@ -14802,13 +14813,31 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
     <span>Invoice ${esc(inv.invoice_number)} &nbsp;·&nbsp; ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
   </div>
 </div></body></html>`
+            return html
+          }
+
+          function generateReimbPDF(inv) {
+            const html = buildReimbInvoiceHtml(inv)
+            const w = window.open('', '_blank')
+            if (!w) { alert('Allow popups to generate PDF.'); return }
             w.document.write(html)
             w.document.close()
             return html
           }
 
           async function exportReimbZip(inv) {
-            const invHtml = generateReimbPDF(inv)
+            // Warn when any invoice line has no receipt backup on file.
+            const zipLines = inv.owner_reimb_invoice_lines || []
+            const missingReceipts = zipLines.filter(l => {
+              if (!l.direct_cost_id) return true
+              const dc = directCosts.find(c => c.id === l.direct_cost_id)
+              return !dc || !dc.receipt_url
+            }).length
+            if (missingReceipts > 0) {
+              const ok = window.confirm(`${missingReceipts} line${missingReceipts === 1 ? ' has' : 's have'} no receipt attached. The ZIP index will list ${missingReceipts === 1 ? 'it' : 'them'} as NO RECEIPT. Export anyway?`)
+              if (!ok) return
+            }
+            const invHtml = buildReimbInvoiceHtml(inv)
             const { data: { session } } = await supabase.auth.getSession()
             const token = session?.access_token
             const res = await fetch('/api/owner-reimb-export', {
@@ -14909,7 +14938,7 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
                 {reimbInvoices.map(inv => {
                   const isExpanded = expandedInvoiceId === inv.id
                   const sc = statusColors[inv.status] || statusColors.draft
-                  const lines = inv.owner_reimb_invoice_lines || []
+                  const lines = sortReimbInvoiceLines(inv.owner_reimb_invoice_lines)
                   const payments = (inv.owner_reimb_payments || []).filter(p => !p.voided)
                   return (
                     <div key={inv.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' }}>

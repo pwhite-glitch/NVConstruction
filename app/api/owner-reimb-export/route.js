@@ -10,8 +10,10 @@ const adminSupabase = createClient(
 
 // POST /api/owner-reimb-export
 // Body: { invoiceId, invoiceHtml }
-// Returns a ZIP containing the invoice HTML and any linked receipts.
-// Fails with 422 if any receipt cannot be retrieved — never produces a silent incomplete package.
+// Returns a ZIP for the owner: Invoice.html, INDEX.txt (every invoice line, numbered, with its
+// receipt file or NO RECEIPT), README.txt, and Receipts/ named by line/date/vendor/amount.
+// Fails with 422 if a linked receipt cannot be retrieved. Lines that never had a receipt are
+// listed as NO RECEIPT in INDEX.txt — never silently dropped.
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
@@ -22,8 +24,11 @@ export async function POST(request) {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { invoiceId, invoiceHtml } = body
+  const { invoiceId, invoiceHtml } = body || {}
   if (!invoiceId) return Response.json({ error: 'invoiceId required' }, { status: 400 })
+  if (typeof invoiceHtml !== 'string' || !invoiceHtml.trim()) {
+    return Response.json({ error: 'invoiceHtml required' }, { status: 400 })
+  }
 
   // Fetch invoice with lines and direct cost receipt paths
   const { data: inv, error: invErr } = await adminSupabase
@@ -31,7 +36,7 @@ export async function POST(request) {
     .select(`
       id, invoice_number, job_id, status,
       owner_reimb_invoice_lines(
-        id, description, direct_cost_id,
+        id, description, direct_cost_id, expense_date, vendor, billed_amount, sort_order,
         direct_costs(id, receipt_url, description)
       )
     `)
@@ -58,9 +63,38 @@ export async function POST(request) {
     return final
   }
 
-  // Download receipts from linked direct costs
-  const lines = inv.owner_reimb_invoice_lines || []
-  for (const line of lines) {
+  const slugPart = (v, fallback) => {
+    const s = String(v || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30)
+    return s || fallback
+  }
+  const dateOf = d => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null)
+  const amt = n => Number(n || 0).toFixed(2)
+
+  // Stable invoice order: sort_order ascending, then id.
+  const lines = [...(inv.owner_reimb_invoice_lines || [])].sort((a, b) => {
+    const sa = a.sort_order == null ? Infinity : Number(a.sort_order)
+    const sb = b.sort_order == null ? Infinity : Number(b.sort_order)
+    if (sa !== sb) return sa < sb ? -1 : 1
+    return String(a.id).localeCompare(String(b.id))
+  })
+  const pad = Math.max(2, String(lines.length).length)
+
+  // Walk every line; download linked receipts, record NO RECEIPT for the rest.
+  const indexRows = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const num = String(i + 1).padStart(pad, '0')
+    const date = dateOf(line.expense_date)
+    const row = {
+      num,
+      date: date || '—',
+      vendor: line.vendor || '—',
+      amount: amt(line.billed_amount),
+      description: line.description || '',
+      receipt: 'NO RECEIPT',
+    }
+    indexRows.push(row)
+
     const dc = line.direct_costs
     if (!dc?.receipt_url) continue
 
@@ -74,10 +108,13 @@ export async function POST(request) {
     }
 
     const arrayBuf = await blob.arrayBuffer()
-    const ext = dc.receipt_url.split('.').pop()?.toLowerCase() || 'pdf'
-    const baseName = (dc.description || line.description || 'receipt').slice(0, 40).replace(/[^\w\s]/g, '_')
+    const rawExt = dc.receipt_url.includes('.') ? dc.receipt_url.split('.').pop().toLowerCase() : ''
+    const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : 'pdf'
+    const baseName = `${num}_${date || 'nodate'}_${slugPart(line.vendor, 'novendor')}_${amt(line.billed_amount)}`
     const fileName = uniqueName(`${baseName}.${ext}`)
-    zipFiles.push({ name: `Receipts/${fileName}`, data: Buffer.from(arrayBuf) })
+    const path = `Receipts/${fileName}`
+    row.receipt = path
+    zipFiles.push({ name: path, data: Buffer.from(arrayBuf) })
   }
 
   // Fail clearly if any receipt could not be retrieved
@@ -87,10 +124,30 @@ export async function POST(request) {
     }, { status: 422 })
   }
 
-  // Invoice HTML
-  if (invoiceHtml) {
-    zipFiles.unshift({ name: 'Invoice.html', data: Buffer.from(invoiceHtml, 'utf8') })
-  }
+  const receiptCount = zipFiles.filter(f => f.name.startsWith('Receipts/')).length
+  const noReceiptCount = indexRows.filter(r => r.receipt === 'NO RECEIPT').length
+
+  // INDEX.txt — one row per invoice line, in invoice order
+  const cols = [
+    ['#', r => r.num],
+    ['Date', r => r.date],
+    ['Vendor', r => r.vendor],
+    ['Billed', r => r.amount],
+    ['Receipt', r => r.receipt],
+    ['Description', r => r.description],
+  ]
+  const widths = cols.map(([h, f], ci) => ci === cols.length - 1 ? 0 : Math.max(h.length, ...indexRows.map(r => String(f(r)).length)))
+  const fmtRow = vals => vals.map((v, ci) => ci === cols.length - 1 ? v : String(v).padEnd(widths[ci])).join('  ').trimEnd()
+  const indexLines = [
+    `RECEIPT INDEX — Invoice ${inv.invoice_number}`,
+    'Line numbers follow the line order on Invoice.html. Amount is the Billed amount.',
+    '',
+    fmtRow(cols.map(([h]) => h)),
+    fmtRow(cols.map((_, ci) => '-'.repeat(Math.max(widths[ci], cols[ci][0].length)))),
+    ...indexRows.map(r => fmtRow(cols.map(([, f]) => String(f(r))))),
+    '',
+    `${indexRows.length} line(s): ${receiptCount} with receipt, ${noReceiptCount} NO RECEIPT`,
+  ]
 
   // README
   const readmeLines = [
@@ -100,12 +157,16 @@ export async function POST(request) {
     '',
     'Contents:',
     '  Invoice.html   — Open in any browser, then File > Print to save as PDF',
-    `  Receipts/      — ${zipFiles.filter(f => f.name.startsWith('Receipts/')).length} receipt file(s)`,
+    '  INDEX.txt      — Numbered list of invoice lines with date, vendor, billed amount, and receipt file',
+    `  Receipts/      — ${receiptCount} receipt file(s)`,
     '',
-    'CONFIDENTIAL — NV Construction internal document. Do not distribute.',
+    'Lines without receipt backup are marked NO RECEIPT in INDEX.txt.',
     '',
     `Generated: ${new Date().toUTCString()}`,
   ]
+
+  zipFiles.unshift({ name: 'INDEX.txt', data: Buffer.from(indexLines.join('\n'), 'utf8') })
+  zipFiles.unshift({ name: 'Invoice.html', data: Buffer.from(invoiceHtml, 'utf8') })
   zipFiles.unshift({ name: 'README.txt', data: Buffer.from(readmeLines.join('\n'), 'utf8') })
 
   const zip = buildZip(zipFiles)

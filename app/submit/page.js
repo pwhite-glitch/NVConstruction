@@ -11,6 +11,8 @@ import { isCoLine, contractsWithBaseSov } from '../../lib/sov-lines'
 import { todayCentral, addDaysCentral } from '../../lib/central-date'
 import { billingPaymentSummary, billingPaidAmount } from '../../lib/billing-payment'
 import { billingDraftKey, LEGACY_BILLING_DRAFT_KEY, restoreBillingDraft, applyDraftPcts, draftToPersist, loadOpenDraws, drawAfterLoad } from '../../lib/billing-draft'
+import { signedWaiverTerms, throughLabel, safeSignatureSrc, LEGACY_WAIVER_NOTE } from '../../lib/lien-waiver-terms'
+import { escapeHtml } from '../../lib/email'
 
 
 const s = {
@@ -356,7 +358,9 @@ export default function Submit() {
     const res = await authFetch('/api/sub-portal')
     if (!res.ok) return
     const access = await res.json()
-    setSubmissions((access.submissions || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null })))
+    const list = (access.submissions || []).map(s => ({ ...s, jobs: s.jobs || jobs.find(j => j.id === s.job_id) || null }))
+    setSubmissions(list)
+    return list
   }
 
   async function loadBidInvitations(email) {
@@ -770,10 +774,19 @@ export default function Submit() {
 
 
   function printLienWaiver(sub) {
-    const amt = parseFloat(sub.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-    const period = sub.billing_period
-      ? new Date(sub.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-      : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    // Signed: print the amount / through date that was signed (signedWaiverTerms). Unsigned
+    // preview: live values. Every text field is escaped; the signature must be an image data URL.
+    const esc = escapeHtml
+    const signed = !!sub.lien_waiver_signed_at
+    const terms = signed ? signedWaiverTerms(sub) : null
+    const amt = parseFloat((signed ? terms.amount : sub.amount_billed) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+    const period = signed
+      ? throughLabel(terms.through)
+      : sub.billing_period
+        ? new Date(sub.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    const legacyNote = signed && terms.legacy ? `<div style="font-size:10px;color:#666;margin-top:4px;">${esc(LEGACY_WAIVER_NOTE)}</div>` : ''
+    const sigSrc = safeSignatureSrc(sub.lien_waiver_signature)
     const owner = sub.jobs?.owner_company || sub.jobs?.owner_name || 'Project Owner'
     const signedAt = sub.lien_waiver_signed_at ? new Date(sub.lien_waiver_signed_at).toLocaleDateString() : null
     const w = window.open('', '_blank')
@@ -799,12 +812,12 @@ export default function Submit() {
 <h1 style="text-align:center;">Lien Waiver</h1>
 <p class="sub" style="text-align:center;">Effective upon receipt of payment in good funds</p>
 <div class="grid">
-  <div class="cell"><label>Claimant (Subcontractor)</label><span>${sub.company_name || ''}</span></div>
+  <div class="cell"><label>Claimant (Subcontractor)</label><span>${esc(sub.company_name || '')}</span></div>
   <div class="cell"><label>Hiring Party</label><span>NV Construction</span></div>
-  <div class="cell"><label>Project</label><span>#${sub.jobs?.job_number} — ${sub.jobs?.project_name}</span></div>
-  <div class="cell"><label>Owner</label><span>${owner}</span></div>
-  <div class="cell"><label>Conditional Payment Amount</label><span style="font-size:16px;font-weight:800;">${amt}</span></div>
-  <div class="cell"><label>Through Date</label><span>${period}</span></div>
+  <div class="cell"><label>Project</label><span>#${esc(sub.jobs?.job_number)} — ${esc(sub.jobs?.project_name)}</span></div>
+  <div class="cell"><label>Owner</label><span>${esc(owner)}</span></div>
+  <div class="cell"><label>Conditional Payment Amount</label><span style="font-size:16px;font-weight:800;">${esc(amt)}</span>${legacyNote}</div>
+  <div class="cell"><label>Through Date</label><span>${esc(period)}</span></div>
 </div>
 <div class="body">
   <strong>Conditional Waiver and Release.</strong> This document, when signed, conditionally waives and releases any mechanic's lien, stop payment notice, or payment bond right the Claimant has for labor, services, equipment, or material furnished through the Through Date on the Project. The rights are waived and released only to the extent of the Conditional Payment Amount actually received in good funds, and this waiver is conditioned on receipt of such payment. Claimant retains all rights for amounts not covered by this payment.
@@ -812,22 +825,22 @@ export default function Submit() {
 <div class="sig-grid">
   <div>
     <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Authorized Signature</p>
-    ${sub.lien_waiver_signature ? `<img src="${sub.lien_waiver_signature}" class="sig-img" />` : '<div class="sig-line"></div>'}
+    ${sigSrc ? `<img src="${esc(sigSrc)}" class="sig-img" />` : '<div class="sig-line"></div>'}
     <div class="sig-label">Signature</div>
   </div>
   <div>
     <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Printed Name &amp; Title</p>
-    ${sub.lien_waiver_signer_name ? `<p style="margin:4px 0;font-size:14px;font-weight:600;">${sub.lien_waiver_signer_name}</p>` : '<div class="sig-line"></div>'}
+    ${sub.lien_waiver_signer_name ? `<p style="margin:4px 0;font-size:14px;font-weight:600;">${esc(sub.lien_waiver_signer_name)}</p>` : '<div class="sig-line"></div>'}
     <div class="sig-label">Name / Title</div>
   </div>
   <div>
     <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Date Signed</p>
-    <p style="margin:4px 0;font-size:13px;">${signedAt || '_________________'}</p>
+    <p style="margin:4px 0;font-size:13px;">${esc(signedAt || '_________________')}</p>
     <div class="sig-label">Date</div>
   </div>
   <div>
     <p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Company</p>
-    <p style="margin:4px 0;font-size:13px;">${sub.company_name || '_________________'}</p>
+    <p style="margin:4px 0;font-size:13px;">${esc(sub.company_name || '_________________')}</p>
     <div class="sig-label">Company Name</div>
   </div>
 </div>
@@ -854,10 +867,19 @@ export default function Submit() {
     const res = await fetch('/api/lien-waiver-sign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ submission_id: lienWaiverSub.id, signer_name: signerName.trim(), signature }),
+      // What the sub was shown: the server refuses (409) if the billing changed since.
+      body: JSON.stringify({ submission_id: lienWaiverSub.id, signer_name: signerName.trim(), signature, expected_amount: lienWaiverSub.amount_billed, expected_period: lienWaiverSub.billing_period || null }),
     })
-    const result = await res.json()
-    if (result.error) { setWaiverMsg('Error: ' + result.error) }
+    const result = await res.json().catch(() => ({}))
+    if (res.status === 409) {
+      // Reload, and show the billing as it is now (or close if there is nothing left to sign).
+      const list = await loadSubmissions()
+      const fresh = (list || []).find(x => x.id === lienWaiverSub.id)
+      if (fresh && fresh.status === 'approved' && !fresh.lien_waiver_signed_at) setLienWaiverSub(fresh)
+      else setLienWaiverSub(null)
+      setWaiverMsg((result.error || 'This billing was changed. Reload and review it before signing.') + ' The billing has been reloaded — review the amount shown and sign again.')
+    }
+    else if (result.error || !res.ok) { setWaiverMsg('Error: ' + (result.error || `HTTP ${res.status}`)) }
     else {
       setLienWaiverSub(null)
       setSignerName('')

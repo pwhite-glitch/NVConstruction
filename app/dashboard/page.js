@@ -38,6 +38,7 @@ import { useJobNumbers, confirmJobNumberFree } from '../../lib/use-job-numbers'
 import { jobNumberSaveError } from '../../lib/job-numbers'
 import { getSiteUrl } from '../../lib/site-url'
 import { retainagePctOrDefault } from '../../lib/retainage-pct'
+import { findDuplicateBillings, duplicateTooltip } from '../../lib/billing-duplicates'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -1110,6 +1111,10 @@ export default function Dashboard() {
   // Approving also sends the lien waiver there.
   async function updateStatus(sub, status, rejectionReason = '') {
     if (status === 'rejected' && !String(rejectionReason || '').trim()) { alert('Enter a rejection reason for the sub.'); return }
+    if (status === 'approved') {
+      const dupMatches = findDuplicateBillings(submissions)[sub.id]
+      if (dupMatches?.length && !window.confirm(`This billing looks like a possible duplicate of:\n${duplicateTooltip(dupMatches, submissions)}\n\nApprove anyway?`)) return
+    }
     const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1471,13 +1476,20 @@ export default function Dashboard() {
       status: editBillingForm.status,
       reviewed_at: editBillingForm.status !== 'pending' ? now : null,
     }
+    let res
     if (editBillingFile) {
       const formData = new FormData()
       formData.append('file', editBillingFile)
       formData.append('data', JSON.stringify(patchData))
-      await authFetch('/api/billing-entry', { method: 'PATCH', body: formData })
+      res = await authFetch('/api/billing-entry', { method: 'PATCH', body: formData })
     } else {
-      await authFetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
+      res = await authFetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patchData) })
+    }
+    const out = await res.json().catch(() => ({}))
+    if (out.waiverVoided) {
+      alert('Lien waiver voided — the signed waiver no longer matches this billing. ' + (out.waiverError
+        ? 'Saved, but the new lien waiver was not sent: ' + out.waiverError
+        : out.waiverSent ? 'A new waiver was sent to the sub now.' : 'A new waiver is sent to the sub when the billing is approved again.'))
     }
     setEditingBilling(null)
     setEditBillingFile(null)
@@ -3467,6 +3479,8 @@ ${planLinks.map(p => p.url
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', color: '#6b7280' }}>Loading...</div>
 
+  // "Possible duplicate" on the billing review list (same company + invoice #, or amount + period)
+  const billingDups = findDuplicateBillings(submissions)
   const filtered = submissions.filter(s => {
     if (filterStatus === 'unsigned_waiver') return s.status === 'approved' && !s.lien_waiver_signed_at
     return (!filterStatus || s.status === filterStatus) && (!filterJob || s.jobs?.job_number === filterJob)
@@ -4339,6 +4353,11 @@ ${planLinks.map(p => p.url
                       <div style={{ display: 'flex', alignItems: 'center', fontWeight: '700', fontSize: '15px', color: '#111827' }}>${sub.amount_billed?.toLocaleString()}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={s.badge(sub.status)}>{sub.status}</span>
+                        {billingDups[sub.id]?.length > 0 && (
+                          <span title={duplicateTooltip(billingDups[sub.id], submissions)} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#fff7ed', color: '#d97706', border: '1px solid #4a3800', cursor: 'help' }}>
+                            Possible duplicate
+                          </span>
+                        )}
                         {isUnsignedView && <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: daysSince > 60 ? '#fef2f2' : daysSince > 30 ? '#fff7ed' : '#fefce8', color: daysSince > 60 ? '#dc2626' : daysSince > 30 ? '#e8590c' : '#d97706' }}>{daysSince}d</span>}
                       </div>
                     </div>

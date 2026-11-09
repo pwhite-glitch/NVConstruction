@@ -6,10 +6,12 @@ import { denyJob, denyJobOf } from '../../../lib/roles'
 import { notify } from '../../../lib/notify'
 import { PM_INSERT_FIELDS, SUB_INSERT_FIELDS, PM_PATCH_FIELDS, SUB_PATCH_FIELDS, pickFields, withoutNew032, billingDeleteBlock, billingDrawLockError, isFirstReviewOnOpenDraw } from '../../../lib/billing-fields'
 import { drawTargetError, DRAWABLE } from '../../../lib/draw-guards'
-import { sendLienWaiver } from '../../../lib/lien-waiver'
+import { sendLienWaiver, VOIDED_WAIVER_PATCH } from '../../../lib/lien-waiver'
 import { planBillingPayment, netBelowPaidError } from '../../../lib/billing-payment'
 import { escapeHtml, emailWrap } from '../../../lib/email'
 import { siteUrl } from '../../../lib/site-url'
+import { findInvoiceMatch, normalizeInvoiceNumber } from '../../../lib/billing-duplicates'
+import { without062, mentions062, isMissingColumnError, waiverTermChanges, voidReason } from '../../../lib/lien-waiver-terms'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -148,6 +150,38 @@ async function uploadBillingDoc(file, jobId) {
   return path
 }
 
+// Possible duplicate (prompt 67B #2): another non-rejected billing on the job, from the same
+// sub company (the sub_id's company people, or a matching company name), with the same
+// normalized invoice #. Returns { dup } (null when none) or { error } (read failed).
+async function findDuplicateInvoice({ jobId, invoiceNumber, subId, companyName, excludeId = null }) {
+  if (!normalizeInvoiceNumber(invoiceNumber)) return { dup: null }
+  const { data: rows, error } = await adminSupabase.from('billing_submissions')
+    .select('id, job_id, invoice_number, submitted_at, status, amount_billed, sub_id, company_name')
+    .eq('job_id', jobId)
+  if (error) return { error: 'Could not check for a duplicate invoice: ' + error.message }
+  const memberIdsBySubId = {}
+  if (subId) {
+    const { data: prof, error: profErr } = await adminSupabase.from('profiles').select('company_id').eq('id', subId).maybeSingle()
+    if (profErr) return { error: 'Could not check for a duplicate invoice: ' + profErr.message }
+    if (prof?.company_id) {
+      const { data: people, error: pplErr } = await adminSupabase.from('profiles').select('id').eq('company_id', prof.company_id)
+      if (pplErr) return { error: 'Could not check for a duplicate invoice: ' + pplErr.message }
+      memberIdsBySubId[subId] = new Set((people || []).map(p => p.id))
+    }
+  }
+  const target = { id: excludeId, job_id: jobId, invoice_number: invoiceNumber, sub_id: subId || null, company_name: companyName || null }
+  return { dup: findInvoiceMatch(rows, target, { memberIdsBySubId }) }
+}
+
+function duplicateResponse(dup) {
+  const date = dup.submitted_at ? new Date(dup.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' }) : 'an earlier date'
+  return Response.json({
+    error: `Invoice #${dup.invoice_number} was already entered for this company on this project (${date}, ${dup.status || 'pending'}). Save anyway only if this is a different invoice.`,
+    needs_confirm: true,
+    duplicate: { id: dup.id, invoice_number: dup.invoice_number, submitted_at: dup.submitted_at, status: dup.status, amount_billed: dup.amount_billed },
+  }, { status: 409 })
+}
+
 export async function POST(request) {
   const auth = await requireAuth(request)
   if (auth.error) return auth.error
@@ -189,6 +223,18 @@ export async function POST(request) {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // Office entry of an invoice # this company already has on the job: confirm first.
+    // confirm_duplicate is not a column (pickFields drops it).
+    let savedDespite = null
+    if (isPM(auth.role) && normalizeInvoiceNumber(row.invoice_number)) {
+      const found = await findDuplicateInvoice({ jobId: raw.job_id, invoiceNumber: row.invoice_number, subId: row.sub_id, companyName: row.company_name })
+      if (found.error) return Response.json({ error: found.error }, { status: 500 })
+      if (found.dup) {
+        if (raw.confirm_duplicate !== true) return duplicateResponse(found.dup)
+        savedDespite = found.dup
+      }
+    }
+
     if (file && file.size > 0) doc_url = await uploadBillingDoc(file, raw.job_id)
 
     // Validate sub_id auth account still exists
@@ -198,12 +244,15 @@ export async function POST(request) {
     }
 
     const insertRow = { ...row, doc_url }
-    let { error } = await adminSupabase.from('billing_submissions').insert(insertRow)
+    let { data: inserted, error } = await adminSupabase.from('billing_submissions').insert(insertRow).select('id')
     if (error?.message?.includes('schema cache')) {
-      ({ error } = await adminSupabase.from('billing_submissions').insert(withoutNew032(insertRow)))
+      ({ data: inserted, error } = await adminSupabase.from('billing_submissions').insert(withoutNew032(insertRow)).select('id'))
     }
 
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (savedDespite) {
+      await logChange({ job_id: raw.job_id, entity_type: 'billing', entity_id: inserted?.[0]?.id || null, field_name: 'invoice_number', old_value: null, new_value: row.invoice_number, changed_by: auth.userId, note: `Saved despite possible duplicate of Invoice #${savedDespite.invoice_number} (${savedDespite.id})` })
+    }
     return Response.json({ ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
@@ -238,17 +287,24 @@ export async function PATCH(request) {
 
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-    const { data: current, error: curErr } = await adminSupabase
-      .from('billing_submissions')
-      .select('status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period, paid_at, payment_amount')
-      .eq('id', id)
-      .maybeSingle()
+    // Waiver columns from migration 062 are read only when present (has062).
+    const CURRENT_COLS = 'status, sub_id, sub_email, job_id, amount_billed, company_name, ready_to_pay, draw_request_id, retainage_pct, retainage_held, nv_reimbursement, billing_period, paid_at, payment_amount, invoice_number, lien_waiver_signed_at, lien_waiver_signer_name, lien_waiver_signature, lien_waiver_sent_at'
+    const readCurrent = cols => adminSupabase.from('billing_submissions').select(cols).eq('id', id).maybeSingle()
+    let has062 = true
+    let { data: current, error: curErr } = await readCurrent(CURRENT_COLS + ', lien_waiver_amount, lien_waiver_through, lien_waiver_history')
+    if (curErr && isMissingColumnError(curErr)) {
+      has062 = false
+      ;({ data: current, error: curErr } = await readCurrent(CURRENT_COLS))
+    }
 
     if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
     if (!current) return Response.json({ error: 'Not found' }, { status: 404 })
     const emailSub = rawFields.email_sub === true
     const paymentRequested = ['record_payment_amount', 'payment_amount', 'paid_at'].some(k => k in rawFields)
     let paymentPlan = null
+    let savedDespiteDup = null
+    let termChanges = []
+    let waiverVoided = false
 
     let fields
     if (isPM(auth.role)) {
@@ -341,6 +397,44 @@ export async function PATCH(request) {
       if (current.draw_request_id && fields.status && fields.status !== current.status && fields.draw_request_id && fields.draw_request_id !== current.draw_request_id) {
         return Response.json({ error: 'Review this billing on its current draw first, then move it to another draw.' }, { status: 422 })
       }
+
+      // Changing the invoice # to one this company already has on the job: confirm first.
+      if ('invoice_number' in fields && normalizeInvoiceNumber(fields.invoice_number) && normalizeInvoiceNumber(fields.invoice_number) !== normalizeInvoiceNumber(current.invoice_number)) {
+        const found = await findDuplicateInvoice({ jobId: current.job_id, invoiceNumber: fields.invoice_number, subId: current.sub_id, companyName: fields.company_name || current.company_name, excludeId: id })
+        if (found.error) return Response.json({ error: found.error }, { status: 500 })
+        if (found.dup) {
+          if (rawFields.confirm_duplicate !== true) return duplicateResponse(found.dup)
+          savedDespiteDup = found.dup
+        }
+      }
+
+      // A signed lien waiver covers the amount / retainage / period it was signed for. When
+      // those change, the signature is voided in the same guarded write (and kept in
+      // lien_waiver_history once 062 is applied); clearing lien_waiver_sent_at lets the next
+      // approval send a fresh waiver. Paper-waiver flags (lien_waiver_received*) are untouched.
+      termChanges = waiverTermChanges(current, fields)
+      if (current.lien_waiver_signed_at && termChanges.length) {
+        const voidedAt = new Date().toISOString()
+        Object.assign(fields, VOIDED_WAIVER_PATCH)
+        if (has062) {
+          const history = Array.isArray(current.lien_waiver_history) ? current.lien_waiver_history : []
+          Object.assign(fields, {
+            lien_waiver_amount: null,
+            lien_waiver_through: null,
+            lien_waiver_history: [...history, {
+              voided_at: voidedAt,
+              voided_by: auth.userId,
+              reason: voidReason(termChanges),
+              signed_at: current.lien_waiver_signed_at,
+              signer_name: current.lien_waiver_signer_name || null,
+              amount: current.lien_waiver_amount ?? current.amount_billed ?? null,
+              through: current.lien_waiver_through ?? current.billing_period ?? null,
+              signature: current.lien_waiver_signature || null,
+            }],
+          })
+        }
+        waiverVoided = true
+      }
     } else if (isSub(auth.role)) {
       // Subs can only edit their own pending submissions
       if (current.sub_id !== auth.userId) return Response.json({ error: 'Forbidden' }, { status: 403 })
@@ -381,7 +475,10 @@ export async function PATCH(request) {
     const tagging = isPM(auth.role) && !!update.draw_request_id && update.draw_request_id !== (current.draw_request_id || null)
     const approvingNow = fields.status === 'approved' && current.status !== 'approved'
     const tagGuard = q => (tagging && !approvingNow ? q.eq('status', 'approved') : q)
-    const statusGuard = q => tagGuard(paidGuard(payGuard(linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q))))
+    // A waiver-term edit lands only on the signature state we read, so a signature that
+    // arrives mid-edit is neither silently voided nor silently kept.
+    const waiverGuard = q => (isPM(auth.role) && termChanges.length ? same(q, 'lien_waiver_signed_at', current.lien_waiver_signed_at) : q)
+    const statusGuard = q => waiverGuard(tagGuard(paidGuard(payGuard(linkGuard(fields.status && fields.status !== current.status ? q.eq('status', current.status) : q)))))
 
     // First review of a billing on a draw (the lock above only lets that through on an OPEN
     // draw, with no other financial change): the write must also see the draw still open.
@@ -393,9 +490,16 @@ export async function PATCH(request) {
       const { data: reloaded } = await adminSupabase.from('billing_submissions').select(SAVED_COLS).eq('id', id).maybeSingle()
       saved = reloaded
     } else {
-      let { data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(update).eq('id', id)).select(SAVED_COLS)
+      const write = patch => statusGuard(adminSupabase.from('billing_submissions').update(patch).eq('id', id)).select(SAVED_COLS)
+      let written = update
+      let { data: updatedRows, error } = await write(written)
+      // 062 not applied yet: void without the history / signed-terms columns.
+      if (error && mentions062(error)) {
+        written = without062(written)
+        ;({ data: updatedRows, error } = await write(written))
+      }
       if (error?.message?.includes('schema cache')) {
-        ({ data: updatedRows, error } = await statusGuard(adminSupabase.from('billing_submissions').update(withoutNew032(update)).eq('id', id)).select(SAVED_COLS))
+        ({ data: updatedRows, error } = await write(withoutNew032(written)))
       }
       if (error) return Response.json({ error: error.message }, { status: 500 })
       if (!updatedRows?.length) return Response.json({ error: 'This billing was changed by someone else. Refresh and try again.' }, { status: 409 })
@@ -426,6 +530,14 @@ export async function PATCH(request) {
       }
       if ('amount_billed' in fields && String(fields.amount_billed) !== String(current.amount_billed)) {
         logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'amount_billed', old_value: fmtAmt(current.amount_billed), new_value: fmtAmt(fields.amount_billed), changed_by: auth.userId, note: `Billing amount updated — ${current.company_name || ''}` })
+      }
+      if (waiverVoided) {
+        const signedOn = String(current.lien_waiver_signed_at).slice(0, 10)
+        const signedAmt = fmtAmt(current.lien_waiver_amount ?? current.amount_billed) || '$0.00'
+        await logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'lien_waiver', old_value: `signed ${signedOn} by ${current.lien_waiver_signer_name || 'unknown'} for ${signedAmt}`, new_value: 'voided', changed_by: auth.userId, note: 'Lien waiver voided — billing amount/retainage/period changed; a new waiver is sent to the sub now if the billing stays approved, or when it is approved again.' })
+      }
+      if (savedDespiteDup) {
+        await logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'invoice_number', old_value: current.invoice_number ?? null, new_value: fields.invoice_number, changed_by: auth.userId, note: `Saved despite possible duplicate of Invoice #${savedDespiteDup.invoice_number} (${savedDespiteDup.id})` })
       }
       if (fields.ready_to_pay === true && (fields.status || current.status) === 'approved') {
         logChange({ job_id: current.job_id, entity_type: 'billing', entity_id: id, field_name: 'ready_to_pay', old_value: 'false', new_value: 'true', changed_by: auth.userId, note: `Marked ready to pay — ${current.company_name || ''}` })
@@ -484,11 +596,27 @@ export async function PATCH(request) {
       emailError = await emailBillingDecision(savedRow, fields.status, fields.rejection_reason)
     }
 
+    // A signed waiver voided on a billing that stays approved: nothing will approve it
+    // again, so send the fresh waiver now (signed_at / sent_at were just cleared). The
+    // edit is already saved; a send failure is only reported. A billing moved out of
+    // approved gets its waiver from the pending → approved path above later.
+    const resendVoided = waiverVoided && !decided && current.status === 'approved' && savedRow.status === 'approved'
+    if (resendVoided) {
+      try {
+        const w = await sendLienWaiver({ db: adminSupabase, resend, submissionId: id })
+        if (!w.ok) waiverError = w.error
+        else waiverSent = !w.skipped
+      } catch (e) {
+        waiverError = e?.message || 'Could not send the new lien waiver.'
+      }
+    }
+
     return Response.json({
       ok: true, emailError,
-      ...(decided && fields.status === 'approved' ? { waiverSent, waiverError } : {}),
+      ...((decided && fields.status === 'approved') || resendVoided ? { waiverSent, waiverError } : {}),
       ...('draw_request_id' in update && update.draw_request_id === null && current.draw_request_id ? { untagged: true } : {}),
       ...(paymentPlan?.summary ? { payment: paymentPlan.summary } : {}),
+      ...(waiverVoided ? { waiverVoided: true } : {}),
     })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

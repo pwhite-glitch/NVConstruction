@@ -48,6 +48,9 @@ import { uploadJobDocument, signedJobDocUrl, deleteJobDocument } from '../../lib
 import { isPrincipal, atLeastPM, isJobLimited, isOnJob, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { canWriteJobDetails } from '../../lib/job-details'
 import { closeoutStatus, closeoutList, CLOSEOUT_SOURCE_LABELS } from '../../lib/closeout'
+import { findDuplicateBillings, duplicateTooltip, duplicateDate, duplicateMoney } from '../../lib/billing-duplicates'
+import { signedWaiverTerms, throughLabel, safeSignatureSrc, LEGACY_WAIVER_NOTE, waiverTermChanges } from '../../lib/lien-waiver-terms'
+import { escapeHtml } from '../../lib/email'
 
 const s = {
   // ── Layout ──
@@ -5192,16 +5195,30 @@ ${attachmentHtml}
       submitted_at: now,
       reviewed_at: status === 'approved' ? now : null,
     }
-    let res, result
-    if (createBillingFile) {
-      const formData = new FormData()
-      formData.append('file', createBillingFile)
-      formData.append('data', JSON.stringify(rowData))
-      res = await authFetch('/api/billing-entry', { method: 'POST', body: formData })
-    } else {
-      res = await authFetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData) })
+    const postBilling = async data => {
+      if (createBillingFile) {
+        const formData = new FormData()
+        formData.append('file', createBillingFile)
+        formData.append('data', JSON.stringify(data))
+        return authFetch('/api/billing-entry', { method: 'POST', body: formData })
+      }
+      return authFetch('/api/billing-entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
     }
-    result = await res.json()
+    let res = await postBilling(rowData)
+    let result = await res.json().catch(() => ({}))
+    // Same invoice # already on this job for this company: ask, then resend with confirm_duplicate.
+    if (res.status === 409 && result.needs_confirm) {
+      const d = result.duplicate || {}
+      const ok = window.confirm(`This looks like a duplicate of Invoice #${d.invoice_number} from ${duplicateDate(d.submitted_at)} (${d.status}, $${duplicateMoney(d.amount_billed)}). Save anyway?`)
+      if (!ok) {
+        setCreateBillingError(`Not saved — Invoice #${d.invoice_number} is already entered for this company. Change the invoice number or confirm to save anyway.`)
+        setCreatingBilling(false)
+        return
+      }
+      res = await postBilling({ ...rowData, confirm_duplicate: true })
+      result = await res.json().catch(() => ({}))
+    }
+    if (!res.ok && !result.error) result.error = `HTTP ${res.status}`
     if (result.error) { setCreateBillingError(result.error) }
     else {
       setCreateBillingError('')
@@ -5228,6 +5245,7 @@ ${attachmentHtml}
     const origAmt = parseFloat(editBillingForm.amount_billed) || 0
     const retPctRaw = parseFloat(editBillingForm.retainage_pct)
     const editRetPct = isNaN(retPctRaw) ? 0 : retPctRaw
+    const savedRow = billingSubmissions.find(x => x.id === editingBilling)
     const patchData = {
       id: editingBilling,
       amount_billed: origAmt,
@@ -5254,6 +5272,16 @@ ${attachmentHtml}
       for (const k of ['amount_billed', 'retainage_pct', 'retainage_held', 'nv_reimbursement', 'billing_period']) delete patchData[k]
       if (!firstReviewOnDraw) for (const k of ['status', 'reviewed_at', 'rejection_reason', 'email_sub']) delete patchData[k]
     }
+    // Amount and retainage % unchanged: keep the stored retainage $ (a re-rounded value would
+    // count as a change and void a signed lien waiver).
+    if (savedRow && 'retainage_held' in patchData && !waiverTermChanges(savedRow, { amount_billed: patchData.amount_billed, retainage_pct: patchData.retainage_pct }).length) {
+      patchData.retainage_held = savedRow.retainage_held
+    }
+    // A signed waiver covers the amount / retainage / period it was signed for.
+    if (savedRow?.lien_waiver_signed_at && waiverTermChanges(savedRow, patchData).length) {
+      const signedAmt = Number(signedWaiverTerms(savedRow).amount || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+      if (!window.confirm(`This billing has a signed lien waiver for ${signedAmt}. Changing it voids that signature; a new waiver is sent to the sub now if the billing stays approved, or when it is approved again. Continue?`)) return
+    }
     let res
     if (editBillingFile) {
       const formData = new FormData()
@@ -5265,8 +5293,13 @@ ${attachmentHtml}
     }
     const result = await res.json().catch(() => ({}))
     if (!res.ok || result.error) { alert('Save error: ' + (result.error || `HTTP ${res.status}`)); return }
+    if (result.waiverVoided) {
+      alert('Lien waiver voided — the signed waiver no longer matches this billing. ' + (result.waiverError
+        ? 'Saved, but the new lien waiver was not sent: ' + result.waiverError
+        : result.waiverSent ? 'A new waiver was sent to the sub now.' : 'A new waiver is sent to the sub when the billing is approved again.'))
+    }
     if (result.emailError) alert('Saved, but the email to the sub was not sent: ' + result.emailError)
-    if (result.waiverError) alert('Approved, but the lien waiver was not sent: ' + result.waiverError)
+    if (result.waiverError && !result.waiverVoided) alert('Approved, but the lien waiver was not sent: ' + result.waiverError)
     setEditingBilling(null)
     setEditBillingFile(null)
     await loadBillingForJob()
@@ -5347,6 +5380,8 @@ ${attachmentHtml}
   }
 
   async function approveBilling(billingId) {
+    const dupMatches = findDuplicateBillings(billingSubmissions)[billingId]
+    if (dupMatches?.length && !window.confirm(`This billing looks like a possible duplicate of:\n${duplicateTooltip(dupMatches, billingSubmissions)}\n\nApprove anyway?`)) return
     setApprovingBillingId(billingId)
     const res = await authFetch('/api/billing-entry', {
       method: 'PATCH',
@@ -5845,6 +5880,8 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
   const approvedCOValue = allCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
   const pendingBillingCount = billingSubmissions.filter(b => b.status === 'pending').length
   const approvedBillingTotal = billingSubmissions.filter(b => b.status === 'approved').reduce((a, b) => a + Number(b.amount_billed || 0), 0)
+  // "Possible duplicate" on the Billing tab: same company + same invoice #, or same amount + period
+  const billingDups = findDuplicateBillings(billingSubmissions)
   // Sub billings credited per contract through billing_sov_lines -> subcontract_sov_lines (see lib/contract-billing.js)
   const billingAlloc = allocateJobBillings({
     contracts,
@@ -9957,6 +9994,11 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           {b.ready_to_pay && <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>READY TO PAY</span>}
                           {b.nv_cuts_check && <span style={{ fontSize: '10px', color: '#e8590c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV CUTS CHECK</span>}
                           {b.nv_reimbursement && <span style={{ fontSize: '10px', color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>NV REIMBURSEMENT</span>}
+                          {billingDups[b.id]?.length > 0 && (
+                            <span title={duplicateTooltip(billingDups[b.id], billingSubmissions)} style={{ padding: '3px 10px', borderRadius: '99px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', background: '#fff7ed', color: '#d97706', border: '1px solid #4a3800', cursor: 'help' }}>
+                              Possible duplicate
+                            </span>
+                          )}
                           {b.status === 'approved' && b.lien_waiver_signed_at
                             ? <span style={{ fontSize: '10px', color: '#16a34a', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontWeight: '700', letterSpacing: '0.5px' }}>WAIVER SIGNED</span>
                             : b.status === 'approved' && b.lien_waiver_sent_at
@@ -10055,8 +10097,12 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           )}
                           {b.lien_waiver_signed_at && (
                             <button style={s.btnSmall} onClick={() => {
-                              const amt = parseFloat(b.amount_billed || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-                              const period = b.billing_period ? new Date(b.billing_period + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                              // Print what was signed (signedWaiverTerms); every text field escaped.
+                              const terms = signedWaiverTerms(b)
+                              const esc = escapeHtml
+                              const amt = parseFloat(terms.amount || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                              const period = throughLabel(terms.through)
+                              const sigSrc = safeSignatureSrc(b.lien_waiver_signature)
                               const w = window.open('', '_blank')
                               if (!w) { alert('Please allow popups for this site to generate PDFs.'); return; }
                               w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Signed Lien Waiver</title><style>body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:0 24px;color:#000}.grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #ccc;border-radius:4px;overflow:hidden;margin-bottom:16px;font-size:13px}.cell{padding:10px 12px;border-bottom:1px solid #ddd}.cell:nth-child(odd){border-right:1px solid #ddd}.cell label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#888;margin-bottom:3px}.body{font-size:12px;line-height:1.8;color:#333;margin-bottom:24px;border:1px solid #ccc;padding:16px}.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}.sig-img{max-width:200px;max-height:60px}.sig-label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-top:4px}@media print{.no-print{display:none}}</style></head><body>
@@ -10065,19 +10111,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 <h1 style="text-align:center;font-size:16px;text-transform:uppercase;letter-spacing:2px;">Signed Lien Waiver</h1>
 <p style="text-align:center;font-size:11px;color:#555;font-style:italic;margin-bottom:24px;">Effective upon receipt of payment in good funds</p>
 <div class="grid">
-<div class="cell"><label>Claimant</label><span>${b.company_name}</span></div>
+<div class="cell"><label>Claimant</label><span>${esc(b.company_name)}</span></div>
 <div class="cell"><label>Hiring Party</label><span>NV Construction</span></div>
-<div class="cell"><label>Project</label><span>#${job?.job_number} — ${job?.project_name}</span></div>
-<div class="cell"><label>Owner</label><span>${job?.owner_company || job?.owner_name || 'Project Owner'}</span></div>
-<div class="cell"><label>Payment Amount</label><span style="font-size:16px;font-weight:800;">${amt}</span></div>
-<div class="cell"><label>Through Date</label><span>${period}</span></div>
+<div class="cell"><label>Project</label><span>#${esc(job?.job_number)} — ${esc(job?.project_name)}</span></div>
+<div class="cell"><label>Owner</label><span>${esc(job?.owner_company || job?.owner_name || 'Project Owner')}</span></div>
+<div class="cell"><label>Payment Amount</label><span style="font-size:16px;font-weight:800;">${esc(amt)}</span>${terms.legacy ? `<div style="font-size:10px;color:#666;margin-top:4px;">${esc(LEGACY_WAIVER_NOTE)}</div>` : ''}</div>
+<div class="cell"><label>Through Date</label><span>${esc(period)}</span></div>
 </div>
 <div class="body">This document conditionally waives and releases any mechanic's lien, stop payment notice, or payment bond right the Claimant has for labor, services, equipment, or materials furnished through the Through Date on the Project, conditioned on receipt of the Conditional Payment Amount in good funds.</div>
 <div class="sig-grid">
-<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Signature</p>${b.lien_waiver_signature ? `<img src="${b.lien_waiver_signature}" class="sig-img" />` : ''}<div class="sig-label">Electronic signature</div></div>
-<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Printed Name</p><p style="margin:4px 0;font-size:14px;font-weight:600;">${b.lien_waiver_signer_name || ''}</p><div class="sig-label">Name</div></div>
-<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Date Signed</p><p style="margin:4px 0;font-size:13px;">${new Date(b.lien_waiver_signed_at).toLocaleDateString()}</p><div class="sig-label">Date</div></div>
-<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Company</p><p style="margin:4px 0;font-size:13px;">${b.company_name}</p><div class="sig-label">Company</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Signature</p>${sigSrc ? `<img src="${esc(sigSrc)}" class="sig-img" />` : ''}<div class="sig-label">Electronic signature</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Printed Name</p><p style="margin:4px 0;font-size:14px;font-weight:600;">${esc(b.lien_waiver_signer_name || '')}</p><div class="sig-label">Name</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Date Signed</p><p style="margin:4px 0;font-size:13px;">${esc(new Date(b.lien_waiver_signed_at).toLocaleDateString())}</p><div class="sig-label">Date</div></div>
+<div><p style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 6px;">Company</p><p style="margin:4px 0;font-size:13px;">${esc(b.company_name)}</p><div class="sig-label">Company</div></div>
 </div></body></html>`)
                               w.document.close()
                             }}>View Waiver</button>

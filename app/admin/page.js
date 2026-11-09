@@ -12,6 +12,7 @@ import { prepareDirectorySave } from '../../lib/company-identity'
 import { todayCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { isCoiDate, fmtCoiDate } from '../../lib/coi-status'
 import { billingPaymentSummary, billingPaidAmount, buildPaymentRequest, paymentMismatchWarning } from '../../lib/billing-payment'
+import { signedWaiverTerms, waiverTermChanges } from '../../lib/lien-waiver-terms'
 
 const CATEGORIES = ['Materials', 'Equipment', 'Labor', 'Subcontractor', 'Permits & Fees', 'Other']
 const PAYMENT_METHODS = ['Check', 'ACH', 'Wire', 'Owner Direct', 'Credit Card', 'Other']
@@ -414,14 +415,45 @@ export default function AdminPortal() {
     if (editBillForm.amount_billed !== '') body.amount_billed = parseFloat(editBillForm.amount_billed)
     if (editBillForm.retainage_held !== '') body.retainage_held = parseFloat(editBillForm.retainage_held)
     if (editBillForm.work_description !== '') body.work_description = editBillForm.work_description
+    // A signed waiver covers the amount / retainage / period it was signed for (same warning
+    // as the job page). The server ignores an amount edit on an approved billing sent without
+    // a status, so only count the fields that will really be saved.
+    const savedRow = billing.find(x => x.id === subId)
+    if (savedRow?.lien_waiver_signed_at) {
+      const termFields = { ...body }
+      if (savedRow.status === 'approved') delete termFields.amount_billed
+      if (waiverTermChanges(savedRow, termFields).length) {
+        const signedAmt = Number(signedWaiverTerms(savedRow).amount || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+        if (!window.confirm(`This billing has a signed lien waiver for ${signedAmt}. Changing it voids that signature; a new waiver is sent to the sub now if the billing stays approved, or when it is approved again. Continue?`)) { setSavingBillEdit(false); return }
+      }
+    }
     const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify(body) }).catch(e => ({ ok: false, json: async () => ({ error: e?.message || 'network error' }) }))
+    const send = payload => fetch('/api/billing-entry', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify(payload) }).catch(e => ({ ok: false, json: async () => ({ error: e?.message || 'network error' }) }))
+    let res = await send(body)
+    let data = await res.json().catch(() => ({}))
+    // Possible duplicate invoice #: confirm, then save anyway.
+    if (res.status === 409 && data?.needs_confirm) {
+      const d = data.duplicate || {}
+      const when = d.submitted_at ? new Date(d.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' }) : 'an earlier date'
+      const amt = Number(d.amount_billed || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      if (!window.confirm(`This looks like a duplicate of Invoice #${d.invoice_number} from ${when} (${d.status || 'pending'}, $${amt}). Save anyway?`)) {
+        setSavingBillEdit(false)
+        setPayMsg('Not saved — possible duplicate invoice.')
+        return
+      }
+      res = await send({ ...body, confirm_duplicate: true })
+      data = await res.json().catch(() => ({}))
+    }
     setSavingBillEdit(false)
     if (!res.ok) {
       // e.g. a net (billed − retainage) below what's already been paid is refused.
-      const data = await res.json().catch(() => ({}))
       setPayMsg('Error saving billing: ' + (data?.error || `HTTP ${res.status}`))
       return
+    }
+    if (data?.waiverVoided) {
+      alert('Lien waiver voided — the signed waiver no longer matches this billing. ' + (data.waiverError
+        ? 'Saved, but the new lien waiver was not sent: ' + data.waiverError
+        : data.waiverSent ? 'A new waiver was sent to the sub now.' : 'A new waiver is sent to the sub when the billing is approved again.'))
     }
     setEditingBillId(null)
     await loadBilling()

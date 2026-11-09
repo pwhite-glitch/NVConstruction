@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { requireAuth } from '../../../../lib/server-auth'
-import { billingContext } from '../../../../lib/sub-access'
+import { billingContext, getCompanyName } from '../../../../lib/sub-access'
+import { normalizeInvoiceNumber, duplicateDate, sameBillingCompanyName } from '../../../../lib/billing-duplicates'
 import { contractsWithBaseSov } from '../../../../lib/sov-lines'
 import { emailWrap, escapeHtml } from '../../../../lib/email'
 import { withoutNew032 } from '../../../../lib/billing-fields'
@@ -54,6 +55,24 @@ export async function POST(request) {
     if (ctx.contracts.length === 0) return Response.json({ error: 'No subcontract on file for this project.' }, { status: 400 })
     if (!body.invoice_number?.trim()) return Response.json({ error: 'Invoice number is required.' }, { status: 400 })
     if (!body.doc_url || !String(body.doc_url).startsWith(`${auth.userId}/`)) return Response.json({ error: 'Invoice PDF is required.' }, { status: 400 })
+
+    // Same invoice # already submitted on this job by anyone at the company (not rejected) →
+    // refuse. A failed read refuses too (fails closed). Rejected billings never block.
+    const { data: earlier, error: dupErr } = await adminSupabase
+      .from('billing_submissions')
+      .select('id, job_id, invoice_number, submitted_at, status, amount_billed, sub_id, company_name')
+      .eq('job_id', body.job_id)
+    if (dupErr) return Response.json({ error: 'Could not check for a duplicate invoice: ' + dupErr.message }, { status: 500 })
+    const memberIds = new Set((ctx.members || []).map(m => m.id))
+    memberIds.add(auth.userId)
+    const companyNames = [await getCompanyName(ctx.profile.company_id), ctx.profile.company_name].filter(n => n && String(n).trim())
+    const ours = (earlier || []).filter(r => memberIds.has(r.sub_id) || companyNames.some(n => sameBillingCompanyName(r.company_name, n)))
+    const wanted = normalizeInvoiceNumber(body.invoice_number)
+    const dup = ours.find(r => r.status !== 'rejected' && normalizeInvoiceNumber(r.invoice_number) === wanted)
+    if (dup) {
+      const n = String(body.invoice_number).trim().replace(/^#+\s*/, '')
+      return Response.json({ error: `Invoice #${n} was already submitted for this project on ${duplicateDate(dup.submitted_at)} (${dup.status || 'pending'}). If this is a different invoice, enter its own invoice number.` }, { status: 409 })
+    }
 
     // The sub's schedule on this job's billable contracts
     const contractMap = Object.fromEntries(ctx.contracts.map(c => [c.id, c]))
@@ -129,8 +148,9 @@ export async function POST(request) {
       ({ data: newSub, error } = await adminSupabase.from('billing_submissions').insert(withoutNew032(row)).select().single())
     }
     if (error) return Response.json({ error: error.message }, { status: 500 })
-    await emailPmBillingSubmitted(ctx.job, newSub)
 
+    // Header and lines are saved together: if the lines fail, take the header back out so a
+    // billing never exists without its lines (the next 100% check would not count it).
     if (sovIn.length) {
       const { error: lineErr } = await adminSupabase.from('billing_sov_lines').insert(sovIn.map(l => ({
         billing_submission_id: newSub.id,
@@ -138,8 +158,16 @@ export async function POST(request) {
         amount: l.amount,
         pct_this_period: l.pct_this_period,
       })))
-      if (lineErr) return Response.json({ ok: true, submission: newSub, warning: 'Billing saved, but the line-item breakdown failed to save: ' + lineErr.message })
+      if (lineErr) {
+        const { error: delErr } = await adminSupabase.from('billing_submissions').delete().eq('id', newSub.id)
+        if (delErr) {
+          return Response.json({ error: `Your billing was not saved: ${lineErr.message}. Cleaning up the partial billing also failed (${delErr.message}) — contact NV Construction before resubmitting.` }, { status: 500 })
+        }
+        return Response.json({ error: 'Your billing was not saved: ' + lineErr.message }, { status: 500 })
+      }
     }
+    // Only after header + lines are saved
+    await emailPmBillingSubmitted(ctx.job, newSub)
     return Response.json({ ok: true, submission: newSub })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })

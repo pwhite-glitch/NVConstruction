@@ -7,6 +7,7 @@ import { authFetch } from '../../lib/client-fetch'
 import { isSubcontractSigned } from '../../lib/signing'
 import { safePageTab, wrongPageHref } from '../../lib/job-links'
 import { contractCommittedForItem } from '../../lib/residential-money'
+import { committedForBudgetLine, laborCostForLine, jobEacSummary, eacBlurAction } from '../../lib/eac-forecast'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
@@ -2385,6 +2386,8 @@ function JobDetailInner() {
     if (!activeAia) return
     const app = activeAia
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
+    // Printed label = the rate the math uses (a 0% retainage release prints 0%, not 10%).
+    const retPctLabel = +(retPct * 100).toFixed(2)
     const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const baseContract = Number(job.contract_value || 0)
     const contractSumToDate = calcContractSumToDate({ job, app, primeCOs, nvSubcontracts, lines: aiaLines })
@@ -2566,7 +2569,7 @@ ${isDraft ? `<div class="draft-banner">DRAFT — Billing period end date is requ
   <div class="info-cell">
     <div class="info-label">Billing Period</div>
     <div class="info-val">${periodFrom} – ${periodTo}</div>
-    <div class="info-sub">Retainage: ${app.retainage_pct || 10}%</div>
+    <div class="info-sub">Retainage: ${retPctLabel}%</div>
   </div>
 </div>
 
@@ -2575,7 +2578,7 @@ ${isDraft ? `<div class="draft-banner">DRAFT — Billing period end date is requ
   <tr><td>2</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
   <tr><td>3</td><td>Contract Sum to Date (Lines 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
   <tr><td>4</td><td>Total Completed &amp; Stored to Date (Column G of G703)</td><td>${fmt(totalCompleted)}</td></tr>
-  <tr><td>5</td><td>Retainage: ${app.retainage_pct || 10}% of Completed Work (Column I of G703)</td><td>(${fmt(totalRetainage)})</td></tr>
+  <tr><td>5</td><td>Retainage: ${retPctLabel}% of Completed Work (Column I of G703)</td><td>(${fmt(totalRetainage)})</td></tr>
   <tr><td>6</td><td>Total Earned Less Retainage (Line 4 less Line 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
   <tr><td>7</td><td>Less Previous Certificates for Payment</td><td>(${fmt(prevCertificates)})</td></tr>
   <tr class="due"><td>8</td><td>CURRENT PAYMENT DUE</td><td>${fmtSigned(currentPaymentDue)}</td></tr>
@@ -3799,7 +3802,8 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     setTimeout(() => setToast(t => (t?.text === text ? null : t)), 3500)
   }
 
-  // Assigns the contract's sub to this job with billing OFF. Sends no email.
+  // Assigns the contract's sub to this job with billing off unless they already billed on
+  // this job. Sends no email.
   async function ensureAssignedForContract({ email, subUserId, companyId }) {
     const normalEmail = email?.toLowerCase() || null
     if (!normalEmail && !companyId) return
@@ -3808,20 +3812,30 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       (companyId && s.company_id === companyId)
     )
     if (alreadyAssigned) return
-    if (companyId) {
-      // Company-level: everyone at the company set to "All company jobs" sees it
-      await authFetch('/api/company-job-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, company_id: companyId, action: 'add_company' }) })
-    } else {
-      await authFetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, sub_id: subUserId || null, company_id: null, invited_at: new Date().toISOString(), billing_enabled: false }) })
+    // The server (/api/subcontracts) also assigns on save/activate; this call is a second
+    // chance, and its failure is shown instead of being swallowed.
+    let errText = null
+    try {
+      const res = companyId
+        // Company-level: everyone at the company set to "All company jobs" sees it
+        ? await authFetch('/api/company-job-access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, company_id: companyId, action: 'add_company' }) })
+        : await authFetch('/api/job-assignments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ job_id: id, sub_email: normalEmail, sub_id: subUserId || null, company_id: null, invited_at: new Date().toISOString(), billing_enabled: false }) })
+      const json = await res.json().catch(() => ({}))
+      // 409 = already assigned (e.g. the server just did it) — that's fine.
+      if ((!res.ok && res.status !== 409) || (json.error && res.status !== 409)) errText = json.error || `HTTP ${res.status}`
+    } catch (e) {
+      errText = e?.message || 'network error'
     }
+    if (errText) { setErrMsg('Contract saved, but the sub was not added to the job: ' + errText); setTimeout(() => setErrMsg(''), 6000) }
     await reloadSubs()
   }
 
   // ── Contracts ──────────────────────────────────────────────
   // asDraft = true → saved as a draft: PM-only, not assigned, nothing sent.
   // asDraft = false → saved active: visible in the sub portal and the sub is assigned
-  // to the job with billing off. No email either way (billing email is sent from
-  // "Enable billing" on the Companies tab, and only if the PM ticks the box).
+  // to the job with billing off unless they already billed on this job. No email either
+  // way (billing email is sent from "Enable billing" on the Companies tab, and only if
+  // the PM ticks the box).
   async function addContract(asDraft = false) {
     if (!contractForm.dir_id || !contractForm.contract_value || !contractForm.description) {
       setErrMsg('Pick a subcontractor and enter a contract value and description.'); setTimeout(() => setErrMsg(''), 4000); return
@@ -3883,6 +3897,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     if (!scRes.ok) { setErrMsg(scJson.error || 'Failed to save contract'); setTimeout(() => setErrMsg(''), 4000) }
     else {
       setShowAddContract(false); setContractForm(emptyContract); setContractBidFile(null); await loadContracts()
+      if (scJson.assignment_error) { setErrMsg('Subcontract saved, but the sub was not added to the job: ' + scJson.assignment_error); setTimeout(() => setErrMsg(''), 8000) }
       if (!asDraft) await ensureAssignedForContract({ email: dirEntry?.email, subUserId, companyId })
       showToast(asDraft
         ? `Saved as draft — ${dirEntry?.company_name || 'subcontract'} (not visible to the sub)`
@@ -3893,9 +3908,11 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
 
   async function activateContract(c) {
     const name = c.vendor_name || 'this sub'
-    if (!window.confirm(`Activate this subcontract?\n\n${name} will see it in their portal and be assigned to this job with billing OFF.\nNo email is sent. Turn on billing from the Companies tab when ready.`)) return
+    if (!window.confirm(`Activate this subcontract?\n\n${name} will see it in their portal and be assigned to this job with billing off unless they already billed on this job.\nNo email is sent. Turn on billing from the Companies tab when ready.`)) return
     const res = await authFetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id, status: 'active' }) })
-    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg('Activate failed: ' + (j.error || res.status)); setTimeout(() => setErrMsg(''), 5000); return }
+    const actJson = await res.json().catch(() => ({}))
+    if (!res.ok) { setErrMsg('Activate failed: ' + (actJson.error || res.status)); setTimeout(() => setErrMsg(''), 5000); return }
+    if (actJson.assignment_error) { setErrMsg('Subcontract activated, but the sub was not added to the job: ' + actJson.assignment_error); setTimeout(() => setErrMsg(''), 8000) }
     let email = null
     if (c.vendor_name) {
       const { data: dir } = await supabase.from('sub_directory').select('email').ilike('company_name', c.vendor_name).limit(1).maybeSingle()
@@ -4917,38 +4934,21 @@ ${attachmentHtml}
     await loadBudgetItems()
   }
 
+  // Labor and committed math lives in lib/eac-forecast.js, shared with /api/job-profit
+  // (Business Dev margins) so both show the same EAC.
   function laborCostForItem(budgetItemId) {
     const budgetItem = budgetItems.find(b => b.id === budgetItemId)
-    const itemText = budgetItem ? `${budgetItem.cost_code ? budgetItem.cost_code + ' — ' : ''}${budgetItem.description}` : null
-    return jobAllocations
-      .filter(a => {
-        if (a.allocation_type !== 'pm_allocation') return false
-        if (a.budget_item_id) return a.budget_item_id === budgetItemId
-        if (itemText && a.budget_line) return a.budget_line === itemText
-        return false
-      })
-      .reduce((sum, a) => {
-        const emp = a.employees
-        if (!emp) return sum
-        const weeklyRate = Number(emp.weekly_salary || 0) + Number(emp.weekly_truck || 0) + Number(emp.weekly_healthcare || 0) + Number(emp.weekly_taxes || 0)
-        const pct = a.percentage != null ? Number(a.percentage) : 100
-        const start = a.start_date ? new Date(a.start_date) : null
-        const end = a.end_date ? new Date(a.end_date) : new Date()
-        const days = start ? Math.max(0, Math.round((end - start) / (24 * 60 * 60 * 1000))) : 0
-        return sum + (weeklyRate * pct / 100 * days / 7)
-      }, 0)
+    return laborCostForLine(jobAllocations, budgetItem)
   }
 
   function committedForItem(budgetItemId) {
     // Subcontracts + approved sub COs: shared with the residential page (lib/residential-money.js)
     const contractCommitted = contractCommittedForItem(contracts, allCOs, budgetItemId)
-    const dcCommitted = directCosts
-      .filter(c => c.status === 'approved' && c.budget_item_id === budgetItemId)
-      .reduce((a, c) => a + (c.is_credit ? -1 : 1) * Number(c.amount || 0), 0)
-    const poCommitted = purchaseOrders
-      .filter(po => (po.status === 'issued' || po.status === 'received') && po.budget_item_id === budgetItemId)
-      .reduce((a, po) => a + Number(po.amount || 0), 0)
-    return contractCommitted + laborCostForItem(budgetItemId) + dcCommitted + poCommitted
+    // + labor, approved direct costs (credits negative), issued/received POs (lib/eac-forecast.js)
+    return committedForBudgetLine({
+      itemId: budgetItemId, contracts, subCOs: allCOs, directCosts, purchaseOrders,
+      laborForItem: laborCostForItem(budgetItemId), contractCommitted,
+    })
   }
 
   function committedBreakdownForItem(budgetItemId) {
@@ -5035,10 +5035,26 @@ ${attachmentHtml}
     return { contractLines, dcLines, poLines, laborLines }
   }
 
-  async function saveForecastEac(budgetItemId, value) {
-    const val = value === '' ? null : parseFloat(value)
-    await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: budgetItemId, fields: { forecast_eac: val } }) })
+  // Saves (or clears, with '' / null) one line's EAC override. Local state changes only
+  // after the server confirms; on failure the line goes back to prevValue and the error shows.
+  async function saveForecastEac(budgetItemId, value, prevValue) {
+    const val = value === '' || value == null ? null : parseFloat(value)
+    const fallback = prevValue !== undefined ? prevValue : budgetItems.find(b => b.id === budgetItemId)?.forecast_eac ?? null
+    let errText = null
+    try {
+      const res = await fetch('/api/budget-items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: budgetItemId, fields: { forecast_eac: val } }) })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) errText = json.error || `HTTP ${res.status}`
+    } catch (e) {
+      errText = e?.message || 'network error'
+    }
+    if (errText) {
+      setBudgetItems(prev => prev.map(b => b.id === budgetItemId ? { ...b, forecast_eac: fallback } : b))
+      setErrMsg('Could not save the EAC forecast: ' + errText); setTimeout(() => setErrMsg(''), 6000)
+      return false
+    }
     setBudgetItems(prev => prev.map(b => b.id === budgetItemId ? { ...b, forecast_eac: val } : b))
+    return true
   }
 
   // ── Subs ────────────────────────────────────────────────────
@@ -5068,7 +5084,7 @@ ${attachmentHtml}
         setAssignSubForm({ email: '', from_dir: '' })
         setAssigningSubLoading(false)
         setExpandedCompanyKey(companyId)
-        showToast(`${dirEntry.company_name} added to the job with billing off. No email sent. Next: choose who sees it.`)
+        showToast(`${dirEntry.company_name} added to the job with billing off unless they already billed on this job. No email sent. Next: choose who sees it.`)
         return
       }
     }
@@ -7514,31 +7530,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
               // not costs — exclude from EAC and variance so totals reflect true margin.
               const isProfitItem = item =>
                 item.cost_code === '1111' || item.description?.trim().toLowerCase() === 'profit'
-              const forecastRows = budgetItems.map(item => {
-                const profit = isProfitItem(item)
-                const spent = directCosts.filter(c => c.status === 'approved' && c.budget_item_id === item.id).reduce((a, c) => a + Number(c.amount || 0), 0)
-                const contracted = committedForItem(item.id)
-                const totalActual = contracted
-                const autoEac = totalActual > 0 ? totalActual : Number(item.budget_amount)
-                const eac = item.forecast_eac != null ? Number(item.forecast_eac) : autoEac
-                const revenue = item.owner_amount != null ? Number(item.owner_amount) : Number(item.budget_amount)
-                return { item, profit, spent, contracted, autoEac, eac, revenue,
-                  variance: profit ? null : Number(item.budget_amount) - eac,
-                  projProfit: profit ? revenue : revenue - eac }
+              // Shared with /api/job-profit (lib/eac-forecast.js): auto EAC = max(budget, committed, spent).
+              const { rows: forecastRows, totals: T } = jobEacSummary({
+                items: budgetItems, directCosts, isProfitItem,
+                committedFor: item => committedForItem(item.id),
               })
-              const T = forecastRows.reduce((acc, r) => ({
-                budget: acc.budget + Number(r.item.budget_amount), revenue: acc.revenue + r.revenue,
-                spent: acc.spent + r.spent, contracted: acc.contracted + r.contracted,
-                eac: acc.eac + r.eac,
-                variance: acc.variance + (r.profit ? 0 : r.variance),
-                projProfit: acc.projProfit + (r.profit ? r.revenue : r.projProfit),
-              }), { budget: 0, revenue: 0, spent: 0, contracted: 0, eac: 0, variance: 0, projProfit: 0 })
               const hdr = { fontSize: '11px', color: '#6b7280', textAlign: 'right' }
               const col = { display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1.2fr 1fr 1fr', gap: '8px', padding: '8px 12px' }
               return (
                 <div style={s.card}>
                   <p style={{ ...s.cardTitle, marginBottom: '0.5rem' }}>Cost to Complete Forecast</p>
-                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>EAC = Estimate at Completion. Auto-calculates from committed (contracts + approved direct costs + labor). Enter a value to override.</p>
+                  <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 1rem' }}>EAC = Estimate at Completion. The auto EAC is the larger of the budget, committed (contracts + approved direct costs + labor + POs), and spent. Type a value to override it; clear it (or ×) to go back to auto.</p>
                   <div style={{ ...s.statRow, marginBottom: '1.25rem' }} className="rx-stats">
                     <div style={s.statCard}><div style={s.statLabel}>Proj. profit</div><div style={s.statValue(T.projProfit >= 0 ? '#16a34a' : '#dc2626')}>{T.projProfit >= 0 ? '+' : '-'}${Math.abs(T.projProfit).toLocaleString()}</div></div>
                     <div style={s.statCard}><div style={s.statLabel}>Cost variance</div><div style={s.statValue(T.variance >= 0 ? '#16a34a' : '#dc2626')}>{T.variance >= 0 ? '+' : '-'}${Math.abs(T.variance).toLocaleString()}</div></div>
@@ -7568,8 +7570,19 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                               style={{ ...s.input, textAlign: 'right', padding: '4px 8px', fontSize: '12px', color: item.forecast_eac != null ? '#e8590c' : '#aaa' }}
                               value={item.forecast_eac != null ? String(item.forecast_eac) : String(Math.round(autoEac))}
                               onChange={e => setBudgetItems(prev => prev.map(b => b.id === item.id ? { ...b, forecast_eac: e.target.value === '' ? null : e.target.value } : b))}
-                              onFocus={e => e.target.select()}
-                              onBlur={e => saveForecastEac(item.id, e.target.value === '' ? '' : e.target.value)}
+                              onFocus={e => {
+                                // Remember what was shown, so a plain tab-through saves nothing.
+                                e.target.dataset.shown = e.target.value
+                                e.target.dataset.orig = item.forecast_eac != null ? String(item.forecast_eac) : ''
+                                e.target.select()
+                              }}
+                              onBlur={e => {
+                                const orig = e.target.dataset.orig ?? ''
+                                const prev = orig === '' ? null : Number(orig)
+                                const act = eacBlurAction({ shown: e.target.dataset.shown, typed: e.target.value, hasOverride: orig !== '', autoEac })
+                                if (act.save) saveForecastEac(item.id, act.value == null ? '' : act.value, prev)
+                                else setBudgetItems(prev2 => prev2.map(b => b.id === item.id ? { ...b, forecast_eac: prev } : b))
+                              }}
                             />
                             {item.forecast_eac != null && (
                               <button title="Reset to auto" onClick={() => saveForecastEac(item.id, '')} style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '14px', lineHeight: 1, padding: '0 2px' }}>×</button>

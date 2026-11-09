@@ -37,6 +37,7 @@ import JobNumberHint from '../components/JobNumberHint'
 import { useJobNumbers, confirmJobNumberFree } from '../../lib/use-job-numbers'
 import { jobNumberSaveError } from '../../lib/job-numbers'
 import { getSiteUrl } from '../../lib/site-url'
+import { retainagePctOrDefault } from '../../lib/retainage-pct'
 
 const TRADES = [
   'Concrete', 'Masonry', 'Structural Steel', 'Carpentry / Framing',
@@ -2681,7 +2682,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
     const body = {
       vendor_name: sub.company_name,
       contract_value: parseFloat(subcontractForm.contract_value) || 0,
-      retainage_pct: parseFloat(subcontractForm.retainage_pct) || 10,
+      retainage_pct: retainagePctOrDefault(subcontractForm.retainage_pct),
       start_date: subcontractForm.start_date || null,
       special_terms: subcontractForm.special_terms || null,
       description: subcontractForm.description || null,
@@ -2694,10 +2695,12 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
       const res = await fetch('/api/subcontracts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...body }) })
       const data = await res.json()
       if (data.error) { alert('Save failed: ' + data.error); setSavingSubcontract(false); return null }
+      if (data.assignment_error) alert('Subcontract saved, but the sub was not added to the job: ' + data.assignment_error)
     } else {
       const res = await fetch('/api/subcontracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
       if (data.error) { alert('Save failed: ' + data.error); setSavingSubcontract(false); return null }
+      if (data.assignment_error) alert('Subcontract saved, but the sub was not added to the job: ' + data.assignment_error)
       id = data.id
       setSubcontractRowId(id)
     }
@@ -2724,7 +2727,7 @@ td.right { text-align: right; font-variant-numeric: tabular-nums; }
     const contractNum = `SC-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const contractValue = formData ? parseFloat(formData.contract_value) || Number(sub.amount) : Number(sub.amount)
-    const retainagePct = formData ? parseFloat(formData.retainage_pct) || 10 : 10
+    const retainagePct = formData ? retainagePctOrDefault(formData.retainage_pct) : 10
     const startDateStr = formData?.start_date ? new Date(formData.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
     const specialTerms = formData?.special_terms || null
     const w = window.open('', '_blank')

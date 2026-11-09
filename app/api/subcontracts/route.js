@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { requireAuth, requirePM, isPM, isSub } from '../../../lib/server-auth'
-import { canAccessSubcontract } from '../../../lib/sub-access'
+import { canAccessSubcontract, ensureContractAssignment } from '../../../lib/sub-access'
 import { logChange } from '../../../lib/change-log'
 import { denyJob, denyJobOf } from '../../../lib/roles'
 import { changedContractTerms, isSubcontractSigned } from '../../../lib/signing'
@@ -19,6 +19,25 @@ const ALLOWED_COLUMNS = new Set([
 
 function pick(obj) {
   return Object.fromEntries(Object.entries(obj).filter(([k]) => ALLOWED_COLUMNS.has(k)))
+}
+
+const isDraftStatus = s => s === 'draft'
+
+// A non-draft contract puts its sub on the job with billing off unless they already billed
+// on this job (server-side, so Bid
+// Leveling, the Bot API and a failed job-page call are all covered). A failure here
+// never undoes the contract save; it comes back as assignment_error.
+async function assignForContract(c) {
+  let r
+  try {
+    r = await ensureContractAssignment(adminSupabase, {
+      jobId: c.job_id, companyId: c.company_id || null, subId: c.sub_id || null, vendorName: c.vendor_name || null,
+    })
+  } catch (e) {
+    r = { ok: false, error: e?.message || String(e) }
+  }
+  if (!r.ok) console.error('[subcontracts] job assignment failed', r.error)
+  return r.ok ? null : (r.error || 'Could not add the sub to the job.')
 }
 
 export async function GET(request) {
@@ -60,6 +79,10 @@ export async function POST(request) {
     if (denied) return denied
     const { error, data } = await adminSupabase.from('subcontracts').insert(body).select('id').single()
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    if (body.job_id && !isDraftStatus(body.status)) {
+      const assignment_error = await assignForContract(body)
+      if (assignment_error) return Response.json({ ok: true, id: data.id, assignment_error })
+    }
     return Response.json({ ok: true, id: data.id })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
@@ -107,7 +130,7 @@ export async function PUT(request) {
 
     // Fetch current values for auditing changed fields
     const { data: current, error: curErr } = await adminSupabase.from('subcontracts')
-      .select('contract_value, description, special_terms, status, signed_at, vendor_name, job_id, signed_contract_url').eq('id', id).maybeSingle()
+      .select('contract_value, description, special_terms, status, signed_at, vendor_name, job_id, company_id, sub_id, signed_contract_url').eq('id', id).maybeSingle()
     if (curErr) return Response.json({ error: curErr.message }, { status: 500 })
     if (!current) return Response.json({ error: 'Subcontract not found.' }, { status: 404 })
     const denied = await denyJob(adminSupabase, auth, current?.job_id) ||
@@ -140,12 +163,21 @@ export async function PUT(request) {
     const { error } = await adminSupabase.from('subcontracts').update(fields).eq('id', id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
 
+    // Became non-draft (draft/null → active, …), or a non-draft contract moved job / company / sub:
+    // make sure the sub is on the job (billing off unless they already billed on this job;
+    // existing rows are never changed).
+    const next = { ...current, ...fields }
+    const becameLive = (current.status == null || isDraftStatus(current.status)) && next.status != null && !isDraftStatus(next.status)
+    const partyMoved = !isDraftStatus(next.status) && ['job_id', 'company_id', 'sub_id'].some(k => k in fields && (fields[k] || null) !== (current[k] || null))
+    const assignment_error = next.job_id && (becameLive || partyMoved) ? await assignForContract(next) : null
+    const extra = assignment_error ? { assignment_error } : {}
+
     // Terms changed after a signing request went out: that link would sign the old terms.
     let voidedSigningRequests = 0
     if (termsChanged.length) {
       const { data: voided, error: voidErr } = await adminSupabase.from('signing_requests')
         .update({ status: 'voided' }).eq('subcontract_id', id).eq('status', 'pending').select('id')
-      if (voidErr) return Response.json({ ok: true, warning: 'Saved, but pending signing links could not be cancelled: ' + voidErr.message })
+      if (voidErr) return Response.json({ ok: true, warning: 'Saved, but pending signing links could not be cancelled: ' + voidErr.message, ...extra })
       voidedSigningRequests = voided?.length || 0
     }
 
@@ -159,7 +191,7 @@ export async function PUT(request) {
       }
     }
 
-    return Response.json({ ok: true, voidedSigningRequests })
+    return Response.json({ ok: true, voidedSigningRequests, ...extra })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }

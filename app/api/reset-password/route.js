@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getSiteUrl } from '../../../lib/site-url'
+import { normalizeResetEmail, clientIp, checkResetLimits, hashKey } from '../../../lib/reset-rate-limit'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -9,8 +10,18 @@ const adminSupabase = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request) {
-  const { email } = await request.json()
-  if (!email) return Response.json({ error: 'Email is required.' }, { status: 400 })
+  let body = null
+  try { body = await request.json() } catch { body = null }
+  const email = normalizeResetEmail(body?.email)
+  if (!email) return Response.json({ error: 'Enter a valid email address.' }, { status: 400 })
+
+  // Throttle BEFORE minting a recovery link (each one invalidates the last emailed link).
+  // A throttled request gets the same answer as a successful one.
+  const limit = await checkResetLimits(adminSupabase, { email, ip: clientIp(request) })
+  if (!limit.allowed) {
+    console.warn(`[reset-password] throttled email#${hashKey(`email:${email}`).slice(0, 12)} buckets=${limit.blocked.join(',')} (${limit.source})`)
+    return Response.json({ ok: true })
+  }
 
   const siteUrl = getSiteUrl()
 
@@ -75,8 +86,8 @@ export async function POST(request) {
   })
 
   if (emailError) {
+    // Same answer either way (a send failure must not reveal that the account exists).
     console.error('[reset-password] email failed', emailError.message)
-    return Response.json({ error: 'Could not send the reset email. Please try again.' }, { status: 500 })
   }
   return Response.json({ ok: true })
 }

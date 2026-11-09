@@ -20,9 +20,16 @@ const MAX_ROWS = 1000
 const SCHEMA = {
   jobs: ['id', 'contract_value', 'project_name'],
   budget_items: ['id', 'job_id', 'budget_amount', 'owner_amount', 'forecast_eac', 'cost_code', 'description'],
-  direct_costs: ['id', 'job_id', 'budget_item_id', 'amount', 'status'],
+  direct_costs: ['id', 'job_id', 'budget_item_id', 'amount', 'status', 'is_credit'], // is_credit: migration 022 (prompt67a reads it)
   subcontracts: ['id', 'job_id', 'sub_id', 'contract_value', 'description', 'status', 'budget_item_id', 'vendor_name', 'budget_allocations'],
   subcontract_summary: ['id', 'job_id', 'sub_id', 'contract_value', 'description', 'onedrive_url', 'status', 'created_at', 'approved_change_orders', 'adjusted_contract_value', 'remaining_balance'],
+  // prompt67a: job-profit also reads what the job page's committed EAC uses (no rows seeded here).
+  subcontract_sov_lines: ['id', 'subcontract_id', 'budget_item_id', 'scheduled_value'],
+  change_orders: ['id', 'subcontract_id', 'status', 'amount', 'sov'],
+  purchase_orders: ['id', 'job_id', 'budget_item_id', 'amount', 'status'],
+  // The embedded employees(...) select is split on commas by this mock, so its pieces are listed.
+  employee_job_allocations: ['id', 'job_id', 'allocation_type', 'percentage', 'start_date', 'end_date', 'budget_item_id', 'budget_line',
+    'employees(weekly_salary', 'weekly_truck', 'weekly_healthcare', 'weekly_taxes)'],
 }
 
 let db, selects, failWith, mockAuth
@@ -156,6 +163,58 @@ describe('failed reads return 500, not partial profits', () => {
     db.direct_costs = Array.from({ length: 1500 }, (_, i) => ({ id: `c${String(i).padStart(5, '0')}`, job_id: JOB, budget_item_id: 'b1', amount: 10, status: 'approved' }))
     failWith = (t, range) => (t === 'direct_costs' && range && range[0] >= 1000 ? { code: 'XX000', message: 'timeout' } : null)
     expect((await post([JOB])).status).toBe(500)
+  })
+})
+
+// prompt67a LOW-3: only a missing TABLE reads as empty; a missing column / embed is a failed read.
+describe('optional reads: missing table vs missing column/embed', () => {
+  const OPTIONAL = ['purchase_orders', 'employee_job_allocations', 'subcontract_sov_lines', 'change_orders']
+  test.each(OPTIONAL.flatMap(t => [
+    [t, { code: '42P01', message: `relation "public.${t}" does not exist` }],
+    [t, { code: 'PGRST205', message: `Could not find the table 'public.${t}' in the schema cache` }],
+    [t, { message: `relation "public.${t}" does not exist` }],
+  ]))('%s missing table %j → 200 (reads as empty)', async (table, err) => {
+    failWith = t => (t === table ? err : null)
+    const res = await post([JOB])
+    expect(res.status).toBe(200)
+    expect((await res.json()).profits[JOB]).toBeTruthy()
+  })
+  test.each(OPTIONAL.flatMap(t => [
+    [t, { code: '42703', message: `column ${t}.amount does not exist` }],
+    [t, { code: 'PGRST204', message: `Could not find the 'sov' column of '${t}' in the schema cache` }],
+    [t, { code: 'PGRST200', message: `Could not find a relationship between '${t}' and 'employees' in the schema cache` }],
+    // A column code wins even if the message looks like a missing table.
+    [t, { code: '42703', message: `relation "public.${t}" does not exist` }],
+  ]))('%s missing column/embed %j → 500', async (table, err) => {
+    failWith = t => (t === table ? err : null)
+    const res = await post([JOB])
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.profits).toBeUndefined()
+    expect(body.error).toMatch(/could not load/i)
+  })
+  test('a missing core table (jobs) is still a 500', async () => {
+    failWith = t => (t === 'jobs' ? { code: 'PGRST205', message: "Could not find the table 'public.jobs' in the schema cache" } : null)
+    expect((await post([JOB])).status).toBe(500)
+  })
+})
+
+// prompt67a LOW-7: the jobs read is paged like every other read.
+describe('jobs read is paged', () => {
+  test('jobs is read with .range() paging and every job is returned', async () => {
+    const res = await post([JOB])
+    expect(res.status).toBe(200)
+    const route = require('fs').readFileSync(require('path').join(__dirname, '..', 'app/api/job-profit/route.js'), 'utf8')
+    expect(route).toMatch(/fetchAll\(\(\) => adminSupabase\.from\('jobs'\)\s*\.select\('id, contract_value'\)\s*\.in\('id', job_ids\)\s*\.order\('id'\)\)/)
+  })
+  test('a later jobs page erroring → 500', async () => {
+    db.jobs = Array.from({ length: 1200 }, (_, i) => ({ id: `j${String(i).padStart(5, '0')}`, contract_value: 1 }))
+    const ids = db.jobs.map(j => j.id)
+    failWith = (t, range) => (t === 'jobs' && range && range[0] >= 1000 ? { code: 'XX000', message: 'timeout' } : null)
+    expect((await post(ids)).status).toBe(500)
+    failWith = null
+    const { profits } = await (await post(ids)).json()
+    expect(Object.keys(profits)).toHaveLength(1200)
   })
 })
 

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { requirePM } from '../../../lib/server-auth'
 import { denyJob } from '../../../lib/roles'
-import { getCompanyProfiles, getCompanyAssignmentRows, isCompanyLevelRow } from '../../../lib/sub-access'
+import { getCompanyProfiles, getCompanyAssignmentRows, isCompanyLevelRow, companyGrandfatheredOnJob } from '../../../lib/sub-access'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -12,7 +12,7 @@ const adminSupabase = createClient(
 // explicit step (the "Email people" panel).
 //
 // POST { job_id, company_id, action, ... }
-//   add_company                     → put the company on the job (billing off)
+//   add_company                     → put the company on the job (billing off unless they already billed on this job)
 //   grant_person   { user_id }      → give one person access by name (for people set to "only assigned jobs")
 //   revoke_person  { user_id }      → remove that person's own access row
 //   billing        { enabled }      → turn billing on/off for the whole company on this job
@@ -28,12 +28,15 @@ export async function POST(request) {
 
     const members = await getCompanyProfiles(company_id)
     const rows = await getCompanyAssignmentRows(company_id, members, job_id)
-    // Same rule the sub portal uses: with no assignment rows, an active subcontract alone
-    // makes the company billable. Adding a row must not silently flip that off.
+    // With no assignment rows, a new row gets billing on only where the company could
+    // already bill here: a non-draft subcontract with this company_id on the job AND a
+    // prior non-rejected billing by one of its people (lib/sub-access
+    // companyGrandfatheredOnJob). A never-billed company, or one that billed before but has
+    // no current company_id contract (removed, then re-added), gets billing off. A failed
+    // read counts as not grandfathered (fails closed).
     let billingOn = rows.some(r => r.billing_enabled !== false)
-    if (!rows.length && action !== 'add_company') {
-      const { data: sc } = await adminSupabase.from('subcontracts').select('id').eq('job_id', job_id).eq('company_id', company_id).or('status.is.null,status.neq.draft').limit(1)
-      billingOn = !!sc?.length
+    if (!rows.length) {
+      billingOn = await companyGrandfatheredOnJob(adminSupabase, { jobId: job_id, companyId: company_id, memberIds: members.map(m => m.id) })
     }
 
     async function ensureCompanyRow(billing) {

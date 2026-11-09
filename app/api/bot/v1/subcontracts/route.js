@@ -1,5 +1,6 @@
 import { withBot, refusedMethods, badRequest, notFound, dbError, logBotChange, fmtAmt } from '../../../../../lib/bot-api'
 import { validateSubcontract, linkedBudgetItemIds } from '../../../../../lib/bot-rules'
+import { ensureContractAssignment } from '../../../../../lib/sub-access'
 
 // Create a subcontract as 'draft' or 'active', like the job page's Add Contract.
 // No email, no e-signature; activating later, approving or executing stays in the portal.
@@ -39,7 +40,18 @@ export const POST = withBot(async ({ bot, supabase, request }) => {
     job_id: row.job_id, entity_type: 'subcontract', entity_id: data.id, field_name: 'created',
     new_value: fmtAmt(row.contract_value), note: `Subcontract created (${row.status}) — ${row.vendor_name || ''}`,
   })
-  return Response.json({ ok: true, id: data.id, status: row.status }, { status: 201 })
+  // An active contract puts its sub on the job with billing off unless they already billed on
+  // this job (never changes an existing row).
+  let assignment_error = null
+  if (row.status === 'active') {
+    try {
+      const r = await ensureContractAssignment(supabase, { jobId: row.job_id, companyId: row.company_id || null, subId: row.sub_id || null, vendorName: row.vendor_name || null })
+      if (!r.ok) assignment_error = r.error || 'Could not add the sub to the job.'
+    } catch (e) {
+      assignment_error = e?.message || String(e)
+    }
+  }
+  return Response.json({ ok: true, id: data.id, status: row.status, ...(assignment_error ? { assignment_error } : {}) }, { status: 201 })
 })
 
 export async function GET() {

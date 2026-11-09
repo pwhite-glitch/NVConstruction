@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { atLeastPM, isJobLimited, isOnJob, isPrincipal, homePathForRole, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { todayCentral } from '../../lib/central-date'
+import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../lib/photo-taken-at'
 import { openFile, openHtml, openStorageFile } from '../../lib/open-file'
 import { dcBilledLockReason } from '../../lib/dc-guards'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
@@ -502,7 +503,7 @@ function ResidentialJobDetailInner() {
     ])
     noteLoad('Photos', e1 || e2)
     const all = [
-      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: (p.taken_at || p.created_at || '').split('T')[0], name: p.file_name })),
+      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: photoDateCentral(p.taken_at || p.created_at), name: p.file_name })),
       ...(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id }))),
     ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
     setPhotos(all)
@@ -1109,9 +1110,10 @@ function ResidentialJobDetailInner() {
       const { data: { session } } = await supabase.auth.getSession()
       const rand = Math.random().toString(36).slice(2, 8)
       const path = `${id}/gallery/${Date.now()}-${rand}-${safeFileName(file.name)}`
+      const taken = await resolveTakenAt(file)
       const { error: upErr } = await supabase.storage.from('daily-report-photos').upload(path, file, { contentType: file.type || undefined, upsert: false })
       if (upErr) { setPhotoMsg('Error: upload failed — ' + upErr.message); return }
-      const { error: dbErr } = await supabase.from('job_photos').insert({ job_id: id, super_id: session?.user?.id || null, storage_path: path, file_name: file.name, caption: null, taken_at: new Date().toISOString() })
+      const { error: dbErr } = await insertWithGpsFallback(gps => supabase.from('job_photos').insert({ job_id: id, super_id: session?.user?.id || null, storage_path: path, file_name: file.name, caption: null, taken_at: taken.takenAt, ...gps }), taken.gps)
       if (dbErr) {
         await supabase.storage.from('daily-report-photos').remove([path])
         setPhotoMsg('Error: photo not saved — ' + dbErr.message)

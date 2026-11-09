@@ -8,6 +8,7 @@ import { fieldTarget, fieldTabFromParam } from '../../lib/notification-labels'
 import NotificationBell from '../components/NotificationBell'
 import FieldInspections from './FieldInspections'
 import { openFile } from '../../lib/open-file'
+import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../lib/photo-taken-at'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
@@ -525,6 +526,8 @@ export default function Field() {
     setUploadingGalleryPhoto(true)
     const ts = Date.now()
     const path = `${selectedJobId}/gallery/${ts}.jpg`
+    // Capture time (EXIF / lastModified) from the ORIGINAL file — compressImage strips EXIF.
+    const taken = await resolveTakenAt(file)
     const [compressed, thumb] = await Promise.all([compressImage(file, 1200, 0.82), compressImage(file, 400, 0.72)])
     let uploadError = null
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -537,7 +540,7 @@ export default function Field() {
     await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
     const usedCaption = captionOverride !== undefined ? captionOverride : captionDraft
     const usedTag = tagOverride !== undefined ? tagOverride : tagDraft
-    const { error: dbErr } = await supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, tag: usedTag || null, taken_at: new Date().toISOString() })
+    const { error: dbErr } = await insertWithGpsFallback(gps => supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, tag: usedTag || null, taken_at: taken.takenAt, ...gps }), taken.gps)
     if (dbErr) { alert('Photo saved to storage but could not save to gallery: ' + dbErr.message); setUploadingGalleryPhoto(false); return }
     if (captionOverride === undefined) setCaptionDraft('')
     if (tagOverride === undefined) setTagDraft('')
@@ -2375,7 +2378,7 @@ export default function Field() {
                 {/* SITE PHOTOS */}
                 {activeTab === 'photos' && (() => {
                   const allPhotos = [
-                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: p.taken_at?.split('T')[0] })),
+                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at) })),
                     ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: p.caption || null, tag: p.tag || null, date: r.report_date, fromReport: true, reportId: r.id }))),
                   ].sort((a, b) => new Date(b.date) - new Date(a.date))
                   const usedTags = [...new Set(allPhotos.filter(p => p.tag).map(p => p.tag))].sort()

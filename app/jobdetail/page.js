@@ -10,6 +10,7 @@ import { contractCommittedForItem } from '../../lib/residential-money'
 import { committedForBudgetLine, laborCostForLine, jobEacSummary, eacBlurAction } from '../../lib/eac-forecast'
 import { openFile, openStorageFile, openHtml } from '../../lib/open-file'
 import { safeFileName } from '../../lib/storage-path'
+import { photoDateCentral } from '../../lib/photo-taken-at'
 import { isAiaLocked, aiaLockReason, nextAiaAppNumber, overrideConfirmed } from '../../lib/aia-lock'
 import { canRecordAiaPayment, parseAiaPaymentAmount, aiaPaymentDiffers, aiaPaymentMismatchMessage } from '../../lib/aia-payments'
 import { isPreviewActive, PRIME_CO_APPLIED_NO_DELETE } from '../../lib/prime-co-review'
@@ -3151,7 +3152,7 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     const all = [
-      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: p.taken_at?.split('T')[0], name: p.file_name })),
+      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), name: p.file_name })),
       ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id })))),
     ].sort((a, b) => new Date(b.date) - new Date(a.date))
     setFieldPhotos(all)

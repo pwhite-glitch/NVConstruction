@@ -26,6 +26,8 @@ import { sameCompany } from '../../lib/company-name'
 import { isBeforeTodayCentral } from '../../lib/central-date'
 import { billingPaymentSummary } from '../../lib/billing-payment'
 import { INSPECTION_TYPES } from '../../lib/res-inspections'
+import { authFetch } from '../../lib/client-fetch'
+import DailyReportForm from '../jobdetail/DailyReportForm'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -147,7 +149,9 @@ function ResidentialJobDetailInner() {
   const [reviewingSubCOId, setReviewingSubCOId] = useState(null)
   const [billingLines, setBillingLines] = useState([]) // billing_sov_lines for this job (contract credit)
   const [openCompanyId, setOpenCompanyId] = useState(null)
-  const [fieldData, setFieldData] = useState(null) // { reports, rfis, deliveries } — read-only Field tab
+  const [fieldData, setFieldData] = useState(null) // { reports, rfis, deliveries } — Field tab (office can add a daily report)
+  const [showNewDailyReport, setShowNewDailyReport] = useState(false)
+  const [dailyReportSaved, setDailyReportSaved] = useState(false)
   const [photoUrls, setPhotoUrls] = useState({})
   const [lightbox, setLightbox] = useState(null) // index into photos
   const [deletingPhoto, setDeletingPhoto] = useState(null)
@@ -3648,7 +3652,25 @@ function ResidentialJobDetailInner() {
                 </div>
                 <div style={s.card}>
                   <p style={s.cardTitle}>Daily Reports</p>
-                  {fieldData.reports.length === 0 ? <div style={s.emptyMsg}>No daily reports. Supers file them in the field app.</div> : fieldData.reports.map(r => (
+                  {isOffice && !showNewDailyReport && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                      <button type="button" style={{ ...s.btnGreen, opacity: inPreview ? 0.5 : 1 }} disabled={inPreview} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => { setDailyReportSaved(false); setShowNewDailyReport(true) }}>+ New daily report</button>
+                      {dailyReportSaved && <span style={{ fontSize: '13px', color: '#15803d', fontWeight: 600 }}>Daily report saved.</span>}
+                    </div>
+                  )}
+                  {isOffice && showNewDailyReport && (
+                    <DailyReportForm
+                      jobId={id}
+                      styles={{ label: s.label, input: s.input, btn: s.btn, btnGray: s.btnGray, btnSmall: s.btnSmGray }}
+                      supabase={supabase}
+                      authFetch={authFetch}
+                      disabled={inPreview}
+                      existingDates={fieldData.reports.map(r => r.report_date)}
+                      onCancel={() => setShowNewDailyReport(false)}
+                      onSuccess={() => { setShowNewDailyReport(false); setDailyReportSaved(true); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
+                    />
+                  )}
+                  {fieldData.reports.length === 0 ? <div style={s.emptyMsg}>No daily reports yet.</div> : fieldData.reports.map(r => (
                     <div key={r.id} style={{ padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
                       <div style={{ fontWeight: 600 }}>{fmtDate(r.report_date)}{Array.isArray(r.photos) && r.photos.length ? ` · ${r.photos.length} photo${r.photos.length !== 1 ? 's' : ''}` : ''}</div>
                       {r.work_performed && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}>{r.work_performed}</div>}

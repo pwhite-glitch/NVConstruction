@@ -57,6 +57,7 @@ import { contractTimeSummary, weatherDelayCount, parseDaysAdded, formatDaysAdded
 import { buildWeatherDayLogHtml } from '../../lib/weather-day-log-print'
 import { writeWithMissingColumnRetry } from '../../lib/missing-column-retry'
 import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../lib/coi-warning'
+import DailyReportForm from './DailyReportForm'
 
 const s = {
   // ── Layout ──
@@ -372,6 +373,8 @@ function JobDetailInner() {
   const [expandedFieldReport, setExpandedFieldReport] = useState(null)
   const [expandedFieldRfi, setExpandedFieldRfi] = useState(null)
   const [fieldSubTab, setFieldSubTab] = useState('reports')
+  const [showNewDailyReport, setShowNewDailyReport] = useState(false)
+  const [dailyReportSaved, setDailyReportSaved] = useState(false)
   const [respondingRfi, setRespondingRfi] = useState(null)
   const [rfiResponse, setRfiResponse] = useState('')
   const [savingRfiResponse, setSavingRfiResponse] = useState(false)
@@ -10465,6 +10468,28 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </div>
 
             {/* Daily Reports */}
+            {fieldSubTab === 'reports' && ['principal', 'admin', 'pm', 'apm'].includes(userRole) && (
+              <div style={{ marginBottom: '12px' }}>
+                {!showNewDailyReport && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <button type="button" style={{ ...s.btnSmallGreen, opacity: inPreview ? 0.5 : 1 }} disabled={inPreview} title={inPreview ? 'Disabled in role preview' : undefined} onClick={() => { setDailyReportSaved(false); setShowNewDailyReport(true) }}>+ New daily report</button>
+                    {dailyReportSaved && <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: '600' }}>Daily report saved.</span>}
+                  </div>
+                )}
+                {showNewDailyReport && (
+                  <DailyReportForm
+                    jobId={id}
+                    styles={s}
+                    supabase={supabase}
+                    authFetch={authFetch}
+                    disabled={inPreview}
+                    existingDates={fieldDailyReports.map(r => r.report_date)}
+                    onCancel={() => setShowNewDailyReport(false)}
+                    onSuccess={() => { setShowNewDailyReport(false); setDailyReportSaved(true); setTimeout(() => setDailyReportSaved(false), 4000); loadFieldData() }}
+                  />
+                )}
+              </div>
+            )}
             {fieldSubTab === 'reports' && (
               fieldDailyReports.length === 0 ? <div style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '3rem 0' }}>No daily reports submitted yet.</div>
               : fieldDailyReports.map(r => (

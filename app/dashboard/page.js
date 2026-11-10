@@ -12,7 +12,7 @@ import { notificationLabel } from '../../lib/notification-labels'
 import { localToday, mondayOf } from '../../lib/lookahead-dates'
 import { stageLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { openStorageFile } from '../../lib/open-file'
-import { generateEstimatePDF } from '../../lib/generate-estimate-pdf'
+import { exportEstimateProposal } from '../../lib/generate-estimate-pdf'
 import { DC_APPROVER_ROLES, daysWaiting, queueTotal, signedAmount, budgetLineLabel, suggestBudgetLine, splitForApproval } from '../../lib/direct-cost-queue'
 import { CompanyPeoplePanel } from '../components/SubCompanyPeople'
 import { sameCompany, companyKey } from '../../lib/company-name'
@@ -7677,7 +7677,7 @@ ${planLinks.map(p => p.url
                                 )
                               })()}
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: convertingEst === est.id ? '1rem' : 0 }}>
-                                <button style={s.btnSm('orange')} onClick={() => generateEstimatePDF(est)}>Export PDF</button>
+                                <button style={s.btnSm('orange')} onClick={() => exportEstimateProposal(est.id)}>Export PDF</button>
                                 {isPrincipal(profile?.role) && <>
                                   <button style={s.btnSm('gray')} onClick={() => {
                                     setEditingEstimate(est.id)

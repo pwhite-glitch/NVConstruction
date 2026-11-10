@@ -1,13 +1,17 @@
 'use client'
-// Field app → Inspections (residential jobs only). Same actions as the office residential
-// page: schedule, record a result, reschedule, re-inspect after a failure, and create a punch
-// item from a failure through the shared /api/punch-list path. Everything goes through
-// /api/res-inspections (service role; the caller must be on the job). No photo field:
-// res_inspections has none.
+// Inspections for every job type (field app, and the commercial office job page since
+// prompt67d). Same actions as the office residential page: schedule, record a result,
+// reschedule, re-inspect after a failure, and create a punch item from a failure through the
+// shared /api/punch-list path. Everything goes through /api/res-inspections (service role; the
+// caller must be on the job). No photo field: res_inspections has none.
+// Props: jobType picks the type list (inspectionTypesFor); canDelete shows Delete (Owner / PM);
+// prefill { key, inspection_type?, notes?, lookahead_activity_id? } opens the form pre-filled
+// (lookahead "Log inspection"); onLoaded(list, has064) reports the loaded rows.
+// Agency and the lookahead link need migration 064 (has064 from the API).
 import { useEffect, useState } from 'react'
 import { authFetch } from '../../lib/client-fetch'
 import { todayCentral } from '../../lib/central-date'
-import { INSPECTION_TYPES } from '../../lib/res-inspections'
+import { inspectionTypesFor } from '../../lib/res-inspections'
 
 const fmtDate = d => (d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—')
 const RESULT_COLORS = {
@@ -17,7 +21,8 @@ const RESULT_COLORS = {
   rescheduled: { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' },
 }
 const badge = r => ({ ...(RESULT_COLORS[r] || RESULT_COLORS.pending), fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '99px', textTransform: 'uppercase', letterSpacing: '0.5px' })
-const EMPTY_FORM = { inspection_type: 'Framing', scheduled_date: '', inspector_name: '', notes: '' }
+const OTHER = '__other'
+const EMPTY_FORM = { inspection_type: 'Framing', other_type: '', scheduled_date: '', inspector_name: '', agency: '', notes: '', lookahead_activity_id: null }
 
 async function call(url, method, body) {
   try {
@@ -30,8 +35,10 @@ async function call(url, method, body) {
   }
 }
 
-export default function FieldInspections({ jobId, userId, s, onCount }) {
+export default function FieldInspections({ jobId, jobType, userId, s, onCount, onLoaded, canDelete = false, prefill = null }) {
+  const types = inspectionTypesFor(jobType)
   const [items, setItems] = useState([])
+  const [has064, setHas064] = useState(false)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -46,9 +53,20 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
     if (!r.ok) { setMsg('Could not load inspections: ' + r.error); setItems([]); return }
     const list = r.data.inspections || []
     setItems(list)
+    setHas064(!!r.data.has064)
     onCount?.(list.filter(i => (i.result || 'pending') === 'pending').length)
+    onLoaded?.(list, !!r.data.has064)
   }
   useEffect(() => { if (jobId) { setMsg(''); setEdit(null); load() } }, [jobId])
+  // "Log inspection" from a lookahead activity: open the form pre-filled.
+  useEffect(() => {
+    if (!prefill?.key) return
+    const t = prefill.inspection_type || ''
+    const known = types.includes(t)
+    setForm({ ...EMPTY_FORM, inspection_type: t ? (known ? t : OTHER) : EMPTY_FORM.inspection_type, other_type: t && !known ? t : '', notes: prefill.notes || '', lookahead_activity_id: prefill.lookahead_activity_id || null })
+    setShowForm(true)
+  }, [prefill?.key])
+  const formType = () => (form.inspection_type === OTHER ? (form.other_type.trim() || 'Other') : form.inspection_type)
 
   async function run(key, fn) {
     setBusy(key); setMsg('')
@@ -59,7 +77,7 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
     e.preventDefault()
     if (!form.inspection_type) return
     return run('new', async () => {
-      const r = await call('/api/res-inspections', 'POST', { job_id: jobId, inspection_type: form.inspection_type, scheduled_date: form.scheduled_date || null, inspector_name: form.inspector_name || null, notes: form.notes || null, result: 'pending' })
+      const r = await call('/api/res-inspections', 'POST', { job_id: jobId, inspection_type: formType(), scheduled_date: form.scheduled_date || null, inspector_name: form.inspector_name || null, notes: form.notes || null, result: 'pending', ...(has064 ? { agency: form.agency || null, ...(form.lookahead_activity_id ? { lookahead_activity_id: form.lookahead_activity_id } : {}) } : {}) })
       if (!r.ok) { setMsg('Not saved: ' + r.error); return }
       setForm(EMPTY_FORM); setShowForm(false)
       await load()
@@ -84,7 +102,7 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
 
   const reinspect = (ins, newDate) => run(ins.id, async () => {
     const ref = `Re-inspection of ${ins.inspection_type} that failed${ins.actual_date ? ' on ' + fmtDate(ins.actual_date) : ''} (ref ${String(ins.id).slice(0, 8)}).`
-    const r = await call('/api/res-inspections', 'POST', { job_id: jobId, inspection_type: ins.inspection_type, scheduled_date: newDate || null, inspector_name: ins.inspector_name || null, result: 'pending', notes: ref })
+    const r = await call('/api/res-inspections', 'POST', { job_id: jobId, inspection_type: ins.inspection_type, scheduled_date: newDate || null, inspector_name: ins.inspector_name || null, result: 'pending', notes: ref, ...(has064 && ins.agency ? { agency: ins.agency } : {}) })
     if (!r.ok) { setMsg('Not saved: ' + r.error); return }
     setEdit(null); await load()
   })
@@ -98,11 +116,21 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
     })
   }
 
+  // Delete: Owner / PM only (the API enforces it too).
+  const remove = ins => {
+    if (!window.confirm(`Delete the ${ins.inspection_type} inspection?`)) return
+    return run(ins.id, async () => {
+      const r = await call('/api/res-inspections', 'DELETE', { id: ins.id })
+      if (!r.ok) { setMsg('Not deleted: ' + r.error); return }
+      await load()
+    })
+  }
+
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <span style={{ fontSize: '13px', color: '#6b7280' }}>{items.length} inspection{items.length !== 1 ? 's' : ''}</span>
-        <button style={s.btnSm('orange')} onClick={() => setShowForm(v => !v)}>{showForm ? 'Cancel' : '+ Schedule'}</button>
+        <button style={s.btnSm('orange')} onClick={() => { if (showForm) setForm(EMPTY_FORM); setShowForm(v => !v) }}>{showForm ? 'Cancel' : '+ Schedule'}</button>
       </div>
       {msg && <div style={{ fontSize: '13px', color: msg === 'Punch item created.' ? '#15803d' : '#dc2626', marginBottom: '10px' }}>{msg}</div>}
 
@@ -114,9 +142,12 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
               <div>
                 <label style={s.label}>Type *</label>
                 <select style={s.input} value={form.inspection_type} onChange={e => setForm(f => ({ ...f, inspection_type: e.target.value }))}>
-                  {INSPECTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  <option value="Other">Other</option>
+                  {types.map(t => <option key={t} value={t}>{t}</option>)}
+                  <option value={OTHER}>Other…</option>
                 </select>
+                {form.inspection_type === OTHER && (
+                  <input style={{ ...s.input, marginTop: '6px' }} value={form.other_type} maxLength={100} onChange={e => setForm(f => ({ ...f, other_type: e.target.value }))} placeholder="Inspection type..." />
+                )}
               </div>
               <div>
                 <label style={s.label}>Date</label>
@@ -127,6 +158,13 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
               <label style={s.label}>Inspector</label>
               <input style={s.input} value={form.inspector_name} onChange={e => setForm(f => ({ ...f, inspector_name: e.target.value }))} placeholder="City inspector..." />
             </div>
+            {has064 && (
+              <div style={{ marginBottom: '12px' }}>
+                <label style={s.label}>Agency</label>
+                <input style={s.input} value={form.agency} maxLength={200} onChange={e => setForm(f => ({ ...f, agency: e.target.value }))} placeholder="City building dept, Fire Marshal, Health Dept..." />
+              </div>
+            )}
+            {has064 && form.lookahead_activity_id && <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '12px' }}>Linked to a lookahead activity.</div>}
             <div style={{ marginBottom: '12px' }}>
               <label style={s.label}>Notes</label>
               <input style={s.input} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes..." />
@@ -151,7 +189,7 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
                     <span style={badge(result)}>{result}</span>
                   </div>
                   <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                    Scheduled {fmtDate(ins.scheduled_date)}{ins.actual_date ? ` · Inspected ${fmtDate(ins.actual_date)}` : ''}{ins.inspector_name ? ' · ' + ins.inspector_name : ''}
+                    Scheduled {fmtDate(ins.scheduled_date)}{ins.actual_date ? ` · Inspected ${fmtDate(ins.actual_date)}` : ''}{ins.agency ? ' · ' + ins.agency : ''}{ins.inspector_name ? ' · ' + ins.inspector_name : ''}
                   </div>
                   {ins.notes && <div style={{ fontSize: '12px', color: '#666', marginTop: '2px', whiteSpace: 'pre-wrap' }}>{ins.notes}</div>}
                 </div>
@@ -166,6 +204,7 @@ export default function FieldInspections({ jobId, userId, s, onCount }) {
                     <button disabled={disabled} style={s.btnSm('')} onClick={() => punch(ins)}>+ Punch item</button>
                   </>}
                   {result !== 'pending' && <button disabled={disabled} style={s.btnSm('')} onClick={() => setEdit({ id: ins.id, mode: 'result', result, date: ins.actual_date || todayCentral() })}>Edit result</button>}
+                  {canDelete && <button disabled={disabled} style={s.btnSm('red')} onClick={() => remove(ins)}>Delete</button>}
                 </div>
               </div>
               {editing && (

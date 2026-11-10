@@ -33,6 +33,7 @@ import MeetingsTab from './MeetingsTab'
 import PaymentTypeSelector from './PaymentTypeSelector'
 import NewPOForm from './NewPOForm'
 import LookaheadActivityModal from './LookaheadActivityModal'
+import FieldInspections from '../field/FieldInspections'
 import { StatusChip, DayWeather, RainTag, ColdTag, WorkflowBar, SendToSubsDialog, useLookaheadForecast } from '../components/lookahead/LookaheadShared'
 import { hasOpenConstraint, responsibleLabel, lookaheadStage } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, shiftActivity, dayOfRange } from '../../lib/lookahead-dates'
@@ -536,6 +537,13 @@ function JobDetailInner() {
   const [showNewMeeting, setShowNewMeeting] = useState(false)
   const [expandedMeetingId, setExpandedMeetingId] = useState(null)
   const [meetingMsg, setMeetingMsg] = useState(null)
+
+  // Inspections (prompt67d: commercial jobs use /api/res-inspections too). has064 = agency +
+  // lookahead link columns exist (migration 064).
+  const [jobInspections, setJobInspections] = useState([])
+  const [inspections064, setInspections064] = useState(false)
+  const [inspectionPrefill, setInspectionPrefill] = useState(null)
+  const [inspectionUserId, setInspectionUserId] = useState(null)
 
   // Punch list / closeout state
   const [punchItems, setPunchItems] = useState([])
@@ -2938,8 +2946,11 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
     if (activeTab === 'orders' && !jobOrdersLoaded) loadJobOrders()
     if (activeTab === 'history' && atLeastPM(userRole)) loadChangeLog()
     if (activeTab === 'po') { loadPurchaseOrders(); loadBudgetItems(); loadDrawRequests() }
-    if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment() }
+    if (activeTab === 'lookahead') { loadLookaheadData(); loadContracts(); loadCompanyEquipment(); loadJobInspections() }
   }, [activeTab, id])
+
+  // Inspections badge (pending count) needs the list before the tab is opened.
+  useEffect(() => { if (id) loadJobInspections() }, [id])
 
   async function loadOverviewSummary() {
     if (overviewSummary) return
@@ -3800,6 +3811,24 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
     await loadJobContacts()
     setMeetingMsg({ ok: true, text: `${contact.name} added to contacts` })
     setTimeout(() => setMeetingMsg(null), 3000)
+  }
+
+  // Job inspections for the sidebar badge and the Lookahead link (the tab loads its own).
+  async function loadJobInspections() {
+    try {
+      if (!inspectionUserId) supabase.auth.getSession().then(({ data }) => setInspectionUserId(data?.session?.user?.id || null)).catch(() => {})
+      const res = await authFetch(`/api/res-inspections?job_id=${encodeURIComponent(id)}`)
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !Array.isArray(body?.inspections)) return false
+      setJobInspections(body.inspections)
+      setInspections064(!!body.has064)
+      return true
+    } catch { return false }
+  }
+  // Lookahead → "Log inspection": open the Inspections tab with the form pre-filled.
+  function logInspectionForActivity(act) {
+    setInspectionPrefill({ key: `${act.id}-${Date.now()}`, notes: `Lookahead: ${act.description || ''}`.trim(), lookahead_activity_id: act.id })
+    setActiveTab('inspections')
   }
 
   // Loaders below return true when loaded, false on a failed load (state left as is).
@@ -6575,6 +6604,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                   { key: 'drawings', label: 'Drawings', badge: drawings.length || null },
                   { key: 'submittals', label: 'Submittals', badge: submittals.length || null },
                   { key: 'punch', label: 'Punch List', badge: punchItems.filter(p => p.status !== 'approved').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0 },
+                  { key: 'inspections', label: 'Inspections', badge: jobInspections.filter(i => (i.result || 'pending') === 'pending').length || null },
                   { key: 'photos', label: 'Site Photos', badge: fieldPhotos.length || null },
                   { key: 'orders', label: 'Orders', badge: jobOrders.length || null },
                   { key: 'lookahead', label: 'Lookahead' },
@@ -13805,9 +13835,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                           <div style={{ color: '#6b7280' }}>
                             {new Date(act.planned_date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
                             {act.inspection_required && <span style={{ color: act.inspection_scheduled ? '#16a34a' : '#d97706', marginLeft: '8px' }}>Inspection {act.inspection_scheduled ? '✓ Scheduled' : '— Not yet scheduled'}</span>}
+                            {act.inspection_required && (() => {
+                              const linked = jobInspections.filter(i => i.lookahead_activity_id === act.id).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0]
+                              return linked ? <span style={{ color: '#374151', marginLeft: '8px' }}>· {linked.inspection_type} {linked.scheduled_date ? new Date(linked.scheduled_date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : 'unscheduled'} — {(linked.result || 'pending').toUpperCase()}</span> : null
+                            })()}
                             {hasOpenConstraint(act) && <span style={{ color: '#ef4444', marginLeft: '8px' }}>{act.constraints}</span>}
                           </div>
                         </div>
+                        {act.inspection_required && inspections064 && <button onClick={() => logInspectionForActivity(act)} style={{ background: 'none', border: '1px solid #fdba74', borderRadius: '5px', color: '#c2410c', fontSize: '11px', cursor: 'pointer', padding: '3px 8px', flexShrink: 0 }}>Log inspection</button>}
                         <button onClick={() => openEditActivity(act)} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '5px', color: '#6b7280', fontSize: '11px', cursor: 'pointer', padding: '3px 8px', flexShrink: 0 }}>Edit</button>
                       </div>
                     ))}
@@ -13962,6 +13997,26 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
             </>
           )
         })()}
+
+        {/* ── INSPECTIONS TAB ── (prompt67d: shared with the field app) */}
+        {activeTab === 'inspections' && (
+          <div style={s.card}>
+            <p style={{ ...s.cardTitle, marginTop: 0 }}>Inspections</p>
+            <FieldInspections
+              jobId={id}
+              jobType={job?.job_type}
+              userId={inspectionUserId}
+              canDelete={atLeastPM(userRole)}
+              prefill={inspectionPrefill}
+              onLoaded={(list, has064) => { setJobInspections(list); setInspections064(!!has064); setInspectionPrefill(null) }}
+              s={{
+                ...s,
+                btnSm: c => (c === 'red' ? s.btnSmallRed : c === 'green' ? s.btnSmallGreen : c === 'orange' ? s.btnSmallOrange : s.btnSmall),
+                empty: { padding: '2rem', textAlign: 'center', color: '#9ca3af', fontSize: '14px' },
+              }}
+            />
+          </div>
+        )}
 
         {/* ── PUNCH LIST TAB ── */}
         {activeTab === 'punch' && (

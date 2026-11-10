@@ -204,7 +204,7 @@ export default function Field() {
   const [filterDocCategory, setFilterDocCategory] = useState('all')
 
   const [punchItems, setPunchItems] = useState([])
-  const [pendingInspections, setPendingInspections] = useState(null) // residential jobs: pending count for the tile
+  const [pendingInspections, setPendingInspections] = useState(null) // pending inspection count for the tile
   const [punchForm, setPunchForm] = useState({ title: '', description: '', due_date: '' })
   const [showPunchForm, setShowPunchForm] = useState(false)
   const [submittingPunch, setSubmittingPunch] = useState(false)
@@ -1330,8 +1330,8 @@ export default function Field() {
                       { key: 'subs', icon: IC.subs, label: 'Contacts', count: (jobContacts.length + subContacts.length) || null },
                       { key: 'costs', icon: IC.costs, label: 'Direct Costs', count: directCosts.length || null },
                       { key: 'docs', icon: IC.docs, label: 'Documents', count: jobDocs.length || null },
-                      // Residential jobs only: building-department inspections (/api/res-inspections).
-                      ...(isResidentialJob(selectedJob) ? [{ key: 'inspections', icon: IC.punch, label: 'Inspections', count: pendingInspections || null }] : []),
+                      // Every job (residential + commercial since prompt67d): inspections (/api/res-inspections).
+                      { key: 'inspections', icon: IC.punch, label: 'Inspections', count: pendingInspections || null },
                       { key: 'punch', icon: IC.punch, label: 'Punch List', count: punchItems.filter(p => p.status === 'open').length || null, alert: punchItems.filter(p => p.status === 'open').length > 0, alertLabel: `${punchItems.filter(p => p.status === 'open').length} open` },
                       { key: 'photos', icon: IC.photos, label: 'Site Photos', count: totalGalleryPhotos || null },
                       { key: 'vehicles', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, label: 'My Vehicle', count: assignedVehicles.length || null },
@@ -2391,9 +2391,9 @@ export default function Field() {
                   </>
                 )}
 
-                {/* INSPECTIONS (residential jobs) */}
-                {activeTab === 'inspections' && isResidentialJob(selectedJob) && (
-                  <FieldInspections jobId={selectedJobId} userId={user?.id} s={s} onCount={setPendingInspections} />
+                {/* INSPECTIONS (every job type) */}
+                {activeTab === 'inspections' && (
+                  <FieldInspections jobId={selectedJobId} jobType={selectedJob?.job_type} userId={user?.id} s={s} onCount={setPendingInspections} />
                 )}
 
                 {/* SITE PHOTOS */}

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth, isPM } from '../../../lib/server-auth'
 import { sameUpdatedAt } from '../../../lib/estimate-save'
 import { validateTaxRate, isMissingTaxRateColumn, DEFAULT_TAX_RATE, TAX_RATE_MIGRATION_MSG } from '../../../lib/calc-total'
+import { validateProposalFields, validateAlternates, isMissing065, hasProposalFields, withoutProposalFields, MIGRATION_065_WARNING } from '../../../lib/estimate-proposal'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -86,7 +87,18 @@ export async function POST(request) {
       const { id, line_items } = body
       const tr = checkTaxRate(body.fields)
       if (tr.res) return tr.res
-      const fields = tr.fields
+      // prompt67d: exclusions / clarifications / proposal_date / valid_days (migration 065).
+      const pv = validateProposalFields(tr.fields)
+      if (pv.error) return Response.json({ error: pv.error, code: 'invalid_proposal' }, { status: 400 })
+      const fields = tr.fields ? pv.fields : tr.fields
+      // Optional alternates array: replace-all (validated before anything is written).
+      let alternates = null
+      if (Object.prototype.hasOwnProperty.call(body, 'alternates') && body.alternates !== null && body.alternates !== undefined) {
+        const av = validateAlternates(body.alternates)
+        if (av.error) return Response.json({ error: av.error, code: 'invalid_alternates' }, { status: 400 })
+        alternates = av.alternates
+      }
+      let warning = null
 
       const { data: est } = await adminSupabase
         .from('estimates').select('created_by, allowed_users, updated_at').eq('id', id).maybeSingle()
@@ -116,16 +128,31 @@ export async function POST(request) {
         return q.select('updated_at')
       }
 
-      let { data: updatedRows, error: updateErr } = await casUpdate(cleanFields)
+      let writeFields = cleanFields
+      let { data: updatedRows, error: updateErr } = await casUpdate(writeFields)
+
+      // Before migration 065: drop the proposal fields and retry (old fields still save).
+      if (updateErr && isMissing065(updateErr) && hasProposalFields(writeFields)) {
+        writeFields = withoutProposalFields(writeFields)
+        warning = MIGRATION_065_WARNING
+        ;({ data: updatedRows, error: updateErr } = await casUpdate(writeFields))
+      }
 
       if (updateErr && isMissingTaxRateColumn(updateErr)) {
-        const retry = withoutDefaultTaxRate(cleanFields)
+        const retry = withoutDefaultTaxRate(writeFields)
         if (!retry) return Response.json({ error: TAX_RATE_MIGRATION_MSG, code: 'migration_missing' }, { status: 422 })
+        writeFields = retry
         ;({ data: updatedRows, error: updateErr } = await casUpdate(retry))
       }
 
+      if (updateErr && isMissing065(updateErr) && hasProposalFields(writeFields)) {
+        writeFields = withoutProposalFields(writeFields)
+        warning = MIGRATION_065_WARNING
+        ;({ data: updatedRows, error: updateErr } = await casUpdate(writeFields))
+      }
+
       if (updateErr?.message?.includes('markup_flat')) {
-        const { markup_flat, ...fieldsWithout } = cleanFields
+        const { markup_flat, ...fieldsWithout } = writeFields
         ;({ data: updatedRows, error: updateErr } = await casUpdate(fieldsWithout))
       }
 
@@ -154,7 +181,22 @@ export async function POST(request) {
         }
       }
 
-      return Response.json({ ok: true, updated_at: savedUpdatedAt })
+      // Alternates (migration 065): replace-all, like line items. Missing table → warning.
+      if (alternates) {
+        const { error: delErr } = await adminSupabase.from('estimate_alternates').delete().eq('estimate_id', id)
+        if (delErr) {
+          if (!isMissing065(delErr)) return Response.json({ error: delErr.message }, { status: 500 })
+          warning = MIGRATION_065_WARNING
+        } else if (alternates.length) {
+          const { error: altErr } = await adminSupabase.from('estimate_alternates').insert(alternates.map(a => ({ ...a, estimate_id: id })))
+          if (altErr) {
+            if (!isMissing065(altErr)) return Response.json({ error: altErr.message }, { status: 500 })
+            warning = MIGRATION_065_WARNING
+          }
+        }
+      }
+
+      return Response.json({ ok: true, updated_at: savedUpdatedAt, ...(warning ? { warning } : {}) })
     }
 
     // ── Delete ───────────────────────────────────────────────────────────────

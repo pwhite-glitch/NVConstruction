@@ -4,8 +4,9 @@ import { isPrincipal } from '../../../lib/roles'
 import { supabase } from '../../../lib/supabase'
 import { openStorageFile } from '../../../lib/open-file'
 import {
-  estimateSavePayload, shouldOfferDraft, initialSaveState, saveStateReducer, shouldAutoSave, STALE_MESSAGE,
+  estimateSavePayload, alternatesSavePayload, shouldOfferDraft, initialSaveState, saveStateReducer, shouldAutoSave, STALE_MESSAGE,
 } from '../../../lib/estimate-save'
+import { acceptedAlternateTotals, addDaysIso, validDaysOf, exportErrorMessage } from '../../../lib/estimate-proposal'
 import { JOB_LINK_ROLES } from '../../../lib/estimate-to-job'
 import { estimateBreakdown, validateTaxRate, taxLabel, DEFAULT_TAX_RATE, MAX_TAX_RATE } from '../../../lib/calc-total'
 import LinkToJobPanel from './LinkToJobPanel'
@@ -107,6 +108,13 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const [hasDraft,    setHasDraft]    = useState(false)
   const [draftSnap,   setDraftSnap]   = useState(null)
   const [restoredMsg, setRestoredMsg] = useState(false)
+  // prompt67d (migration 065): proposal sections + alternates. has065 = the loaded row has
+  // the new columns; before 065 the section is hidden and nothing new is sent.
+  const has065 = Object.prototype.hasOwnProperty.call(estimate, 'valid_days')
+  const [alternates,  setAlternates]  = useState([])
+  const [altsLoaded,  setAltsLoaded]  = useState(false)
+  const [defaultsMsg, setDefaultsMsg] = useState('')
+  const [editDefaults, setEditDefaults] = useState(null) // { default_exclusions, default_clarifications } while editing
 
   // dirty is set ONLY by markEdited() from user input handlers. Loads, refetches,
   // draft restores and saves never mark dirty, so a save can't re-trigger itself.
@@ -124,6 +132,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const canEdit = isPrincipal(profile?.role)
   const isPM    = isPrincipal(profile?.role) // delete estimate: Owner only
   const canLink = JOB_LINK_ROLES.has(profile?.role)
+  const canEditDefaults = ['principal', 'pm'].includes(profile?.role)
 
   function markEdited() {
     setRestoredMsg(false)
@@ -136,6 +145,55 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   function editLines(updater) {
     setLines(updater)
     markEdited()
+  }
+  function editAlternates(updater) {
+    setAlternates(updater)
+    markEdited()
+  }
+
+  async function loadAlternates() {
+    if (!has065) return
+    const { data, error } = await supabase.from('estimate_alternates')
+      .select('id, description, kind, amount, accepted, sort_order').eq('estimate_id', estimate.id).order('sort_order', { ascending: true })
+    if (!error) { setAlternates(data || []); setAltsLoaded(true) }
+  }
+  useEffect(() => { loadAlternates() }, [])
+
+  async function apiCall(url, method, body) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    })
+    let result = null
+    try { result = await res.json() } catch {}
+    return { res, result }
+  }
+
+  // "Use default list": insert the saved company defaults; never overwrite without confirm.
+  async function applyDefaultList(field) {
+    setDefaultsMsg('')
+    const { res, result } = await apiCall('/api/estimates/proposal-defaults', 'GET')
+    if (!res.ok) { setDefaultsMsg(result?.error || 'Could not load the default list.'); return }
+    const text = result?.defaults?.[field === 'exclusions' ? 'default_exclusions' : 'default_clarifications'] || ''
+    if (!text.trim()) { setDefaultsMsg('No default list saved yet.'); return }
+    if (String(form[field] || '').trim() && !window.confirm(`Replace the current ${field} with the default list?`)) return
+    editForm({ [field]: text })
+  }
+
+  async function openDefaultsEditor() {
+    setDefaultsMsg('')
+    const { res, result } = await apiCall('/api/estimates/proposal-defaults', 'GET')
+    if (!res.ok) { setDefaultsMsg(result?.error || 'Could not load the default list.'); return }
+    setEditDefaults({ default_exclusions: result?.defaults?.default_exclusions || '', default_clarifications: result?.defaults?.default_clarifications || '' })
+  }
+
+  async function saveDefaults() {
+    const { res, result } = await apiCall('/api/estimates/proposal-defaults', 'PUT', editDefaults)
+    if (!res.ok) { setDefaultsMsg(result?.error || 'Default list not saved.'); return }
+    setEditDefaults(null)
+    setDefaultsMsg('Default list saved.')
   }
 
   useEffect(() => { if (tab === 'docs') loadDocs() }, [tab])
@@ -162,13 +220,13 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     if (!dirty || conflict) return
     const t = setTimeout(() => {
       try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines, savedAt: Date.now(), base_updated_at: saveStateRef.current.base }))
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines, alternates, savedAt: Date.now(), base_updated_at: saveStateRef.current.base }))
         setDraftMsg('Draft saved locally')
         setTimeout(() => setDraftMsg(''), 2500)
       } catch {}
     }, 1500)
     return () => clearTimeout(t)
-  }, [form, lines, dirty, conflict])
+  }, [form, lines, alternates, dirty, conflict])
 
   async function loadDocs() {
     setLoadingDocs(true)
@@ -177,9 +235,11 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     setLoadingDocs(false)
   }
 
+  // Returns true when the save went through (export uses it).
   async function save(auto = false, statusOverride) {
+    let ok = false
     // Never overlap saves, and never write once we know we're stale.
-    if (savingRef.current || saveStateRef.current.conflict) return
+    if (savingRef.current || saveStateRef.current.conflict) return false
     if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); autoSaveTimer.current = null }
     savingRef.current = true
     if (!auto) setSaving(true)
@@ -207,6 +267,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
           expected_updated_at: saveStateRef.current.base ?? null,
           fields,
           line_items: lineItems,
+          ...(has065 && altsLoaded ? { alternates: alternatesSavePayload(alternates) } : {}),
         }),
       })
       let result = null
@@ -219,11 +280,13 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
 
       // Saved. From here on the server's updated_at is our base.
       dispatchSave({ type: 'saved', updated_at: result?.updated_at ?? null, seqAtStart })
+      ok = true
       try { localStorage.removeItem(DRAFT_KEY) } catch {}
       setHasDraft(false)
       setRestoredMsg(false)
       dbLineCount.current = lineItems.length
-      setSaveMsg(auto ? 'Auto-saved' : 'Saved')
+      if (result?.warning) setSaveMsg('Error — ' + result.warning)
+      else setSaveMsg(auto ? 'Auto-saved' : 'Saved')
       setTimeout(() => setSaveMsg(m => (m === 'Saved' || m === 'Auto-saved' ? '' : m)), 2500)
 
       // Refresh from the DB. This does NOT mark dirty. If the user typed while
@@ -235,6 +298,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
         if (saveStateRef.current.editSeq === seqAtStart) {
           setForm({ ...updated })
           setLines(updated.estimate_line_items)
+          await loadAlternates()
         }
         onUpdated(updated)
       }
@@ -245,6 +309,44 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
       savingRef.current = false
       if (!auto) setSaving(false)
     }
+    return ok
+  }
+
+  // Export PDF: always prints the SAVED estimate through /api/estimates/export (revision /
+  // proposal date). Unsaved edits are saved first. The print window opens inside the tap
+  // (generatePDF with a loader → openHtml) and is filled after the requests.
+  // If an auto-save is running when Export is tapped, wait for it (up to ~10s) and continue,
+  // instead of failing. dirty / conflict are re-read from saveStateRef after the wait.
+  async function waitForSaveIdle(timeoutMs = 10000) {
+    const until = Date.now() + timeoutMs
+    while (savingRef.current) {
+      if (Date.now() >= until) return false
+      await new Promise(r => setTimeout(r, 100))
+    }
+    await new Promise(r => setTimeout(r, 0)) // let the save's state update render first
+    return true
+  }
+  function exportPdf() {
+    if (conflict) { setSaveMsg('Error — ' + STALE_MESSAGE); return }
+    // The print window opens synchronously in this tap (generatePDF → openHtml); everything
+    // async happens inside the loader.
+    generatePDF(async () => {
+      if (savingRef.current && !(await waitForSaveIdle())) {
+        setSaveMsg('Error — not exported: a save is still running. Try again in a moment.')
+        return null
+      }
+      const st = saveStateRef.current
+      if (st.conflict) { setSaveMsg('Error — ' + STALE_MESSAGE); return null }
+      if (st.dirty && canEdit && !isArchived) {
+        const saved = await save(false)
+        if (!saved) { setSaveMsg(m => (m && m.startsWith('Error') ? m : 'Error — not exported: save your changes first.')); return null }
+      }
+      const { res, result } = await apiCall('/api/estimates/export', 'POST', { id: estimate.id })
+      if (!res.ok || !result?.estimate) { setSaveMsg('Error — ' + exportErrorMessage(res.status, result?.error)); return null }
+      const ex = result.estimate
+      if (result.changed) setForm(f => ({ ...f, revision: ex.revision, proposal_date: ex.proposal_date, proposal_exported_at: ex.proposal_exported_at, proposal_export_hash: ex.proposal_export_hash }))
+      return ex
+    })
   }
 
   async function uploadDoc(file) {
@@ -340,6 +442,9 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
   const grandTotal = bd.total
   const markupAmt  = bd.markup
   const sqftRate   = form.square_footage > 0 ? grandTotal / Number(form.square_footage) : null
+  // Alternates are never in the base total on screen; their own subtotal only.
+  const altTotals  = acceptedAlternateTotals(alternates)
+  const validThrough = addDaysIso(form.proposal_date || '', validDaysOf(form))
 
   const stageCfg = STAGE_MAP[form.status] || { label: form.status, color: '#374151', bg: '#f3f4f6', border: '#e5e7eb' }
   const isArchived = ['won','lost','accepted','declined'].includes(form.status)
@@ -363,6 +468,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
     if (!draftSnap) return
     setForm(draftSnap.form)
     setLines(draftSnap.lines || [])
+    if (Array.isArray(draftSnap.alternates)) setAlternates(draftSnap.alternates)
     setHasDraft(false)
     setRestoredMsg(true)
   }
@@ -484,6 +590,86 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                 <textarea style={s.ta} value={form.notes || ''} onChange={e => editForm({ notes: e.target.value })} disabled={!canEdit || isArchived} />
               </div>
             </div>
+
+            {/* Proposal sections (prompt67d / migration 065) */}
+            {has065 && (
+              <div style={s.box}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem', gap: '8px', flexWrap: 'wrap' }}>
+                  <p style={{ ...s.sec, margin: 0 }}>Proposal</p>
+                  {canEditDefaults && !editDefaults && <button style={s.btnSm()} onClick={openDefaultsEditor}>Edit default exclusions</button>}
+                </div>
+                {editDefaults && (
+                  <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '10px', marginBottom: '12px', background: '#fafafa' }}>
+                    <label style={s.lbl}>Default exclusions (one per line)</label>
+                    <textarea style={s.ta} value={editDefaults.default_exclusions} onChange={e => setEditDefaults(d => ({ ...d, default_exclusions: e.target.value }))} />
+                    <label style={{ ...s.lbl, marginTop: '8px' }}>Default clarifications (one per line)</label>
+                    <textarea style={s.ta} value={editDefaults.default_clarifications} onChange={e => setEditDefaults(d => ({ ...d, default_clarifications: e.target.value }))} />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <button style={s.btnSm('green')} onClick={saveDefaults}>Save default list</button>
+                      <button style={s.btnSm()} onClick={() => setEditDefaults(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                {defaultsMsg && <p style={{ fontSize: '12px', color: defaultsMsg === 'Default list saved.' ? '#16a34a' : '#92400e', margin: '0 0 8px' }}>{defaultsMsg}</p>}
+                <div style={s.g2} className="rx-grid-2">
+                  <div>
+                    <label style={s.lbl}>Proposal date</label>
+                    <input type="date" style={s.inp} value={form.proposal_date || ''} onChange={e => editForm({ proposal_date: e.target.value || null })} disabled={!canEdit || isArchived} />
+                  </div>
+                  <div>
+                    <label style={s.lbl}>Valid (days)</label>
+                    <input type="number" min="1" max="365" step="1" style={s.inp} value={form.valid_days ?? 30} onChange={e => editForm({ valid_days: e.target.value })} disabled={!canEdit || isArchived} />
+                  </div>
+                </div>
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 12px' }}>
+                  {form.proposal_date ? `Valid through ${validThrough || '—'}` : 'Date is set to today on the first export.'} · Revision {Number(form.revision || 0)}{form.proposal_exported_at ? `, last exported ${new Date(form.proposal_exported_at).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })}` : ''}
+                </p>
+                {[['exclusions', 'Exclusions'], ['clarifications', 'Clarifications']].map(([key, label]) => (
+                  <div key={key} style={{ marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ ...s.lbl, marginBottom: 0 }}>{label} (one per line)</label>
+                      {canEdit && !isArchived && <button style={s.btnSm()} onClick={() => applyDefaultList(key)}>Use default list</button>}
+                    </div>
+                    <textarea style={s.ta} value={form[key] || ''} onChange={e => editForm({ [key]: e.target.value })} disabled={!canEdit || isArchived} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Alternates (prompt67d): never in the base total */}
+            {has065 && (
+              <div style={s.box}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+                  <p style={{ ...s.sec, margin: 0 }}>Alternates</p>
+                  {canEdit && !isArchived && altsLoaded && (
+                    <button style={s.btnSm('green')} onClick={() => editAlternates(a => [...a, { description: '', kind: 'add', amount: '', accepted: false }])}>+ Add alternate</button>
+                  )}
+                </div>
+                {alternates.length === 0 && <div style={{ fontSize: '13px', color: '#9ca3af' }}>No alternates.</div>}
+                {alternates.map((alt, idx) => (
+                  <div key={alt.id || idx} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 110px auto 30px', gap: '6px', alignItems: 'center', marginBottom: '6px' }}>
+                    <input style={s.inp} value={alt.description || ''} placeholder="Description" onChange={e => editAlternates(a => a.map((x, i) => (i === idx ? { ...x, description: e.target.value } : x)))} disabled={!canEdit || isArchived} />
+                    <select style={s.sel} value={alt.kind || 'add'} onChange={e => editAlternates(a => a.map((x, i) => (i === idx ? { ...x, kind: e.target.value } : x)))} disabled={!canEdit || isArchived}>
+                      <option value="add">Add</option>
+                      <option value="deduct">Deduct</option>
+                    </select>
+                    <input type="number" min="0" step="0.01" style={{ ...s.inp, textAlign: 'right' }} value={alt.amount ?? ''} placeholder="0.00" onChange={e => editAlternates(a => a.map((x, i) => (i === idx ? { ...x, amount: e.target.value } : x)))} disabled={!canEdit || isArchived} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#374151' }}>
+                      <input type="checkbox" checked={!!alt.accepted} onChange={e => editAlternates(a => a.map((x, i) => (i === idx ? { ...x, accepted: e.target.checked } : x)))} disabled={!canEdit || isArchived} />
+                      Accepted
+                    </label>
+                    {canEdit && !isArchived
+                      ? <button style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '18px', padding: 0 }} onClick={() => editAlternates(a => a.filter((_, i) => i !== idx))}>×</button>
+                      : <div />}
+                  </div>
+                ))}
+                {alternates.length > 0 && (
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
+                    Accepted alternates: +{fmt$(altTotals.add)} / −{fmt$(altTotals.deduct)} — not included in the Total. Accepted alternates are added to the job budget and contract on Convert to Job.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Schedule of values */}
             <div style={s.box}>
@@ -631,6 +817,12 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
                   {fmt$(sqftRate)} / sq ft
                 </div>
               )}
+              {has065 && alternates.length > 0 && (
+                <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
+                  Accepted alternates: +{fmt$(altTotals.add)} / −{fmt$(altTotals.deduct)}
+                  <div style={{ fontSize: '11px', color: '#9ca3af' }}>Not included in the Total.</div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -672,7 +864,13 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
             <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 1rem' }}>
               Generates a formatted Cost Proposal PDF for {form.owner_name || form.owner_company || 'the client'}, including the schedule of values, markup, and signature block.
             </p>
-            <button style={s.btn} onClick={() => generatePDF({ ...estimate, ...form, estimate_line_items: lines })}>
+            {dirty && canEdit && !isArchived && <p style={{ fontSize: '12px', color: '#92400e', margin: '0 0 0.75rem' }}>You have unsaved changes. Export PDF saves them first, then exports the saved estimate.</p>}
+            {has065 && (
+              <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 0.75rem' }}>
+                Revision {Number(form.revision || 0)}{form.proposal_exported_at ? `, last exported ${new Date(form.proposal_exported_at).toLocaleDateString('en-US', { timeZone: 'America/Chicago' })}` : ', not exported yet'}
+              </p>
+            )}
+            <button style={s.btn} onClick={exportPdf} disabled={conflict}>
               Export PDF
             </button>
           </div>

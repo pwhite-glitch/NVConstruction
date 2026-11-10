@@ -37,7 +37,8 @@ describe('jobHref', () => {
     expect(jobHref(RES, 'lookahead')).toContain('tab=field')
     expect(jobHref(RES, 'po')).toContain('tab=overview')
     expect(jobHref(COM, 'punchlist')).toContain('tab=punch')
-    expect(jobHref(COM, 'inspections')).toContain('tab=overview')
+    // prompt67d #9: the commercial page has its own Inspections tab now.
+    expect(jobHref(COM, 'inspections')).toContain('tab=inspections')
     expect(jobHref(COM, 'nonsense')).toContain('tab=overview')
     for (const t of [...RESIDENTIAL_TABS, ...COMMERCIAL_TABS, 'bogus']) {
       expect(RESIDENTIAL_TABS).toContain(mapJobTab(t, true))

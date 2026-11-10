@@ -349,12 +349,13 @@ describe('6) /api/res-inspections', () => {
     expect((await call('PATCH', '/api/res-inspections', { id: 'i1', result: 'maybe' })).status).toBe(400)
     expect((await call('POST', '/api/res-inspections', { job_id: 'RJ', inspection_type: '  ' })).status).toBe(400)
   })
-  test('office: principal / admin on any residential job; PM only on their job; commercial refused', async () => {
+  test('office: principal / admin on any residential job; PM only on their job; commercial allowed (prompt67d)', async () => {
     as('admin'); expect((await call('GET', '/api/res-inspections?job_id=RJ2')).status).toBe(200)
     as('principal'); expect((await call('GET', '/api/res-inspections?job_id=RJ2')).status).toBe(200)
     as('pm'); expect((await call('GET', '/api/res-inspections?job_id=RJ')).status).toBe(200)
     expect((await call('GET', '/api/res-inspections?job_id=RJ2')).status).toBe(403)
-    expect((await call('GET', '/api/res-inspections?job_id=CJ')).status).toBe(400)
+    // prompt67d #9: commercial jobs use the same inspection log (PM assigned to CJ).
+    expect((await call('GET', '/api/res-inspections?job_id=CJ')).status).toBe(200)
     expect((await call('GET', '/api/res-inspections')).status).toBe(404)
   })
   test('delete: Owner / PM on the job only (supers and admin refused, as on the office page)', async () => {
@@ -408,10 +409,10 @@ describe('6) /api/res-inspections', () => {
     // and owner draws are still never loaded for supers
     expect(page).toMatch(/if \(!canUseOwnerDraws\(role\)\) \{ setOwnerDraws\(\[\]\); return \}/)
   })
-  test('field app: Inspections section on residential jobs only, punch through /api/punch-list', () => {
+  test('field app: Inspections section on every job (prompt67d), punch through /api/punch-list', () => {
     const field = read('app/field/page.js')
-    expect(field).toMatch(/isResidentialJob\(selectedJob\) \? \[\{ key: 'inspections'/)
-    expect(field).toMatch(/activeTab === 'inspections' && isResidentialJob\(selectedJob\)/)
+    expect(field).toMatch(/\{ key: 'inspections', icon: IC\.punch, label: 'Inspections'/)
+    expect(field).toMatch(/activeTab === 'inspections' && \(/)
     const comp = read('app/field/FieldInspections.js')
     expect(comp).toMatch(/call\('\/api\/punch-list', 'POST'/)
     expect(comp).toMatch(/\/api\/res-inspections/)

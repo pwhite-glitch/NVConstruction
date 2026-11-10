@@ -5,6 +5,7 @@ import {
   JOB_LINK_ROLES, mapEstimateLinesToBudget, estimateTotal, findDuplicates, planLink, budgetSnapshot,
 } from '../../../../lib/estimate-to-job'
 import { denyJob, accessibleJobIds, isJobLimited } from '../../../../lib/roles'
+import { isMissing065 } from '../../../../lib/estimate-proposal'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -60,7 +61,12 @@ async function loadEstimate(id, auth) {
     const allowed = est.created_by === auth.userId || (est.allowed_users || []).includes(auth.userId)
     if (!allowed) return { res: json({ error: 'Forbidden' }, 403) }
   }
-  return { est, lines: est.estimate_line_items || [] }
+  // Alternates (migration 065): only accepted ones reach the job. Table missing → none
+  // (convert / link exactly as before 065).
+  const { data: alts, error: altErr } = await adminSupabase
+    .from('estimate_alternates').select('id, description, kind, amount, accepted, sort_order').eq('estimate_id', id)
+  if (altErr && !isMissing065(altErr)) return { res: json({ error: altErr.message }, 500) }
+  return { est, lines: est.estimate_line_items || [], alternates: altErr ? [] : (alts || []) }
 }
 
 function checkFresh(body, est) {
@@ -163,7 +169,7 @@ export async function POST(request) {
       const denied = await denyJob(adminSupabase, auth, jl.job.id)
       if (denied) return denied
 
-      const newLines = mapEstimateLinesToBudget(e.est, e.lines)
+      const newLines = mapEstimateLinesToBudget(e.est, e.lines, e.alternates)
       let references = []
       let referencesError = null
       if (jl.lines.length) {
@@ -174,7 +180,7 @@ export async function POST(request) {
       }
       return json({
         estimate_updated_at: e.est.updated_at ?? null,
-        estimate_total: estimateTotal(e.est, e.lines),
+        estimate_total: estimateTotal(e.est, e.lines, e.alternates),
         new_lines: newLines,
         job: jl.job,
         job_lines: jl.lines,
@@ -201,8 +207,8 @@ export async function POST(request) {
         p_estimate_id: e.est.id,
         p_expected_updated_at: e.est.updated_at ?? null,
         p_job: { job_number: jobNumber, project_name: e.est.project_name || null, owner_name: e.est.owner_name || null, start_date: startDate },
-        p_lines: mapEstimateLinesToBudget(e.est, e.lines),
-        p_contract_value: estimateTotal(e.est, e.lines),
+        p_lines: mapEstimateLinesToBudget(e.est, e.lines, e.alternates),
+        p_contract_value: estimateTotal(e.est, e.lines, e.alternates),
         p_user_id: auth.userId,
         p_user_role: auth.role,
         p_user_name: await userName(auth.userId),
@@ -252,6 +258,7 @@ export async function POST(request) {
       const { plan, error: planErr, code } = planLink({
         estimate: e.est, estimateLines: e.lines, job: jl.job, jobLines: jl.lines,
         opts: { mode: body.mode, duplicate_actions: body.duplicate_actions, contract_action: body.contract_action },
+        alternates: e.alternates,
       })
       if (planErr) return json({ error: planErr, code }, 400)
 

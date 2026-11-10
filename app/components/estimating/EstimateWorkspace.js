@@ -89,7 +89,7 @@ const s = {
   empty:   { textAlign: 'center', color: '#9ca3af', fontSize: '13px', padding: '2.5rem 0' },
 }
 
-export default function EstimateWorkspace({ estimate, profile, generatePDF, onBack, onUpdated, onDeleted }) {
+export default function EstimateWorkspace({ estimate, profile, generatePDF, onBack, onUpdated, onDeleted, backLabel = '← Estimates' }) {
   const [tab,         setTab]         = useState('pricing')
   const [form,        setForm]        = useState({ ...estimate })
   const [lines,       setLines]       = useState((estimate.estimate_line_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)))
@@ -507,7 +507,7 @@ export default function EstimateWorkspace({ estimate, profile, generatePDF, onBa
 
       {/* ── Header ── */}
       <div style={s.header}>
-        <button style={s.backBtn} onClick={onBack}>← Estimates</button>
+        <button style={s.backBtn} onClick={onBack}>{backLabel}</button>
         <div style={s.hdivider} />
         <div>
           <p style={s.htitle}>{form.project_name || 'Untitled estimate'}</p>

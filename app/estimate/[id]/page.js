@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabase'
 import EstimateWorkspace from '../../components/estimating/EstimateWorkspace'
 import { generateEstimatePDF } from '../../../lib/generate-estimate-pdf'
+import { estimateBackTarget } from '../../../lib/estimate-nav'
 
 export default function EstimateDetailPage() {
   const { id } = useParams()
@@ -13,6 +14,12 @@ export default function EstimateDetailPage() {
   const [estimate, setEstimate] = useState(null)
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState('')
+  // ?from=pipeline: back returns to the Estimator > Pipeline sub-tab (read client-side; no Suspense needed)
+  const [from, setFrom]         = useState('')
+  useEffect(() => {
+    try { setFrom(new URLSearchParams(window.location.search).get('from') || '') } catch {}
+  }, [])
+  const back = estimateBackTarget(from)
 
   const load = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -56,7 +63,8 @@ export default function EstimateDetailPage() {
         estimate={estimate}
         profile={profile}
         generatePDF={generateEstimatePDF}
-        onBack={() => router.push('/dashboard?tab=estimator')}
+        onBack={() => router.push(back.href)}
+        backLabel={back.label}
         onUpdated={(updated) => setEstimate(updated)}
         onDeleted={() => router.push('/dashboard?tab=estimator')}
       />

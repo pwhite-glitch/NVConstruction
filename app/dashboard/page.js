@@ -30,6 +30,7 @@ import { estimateTotal, mapEstimateLinesToBudget } from '../../lib/estimate-to-j
 import { inActiveJobList, inCompletedJobList, isActiveStatusJob } from '../../lib/job-lifecycle'
 import { isPrincipal, atLeastPM, isJobLimited, rolePill, roleLabel, accessibleJobIds, homePathForRole } from '../../lib/roles'
 import { resolveDashboardTab, tabFromSearch, dashboardUrlForTab } from '../../lib/dashboard-tabs'
+import { estimatorSubFromSearch, estimateHrefFromPipeline } from '../../lib/estimate-nav'
 import { jobHref, jobHrefById, isResidentialJob } from '../../lib/job-links'
 import { ownerDrawFunding, pctFunded } from '../../lib/owner-draws'
 import CashOutlookCard from '../components/CashOutlookCard'
@@ -287,6 +288,7 @@ export default function Dashboard() {
   // ?tab= handling: the inbound tab waits until the role's nav is known (then it is
   // checked against it), the open tab is mirrored into the URL, back/forward work.
   const inboundTabRef = useRef(null)   // ?tab= on arrival, until applied
+  const inboundSubRef = useRef(null)   // ?sub= (Estimator inner tab) on arrival, until applied
   const navKeysRef = useRef([])        // tab keys this (effective) role can open
   const popRef = useRef(false)         // the current tab change came from back/forward
   const activeTabRef = useRef('overview')
@@ -601,6 +603,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       inboundTabRef.current = tabFromSearch(window.location.search)
+      inboundSubRef.current = estimatorSubFromSearch(window.location.search)
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
@@ -679,7 +682,14 @@ export default function Dashboard() {
     if (inboundTabRef.current !== null) {
       const t = resolveDashboardTab(inboundTabRef.current, allowed)
       inboundTabRef.current = null
-      window.history.replaceState(window.history.state, '', dashboardUrlForTab(window.location, t))
+      // ?sub= picks the Estimator inner tab (only when Estimator is the tab opened), then is dropped from the URL
+      const sub = inboundSubRef.current
+      inboundSubRef.current = null
+      if (t === 'estimator' && sub) setEstimatorInnerTab(sub)
+      const params = new URLSearchParams(window.location.search)
+      params.delete('sub')
+      const qs = params.toString()
+      window.history.replaceState(window.history.state, '', dashboardUrlForTab({ pathname: window.location.pathname, search: qs ? '?' + qs : '', hash: window.location.hash }, t))
       if (t !== activeTab) { setActiveTabValue(t); return }
     }
     if (!allowed.includes(activeTab)) { popRef.current = true; setActiveTabValue('overview'); return }
@@ -7173,7 +7183,7 @@ ${planLinks.map(p => p.url
                               const psf = est.square_footage > 0 ? tot / est.square_footage : null
                               return (
                                 <div key={est.id} className="nv-kanban-card" style={cardStyle}
-                                  onClick={() => { setEstimatorInnerTab('estimates'); setExpandedEstimate(est.id) }}>
+                                  onClick={() => { if (!leaveScope()) return; router.push(estimateHrefFromPipeline(est.id)) }}>
                                   <div style={{ fontSize: '13px', fontWeight: '700', color: '#111827', lineHeight: '1.3', marginBottom: '2px' }}>{est.project_name}</div>
                                   {(est.owner_company || est.owner_name) && <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>{est.owner_company || est.owner_name}</div>}
                                   <div style={cardAmtStyle}>{fmtK(tot)}</div>

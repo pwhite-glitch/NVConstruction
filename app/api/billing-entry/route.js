@@ -10,7 +10,7 @@ import { sendLienWaiver, VOIDED_WAIVER_PATCH } from '../../../lib/lien-waiver'
 import { planBillingPayment, netBelowPaidError } from '../../../lib/billing-payment'
 import { escapeHtml, emailWrap } from '../../../lib/email'
 import { siteUrl } from '../../../lib/site-url'
-import { findInvoiceMatch, normalizeInvoiceNumber } from '../../../lib/billing-duplicates'
+import { findDuplicateInvoice as findDuplicateInvoiceIn, normalizeInvoiceNumber } from '../../../lib/billing-duplicates'
 import { without062, mentions062, isMissingColumnError, waiverTermChanges, voidReason } from '../../../lib/lien-waiver-terms'
 
 const adminSupabase = createClient(
@@ -153,25 +153,8 @@ async function uploadBillingDoc(file, jobId) {
 // Possible duplicate (prompt 67B #2): another non-rejected billing on the job, from the same
 // sub company (the sub_id's company people, or a matching company name), with the same
 // normalized invoice #. Returns { dup } (null when none) or { error } (read failed).
-async function findDuplicateInvoice({ jobId, invoiceNumber, subId, companyName, excludeId = null }) {
-  if (!normalizeInvoiceNumber(invoiceNumber)) return { dup: null }
-  const { data: rows, error } = await adminSupabase.from('billing_submissions')
-    .select('id, job_id, invoice_number, submitted_at, status, amount_billed, sub_id, company_name')
-    .eq('job_id', jobId)
-  if (error) return { error: 'Could not check for a duplicate invoice: ' + error.message }
-  const memberIdsBySubId = {}
-  if (subId) {
-    const { data: prof, error: profErr } = await adminSupabase.from('profiles').select('company_id').eq('id', subId).maybeSingle()
-    if (profErr) return { error: 'Could not check for a duplicate invoice: ' + profErr.message }
-    if (prof?.company_id) {
-      const { data: people, error: pplErr } = await adminSupabase.from('profiles').select('id').eq('company_id', prof.company_id)
-      if (pplErr) return { error: 'Could not check for a duplicate invoice: ' + pplErr.message }
-      memberIdsBySubId[subId] = new Set((people || []).map(p => p.id))
-    }
-  }
-  const target = { id: excludeId, job_id: jobId, invoice_number: invoiceNumber, sub_id: subId || null, company_name: companyName || null }
-  return { dup: findInvoiceMatch(rows, target, { memberIdsBySubId }) }
-}
+// Shared with the Bot API billing POST (lib/billing-duplicates findDuplicateInvoice).
+const findDuplicateInvoice = args => findDuplicateInvoiceIn(adminSupabase, args)
 
 function duplicateResponse(dup) {
   const date = dup.submitted_at ? new Date(dup.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' }) : 'an earlier date'

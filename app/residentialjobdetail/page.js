@@ -28,6 +28,10 @@ import { billingPaymentSummary } from '../../lib/billing-payment'
 import { INSPECTION_TYPES } from '../../lib/res-inspections'
 import { authFetch } from '../../lib/client-fetch'
 import DailyReportForm from '../jobdetail/DailyReportForm'
+import NewPOForm from '../jobdetail/NewPOForm'
+import EditPOForm from '../jobdetail/EditPOForm'
+import PaymentTypeSelector from '../jobdetail/PaymentTypeSelector' // eslint-disable-line no-unused-vars -- used inside the shared PO forms
+import { confirmPOEdit, editFormFromPO, RECEIVED_EDIT_WARNING, CLOSED_LOCKED_MESSAGE } from '../../lib/po-edit-guards'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -64,6 +68,11 @@ const s = {
   btnSmGray: { padding: '6px 12px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   btnGreen: { padding: '6px 14px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
   btnRed: { padding: '6px 14px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  // Commercial key aliases so the shared PO forms (app/jobdetail/NewPOForm, EditPOForm) render unchanged.
+  btnSmall: { padding: '6px 12px', background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
+  btnSmallOrange: { padding: '6px 14px', background: '#e8590c', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
+  btnSmallGreen: { padding: '6px 14px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' },
+  btnSmallRed: { padding: '6px 14px', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' },
   inlineForm: { background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', marginBottom: '16px' },
   badge: (color) => {
     const map = { orange: ['#fff7ed','#c2410c','#fed7aa'], green: ['#f0fdf4','#15803d','#bbf7d0'], red: ['#fef2f2','#dc2626','#fecaca'], blue: ['#eff6ff','#1d4ed8','#bfdbfe'], gray: ['#f9fafb','#6b7280','#e5e7eb'], amber: ['#fefce8','#a16207','#fde68a'] }
@@ -224,6 +233,20 @@ function ResidentialJobDetailInner() {
   const [savingDrawCosts, setSavingDrawCosts] = useState(false)
   const [drawAddBillingIds, setDrawAddBillingIds] = useState([])
   const [savingDrawBillings, setSavingDrawBillings] = useState(false)
+  // Purchase Orders (same /api/purchase-orders route and shared forms as commercial)
+  const EMPTY_PO_FORM = { vendor_name: '', description: '', budget_item_id: '', notes: '', payment_type: 'check', items: [{ uid: 0, description: '', qty: '1', unit: '', unit_price: '' }] }
+  const [purchaseOrders, setPurchaseOrders] = useState([])
+  const [poLoadError, setPoLoadError] = useState(false)
+  const [showNewPO, setShowNewPO] = useState(false)
+  const [poForm, setPOForm] = useState(EMPTY_PO_FORM)
+  const [savingPO, setSavingPO] = useState(false)
+  const [expandedPOId, setExpandedPOId] = useState(null)
+  const [updatingPOId, setUpdatingPOId] = useState(null)
+  const [editingPOId, setEditingPOId] = useState(null)
+  const [editPOForm, setEditPOForm] = useState({})
+  const [savingPOEdit, setSavingPOEdit] = useState(false)
+  const [poFile, setPOFile] = useState(null)
+  const [editPOFile, setEditPOFile] = useState(null)
   const [editingCostId, setEditingCostId] = useState(null)
   const [editCostForm, setEditCostForm] = useState({})
   const [savingEditCost, setSavingEditCost] = useState(false)
@@ -326,6 +349,7 @@ function ResidentialJobDetailInner() {
 
   useEffect(() => { if (id) loadAll() }, [id])
   useEffect(() => { if (id && job && activeTab === 'field' && !fieldData) loadFieldData() }, [id, job, activeTab])
+  useEffect(() => { if (id && job && activeTab === 'po') { loadPurchaseOrders(); loadBudget(); loadDrawRequests() } }, [id, job, activeTab])
   useEffect(() => {
     if (lightbox === null) return
     const onKey = e => {
@@ -494,6 +518,149 @@ function ResidentialJobDetailInner() {
     const r = await api(`/api/draw-requests?job_id=${encodeURIComponent(id)}`)
     noteLoad('Draw requests', r.ok ? null : r.error)
     if (r.ok) setDrawRequests(r.data.draws || [])
+  }
+
+  // ── Purchase Orders (ported from commercial; authFetch carries the Bearer requirePM needs) ──
+  async function loadPurchaseOrders() {
+    try {
+      const res = await authFetch(`/api/purchase-orders?job_id=${encodeURIComponent(id)}`)
+      const data = await res.json().catch(() => ({}))
+      const failed = !res.ok || !!data.error || !Array.isArray(data.purchase_orders)
+      setPoLoadError(failed)
+      if (failed) noteLoad('Purchase orders', data.error || `server returned ${res.status}`)
+      else noteLoad('Purchase orders', null)
+      setPurchaseOrders(data.purchase_orders || [])
+    } catch (e) {
+      setPoLoadError(true)
+      noteLoad('Purchase orders', e)
+      setPurchaseOrders([])
+    }
+  }
+
+  async function poResponseError(res) {
+    const j = await res.json().catch(() => ({}))
+    return j.error || res.statusText || `server returned ${res.status}`
+  }
+
+  async function savePO(issueImmediately = false) {
+    if (!poForm.vendor_name) return
+    setSavingPO(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const validItems = poForm.items.filter(i => i.description && i.unit_price)
+      const payload = {
+        job_id: id,
+        vendor_name: poForm.vendor_name,
+        description: poForm.description || null,
+        budget_item_id: poForm.budget_item_id || null,
+        notes: poForm.notes || null,
+        payment_type: poForm.payment_type || 'check',
+        status: issueImmediately ? 'issued' : 'draft',
+        created_by: session?.user?.id || null,
+        items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
+      }
+      let res
+      if (poFile) {
+        const fd = new FormData()
+        fd.append('file', poFile)
+        fd.append('data', JSON.stringify(payload))
+        res = await authFetch('/api/purchase-orders', { method: 'POST', body: fd })
+      } else {
+        res = await authFetch('/api/purchase-orders', jsonOpts('POST', payload))
+      }
+      if (!res.ok) { flash(false, 'PO save failed: ' + await poResponseError(res)); return }
+      const saved = await res.json().catch(() => ({}))
+      if (saved.warning) alert(saved.warning)
+      setShowNewPO(false)
+      setPOForm(EMPTY_PO_FORM)
+      setPOFile(null)
+      await loadPurchaseOrders()
+    } catch (e) {
+      flash(false, 'PO save failed: ' + (e.message || 'network error'))
+    } finally {
+      setSavingPO(false)
+    }
+  }
+
+  async function updatePOStatus(poId, status) {
+    setUpdatingPOId(poId)
+    try {
+      const res = await authFetch('/api/purchase-orders', jsonOpts('PUT', { id: poId, status }))
+      if (!res.ok) flash(false, 'PO update failed: ' + await poResponseError(res))
+      await loadPurchaseOrders()
+    } catch (e) {
+      flash(false, 'PO update failed: ' + (e.message || 'network error'))
+    } finally {
+      setUpdatingPOId(null)
+    }
+  }
+
+  async function savePOEdit() {
+    // Confirm cash-outlook / committed-cost / draw-amount effects before any write.
+    const originalPO = purchaseOrders.find(p => p.id === editingPOId)
+    if (!confirmPOEdit(originalPO, editPOForm, msg => window.confirm(msg))) return
+    setSavingPOEdit(true)
+    try {
+      const validItems = editPOForm.items.filter(i => i.description && i.unit_price)
+      const payload = {
+        id: editingPOId,
+        job_id: id,
+        vendor_name: editPOForm.vendor_name,
+        description: editPOForm.description || null,
+        budget_item_id: editPOForm.budget_item_id || null,
+        notes: editPOForm.notes || null,
+        payment_type: editPOForm.payment_type || 'check',
+        items: validItems.map((i, idx) => ({ description: i.description, qty: parseFloat(i.qty) || 1, unit: i.unit || null, unit_price: parseFloat(i.unit_price) || 0, sort_order: idx })),
+      }
+      let res
+      if (editPOFile) {
+        const fd = new FormData()
+        fd.append('file', editPOFile)
+        fd.append('data', JSON.stringify(payload))
+        res = await authFetch('/api/purchase-orders', { method: 'PUT', body: fd })
+      } else {
+        res = await authFetch('/api/purchase-orders', jsonOpts('PUT', payload))
+      }
+      if (!res.ok) { flash(false, 'PO update failed: ' + await poResponseError(res)); return }
+      const edited = await res.json().catch(() => ({}))
+      if (edited.warning) alert(edited.warning)
+      setEditingPOId(null)
+      setEditPOFile(null)
+      await loadPurchaseOrders()
+    } catch (e) {
+      flash(false, 'PO update failed: ' + (e.message || 'network error'))
+    } finally {
+      setSavingPOEdit(false)
+    }
+  }
+
+  async function openPOAttachment(attachmentUrl) {
+    try {
+      const res = await authFetch(`/api/purchase-orders?sign=${encodeURIComponent(attachmentUrl)}`)
+      const json = await res.json().catch(() => ({}))
+      if (json.signedUrl) window.open(json.signedUrl, '_blank')
+      else alert('Could not open attachment: ' + (json.error || 'Unknown error'))
+    } catch (e) {
+      alert('Could not open attachment: ' + (e.message || 'network error'))
+    }
+  }
+
+  async function deletePO(poId) {
+    if (!window.confirm('Delete this purchase order?')) return
+    try {
+      const res = await authFetch('/api/purchase-orders', jsonOpts('DELETE', { id: poId }))
+      if (!res.ok) flash(false, 'PO delete failed: ' + await poResponseError(res))
+      await loadPurchaseOrders()
+    } catch (e) {
+      flash(false, 'PO delete failed: ' + (e.message || 'network error'))
+    }
+  }
+
+  function startPOEdit(po) {
+    setEditingPOId(po.id)
+    setExpandedPOId(null)
+    setShowNewPO(false)
+    setEditPOForm(editFormFromPO(po))
   }
 
   async function loadMilestones() {
@@ -1816,6 +1983,7 @@ function ResidentialJobDetailInner() {
         ...(!hideBudget ? [{ key: 'budget', label: 'Budget' }] : []),
         { key: 'costs', label: 'Direct Costs', badge: pendingCosts.length || null, alert: pendingCosts.length > 0 },
         { key: 'subs', label: 'Subs' },
+        { key: 'po', label: 'Purchase Orders', badge: purchaseOrders.filter(p => p.status === 'issued').length || null },
         { key: 'changeorders', label: 'Change Orders', badge: (pendingPrimeCOs.length + pendingSubCOs.length) || null, alert: (pendingPrimeCOs.length + pendingSubCOs.length) > 0 },
         { key: 'billing', label: 'Sub Billing', badge: pendingBillings.length || null, alert: pendingBillings.length > 0 },
         ...(canUseOwnerDraws(userRole) ? [{ key: 'ownerdraw', label: 'Owner Draw' }] : []),
@@ -2655,6 +2823,116 @@ function ResidentialJobDetailInner() {
         )}
 
         {/* ── CHANGE ORDERS ── */}
+        {/* PURCHASE ORDERS (same route + shared forms as commercial) */}
+        {visibleTab === 'po' && (() => {
+          const PO_BADGE = { draft: 'gray', issued: 'amber', received: 'green', closed: 'blue' }
+          const poFmt = n => '$' + fmt(n)
+          const issuedPOs = purchaseOrders.filter(p => p.status === 'issued')
+          const receivedPOs = purchaseOrders.filter(p => p.status === 'received')
+          const totalCommitted = [...issuedPOs, ...receivedPOs].reduce((a, p) => a + Number(p.amount || 0), 0)
+          return (
+            <>
+              <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                <div style={s.statCard}><div style={s.statLabel}>Total POs</div><div style={s.statValue()}>{purchaseOrders.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Issued (open)</div><div style={s.statValue(issuedPOs.length > 0 ? '#d97706' : undefined)}>{issuedPOs.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Received</div><div style={s.statValue('#15803d')}>{receivedPOs.length}</div></div>
+                <div style={s.statCard}><div style={s.statLabel}>Total committed</div><div style={s.statValue('#e8590c')}>{poFmt(totalCommitted)}</div></div>
+              </div>
+
+              <div style={s.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showNewPO ? '16px' : 0 }}>
+                  <p style={{ ...s.cardTitle, margin: 0 }}>Purchase Orders</p>
+                  <button style={s.btnSmallOrange} onClick={() => { setShowNewPO(v => !v); setEditingPOId(null) }}>{showNewPO ? 'Cancel' : '+ New PO'}</button>
+                </div>
+                {showNewPO && (
+                  <NewPOForm s={s} poForm={poForm} setPOForm={setPOForm} poFile={poFile} setPOFile={setPOFile} budgetItems={budgetItems} savingPO={savingPO} savePO={savePO} />
+                )}
+              </div>
+
+              <div style={s.card}>
+                {poLoadError && <div style={{ ...s.errMsg, marginBottom: '10px' }}>Purchase orders could not load — refresh to try again.</div>}
+                {!poLoadError && purchaseOrders.length === 0 && <p style={{ color: '#6b7280', fontSize: '13px', margin: 0 }}>No purchase orders yet. Click "+ New PO" to create one.</p>}
+                {purchaseOrders.map(po => {
+                  const isExpanded = expandedPOId === po.id
+                  const bi = budgetItems.find(b => b.id === po.budget_item_id)
+                  const dr = po.draw_request_id ? drawRequests.find(d => d.id === po.draw_request_id) : null
+                  const items = po.purchase_order_items || []
+                  const busy = updatingPOId === po.id
+                  if (editingPOId === po.id) {
+                    return (
+                      <div key={po.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <EditPOForm s={s} fmt={poFmt} po={po} editPOForm={editPOForm} setEditPOForm={setEditPOForm} editPOFile={editPOFile} setEditPOFile={setEditPOFile} budgetItems={budgetItems} savingPOEdit={savingPOEdit} savePOEdit={savePOEdit} setEditingPOId={setEditingPOId} />
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={po.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', cursor: 'pointer', gap: '10px' }} onClick={() => setExpandedPOId(isExpanded ? null : po.id)}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#111827' }}>{po.vendor_name}</span>
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#6b7280' }}>{po.po_number}</span>
+                            {po.description && <span style={{ fontSize: '12px', color: '#6b7280' }}>{po.description}</span>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ ...s.badge(PO_BADGE[po.status] || 'gray'), textTransform: 'uppercase' }}>{po.status}</span>
+                            <span style={s.badge(po.payment_type === 'reimbursement' ? 'blue' : 'gray')}>{po.payment_type === 'reimbursement' ? 'Reimbursement' : 'Check to vendor'}</span>
+                            {bi ? <span style={{ fontSize: '11px', color: '#6b7280' }}>{bi.cost_code ? `${bi.cost_code} · ` : ''}{bi.description}</span> : <span style={{ fontSize: '11px', color: '#9ca3af' }}>No budget line</span>}
+                            <span style={{ fontSize: '11px', color: '#6b7280' }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>
+                            {dr && <span style={s.badge('blue')}>Draw #{dr.draw_number}{dr.title ? ` — ${dr.title}` : ''}</span>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                          <span style={{ fontSize: '15px', fontWeight: '800', color: '#111827' }}>{poFmt(po.amount)}</span>
+                          <span style={{ color: '#6b7280', fontSize: '14px' }}>{isExpanded ? '▲' : '▼'}</span>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div style={{ paddingBottom: '14px' }}>
+                          {po.notes && <p style={{ fontSize: '13px', color: '#4b5563', marginBottom: '10px', lineHeight: 1.5 }}>{po.notes}</p>}
+                          {po.attachment_url && <button style={{ ...s.btnSmGray, marginBottom: '10px' }} onClick={() => openPOAttachment(po.attachment_url)}>View Attachment</button>}
+                          {items.length > 0 && (
+                            <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflowX: 'auto' }}>
+                              {items.map((i, idx) => (
+                                <div key={i.id || idx} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 2fr) 50px 50px 90px 90px', gap: '0 8px', padding: '8px 12px', borderTop: idx ? '1px solid #f3f4f6' : 'none', fontSize: '13px', color: '#374151' }}>
+                                  <span>{i.description}</span>
+                                  <span style={{ textAlign: 'right', color: '#6b7280' }}>{Number(i.qty)}</span>
+                                  <span style={{ color: '#6b7280' }}>{i.unit || '—'}</span>
+                                  <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{poFmt(i.unit_price)}</span>
+                                  <span style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: '600' }}>{poFmt(i.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {po.status === 'draft' && <>
+                              <button style={{ ...s.btnSmallGreen, opacity: (busy || !po.attachment_url) ? 0.6 : 1 }} disabled={busy || !po.attachment_url} title={!po.attachment_url ? 'Attach a document before issuing' : ''} onClick={() => updatePOStatus(po.id, 'issued')}>Issue PO</button>
+                              {!po.attachment_url && <span style={{ fontSize: '12px', color: '#6b7280' }}>Attachment required to issue</span>}
+                              <button style={s.btnSmall} onClick={() => startPOEdit(po)}>Edit</button>
+                              <button style={s.btnSmallRed} onClick={() => deletePO(po.id)}>Delete</button>
+                            </>}
+                            {po.status === 'issued' && <>
+                              <button style={{ ...s.btnSmallGreen, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => updatePOStatus(po.id, 'received')}>Mark Received</button>
+                              <button style={s.btnSmall} onClick={() => startPOEdit(po)}>Edit</button>
+                              <button style={{ ...s.btnSmallRed, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => updatePOStatus(po.id, 'closed')}>Cancel PO</button>
+                            </>}
+                            {po.status === 'received' && <>
+                              <button style={{ ...s.btnSmall, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => updatePOStatus(po.id, 'closed')}>Close PO</button>
+                              <button style={s.btnSmall} onClick={() => { if (!window.confirm(RECEIVED_EDIT_WARNING)) return; startPOEdit(po) }}>Edit</button>
+                            </>}
+                            {po.status === 'closed' && <span style={{ fontSize: '12px', color: '#6b7280' }}>{CLOSED_LOCKED_MESSAGE}</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )
+        })()}
+
         {visibleTab === 'changeorders' && (
           <>
             <div className="rx-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>

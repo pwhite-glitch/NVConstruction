@@ -3,6 +3,7 @@ import { requirePM } from '../../../lib/server-auth'
 import { isMissingPaymentTypeColumn, PAYMENT_TYPE_NOT_SAVED_WARNING } from '../../../lib/payment-route'
 import { todayCentral } from '../../../lib/central-date'
 import { denyUnlessOnJob, seesAllJobs } from '../../../lib/roles'
+import { logChange } from '../../../lib/change-log'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -12,9 +13,19 @@ const adminSupabase = createClient(
 // Every job-scoped PO operation uses denyUnlessOnJob: Owner/admin pass,
 // PM/APM/super only on their own jobs (an unassigned super is refused).
 
+// Columns of the STORED PO used for the status gates and change_log diffs.
+const PO_GUARD_COLS = 'id, job_id, attachment_url, status, vendor_name, amount, payment_type, budget_item_id, draw_request_id, description, notes, po_number'
+
+// A closed PO may only change status (reopen later); everything else is locked.
+const CLOSED_EDITABLE = new Set(['status', 'issued_date'])
+
+// Normalized the same way PUT stores lines, so a stored line and its re-sent copy match.
+const lineKey = i => [i.description ?? '', parseFloat(i.qty) || 1, i.unit || '', parseFloat(i.unit_price) || 0].join('|')
+const fmtAmount = n => String(Number(n) || 0)
+
 // Load a PO by id and guard its real job. Returns { po } or { denied }.
 async function loadPOForCaller(auth, id) {
-  const { data: po, error } = await adminSupabase.from('purchase_orders').select('id, job_id, attachment_url').eq('id', id).maybeSingle()
+  const { data: po, error } = await adminSupabase.from('purchase_orders').select(PO_GUARD_COLS).eq('id', id).maybeSingle()
   if (error) return { denied: Response.json({ error: error.message }, { status: 500 }) }
   if (!po) return { denied: Response.json({ error: 'Purchase order not found.' }, { status: 404 }) }
   const denied = await denyUnlessOnJob(adminSupabase, auth, po.job_id)
@@ -199,15 +210,6 @@ export async function PUT(request) {
     if (fields.job_id !== undefined && fields.job_id !== po.job_id) {
       return Response.json({ error: 'A purchase order cannot be moved to another job.' }, { status: 400 })
     }
-    const refDenied = await denyForeignRefs(po.job_id, {
-      budget_item_id: fields.budget_item_id || null,
-      draw_request_id: fields.draw_request_id || null,
-    })
-    if (refDenied) return refDenied
-    if (file && file.size > 0) {
-      newAttachmentUrl = await uploadPOAttachment(file, po.job_id)
-    }
-
     const updates = {}
     if (fields.status !== undefined) {
       updates.status = fields.status
@@ -220,6 +222,31 @@ export async function PUT(request) {
     if (fields.payment_type) updates.payment_type = fields.payment_type  // requires migration 004
     if (fields.draw_request_id !== undefined) updates.draw_request_id = fields.draw_request_id || null
     if (fields.drawn_at !== undefined) updates.drawn_at = fields.drawn_at || null
+
+    // Gate on the STORED status, never the client's. A closed PO accepts a status-only
+    // change; any other column, line items (even []) or a new attachment is refused.
+    const wantsUpload = !!(file && file.size > 0)
+    if (po.status === 'closed' && (items !== undefined || wantsUpload || Object.keys(updates).some(k => !CLOSED_EDITABLE.has(k)))) {
+      return Response.json({ error: 'This purchase order is closed and cannot be edited.' }, { status: 409 })
+    }
+
+    const refDenied = await denyForeignRefs(po.job_id, {
+      budget_item_id: fields.budget_item_id || null,
+      draw_request_id: fields.draw_request_id || null,
+    })
+    if (refDenied) return refDenied
+
+    // Prior lines, for the change_log line-items summary (read before they are replaced).
+    let oldItems = null
+    if (items !== undefined) {
+      const { data: prior, error: priorErr } = await adminSupabase.from('purchase_order_items').select('id, description, qty, unit, unit_price, amount, sort_order').eq('po_id', id)
+      if (priorErr) return Response.json({ error: 'PO line items not saved: ' + priorErr.message }, { status: 500 })
+      oldItems = (prior || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    }
+
+    if (wantsUpload) {
+      newAttachmentUrl = await uploadPOAttachment(file, po.job_id)
+    }
     if (newAttachmentUrl !== undefined) updates.attachment_url = newAttachmentUrl
 
     if (items !== undefined) {
@@ -256,6 +283,29 @@ export async function PUT(request) {
       if (upErr) return Response.json({ error: upErr.message }, { status: 500 })
     }
 
+    // change_log (server-only). Only real changes; logChange never throws.
+    const diffs = []
+    const add = (field_name, oldV, newV) => {
+      const o = oldV == null || oldV === '' ? null : String(oldV)
+      const n = newV == null || newV === '' ? null : String(newV)
+      if (o !== n) diffs.push({ field_name, old_value: o, new_value: n })
+    }
+    if ('vendor_name' in updates) add('vendor_name', po.vendor_name, updates.vendor_name)
+    if ('payment_type' in updates && !warning) add('payment_type', po.payment_type, updates.payment_type)
+    if ('budget_item_id' in updates) add('budget_item_id', po.budget_item_id, updates.budget_item_id)
+    if ('status' in updates) add('status', po.status, updates.status)
+    if (items !== undefined) {
+      add('amount', fmtAmount(po.amount), fmtAmount(updates.amount))
+      const sameLines = oldItems.length === items.length && oldItems.every((o, idx) => lineKey(o) === lineKey(items[idx]))
+      const oldSummary = `${oldItems.length} lines / ${fmtAmount(po.amount)}`
+      const newSummary = `${items.length} lines / ${fmtAmount(updates.amount)}`
+      // Same count and total but different lines still gets a row, marked so it isn't a no-op.
+      if (!sameLines || oldSummary !== newSummary) add('line_items', oldSummary, oldSummary === newSummary ? `${newSummary} (lines changed)` : newSummary)
+    }
+    for (const d of diffs) {
+      await logChange({ job_id: po.job_id, entity_type: 'purchase_order', entity_id: po.id, changed_by: auth.userId, ...d })
+    }
+
     return Response.json(warning ? { ok: true, warning } : { ok: true })
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
@@ -270,6 +320,7 @@ export async function DELETE(request) {
     if (!id) return Response.json({ error: 'id required' }, { status: 400 })
     const { po, denied } = await loadPOForCaller(auth, id)
     if (denied) return denied
+    if (po.status !== 'draft') return Response.json({ error: 'Only draft purchase orders can be deleted.' }, { status: 409 })
     const { error } = await adminSupabase.from('purchase_orders').delete().eq('id', id).eq('job_id', po.job_id)
     if (error) return Response.json({ error: error.message }, { status: 500 })
     return Response.json({ ok: true })

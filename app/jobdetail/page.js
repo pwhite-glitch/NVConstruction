@@ -41,6 +41,7 @@ import { openLookaheadPrint } from '../../lib/lookahead-print'
 import { equipmentLabel } from '../../lib/equipment-usage'
 import * as lookaheadApi from '../../lib/lookahead-client'
 import EditPOForm from './EditPOForm'
+import { confirmPOEdit, editFormFromPO, RECEIVED_EDIT_WARNING, CLOSED_LOCKED_MESSAGE } from '../../lib/po-edit-guards'
 import { REIMBURSEMENT, PAYMENT_ROUTE_LABELS, poPaymentRoute, directCostPaymentRoute, generalConditionPaymentRoute, subBillingPaymentRoute, totalsByPaymentRoute } from '../../lib/payment-route'
 import { todayCentral, addDaysCentral, isBeforeTodayCentral } from '../../lib/central-date'
 import { getSiteUrl } from '../../lib/site-url'
@@ -2848,6 +2849,9 @@ ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><st
   }
 
   async function savePOEdit() {
+    // Confirm cash-outlook / committed-cost / draw-amount effects before any write.
+    const originalPO = purchaseOrders.find(p => p.id === editingPOId)
+    if (!confirmPOEdit(originalPO, editPOForm, msg => window.confirm(msg))) return
     setSavingPOEdit(true)
     const validItems = editPOForm.items.filter(i => i.description && i.unit_price)
     const payload = {
@@ -14284,7 +14288,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                       </>}
                                       {po.status === 'received' && <>
                                         <button style={{ ...s.btnSmall, opacity: updatingPOId === po.id ? 0.6 : 1 }} disabled={updatingPOId === po.id} onClick={() => updatePOStatus(po.id, 'closed')}>Close PO</button>
+                                        <button style={s.btnSmall} onClick={() => { if (!window.confirm(RECEIVED_EDIT_WARNING)) return; setEditingPOId(po.id); setExpandedPOId(null); setEditPOForm(editFormFromPO(po)) }}>Edit</button>
                                       </>}
+                                      {po.status === 'closed' && <span style={{ fontSize: '12px', color: '#6b7280' }}>{CLOSED_LOCKED_MESSAGE}</span>}
                                     </div>
                                   </div>
                                 )}

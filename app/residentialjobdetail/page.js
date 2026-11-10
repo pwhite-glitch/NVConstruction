@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { atLeastPM, isJobLimited, isOnJob, isPrincipal, homePathForRole, NOT_ASSIGNED_MESSAGE } from '../../lib/roles'
 import { todayCentral } from '../../lib/central-date'
 import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../lib/photo-taken-at'
+import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { openFile, openHtml, openStorageFile } from '../../lib/open-file'
 import { dcBilledLockReason } from '../../lib/dc-guards'
 import { coNumberLabel, coNumberMissingMessage } from '../../lib/co-number'
@@ -150,6 +151,9 @@ function ResidentialJobDetailInner() {
   const [photoUrls, setPhotoUrls] = useState({})
   const [lightbox, setLightbox] = useState(null) // index into photos
   const [deletingPhoto, setDeletingPhoto] = useState(null)
+  // Internal only (prompt 73): upload switch + Hide from owner / Show to owner toggle.
+  const [photoInternalDraft, setPhotoInternalDraft] = useState(false)
+  const [togglingPhoto, setTogglingPhoto] = useState(null)
   const [legacyDocs, setLegacyDocs] = useState([]) // job_docs (read-only bridge)
   const [docCategory, setDocCategory] = useState('plans')
   const [legacyPunch, setLegacyPunch] = useState([]) // res_punch_list (read-only; empty live)
@@ -498,13 +502,14 @@ function ResidentialJobDetailInner() {
   // the private daily-report-photos bucket through signed URLs (same as commercial).
   async function loadPhotos() {
     const [{ data: standalone, error: e1 }, { data: reports, error: e2 }] = await Promise.all([
-      supabase.from('job_photos').select('id, job_id, storage_path, file_name, caption, taken_at, created_at').eq('job_id', id).order('taken_at', { ascending: false }),
+      // select('*'): internal_only (migration 070) is read when present, absent before it.
+      supabase.from('job_photos').select('*').eq('job_id', id).order('taken_at', { ascending: false }),
       supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     noteLoad('Photos', e1 || e2)
     const all = [
-      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: photoDateCentral(p.taken_at || p.created_at), name: p.file_name })),
-      ...(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id }))),
+      ...(standalone || []).filter(p => p.storage_path).map(p => ({ key: 'p' + p.id, path: p.storage_path, caption: p.caption, date: photoDateCentral(p.taken_at || p.created_at), name: p.file_name, internal_only: p.internal_only === true })),
+      ...(reports || []).flatMap(r => (Array.isArray(r.photos) ? r.photos : []).filter(p => p?.path).map((p, i) => ({ key: `r${r.id}-${i}`, path: p.path, caption: p.caption, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: p.internal_only === true }))),
     ].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
     setPhotos(all)
     const paths = [...new Set(all.map(p => p.path))]
@@ -1113,16 +1118,30 @@ function ResidentialJobDetailInner() {
       const taken = await resolveTakenAt(file)
       const { error: upErr } = await supabase.storage.from('daily-report-photos').upload(path, file, { contentType: file.type || undefined, upsert: false })
       if (upErr) { setPhotoMsg('Error: upload failed — ' + upErr.message); return }
-      const { error: dbErr } = await insertWithGpsFallback(gps => supabase.from('job_photos').insert({ job_id: id, super_id: session?.user?.id || null, storage_path: path, file_name: file.name, caption: null, taken_at: taken.takenAt, ...gps }), taken.gps)
+      // internal_only true is never dropped: before migration 070 the insert is refused and
+      // the uploaded file removed (no owner-visible row).
+      const { error: dbErr, migrationRequired } = await insertJobPhotoWithFallbacks(extra => insertWithGpsFallback(gps => supabase.from('job_photos').insert({ job_id: id, super_id: session?.user?.id || null, storage_path: path, file_name: file.name, caption: null, ...extra, taken_at: taken.takenAt, ...gps }), taken.gps), { internal_only: photoInternalDraft })
       if (dbErr) {
         await supabase.storage.from('daily-report-photos').remove([path])
-        setPhotoMsg('Error: photo not saved — ' + dbErr.message)
+        setPhotoMsg(migrationRequired ? 'Error: ' + dbErr.message : 'Error: photo not saved — ' + dbErr.message)
         return
       }
       await loadPhotos()
     } finally {
       setUploadingPhoto(false)
     }
+  }
+
+  // Hide from owner / Show to owner — /api/photo-visibility (same gate as delete-photo).
+  const canTogglePhoto = ['principal', 'pm', 'admin', 'super'].includes(userRole)
+  async function togglePhotoVisibility(photo) {
+    if (!photo?.path || togglingPhoto) return
+    const next = !photo.internal_only
+    setTogglingPhoto(photo.path)
+    setPhotos(list => list.map(p => (p.key === photo.key ? { ...p, internal_only: next } : p)))
+    const r = await api('/api/photo-visibility', jsonOpts('POST', { jobId: id, path: photo.path, internal_only: next, fromReport: !!photo.fromReport, reportId: photo.reportId || null }))
+    setTogglingPhoto(null)
+    if (!r.ok) { setPhotoMsg('Error: ' + (next ? 'hide from owner' : 'show to owner') + ' failed — ' + r.error); await loadPhotos() }
   }
 
   // Same guarded delete as the commercial page (/api/delete-photo checks role and job).
@@ -3036,6 +3055,10 @@ function ResidentialJobDetailInner() {
               <p style={{ ...s.cardTitle, margin: 0 }}>Photos ({photos.length})</p>
               <div>
                 <input type="file" ref={photoInputRef} accept="image/*" style={{ display: 'none' }} onChange={uploadPhoto} />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', marginRight: '10px', fontSize: '12px', color: '#4b5563', cursor: 'pointer' }} title="Internal only photos are hidden from the owner portal">
+                  <input type="checkbox" checked={photoInternalDraft} onChange={e => setPhotoInternalDraft(e.target.checked)} />
+                  Internal only
+                </label>
                 <button style={s.btnSm} onClick={() => photoInputRef.current?.click()} disabled={uploadingPhoto}>{uploadingPhoto ? 'Uploading...' : '+ Upload Photo'}</button>
               </div>
             </div>
@@ -3049,7 +3072,7 @@ function ResidentialJobDetailInner() {
                   return (
                     <button key={p.key} onClick={() => setLightbox(i)} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb', padding: 0, background: '#f9fafb', cursor: 'pointer', textAlign: 'left' }}>
                       {thumb ? <img src={thumb} alt={p.caption || p.name || 'Photo'} loading="lazy" style={{ width: '100%', height: '130px', objectFit: 'cover', display: 'block' }} /> : <div style={{ height: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: '#9ca3af' }}>Unavailable</div>}
-                      <div style={{ padding: '6px 8px', fontSize: '11px', color: '#6b7280' }}>{p.date ? fmtDate(p.date) : ''}{p.fromReport ? ' · Daily report' : ''}{p.caption ? ' · ' + p.caption : ''}</div>
+                      <div style={{ padding: '6px 8px', fontSize: '11px', color: '#6b7280' }}>{p.internal_only && <span title="Hidden from the owner portal" style={{ background: '#111827', color: '#fde68a', fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', padding: '1px 5px', borderRadius: '3px', marginRight: '4px' }}>Internal</span>}{p.date ? fmtDate(p.date) : ''}{p.fromReport ? ' · Daily report' : ''}{p.caption ? ' · ' + p.caption : ''}</div>
                     </button>
                   )
                 })}
@@ -3066,6 +3089,8 @@ function ResidentialJobDetailInner() {
                     <button style={s.btnSmGray} disabled={lightbox === 0} onClick={() => setLightbox(lightbox - 1)}>‹ Prev</button>
                     <span style={{ color: '#e5e7eb', fontSize: '12px' }}>{lightbox + 1} / {photos.length}{p.caption ? ' · ' + p.caption : ''}</span>
                     <button style={s.btnSmGray} disabled={lightbox === photos.length - 1} onClick={() => setLightbox(lightbox + 1)}>Next ›</button>
+                    {p.internal_only && <span style={{ background: '#111827', color: '#fde68a', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px' }}>Internal</span>}
+                    {canTogglePhoto && <button style={s.btnSmGray} disabled={togglingPhoto === p.path} onClick={() => togglePhotoVisibility(p)}>{togglingPhoto === p.path ? 'Saving…' : p.internal_only ? 'Show to owner' : 'Hide from owner'}</button>}
                     {['principal', 'pm', 'admin'].includes(userRole) && <button style={s.btnRed} disabled={deletingPhoto === p.path} onClick={() => deletePhoto(p)}>{deletingPhoto === p.path ? 'Deleting…' : 'Delete'}</button>}
                     <button style={s.btnSmGray} onClick={() => setLightbox(null)}>Close</button>
                   </div>

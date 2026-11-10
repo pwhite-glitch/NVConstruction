@@ -579,6 +579,7 @@ function JobDetailInner() {
   const [fieldPhotoUrls, setFieldPhotoUrls] = useState({})
   const [fieldLightbox, setFieldLightbox] = useState(null)
   const [deletingFieldPhoto, setDeletingFieldPhoto] = useState(null)
+  const [togglingFieldPhoto, setTogglingFieldPhoto] = useState(null)
 
   // NV Subcontracts (when NV is acting as sub on a job)
   const [nvSubcontracts, setNvSubcontracts] = useState([])
@@ -3208,12 +3209,35 @@ ${sc.contract_number ? `<div class="block" style="margin-bottom:20px"><div class
       supabase.from('daily_reports').select('id, report_date, photos').eq('job_id', id).order('report_date', { ascending: false }),
     ])
     const all = [
-      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), name: p.file_name })),
-      ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id })))),
+      ...(standalone || []).map(p => ({ path: p.storage_path, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), name: p.file_name, internal_only: p.internal_only === true })),
+      ...((reports || []).flatMap(r => (r.photos || []).map(p => ({ path: p.path, caption: p.caption, tag: p.tag || null, date: r.report_date, name: p.name, fromReport: true, reportId: r.id, internal_only: p.internal_only === true })))),
     ].sort((a, b) => new Date(b.date) - new Date(a.date))
     setFieldPhotos(all)
     const paths = all.map(p => p.path).filter(Boolean)
     if (paths.length) fetchFieldPhotoUrls(paths)
+  }
+
+  // Hide from owner / Show to owner (prompt 73): server route with the same gate as
+  // /api/delete-photo (job_photos has no UPDATE RLS). Optimistic; reload on failure.
+  const canToggleFieldPhoto = ['principal', 'pm', 'admin', 'super'].includes(userRole)
+  async function toggleFieldPhotoVisibility(photo) {
+    if (!photo?.path || togglingFieldPhoto) return
+    const next = !photo.internal_only
+    setTogglingFieldPhoto(photo.path)
+    const flip = list => list.map(p => (p.path === photo.path ? { ...p, internal_only: next } : p))
+    setFieldPhotos(flip)
+    setFieldLightbox(lb => (lb ? { ...lb, photos: flip(lb.photos) } : lb))
+    try {
+      const res = await authFetch('/api/photo-visibility', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: id, path: photo.path, internal_only: next, fromReport: !!photo.fromReport, reportId: photo.reportId || null }) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status}`)
+    } catch (err) {
+      alert((next ? 'Hide from owner' : 'Show to owner') + ' failed: ' + err.message)
+      await loadFieldPhotos()
+      setFieldLightbox(null)
+    } finally {
+      setTogglingFieldPhoto(null)
+    }
   }
 
   async function deleteFieldPhoto(photo) {
@@ -14078,6 +14102,17 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                             }
                             {p.tag && <div style={{ position: 'absolute', top: '4px', left: '4px', background: 'rgba(232,89,12,0.85)', color: '#fff', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.tag}</div>}
                             {p.caption && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '16px 4px 4px', fontSize: '9px', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</div>}
+                            {p.internal_only && <div title="Hidden from the owner portal" style={{ position: 'absolute', top: p.tag ? '22px' : '4px', left: '4px', background: 'rgba(17,24,39,0.85)', color: '#fde68a', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3' }}>Internal</div>}
+                            {canToggleFieldPhoto && (
+                              <button
+                                type="button"
+                                title={p.internal_only ? 'Show to owner' : 'Hide from owner'}
+                                disabled={togglingFieldPhoto === p.path}
+                                onClick={e => { e.stopPropagation(); toggleFieldPhotoVisibility(p) }}
+                                style={{ position: 'absolute', top: '4px', right: '30px', height: '22px', padding: '0 6px', background: 'rgba(0,0,0,0.75)', border: 'none', borderRadius: '11px', color: p.internal_only ? '#fde68a' : '#e5e7eb', fontSize: '9px', fontWeight: '700', cursor: 'pointer', lineHeight: 1 }}>
+                                {togglingFieldPhoto === p.path ? '…' : p.internal_only ? 'Show to owner' : 'Hide from owner'}
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); deleteFieldPhoto(p) }}
@@ -15336,6 +15371,15 @@ tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ color: '#6b7280', fontSize: '12px' }}>{fieldLightbox.index + 1} / {fieldLightbox.photos.length}</span>
+              {fieldLightbox.photos[fieldLightbox.index]?.internal_only && <span style={{ background: '#111827', color: '#fde68a', fontSize: '10px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase', padding: '3px 8px', borderRadius: '4px' }}>Internal</span>}
+              {canToggleFieldPhoto && fieldLightbox.photos[fieldLightbox.index] && (
+                <button
+                  onClick={() => toggleFieldPhotoVisibility(fieldLightbox.photos[fieldLightbox.index])}
+                  disabled={togglingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path}
+                  style={{ padding: '6px 14px', background: '#f9fafb', border: '1px solid #d1d5db', borderRadius: '6px', color: '#374151', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
+                  {togglingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path ? 'Saving...' : fieldLightbox.photos[fieldLightbox.index]?.internal_only ? 'Show to owner' : 'Hide from owner'}
+                </button>
+              )}
               <button
                 onClick={() => deleteFieldPhoto(fieldLightbox.photos[fieldLightbox.index])}
                 disabled={deletingFieldPhoto === fieldLightbox.photos[fieldLightbox.index]?.path}

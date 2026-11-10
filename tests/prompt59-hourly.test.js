@@ -1009,7 +1009,8 @@ describe('9) owner photos', () => {
     // A job that truly has no photos is still an empty list.
     mockState.db.job_photos = []
     r = await call(route.GET, '/api/owner-photos?job_id=J1', 'GET')
-    expect(r).toEqual({ status: 200, body: { photos: [] } })
+    // prompt73: paging metadata added alongside the (still empty) photos list.
+    expect(r).toEqual({ status: 200, body: { photos: [], total: 0, limit: 100, offset: 0, has_more: false } })
   })
 
   test('M1: signOwnerPhotos treats an absent primary as failed', () => {

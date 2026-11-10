@@ -9,6 +9,7 @@ import NotificationBell from '../components/NotificationBell'
 import FieldInspections from './FieldInspections'
 import { openFile } from '../../lib/open-file'
 import { resolveTakenAt, insertWithGpsFallback, photoDateCentral } from '../../lib/photo-taken-at'
+import { insertJobPhotoWithFallbacks } from '../../lib/photo-visibility'
 import { uploadJobDocument, signedJobDocUrl } from '../../lib/job-doc-client'
 import { uniqueSubOptions, subName, responsibleLabel, activityProblem, hasOpenConstraint, PRECEDING_WORK_HELP, COMMITTED_HELP } from '../../lib/lookahead-fields'
 import { addDays, localToday, mondayOf, lookaheadDays, activitiesForDay, activitiesInDays, moveActivityTo, dayOfRange } from '../../lib/lookahead-dates'
@@ -215,6 +216,9 @@ export default function Field() {
   const [standalonePhotos, setStandalonePhotos] = useState([])
   const [captionDraft, setCaptionDraft] = useState('')
   const [tagDraft, setTagDraft] = useState('')
+  // Internal only (prompt 73): hide new uploads from the owner portal. Default OFF.
+  const [internalOnlyDraft, setInternalOnlyDraft] = useState(false)
+  const [reportPhotosInternal, setReportPhotosInternal] = useState(false)
   const [fabTag, setFabTag] = useState('')
   const [photoTagFilter, setPhotoTagFilter] = useState('all')
   const [uploadingGalleryPhoto, setUploadingGalleryPhoto] = useState(false)
@@ -486,12 +490,10 @@ export default function Field() {
     const { data, error: photoErr } = await supabase.from('job_photos').select('*').eq('job_id', selectedJobId).order('taken_at', { ascending: false })
     if (photoErr) console.error('job_photos query error:', photoErr.message)
     setStandalonePhotos(data || [])
-    let reports = dailyReports
-    if (reports.length === 0) {
-      const { data: rpts } = await supabase.from('daily_reports').select('*').eq('job_id', selectedJobId).order('report_date', { ascending: false })
-      setDailyReports(rpts || [])
-      reports = rpts || []
-    }
+    // Always refetch so Internal badges / photos changed from the job pages are current.
+    const { data: rpts } = await supabase.from('daily_reports').select('*').eq('job_id', selectedJobId).order('report_date', { ascending: false })
+    setDailyReports(rpts || [])
+    const reports = rpts || []
     // Batch-sign all URLs in one API call; loading="lazy" on <img> prevents browser from downloading off-screen images
     const allPaths = [
       ...(data || []).map(p => p.storage_path),
@@ -504,14 +506,23 @@ export default function Field() {
     if (!window.confirm('Delete this photo? This cannot be undone.')) return
     setDeletingPhoto(photo.path)
     try {
-      await supabase.storage.from('daily-report-photos').remove([photo.path, tp(photo.path)].filter(Boolean))
       if (photo.fromReport) {
-        const report = dailyReports.find(r => r.id === photo.reportId)
-        if (report) {
-          const updated = (report.photos || []).filter(p => p.path !== photo.path)
-          await supabase.from('daily_reports').update({ photos: updated.length ? updated : null }).eq('id', report.id)
+        // Re-read the report fresh (not the cached dailyReports copy) so a Hide-from-owner
+        // (internal_only) set on another element from the job page is never overwritten.
+        const { data: fresh, error: readErr } = await supabase.from('daily_reports').select('id, photos').eq('id', photo.reportId).maybeSingle()
+        if (readErr) throw new Error(`could not reload the daily report (${readErr.message}); nothing was deleted`)
+        if (!fresh) throw new Error('daily report not found; nothing was deleted')
+        const current = Array.isArray(fresh.photos) ? fresh.photos : []
+        if (current.some(p => p?.path === photo.path)) {
+          const updated = current.filter(p => p?.path !== photo.path)
+          const { error: writeErr } = await supabase.from('daily_reports').update({ photos: updated.length ? updated : null }).eq('id', fresh.id)
+          if (writeErr) throw new Error(`could not update the daily report (${writeErr.message}); nothing was deleted`)
+          setDailyReports(prev => prev.map(r => (r.id === fresh.id ? { ...r, photos: updated.length ? updated : null } : r)))
         }
+        // Storage only after the DB write succeeded, so no jsonb element points at a deleted file.
+        await supabase.storage.from('daily-report-photos').remove([photo.path, tp(photo.path)].filter(Boolean))
       } else {
+        await supabase.storage.from('daily-report-photos').remove([photo.path, tp(photo.path)].filter(Boolean))
         await supabase.from('job_photos').delete().eq('storage_path', photo.path)
       }
       await loadPhotoGallery()
@@ -522,7 +533,7 @@ export default function Field() {
     }
   }
 
-  async function uploadGalleryPhoto(file, captionOverride, tagOverride) {
+  async function uploadGalleryPhoto(file, captionOverride, tagOverride, internalOverride) {
     setUploadingGalleryPhoto(true)
     const ts = Date.now()
     const path = `${selectedJobId}/gallery/${ts}.jpg`
@@ -540,7 +551,11 @@ export default function Field() {
     await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
     const usedCaption = captionOverride !== undefined ? captionOverride : captionDraft
     const usedTag = tagOverride !== undefined ? tagOverride : tagDraft
-    const { error: dbErr } = await insertWithGpsFallback(gps => supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, caption: usedCaption || null, tag: usedTag || null, taken_at: taken.takenAt, ...gps }), taken.gps)
+    const usedInternal = internalOverride !== undefined ? !!internalOverride : internalOnlyDraft
+    // internal_only true is never dropped: before migration 070 the insert is refused
+    // (no owner-visible row) and the uploaded file + thumb are removed below.
+    const { error: dbErr, migrationRequired } = await insertJobPhotoWithFallbacks(extra => insertWithGpsFallback(gps => supabase.from('job_photos').insert({ job_id: selectedJobId, super_id: user.id, storage_path: path, file_name: file.name, ...extra, taken_at: taken.takenAt, ...gps }), taken.gps), { caption: usedCaption || null, tag: usedTag || null, internal_only: usedInternal })
+    if (migrationRequired) { await supabase.storage.from('daily-report-photos').remove([path, tp(path)]); alert(dbErr.message); setUploadingGalleryPhoto(false); return }
     if (dbErr) { alert('Photo saved to storage but could not save to gallery: ' + dbErr.message); setUploadingGalleryPhoto(false); return }
     if (captionOverride === undefined) setCaptionDraft('')
     if (tagOverride === undefined) setTagDraft('')
@@ -1075,7 +1090,7 @@ export default function Field() {
         const { error } = await supabase.storage.from('daily-report-photos').upload(path, compressed)
         if (error) { failed.push(error.message); continue }
         await supabase.storage.from('daily-report-photos').upload(tp(path), thumb)
-        setReportPhotos(prev => [...prev, { path, caption: '', name: file.name }])
+        setReportPhotos(prev => [...prev, { path, caption: '', name: file.name, ...(reportPhotosInternal ? { internal_only: true } : {}) }])
       } catch (e) { failed.push(e.message) }
     }
     setUploadingPhoto(false)
@@ -1138,6 +1153,7 @@ export default function Field() {
       setVisitorsLog([])
       setSubActivityLog([])
       setReportPhotos([])
+      setReportPhotosInternal(false)
       setWizardStep(1)
       await loadDailyReports()
       await checkTodayReport()
@@ -1595,11 +1611,16 @@ export default function Field() {
                               {uploadingPhoto ? 'Uploading...' : 'Add Photos'}
                               <input type="file" accept="image/*" multiple style={{ display: 'none' }} disabled={uploadingPhoto} onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadReportPhotos(files) }} />
                             </label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '12px', fontSize: '12px', color: '#4b5563', cursor: 'pointer' }} title="Internal only photos are hidden from the owner portal">
+                              <input type="checkbox" checked={reportPhotosInternal} onChange={e => setReportPhotosInternal(e.target.checked)} />
+                              Internal only (hide from owner)
+                            </label>
                             {reportPhotos.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
                                 {reportPhotos.map((p, i) => (
                                   <div key={i} style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {p.name}
+                                    {p.internal_only === true && <span style={{ fontSize: '10px', fontWeight: '800', color: '#7c2d12', background: '#ffedd5', padding: '1px 5px', borderRadius: '3px', textTransform: 'uppercase' }}>Internal</span>}
                                     <button type="button" onClick={() => setReportPhotos(l => l.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '14px', padding: 0 }}>×</button>
                                   </div>
                                 ))}
@@ -2378,8 +2399,8 @@ export default function Field() {
                 {/* SITE PHOTOS */}
                 {activeTab === 'photos' && (() => {
                   const allPhotos = [
-                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at) })),
-                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: p.caption || null, tag: p.tag || null, date: r.report_date, fromReport: true, reportId: r.id }))),
+                    ...standalonePhotos.map(p => ({ path: p.storage_path, name: p.file_name, caption: p.caption, tag: p.tag || null, date: photoDateCentral(p.taken_at), internal_only: p.internal_only === true })),
+                    ...dailyReports.flatMap(r => (r.photos || []).map(p => ({ path: p.path, name: p.name, caption: p.caption || null, tag: p.tag || null, date: r.report_date, fromReport: true, reportId: r.id, internal_only: p.internal_only === true }))),
                   ].sort((a, b) => new Date(b.date) - new Date(a.date))
                   const usedTags = [...new Set(allPhotos.filter(p => p.tag).map(p => p.tag))].sort()
                   const filtered = photoTagFilter === 'all' ? allPhotos : allPhotos.filter(p => p.tag === photoTagFilter)
@@ -2409,6 +2430,10 @@ export default function Field() {
                             <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingGalleryPhoto} multiple onChange={async e => { for (const f of Array.from(e.target.files || [])) await uploadGalleryPhoto(f, undefined, undefined); e.target.value = '' }} />
                           </label>
                         </div>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '12px', color: '#4b5563', cursor: 'pointer' }} title="Internal only photos are hidden from the owner portal">
+                          <input type="checkbox" checked={internalOnlyDraft} onChange={e => setInternalOnlyDraft(e.target.checked)} />
+                          Internal only (hide from owner)
+                        </label>
                       </div>
 
                       {/* Migration banner / button */}
@@ -2486,6 +2511,7 @@ export default function Field() {
                                 >
                                   {deletingPhoto === p.path ? '…' : '✕'}
                                 </button>
+                                {p.internal_only && <div title="Hidden from the owner portal" style={{ position: 'absolute', top: '30px', right: '4px', background: 'rgba(17,24,39,0.85)', color: '#fde68a', fontSize: '8px', fontWeight: '800', letterSpacing: '0.5px', textTransform: 'uppercase', padding: '2px 5px', borderRadius: '3px', lineHeight: '1.3' }}>Internal</div>}
                               </div>
                             ))}
                           </div>
@@ -3160,7 +3186,7 @@ export default function Field() {
                     const files = Array.from(e.target.files || [])
                     if (!files.length) return
                     e.target.value = ''
-                    for (const f of files) await uploadGalleryPhoto(f, fabCaption, fabTag)
+                    for (const f of files) await uploadGalleryPhoto(f, fabCaption, fabTag, false)
                     setFabCount(n => n + files.length)
                     fabInputRef.current?.click()
                   }}

@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { isBeforeTodayCentral } from '../../lib/central-date'
@@ -135,6 +135,9 @@ export default function OwnerPortal() {
   const [milestones, setMilestones] = useState([])
   const [photos, setPhotos] = useState([])
   const [photosError, setPhotosError] = useState(null)
+  // Paged (prompt 73): { total, has_more } from the owner photos route; "Load more" appends.
+  const [photosPage, setPhotosPage] = useState({ total: 0, has_more: false, loadingMore: false, moreError: null })
+  const photosJobRef = useRef(null) // job whose photos are on screen; a late "Load more" for another job is dropped
   const [payAppsInfo, setPayAppsInfo] = useState({ billed_to_date: 0, has_aia: false, error: null })
   // Residential: owner/lender draws from /api/owner-res-draws ({ draws, totals } or error)
   const [resDraws, setResDraws] = useState({ draws: [], totals: null, error: null })
@@ -189,7 +192,7 @@ export default function OwnerPortal() {
   async function loadJobData(jobId, jobObj) {
     setLoadingJob(true)
     setChangeOrders([]); setRfis([]); setRfiComments({}); setAiaApps([])
-    setDrawRequests([]); setMilestones([]); setPhotos([]); setPhotosError(null); setPmProfile(null)
+    setDrawRequests([]); setMilestones([]); setPhotos([]); setPhotosError(null); photosJobRef.current = null; setPhotosPage({ total: 0, has_more: false, loadingMore: false, moreError: null }); setPmProfile(null)
     setPayAppsInfo({ billed_to_date: 0, has_aia: false, error: null })
     setResDraws({ draws: [], totals: null, error: null })
     const residential = isResidentialJob(jobObj)
@@ -264,12 +267,32 @@ export default function OwnerPortal() {
       if (!Array.isArray(j.photos)) throw new Error('Photo list missing from response.')
       setPhotosError(null)
       setPhotos(j.photos)
+      photosJobRef.current = jobId
+      setPhotosPage({ total: Number.isFinite(j.total) ? j.total : j.photos.length, has_more: !!j.has_more, loadingMore: false, moreError: null })
     } catch (e) {
       setPhotos([])
       setPhotosError(e?.message || 'error')
     }
 
     setLoadingJob(false)
+  }
+
+  // Next page of owner photos (internal-only photos are already excluded server-side).
+  async function loadMorePhotos() {
+    if (!selectedJobId || photosPage.loadingMore || !photosPage.has_more) return
+    const jobId = selectedJobId
+    setPhotosPage(p => ({ ...p, loadingMore: true, moreError: null }))
+    try {
+      const r = await authFetch(`/api/owner-photos?job_id=${encodeURIComponent(jobId)}&limit=100&offset=${photos.length}`)
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`)
+      if (!Array.isArray(j.photos)) throw new Error('Photo list missing from response.')
+      if (photosJobRef.current !== jobId) return
+      setPhotos(prev => { const seen = new Set(prev.map(p => p.path)); return [...prev, ...j.photos.filter(p => !seen.has(p.path))] })
+      setPhotosPage({ total: Number.isFinite(j.total) ? j.total : photosPage.total, has_more: !!j.has_more, loadingMore: false, moreError: null })
+    } catch (e) {
+      setPhotosPage(p => ({ ...p, loadingMore: false, moreError: e?.message || 'error' }))
+    }
   }
 
   async function submitComment(rfiId) {
@@ -711,7 +734,7 @@ export default function OwnerPortal() {
                 {/* ── PHOTOS ── */}
                 {activeTab === 'photos' && (
                   <div style={s.card}>
-                    <div style={s.cardTitle}>Progress Photos ({photos.length})</div>
+                    <div style={s.cardTitle}>Progress Photos ({photosError ? 0 : Math.max(photosPage.total, photos.length)})</div>
                     {photosError ? <div style={{ ...s.emptyMsg, color: '#dc2626' }}>Couldn&apos;t load photos. Please try again later.</div>
                     : photos.length === 0 ? <div style={s.emptyMsg}>No photos uploaded for this project yet.</div> : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '8px' }}>
@@ -728,6 +751,17 @@ export default function OwnerPortal() {
                             )}
                           </a>
                         ))}
+                      </div>
+                    )}
+                    {!photosError && photos.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', fontSize: '12px', color: '#6b7280', flexWrap: 'wrap' }}>
+                        <span>Showing {photos.length} of {Math.max(photosPage.total, photos.length)}</span>
+                        {photosPage.has_more && (
+                          <button type="button" onClick={loadMorePhotos} disabled={photosPage.loadingMore} style={{ ...s.btn, ...(photosPage.loadingMore ? s.btnDisabled : {}) }}>
+                            {photosPage.loadingMore ? 'Loading…' : 'Load more'}
+                          </button>
+                        )}
+                        {photosPage.moreError && <span style={{ color: '#dc2626' }}>Couldn&apos;t load more photos. Please try again.</span>}
                       </div>
                     )}
                   </div>

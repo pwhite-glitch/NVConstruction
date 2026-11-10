@@ -56,7 +56,8 @@ import { escapeHtml } from '../../lib/email'
 import { poCashOutByMonth, summarizeOwnerCheckPOs } from '../../lib/po-cash'
 import { contractTimeSummary, weatherDelayCount, parseDaysAdded, formatDaysAdded, DAYS_ADDED_NEEDS_069 } from '../../lib/contract-time'
 import { buildWeatherDayLogHtml } from '../../lib/weather-day-log-print'
-import { writeWithMissingColumnRetry } from '../../lib/missing-column-retry'
+import { writeWithMissingColumnRetry, isMissingColumnError } from '../../lib/missing-column-retry'
+import { g703Row, screenStored, storedBalanceByKey, storedInstalledError, hasStoredColumns } from '../../lib/aia-g703'
 import { findDirectoryEntry, coiBadgeModel, confirmCoiForCompany } from '../../lib/coi-warning'
 import DailyReportForm from './DailyReportForm'
 
@@ -454,6 +455,8 @@ function JobDetailInner() {
   const [relinkDrawOpen, setRelinkDrawOpen] = useState(false)
   // Owner override: id of a locked (submitted/certified/paid) AIA app opened for editing
   const [aiaUnlockedId, setAiaUnlockedId] = useState(null)
+  // G703 stored-material columns exist (migration 063); detected from the rows on each load.
+  const [aiaStoredEnabled, setAiaStoredEnabled] = useState(false)
   const [relinkDrawId, setRelinkDrawId] = useState('')
   // Per-subcontract AIA (nv_role === 'sub')
   const [showNewNvSubAia, setShowNewNvSubAia] = useState(null) // nv_subcontract_id | null
@@ -1660,6 +1663,9 @@ function JobDetailInner() {
           dollarPrevByDesc[l.line_description] = (dollarPrevByDesc[l.line_description] || 0) + (l.dollar_this_period != null ? Number(l.dollar_this_period) : 0)
         }
       }
+      // Materials stored on earlier apps of this contract, by line (migration 063; 0 before it).
+      const storedByDesc = storedBalanceByKey(prevAppLines || [], l => l.line_description || null)
+      setAiaStoredEnabled(hasStoredColumns([...(lines || []), ...(prevAppLines || [])]))
       setAiaLines((lines || []).map(l => {
         const sched = Number(l.scheduled_value || 0)
         const dollarPrev = prevApps.length > 0 ? (dollarPrevByDesc[l.line_description] || 0) : (l.dollar_prev != null ? Number(l.dollar_prev) : 0)
@@ -1676,6 +1682,9 @@ function JobDetailInner() {
           dollar_prev: dollarPrev,
           pct_this: String(sched > 0 ? dollarThis / sched * 100 : 0),
           dollar_this: dollarThis,
+          stored_prev_balance: storedByDesc[l.line_description] || 0,
+          stored_this: Number(l.stored_this_period || 0),
+          stored_installed_this: Number(l.stored_installed_this_period || 0),
         }
       }))
       setPeriodBilling([])
@@ -1710,7 +1719,8 @@ function JobDetailInner() {
     for (const prevApp of prevApps) {
       const appLines = (prevAppLines || []).filter(l => l.application_id === prevApp.id)
       for (const l of appLines) {
-        const bAmt = budgetMap[l.budget_item_id] || 0
+        // An earlier line's own saved scheduled_value wins for percent-only amounts.
+        const bAmt = l.scheduled_value != null ? r2(Number(l.scheduled_value)) : (budgetMap[l.budget_item_id] || 0)
         const thisAmt = l.dollar_this_period != null
           ? Number(l.dollar_this_period)
           : r2(bAmt * (parseFloat(l.pct_this_period) || 0) / 100)
@@ -1718,23 +1728,48 @@ function JobDetailInner() {
       }
     }
     const lineMap = Object.fromEntries((lines || []).map(l => [l.budget_item_id, l]))
-    setAiaLines(budgetItems.map(b => {
-      const bAmt = r2(Number(b.owner_amount ?? b.budget_amount ?? 0))
-      const pctThis = parseFloat(lineMap[b.id]?.pct_this_period ?? 0)
-      const savedDollar = lineMap[b.id]?.dollar_this_period
+    // Materials stored on earlier prime apps, by budget line (migration 063; 0 before it).
+    const storedByItem = storedBalanceByKey(prevAppLines || [], l => l.budget_item_id ?? null)
+    setAiaStoredEnabled(hasStoredColumns([...(lines || []), ...(prevAppLines || [])]))
+    const screenLine = (b, l, bAmt) => {
+      const pctThis = parseFloat(l?.pct_this_period ?? 0)
+      const savedDollar = l?.dollar_this_period
       const dollarThis = savedDollar != null ? r2(Number(savedDollar)) : r2(bAmt * pctThis / 100)
-      const dollarPrev = prevApps.length > 0 ? (dollarPrevByItem[b.id] || 0) : (lineMap[b.id]?.dollar_prev != null ? r2(Number(lineMap[b.id].dollar_prev)) : null)
+      const key = b?.id ?? l?.budget_item_id
+      const dollarPrev = prevApps.length > 0 ? (dollarPrevByItem[key] || 0) : (l?.dollar_prev != null ? r2(Number(l.dollar_prev)) : null)
       return {
-        budget_item_id: b.id,
-        cost_code: b.cost_code,
-        description: b.description,
+        budget_item_id: key,
+        cost_code: b ? b.cost_code : null,
+        description: b ? b.description : null,
         budget_amount: bAmt,
-        pct_prev: String(lineMap[b.id]?.pct_prev ?? 0),
+        pct_prev: String(l?.pct_prev ?? 0),
         dollar_prev: dollarPrev,
         pct_this: String(pctThis),
         dollar_this: dollarThis,
+        stored_prev_balance: storedByItem[key] || 0,
+        stored_this: Number(l?.stored_this_period || 0),
+        stored_installed_this: Number(l?.stored_installed_this_period || 0),
       }
-    }))
+    }
+    if (app.schedule_frozen_at) {
+      // Frozen at submit (migration 063): this app's own saved lines and Column C — not
+      // today's budget items. Cost code from the budget item if it still exists.
+      const itemById = Object.fromEntries(budgetItems.map(b => [b.id, b]))
+      const order = Object.fromEntries(budgetItems.map((b, i) => [b.id, i]))
+      const pos = l => order[l.budget_item_id] ?? Number.MAX_SAFE_INTEGER
+      setAiaLines((lines || []).slice().sort((x, y) => pos(x) - pos(y)).map(l => {
+        const b = itemById[l.budget_item_id] || null
+        const bAmt = r2(Number(l.scheduled_value ?? budgetMap[l.budget_item_id] ?? 0))
+        const row = screenLine(b, l, bAmt)
+        const saved = String(l.line_description || '')
+        const code = b?.cost_code ? String(b.cost_code) : ''
+        row.description = saved ? (code && saved.startsWith(code + ' ') ? saved.slice(code.length + 1) : saved) : (b?.description ?? null)
+        row.line_description = l.line_description || null
+        return row
+      }))
+    } else {
+      setAiaLines(budgetItems.map(b => screenLine(b, lineMap[b.id], r2(Number(b.owner_amount ?? b.budget_amount ?? 0)))))
+    }
     setPeriodBilling(bills || [])
     setPeriodDirectCosts(dcs || [])
     const linkedPOs = linkedDrawId
@@ -1834,6 +1869,13 @@ function JobDetailInner() {
       const prevPct = sched > 0 ? prevAmt / sched * 100 : 0
       const newThisPct = Math.max(0, Math.min(100 - prevPct, overallPct - prevPct))
       const newDollar = Math.round(Math.max(0, Math.min(sched - prevAmt, sched * overallPct / 100 - prevAmt)) * 100) / 100
+      // Installed from stored (G703 F → E) rides on top of the pro-rata amount. newDollar is
+      // computed from the overall %, never from dollar_this, so repeated recalcs don't re-add it.
+      const installed = Math.round(Number(l.stored_installed_this || 0) * 100) / 100
+      if (installed > 0) {
+        const withInstalled = Math.round((newDollar + installed) * 100) / 100
+        return { ...l, pct_this: String(sched > 0 ? withInstalled / sched * 100 : newThisPct), dollar_this: withInstalled }
+      }
       return { ...l, pct_this: String(newThisPct), dollar_this: newDollar }
     })
   }
@@ -1916,6 +1958,11 @@ function JobDetailInner() {
 
   // Locked app (submitted/certified/paid): non-Owners are refused; an Owner must
   // type the app number. Returns true when the change may go ahead.
+  // Saved G703 line text for a prime line: cost code + description (frozen apps print it).
+  function aiaLineDescription(b) {
+    return [b?.cost_code, b?.description].filter(x => x != null && String(x).trim() !== '').join(' ')
+  }
+
   function confirmAiaOverride(app, what) {
     if (!isAiaLocked(app)) return true
     if (!isPrincipal(userRole)) {
@@ -1996,6 +2043,9 @@ function JobDetailInner() {
           dollar_prev: newDollarPrev,
           pct_this_period: 0,
           dollar_this_period: 0,
+          // Column C saved per line (frozen when the app leaves draft)
+          scheduled_value: Math.round(bAmt * 100) / 100,
+          line_description: aiaLineDescription(b),
         }
       })
       const { error: linesErr } = await supabase.from('aia_application_lines').insert(lineInserts)
@@ -2057,7 +2107,7 @@ function JobDetailInner() {
         const prevDollarThis = prevLine?.dollar_this_period != null ? Number(prevLine.dollar_this_period) : bAmt * ((parseFloat(prevLine?.pct_this_period || 0)) / 100)
         const newDollarPrev = prevLine ? r2(prevDollarPrev + prevDollarThis) : 0
         const newPctPrev = bAmt > 0 ? newDollarPrev / bAmt * 100 : 0
-        return { application_id: newApp.id, budget_item_id: b.id, pct_prev: newPctPrev, dollar_prev: newDollarPrev, pct_this_period: 0, dollar_this_period: 0 }
+        return { application_id: newApp.id, budget_item_id: b.id, pct_prev: newPctPrev, dollar_prev: newDollarPrev, pct_this_period: 0, dollar_this_period: 0, scheduled_value: r2(bAmt), line_description: aiaLineDescription(b) }
       })
       const { error: linesErr } = await supabase.from('aia_application_lines').insert(lineInserts)
       if (linesErr) {
@@ -2157,7 +2207,7 @@ function JobDetailInner() {
     if (isAiaLocked(stored) && !ownerOverride) {
       // Locked: amounts, retainage % and markup % stay as stored. Only Status may move forward.
       const { data: storedLines, error: slErr } = await supabase.from('aia_application_lines')
-        .select('id, budget_item_id, dollar_this_period').eq('application_id', stored.id)
+        .select('id, budget_item_id, dollar_this_period' + (aiaStoredEnabled ? ', stored_this_period, stored_installed_this_period' : '')).eq('application_id', stored.id)
       if (slErr) { alert('Could not check the application lines: ' + slErr.message); return false }
       const near = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.005
       const linesChanged = aiaLines.some(line => {
@@ -2166,7 +2216,9 @@ function JobDetailInner() {
         const sl = line.nv_sub_mode
           ? (storedLines || []).find(x => x.id === line.id)
           : (storedLines || []).find(x => x.budget_item_id === line.budget_item_id)
-        return !near(amt, sl?.dollar_this_period)
+        if (!near(amt, sl?.dollar_this_period)) return true
+        // Stored materials (063) are amounts too: a locked app can't change them.
+        return aiaStoredEnabled && (!near(line.stored_this, sl?.stored_this_period) || !near(line.stored_installed_this, sl?.stored_installed_this_period))
       })
       const headerChanged = !near(parseFloat(activeAia.retainage_pct), stored.retainage_pct)
         || !near(parseFloat(activeAia.markup_pct) || 0, stored.markup_pct)
@@ -2179,16 +2231,31 @@ function JobDetailInner() {
       if (newStatus !== (stored.status || 'draft')) {
         if (newStatus === 'draft' && !confirmAiaOverride(stored, 'move it back to draft')) return false
         setSavingAia(true)
-        const { error: stErr } = await supabase.from('aia_applications')
-          .update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', stored.id)
+        // Leaving draft (e.g. a draft with a payment recorded): freeze the prime schedule first,
+        // status last. Back to draft: un-freeze (saved values are kept, live again while draft).
+        let freezeHeader = {}
+        if (aiaFreezing(stored, newStatus)) {
+          const fz = await freezePrimeAiaSchedule(activeAia)
+          if (fz.error) { setSavingAia(false); alert(`Status was not changed — the schedule of values could not be saved:\n\n${fz.error}`); return false }
+          freezeHeader = fz.header
+        }
+        if (newStatus === 'draft') freezeHeader = { schedule_frozen_at: null }
+        const { error: stErr, row: stRow } = await updateAiaHeader(stored.id, { status: newStatus, updated_at: new Date().toISOString(), ...freezeHeader })
         setSavingAia(false)
         if (stErr) { alert('Status was not saved: ' + stErr.message); return false }
+        setActiveAia(a => (a && a.id === stored.id ? { ...a, ...stRow } : a))
         await loadAiaApplications()
       }
       return true
     }
+    // Stored materials: "Installed from stored" can't exceed what earlier apps stored.
+    if (aiaStoredEnabled) {
+      const storedErrs = aiaLines.map(line => storedInstalledError({ storedPrevBalance: line.stored_prev_balance, storedInstalledThis: line.stored_installed_this, label: line.description || line.cost_code || 'Line' })).filter(Boolean)
+      if (storedErrs.length) { alert('Not saved — stored materials:\n\n' + storedErrs.join('\n')); return false }
+    }
     // Lump sum: lines may run over, but the pay app as a whole can't bill past the contract.
     // Every way of entering amounts (typed, Apply to G703, pinned) lands here before it is stored.
+    // Total completed & stored includes Column F (materials presently stored).
     const cap = contractCap(
       calcContractSumToDate({ job, app: activeAia, primeCOs, nvSubcontracts, lines: aiaLines }),
       totalCompletedToDate(aiaLines)
@@ -2196,15 +2263,30 @@ function JobDetailInner() {
     if (cap.isOver) { alert(contractCapMessage(cap)); return false }
     setSavingAia(true)
     const saveErrors = []
+    const r2 = n => Math.round(n * 100) / 100
+    const prevStatus = stored.status || 'draft'
+    const newStatus = activeAia.status || 'draft'
+    // Leaving draft: lines and the frozen schedule are written first, the status last.
+    const freezing = aiaFreezing(stored, newStatus)
+    const unfreezing = newStatus === 'draft' && prevStatus !== 'draft'
+    const frozenNow = !!activeAia.schedule_frozen_at && !unfreezing
 
-    const { error: appErr } = await supabase.from('aia_applications').update({
+    const { error: appErr } = await updateAiaHeader(activeAia.id, {
       retainage_pct: parseFloat(activeAia.retainage_pct),
       markup_pct: parseFloat(activeAia.markup_pct) || 0,
-      status: activeAia.status || 'draft',
+      status: freezing ? prevStatus : newStatus,
       updated_at: new Date().toISOString(),
-    }).eq('id', activeAia.id)
+      ...(unfreezing ? { schedule_frozen_at: null } : {}),
+    })
     if (appErr) saveErrors.push(`Application header: ${appErr.message}`)
+    else if (unfreezing) setActiveAia(a => (a && a.id === activeAia.id ? { ...a, schedule_frozen_at: null } : a))
 
+    let storedDropped = false
+    const writeLine = run => async row => {
+      const res = await writeWithMissingColumnRetry(run, row, { fallbackCols: AIA_STORED_COLS })
+      if (res.dropped.some(c => AIA_STORED_COLS.includes(c))) storedDropped = true
+      return res
+    }
     for (const line of aiaLines) {
       const scheduled = Number(line.budget_amount || 0)
       const dollarRaw = line.dollar_this !== undefined ? Number(line.dollar_this) : null
@@ -2213,22 +2295,30 @@ function JobDetailInner() {
         ? dollarToSave / scheduled * 100
         : parseFloat(line.pct_this) || 0
       const updates = { pct_this_period: pctToSave, dollar_this_period: dollarToSave, dollar_prev: line.dollar_prev != null ? Number(line.dollar_prev) : null }
+      if (aiaStoredEnabled) {
+        updates.stored_this_period = r2(Number(line.stored_this || 0))
+        updates.stored_installed_this_period = r2(Number(line.stored_installed_this || 0))
+      }
       if (line.nv_sub_mode) {
-        const { error } = await supabase.from('aia_application_lines').update(updates).eq('id', line.id)
+        const { error } = await writeLine(row => supabase.from('aia_application_lines').update(row).eq('id', line.id))(updates)
         if (error) saveErrors.push(`Line "${line.description}": ${error.message}`)
       } else {
+        // Column C per line: live budget while draft; a frozen app keeps its saved values.
+        const b = budgetItems.find(x => x.id === line.budget_item_id)
+        updates.scheduled_value = !frozenNow && b ? r2(Number(b.owner_amount ?? b.budget_amount ?? 0)) : r2(scheduled)
+        updates.line_description = !frozenNow && b ? aiaLineDescription(b) : (line.line_description ?? aiaLineDescription(b || line))
         // Try update first; if no matching row exists (app created before budget item was added),
         // insert a new row so the amount is not silently discarded.
-        const { data: updated, error: updErr } = await supabase
+        const { data: updated, error: updErr } = await writeLine(row => supabase
           .from('aia_application_lines')
-          .update(updates)
+          .update(row)
           .eq('application_id', activeAia.id)
           .eq('budget_item_id', line.budget_item_id)
-          .select('id')
+          .select('id'))(updates)
         if (updErr) {
           saveErrors.push(`Line "${line.description}": ${updErr.message}`)
         } else if (!updated || updated.length === 0) {
-          const { error: insErr } = await supabase.from('aia_application_lines').insert({
+          const { error: insErr } = await writeLine(row => supabase.from('aia_application_lines').insert(row))({
             application_id: activeAia.id,
             budget_item_id: line.budget_item_id,
             ...updates,
@@ -2238,13 +2328,87 @@ function JobDetailInner() {
       }
     }
 
+    let statusNote = ''
+    if (freezing) {
+      if (saveErrors.length > 0) {
+        statusNote = `\n\nStatus was NOT changed to ${newStatus} (still ${prevStatus}) because the lines did not all save.`
+      } else {
+        const fz = await freezePrimeAiaSchedule(activeAia)
+        if (fz.error) {
+          saveErrors.push(`Schedule of values: ${fz.error}`)
+          statusNote = `\n\nStatus was NOT changed to ${newStatus} (still ${prevStatus}) because the schedule of values could not be saved.`
+        } else {
+          const { error: stErr, row: stRow } = await updateAiaHeader(activeAia.id, { status: newStatus, updated_at: new Date().toISOString(), ...fz.header })
+          if (stErr) {
+            saveErrors.push(`Status: ${stErr.message}`)
+            statusNote = `\n\nStatus was NOT changed to ${newStatus} (still ${prevStatus}).`
+          } else {
+            setActiveAia(a => (a && a.id === activeAia.id ? { ...a, ...stRow } : a))
+          }
+        }
+      }
+      if (statusNote) setActiveAia(a => (a && a.id === activeAia.id ? { ...a, status: prevStatus } : a))
+    }
+
     await loadAiaApplications()
     setSavingAia(false)
     if (saveErrors.length > 0) {
-      alert(`Save completed with errors — some line amounts may not have been stored:\n\n${saveErrors.join('\n')}`)
+      alert(`Save completed with errors — some line amounts may not have been stored:\n\n${saveErrors.join('\n')}${statusNote}`)
       return false
     }
+    if (storedDropped && aiaLines.some(l => Number(l.stored_this || 0) || Number(l.stored_installed_this || 0))) {
+      alert('Saved, except stored materials: they need database migration 063 (not applied yet). Stored amounts were not saved.')
+    }
     return true
+  }
+
+  // Columns that only exist after migration 063 (dropped on retry before it is applied).
+  const AIA_STORED_COLS = ['stored_this_period', 'stored_installed_this_period']
+  const AIA_FREEZE_COLS = ['original_contract_sum', 'net_change_orders', 'schedule_frozen_at']
+
+  // A prime app leaving draft (→ submitted / certified) gets its schedule frozen.
+  function aiaFreezing(storedApp, newStatus) {
+    return !activeAia?.nv_subcontract_id && (storedApp?.status || 'draft') === 'draft' && (newStatus === 'submitted' || newStatus === 'certified')
+  }
+
+  // aia_applications header write; before 063 the freeze columns are dropped and the rest saves.
+  async function updateAiaHeader(appId, patch) {
+    return writeWithMissingColumnRetry(row => supabase.from('aia_applications').update(row).eq('id', appId), patch, { fallbackCols: AIA_FREEZE_COLS })
+  }
+
+  // Freeze a prime app's schedule of values when it leaves draft: write every prime line's
+  // Column C (scheduled_value) and line_description from the live budget — inserting a
+  // $0 row for any budget item without one — and return G702 lines 1–2 to save WITH the
+  // status (schedule_frozen_at). Returns { header } or { error } (then nothing is frozen).
+  async function freezePrimeAiaSchedule(app) {
+    const r2 = n => Math.round(n * 100) / 100
+    const { data: rows, error } = await supabase.from('aia_application_lines')
+      .select('id, budget_item_id, scheduled_value, line_description').eq('application_id', app.id)
+    if (error) return { error: 'Could not read the G703 lines: ' + error.message }
+    const byItem = {}
+    for (const r of rows || []) if (r.budget_item_id && !byItem[r.budget_item_id]) byItem[r.budget_item_id] = r
+    const inserts = []
+    for (const b of budgetItems) {
+      const sched = r2(Number(b.owner_amount ?? b.budget_amount ?? 0))
+      const desc = aiaLineDescription(b)
+      const r = byItem[b.id]
+      if (!r) {
+        inserts.push({ application_id: app.id, budget_item_id: b.id, pct_prev: 0, dollar_prev: 0, pct_this_period: 0, dollar_this_period: 0, scheduled_value: sched, line_description: desc })
+        continue
+      }
+      if (r.scheduled_value != null && Math.abs(Number(r.scheduled_value) - sched) < 0.005 && (r.line_description || '') === desc) continue
+      const { error: uErr } = await supabase.from('aia_application_lines').update({ scheduled_value: sched, line_description: desc }).eq('id', r.id)
+      if (uErr) return { error: `Line "${desc}": ${uErr.message}` }
+    }
+    if (inserts.length) {
+      const { error: iErr } = await supabase.from('aia_application_lines').insert(inserts)
+      if (iErr) return { error: 'Could not add the missing G703 lines: ' + iErr.message }
+    }
+    // Same rules the G702 prints today (generateAIAFromApp): line 1 and line 2.
+    const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+    const liveSum = calcContractSumToDate({ job, app: { ...app, schedule_frozen_at: null }, primeCOs, nvSubcontracts, lines: aiaLines })
+    const original = job.nv_role === 'sub' ? liveSum : Number(job.contract_value || 0)
+    return { header: { original_contract_sum: r2(original), net_change_orders: r2(approvedCOsVal), schedule_frozen_at: new Date().toISOString() } }
   }
 
   // Always saves before generating so the exported PDF reflects the stored application.
@@ -2444,10 +2608,19 @@ function JobDetailInner() {
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100
     // Printed label = the rate the math uses (a 0% retainage release prints 0%, not 10%).
     const retPctLabel = +(retPct * 100).toFixed(2)
-    const approvedCOsVal = primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
+    // Prime app frozen at submit (migration 063): G702 lines 1–2 are the saved values.
+    const scheduleFrozen = !app.nv_subcontract_id && !!app.schedule_frozen_at && app.original_contract_sum != null
+    // Locked prime app sent before the portal saved its schedule: rebuilt live, with a note.
+    const scheduleRebuilt = !app.nv_subcontract_id && !app.schedule_frozen_at && isAiaLocked(aiaApplications.find(a => a.id === app.id) || app)
+    const approvedCOsVal = scheduleFrozen
+      ? Number(app.net_change_orders || 0)
+      : primeCOs.filter(co => co.status === 'approved').reduce((a, co) => a + Number(co.amount || 0), 0)
     const baseContract = Number(job.contract_value || 0)
     const contractSumToDate = calcContractSumToDate({ job, app, primeCOs, nvSubcontracts, lines: aiaLines })
-    const origContract = (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
+    const origContract = scheduleFrozen
+      ? Number(app.original_contract_sum || 0)
+      : (job.nv_role === 'sub' || app.nv_subcontract_id) ? contractSumToDate : baseContract
+    const REBUILT_NOTE = 'Schedule rebuilt from the current budget — this application was submitted before the portal saved its schedule of values.'
 
     const isDraft = !app.period_to
     const periodFrom = app.period_from ? new Date(app.period_from + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
@@ -2464,18 +2637,24 @@ function JobDetailInner() {
       const thisAmt = line.dollar_this !== undefined
         ? r2(Number(line.dollar_this))
         : r2(scheduled * Math.max(0, parseFloat(line.pct_this) || 0) / 100)
-      const totalAmt = prevAmt + thisAmt
+      // G703 row (lib/aia-g703.js): F = materials presently stored, G = D + E + F
+      const g = g703Row({ scheduled, prevCompleted: prevAmt, thisCompleted: thisAmt, ...screenStored(line), retPct })
+      const totalAmt = g.G
       // Do NOT cap at 100% — show actual percentage so overbilling is visible
-      const totalPct = scheduled > 0 ? totalAmt / scheduled * 100 : 0
+      const totalPct = g.pct
       const isOverbilled = totalPct > 100 + 0.01
-      const balance = scheduled - totalAmt
-      return { ...line, idx: idx + 1, scheduled, prevAmt, thisAmt, totalAmt, totalPct, isOverbilled, balance, retainage: totalAmt * retPct }
+      const balance = g.H
+      return { ...line, idx: idx + 1, scheduled, prevAmt, thisAmt, storedAmt: g.F, storedPrev: Number(line.stored_prev_balance || 0), totalAmt, totalPct, isOverbilled, balance, retainage: g.I, retainageWork: g.I_work, retainageStored: g.I_stored }
     })
 
     const totalScheduled  = sovLines.reduce((a, l) => a + l.scheduled, 0)
     const totalPrev       = sovLines.reduce((a, l) => a + l.prevAmt, 0)
     const totalThis       = sovLines.reduce((a, l) => a + l.thisAmt, 0)
+    const totalStored     = sovLines.reduce((a, l) => a + l.storedAmt, 0)
+    const totalStoredPrev = sovLines.reduce((a, l) => a + l.storedPrev, 0)
     const totalCompleted  = sovLines.reduce((a, l) => a + l.totalAmt, 0)
+    const totalRetainageWork   = sovLines.reduce((a, l) => a + l.retainageWork, 0)
+    const totalRetainageStored = sovLines.reduce((a, l) => a + l.retainageStored, 0)
     const totalRetainage  = sovLines.reduce((a, l) => a + l.retainage, 0)
     const totalEarnedLessRet = totalCompleted - totalRetainage
     const appsInSequence  = aiaApplications
@@ -2483,7 +2662,9 @@ function JobDetailInner() {
       .sort((x, y) => x.app_number - y.app_number)
     const prevAppInSeq    = appsInSequence[appsInSequence.findIndex(a => a.id === app.id) - 1]
     const prevRetPct      = prevAppInSeq ? Math.max(0, Math.min(100, parseFloat(prevAppInSeq.retainage_pct) || 0)) / 100 : retPct
-    const prevCertificates = totalPrev * (1 - prevRetPct)
+    // Previous apps' completed + stored (stored balance carried in) less their retainage,
+    // so a draw of stored material is not billed twice.
+    const prevCertificates = (totalPrev + totalStoredPrev) * (1 - prevRetPct)
     const currentPaymentDue = totalEarnedLessRet - prevCertificates
     const balanceToFinish = contractSumToDate - totalCompleted
     const overallPct      = totalScheduled > 0 ? (totalCompleted / totalScheduled * 100).toFixed(1) : '0.0'
@@ -2634,12 +2815,15 @@ ${isDraft ? `<div class="draft-banner">DRAFT — Billing period end date is requ
   <tr><td>2</td><td>Net Change by Change Orders</td><td>${approvedCOsVal >= 0 ? '+' : ''}${fmtSigned(approvedCOsVal)}</td></tr>
   <tr><td>3</td><td>Contract Sum to Date (Lines 1 ± 2)</td><td>${fmt(contractSumToDate)}</td></tr>
   <tr><td>4</td><td>Total Completed &amp; Stored to Date (Column G of G703)</td><td>${fmt(totalCompleted)}</td></tr>
-  <tr><td>5</td><td>Retainage: ${retPctLabel}% of Completed Work (Column I of G703)</td><td>(${fmt(totalRetainage)})</td></tr>
+  <tr><td>5a</td><td>${retPctLabel}% of Completed Work (Column D + E on G703)</td><td>(${fmt(totalRetainageWork)})</td></tr>
+  <tr><td>5b</td><td>${retPctLabel}% of Stored Material (Column F on G703)</td><td>(${fmt(totalRetainageStored)})</td></tr>
+  <tr><td>5</td><td>Total Retainage (Lines 5a + 5b or Total in Column I of G703)</td><td>(${fmt(totalRetainage)})</td></tr>
   <tr><td>6</td><td>Total Earned Less Retainage (Line 4 less Line 5)</td><td>${fmt(totalEarnedLessRet)}</td></tr>
   <tr><td>7</td><td>Less Previous Certificates for Payment</td><td>(${fmt(prevCertificates)})</td></tr>
   <tr class="due"><td>8</td><td>CURRENT PAYMENT DUE</td><td>${fmtSigned(currentPaymentDue)}</td></tr>
   <tr class="balance"><td>9</td><td>Balance to Finish, Including Retainage (Line 3 less Line 4)</td><td>${fmtSigned(balanceToFinish)}</td></tr>
 </table>
+${scheduleRebuilt ? `<div class="warn-box" style="margin-top:8px">${REBUILT_NOTE}</div>` : ''}
 
 ${overbilledLines.length > 0 ? `
 <div class="warn-box">
@@ -2665,15 +2849,16 @@ ${visibleSovLines.length > 0 ? `
 <table class="g703">
   <thead>
     <tr>
-      <th style="width:22px">A<br>No.</th>
-      <th style="width:70px" class="left">B<br>Cost Code</th>
-      <th class="left">C — Description of Work</th>
-      <th>D<br>Scheduled<br>Value</th>
-      <th>E<br>Previous<br>Application</th>
-      <th>F<br>This<br>Period</th>
-      <th>G<br>Total Completed<br>&amp; Stored to Date</th>
-      <th>%<br>G÷D</th>
-      <th>H<br>Balance<br>to Finish</th>
+      <th style="width:22px">A<br>Item No.</th>
+      <th style="width:70px" class="left">Cost Code</th>
+      <th class="left">B — Description of Work</th>
+      <th>C<br>Scheduled<br>Value</th>
+      <th>D<br>From Previous<br>Application</th>
+      <th>E<br>This<br>Period</th>
+      <th>F<br>Materials Presently<br>Stored</th>
+      <th>G<br>Total Completed<br>&amp; Stored to Date<br>(D+E+F)</th>
+      <th>%<br>(G÷C)</th>
+      <th>H<br>Balance<br>to Finish<br>(C−G)</th>
       <th>I<br>Retainage</th>
     </tr>
   </thead>
@@ -2685,6 +2870,7 @@ ${visibleSovLines.length > 0 ? `
       <td class="r">${fmt(l.scheduled)}</td>
       <td class="r">${fmt(l.prevAmt)}</td>
       <td class="r">${fmt(l.thisAmt)}</td>
+      <td class="r">${fmtSigned(l.storedAmt || 0)}</td>
       <td class="r">${fmt(l.totalAmt)}</td>
       <td class="pct">${l.totalPct.toFixed(1)}%${l.isOverbilled ? ' ▲' : ''}</td>
       <td class="r">${fmtSigned(l.balance)}</td>
@@ -2697,6 +2883,7 @@ ${visibleSovLines.length > 0 ? `
       <td class="r">${fmt(totalScheduled)}</td>
       <td class="r">${fmt(totalPrev)}</td>
       <td class="r">${fmt(totalThis)}</td>
+      <td class="r">${fmtSigned(totalStored)}</td>
       <td class="r">${fmt(totalCompleted)}</td>
       <td class="pct">${overallPct}%</td>
       <td class="r">${fmtSigned(balanceToFinish)}</td>
@@ -2705,6 +2892,7 @@ ${visibleSovLines.length > 0 ? `
   </tfoot>
 </table>
 
+${scheduleRebuilt ? `<div class="warn-box" style="margin-top:8px">${REBUILT_NOTE}</div>` : ''}
 ${overbilledLines.length > 0 ? `<div class="warn-box" style="margin-top:8px"><strong>▲ Overbilled:</strong> Highlighted rows show completed amounts that exceed the scheduled value. Percentage shown is actual (not capped). Review change orders or correct cost data before submitting.</div>` : ''}
 
 <div class="foot">
@@ -4985,8 +5173,15 @@ ${attachmentHtml}
       }
     }, 'Could not save budget line')
     if (!ok) return
+    const prevItem = budgetItems.find(b => b.id === editingBudgetItem)
     setEditingBudgetItem(null)
     await loadBudgetItems()
+    // Owner SOV changed and an owner pay app was already sent: say which apps it affects.
+    const ownerBefore = prevItem?.owner_amount == null || prevItem.owner_amount === '' ? null : Number(prevItem.owner_amount)
+    if (prevItem && ownerBefore !== (owner ?? null)) {
+      const { data: sentApps } = await supabase.from('aia_applications').select('id').eq('job_id', id).is('nv_subcontract_id', null).in('status', ['submitted', 'certified']).limit(1)
+      if (sentApps?.length) { setMsg('Already-submitted pay apps keep their saved schedule; this change applies to the next pay app.'); setTimeout(() => setMsg(''), 8000) }
+    }
   }
 
   async function toggleRollIntoGc(item) {
@@ -12209,6 +12404,9 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Scheduled</th>
                                         <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>% Prev</th>
                                         <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>This Period</th>
+                                        {aiaStoredEnabled && <th title="New material stored on site / in a yard this period (G703 Column F)" style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Stored this period</th>}
+                                        {aiaStoredEnabled && <th title="Previously stored material installed this period — moves from Stored (F) into This Period (E)" style={{ textAlign: 'center', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Installed from stored</th>}
+                                        {aiaStoredEnabled && <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Stored to date (F)</th>}
                                         <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Total</th>
                                         <th style={{ textAlign: 'right', padding: '8px 10px', fontSize: '10px', color: '#6b7280', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: '700', whiteSpace: 'nowrap' }}>Balance</th>
                                       </tr>
@@ -12220,8 +12418,10 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                         const thisAmt = line.dollar_this !== undefined
                                           ? Math.round(Number(line.dollar_this) * 100) / 100
                                           : Math.round(scheduled * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0))) / 100
-                                        const total = prevAmt + thisAmt
-                                        const balance = scheduled - total
+                                        // G = D + E + F (materials presently stored, migration 063; 0 before it)
+                                        const g703 = g703Row({ scheduled, prevCompleted: prevAmt, thisCompleted: thisAmt, ...screenStored(line) })
+                                        const total = g703.G
+                                        const balance = g703.H
                                         const isPinnedRow = !line.nv_sub_mode && pinnedLineIds.has(line.budget_item_id)
                                         const lineKey = line.nv_sub_mode ? line.id : line.budget_item_id
                                         return (
@@ -12292,6 +12492,44 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                                 )
                                               })()}
                                             </td>
+                                            {aiaStoredEnabled && (
+                                              <td style={{ padding: '6px 8px' }}>
+                                                <input type="number" min="0" step="0.01" aria-label="Stored this period"
+                                                  style={{ background: '#ffffff', border: '1px solid #d1d5db', borderRadius: '8px', outline: 'none', color: '#111827', fontSize: '12px', padding: '6px 6px', width: '90px', textAlign: 'right' }}
+                                                  value={Number(line.stored_this || 0) || ''}
+                                                  placeholder="0"
+                                                  onChange={e => {
+                                                    const v = Math.round(Math.max(0, parseFloat(e.target.value) || 0) * 100) / 100
+                                                    setAiaLines(ls => ls.map((l, idx) => idx === i ? { ...l, stored_this: v } : l))
+                                                  }} />
+                                              </td>
+                                            )}
+                                            {aiaStoredEnabled && (
+                                              <td style={{ padding: '6px 8px' }}>
+                                                <input type="number" min="0" step="0.01" aria-label="Installed from stored"
+                                                  title={`Stored on earlier pay apps: $${Number(line.stored_prev_balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                  style={{ background: '#ffffff', border: `1px solid ${Number(line.stored_installed_this || 0) > Number(line.stored_prev_balance || 0) + 0.005 ? '#dc2626' : '#d1d5db'}`, borderRadius: '8px', outline: 'none', color: '#111827', fontSize: '12px', padding: '6px 6px', width: '90px', textAlign: 'right' }}
+                                                  value={Number(line.stored_installed_this || 0) || ''}
+                                                  placeholder="0"
+                                                  onChange={e => {
+                                                    // Move to installed: the same amount is added to This Period (E), so G is unchanged.
+                                                    const v = Math.round(Math.max(0, parseFloat(e.target.value) || 0) * 100) / 100
+                                                    setAiaLines(ls => {
+                                                      const updated = ls.map((l, idx) => {
+                                                        if (idx !== i) return l
+                                                        const sched = Number(l.budget_amount || 0)
+                                                        const curThis = l.dollar_this !== undefined && l.dollar_this !== null ? Number(l.dollar_this) : sched * (parseFloat(l.pct_this) || 0) / 100
+                                                        const nextThis = Math.round((curThis + v - Number(l.stored_installed_this || 0)) * 100) / 100
+                                                        return { ...l, stored_installed_this: v, dollar_this: nextThis, pct_this: String(sched > 0 ? nextThis / sched * 100 : 0) }
+                                                      })
+                                                      return line.nv_sub_mode ? updated : recalcPinnedLines(updated, pinnedLineIds)
+                                                    })
+                                                  }} />
+                                              </td>
+                                            )}
+                                            {aiaStoredEnabled && (
+                                              <td style={{ padding: '10px', textAlign: 'right', color: g703.F < 0 ? '#dc2626' : '#555', fontFamily: 'monospace' }}>${g703.F.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                            )}
                                             <td style={{ padding: '10px', textAlign: 'right', color: total > 0 ? '#16a34a' : '#555', fontFamily: 'monospace' }}>${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                             <td style={{ padding: '10px', textAlign: 'right', color: balance < 0 ? '#dc2626' : '#555', fontFamily: 'monospace' }}>${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                           </tr>
@@ -12317,12 +12555,14 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
                                     const thisAmt = line.dollar_this !== undefined
                                       ? r2(Number(line.dollar_this))
                                       : r2(sv * Math.min(100, Math.max(0, parseFloat(line.pct_this) || 0)) / 100)
-                                    return a + prevAmt + thisAmt
+                                    // G = D + E + F (stored materials count in completed & stored and in retainage)
+                                    return a + g703Row({ scheduled: sv, prevCompleted: prevAmt, thisCompleted: thisAmt, ...screenStored(line) }).G
                                   }, 0)
                                   const totalRetainage = r2(totalCompleted * retPct)
                                   const totalPrevCompleted = aiaLines.reduce((a, line) => {
                                     const sv = r2(Number(line.budget_amount || 0))
-                                    return a + (line.dollar_prev != null ? r2(Number(line.dollar_prev)) : r2(sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100))
+                                    // previous certificates include material stored on earlier apps (carried-in balance)
+                                    return a + (line.dollar_prev != null ? r2(Number(line.dollar_prev)) : r2(sv * Math.min(100, Math.max(0, parseFloat(line.pct_prev) || 0)) / 100)) + Number(line.stored_prev_balance || 0)
                                   }, 0)
                                   const earnedLessRet = totalCompleted - totalRetainage
                                   const appsInSeq = aiaApplications

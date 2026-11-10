@@ -5,6 +5,8 @@ import { DC_APPROVER_ROLES } from '../../../lib/direct-cost-queue'
 import { jobAccessError, budgetLineError } from '../../../lib/dc-guards'
 import { isAiaLocked, aiaLockReason, overrideConfirmed } from '../../../lib/aia-lock'
 import { toCents, fromCents, signedDrawCents, applyDrawDelta, undoDrawDelta, pctOf } from '../../../lib/aia-draw'
+import { isMissingColumnError } from '../../../lib/missing-column-retry'
+import { storedBalanceBefore, storedToDate, savedStored } from '../../../lib/aia-g703'
 
 const adminSupabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -53,27 +55,44 @@ function lockCheck(auth, app, typed) {
   return { override: true }
 }
 
+// schedule_frozen_at (migration 063): until 063 is applied the select is retried without
+// it and the app behaves as live (unfrozen).
+const APP_COLS = 'id, job_id, app_number, status, payment_received, markup_pct, nv_subcontract_id'
 async function loadApp(id) {
-  const { data, error } = await adminSupabase.from('aia_applications')
-    .select('id, job_id, app_number, status, payment_received, markup_pct, nv_subcontract_id').eq('id', id).maybeSingle()
+  const build = cols => adminSupabase.from('aia_applications').select(cols).eq('id', id).maybeSingle()
+  let { data, error } = await build(APP_COLS + ', schedule_frozen_at')
+  if (error && isMissingColumnError(error)) ({ data, error } = await build(APP_COLS))
   if (error) return { error: Response.json({ error: error.message }, { status: 500 }) }
   if (!data) return { error: Response.json({ error: 'Pay app not found.' }, { status: 404 }) }
   return { app: data }
 }
 
+// Stored-material columns (migration 063). Until 063 is applied the select is retried
+// without them and stored counts 0 (today's bound).
+const LINE_COLS = 'id, budget_item_id, dollar_this_period, pct_this_period, dollar_prev, scheduled_value'
+const STORED_SELECT = ', stored_this_period, stored_installed_this_period'
+async function selectWithStored(build, cols) {
+  const res = await build(cols + STORED_SELECT)
+  if (res.error && isMissingColumnError(res.error)) return build(cols)
+  return res
+}
+
 // This app's G703 row for the budget line (null when none saved yet) and its scheduled value.
 async function loadLine(app, budgetItemId) {
   const [{ data: rows, error }, { data: item, error: itemErr }] = await Promise.all([
-    adminSupabase.from('aia_application_lines')
-      .select('id, budget_item_id, dollar_this_period, pct_this_period, dollar_prev, scheduled_value')
-      .eq('application_id', app.id).eq('budget_item_id', budgetItemId).order('id').limit(1),
+    selectWithStored(cols => adminSupabase.from('aia_application_lines')
+      .select(cols)
+      .eq('application_id', app.id).eq('budget_item_id', budgetItemId).order('id').limit(1), LINE_COLS),
     adminSupabase.from('budget_items').select('id, job_id, budget_amount, owner_amount').eq('id', budgetItemId).maybeSingle(),
   ])
   if (error || itemErr) return { error: Response.json({ error: (error || itemErr).message }, { status: 500 }) }
   if (!item) return { error: Response.json({ error: 'The cost’s budget line no longer exists.' }, { status: 422 }) }
   const row = rows?.[0] || null
-  // Same scheduled value the pay app screen uses: owner_amount, else budget_amount
-  const schedCents = toCents(item.owner_amount ?? item.budget_amount ?? 0)
+  // Same scheduled value the pay app screen uses: owner_amount, else budget_amount.
+  // A frozen app (schedule saved at submit, migration 063) uses the line's saved Column C.
+  const schedCents = app.schedule_frozen_at && row?.scheduled_value != null
+    ? toCents(row.scheduled_value)
+    : toCents(item.owner_amount ?? item.budget_amount ?? 0)
   const thisCents = row?.dollar_this_period != null
     ? toCents(row.dollar_this_period)
     : Math.round(schedCents * (parseFloat(row?.pct_this_period) || 0) / 100)
@@ -81,19 +100,25 @@ async function loadLine(app, budgetItemId) {
 }
 
 // Total billed on this budget line by earlier prime apps of the job (same rule as the page).
+// prevCents = completed on earlier apps (G703 Column D, what dollar_prev stores).
+// storedCents = materials presently stored on this line (Column F: carried-in balance from
+// earlier apps + this app's stored − installed, lib/aia-g703.js); 0 before migration 063.
 async function prevCentsFor(app, budgetItemId, schedCents, row) {
   const { data: prevApps, error } = await adminSupabase.from('aia_applications')
     .select('id, app_number').eq('job_id', app.job_id).is('nv_subcontract_id', null).lt('app_number', app.app_number)
   if (error) return { error: Response.json({ error: error.message }, { status: 500 }) }
-  if (!prevApps?.length) return { prevCents: row?.dollar_prev != null ? toCents(row.dollar_prev) : 0 }
-  const { data: lines, error: lErr } = await adminSupabase.from('aia_application_lines')
-    .select('application_id, dollar_this_period, pct_this_period').in('application_id', prevApps.map(a => a.id)).eq('budget_item_id', budgetItemId)
+  if (!prevApps?.length) {
+    return { prevCents: row?.dollar_prev != null ? toCents(row.dollar_prev) : 0, storedCents: toCents(storedToDate(savedStored(row, 0))) }
+  }
+  const { data: lines, error: lErr } = await selectWithStored(cols => adminSupabase.from('aia_application_lines')
+    .select(cols).in('application_id', prevApps.map(a => a.id)).eq('budget_item_id', budgetItemId), 'application_id, dollar_this_period, pct_this_period')
   if (lErr) return { error: Response.json({ error: lErr.message }, { status: 500 }) }
   let prevCents = 0
   for (const l of lines || []) {
     prevCents += l.dollar_this_period != null ? toCents(l.dollar_this_period) : Math.round(schedCents * (parseFloat(l.pct_this_period) || 0) / 100)
   }
-  return { prevCents }
+  const storedCents = toCents(storedToDate(savedStored(row, storedBalanceBefore(lines))))
+  return { prevCents, storedCents }
 }
 
 export async function POST(request) {
@@ -137,9 +162,11 @@ export async function POST(request) {
       if (badLine) return Response.json({ error: badLine.error }, { status: badLine.status })
       const { row, schedCents, thisCents, error: lineErr } = await loadLine(app, cost.budget_item_id)
       if (lineErr) return lineErr
-      const { prevCents, error: prevErr } = await prevCentsFor(app, cost.budget_item_id, schedCents, row)
+      const { prevCents, storedCents, error: prevErr } = await prevCentsFor(app, cost.budget_item_id, schedCents, row)
       if (prevErr) return prevErr
-      const res = applyDrawDelta({ thisCents, prevCents, scheduledCents: schedCents, deltaCents: signedDrawCents(cost, app.markup_pct) })
+      // Bound on G = D + E + F: previous completed plus materials presently stored count
+      // toward the scheduled value. The draw itself still lands in This Period (E).
+      const res = applyDrawDelta({ thisCents, prevCents: prevCents + (storedCents || 0), scheduledCents: schedCents, deltaCents: signedDrawCents(cost, app.markup_pct) })
       if (res.error) return Response.json({ error: res.error }, { status: 422 })
       const { error } = await adminSupabase.rpc('aia_dc_draw_apply', {
         p_mode: 'draw', p_cost_id: cost.id, p_app_id: app.id, p_budget_item_id: cost.budget_item_id,

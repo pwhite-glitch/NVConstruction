@@ -51,7 +51,9 @@ describe('page source', () => {
     expect(body).toContain('const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(app.retainage_pct)) ? 10 : parseFloat(app.retainage_pct))) / 100')
     expect(body).toContain('const retPctLabel = +(retPct * 100).toFixed(2)')
     expect(body).toContain('Retainage: ${retPctLabel}%</div>')
-    expect(body).toContain('Retainage: ${retPctLabel}% of Completed Work (Column I of G703)')
+    // prompt67C split G702 line 5 into 5a / 5b (AIA wording); both still print the rate the math uses
+    expect(body).toContain('${retPctLabel}% of Completed Work (Column D + E on G703)')
+    expect(body).toContain('${retPctLabel}% of Stored Material (Column F on G703)')
     // The label for a 0% release is 0, not 10
     const retPct = Math.max(0, Math.min(100, isNaN(parseFloat(0)) ? 10 : parseFloat(0))) / 100
     expect(+(retPct * 100).toFixed(2)).toBe(0)
